@@ -11,7 +11,10 @@
 ## 1. 目的と範囲
 
 **目的:** 家族が、地震と津波の情報を 1 か所でまとめて見られ、タブを閉じていても大きな揺れや津波のときは端末に知らせが届くこと。
-まずは自分と家族だけで使い (ログインで閉じる)、いずれ広く公開しても困らない作りにしておく。
+**まずは持ち主 1 人で使う** (ログインで閉じる)。家族との共有は、仕様 (Entra のアプリロール、2.6) だけ先に入れておき、招待はあとでする。
+広く公開はまだしないが、公開しても困らない作りにしておく。
+
+- **ホスト名は `s.doany.io`** (家のクラスタの Gateway の `doany`)。
 
 ### MVP
 
@@ -209,12 +212,16 @@ type QuakeReport = {
 
 ### 2.6 認証
 
-家族だけが開けるようにする。ほかのアプリと同じく、パスワードは持たず OIDC でログインする。
+ロールを持つ人だけが開けるようにする。ほかのアプリと同じく、パスワードは持たず OIDC でログインする。
 
 - **OIDC のクライアントは自前** (noren の `src/lib/server/oidc.ts` と同じ形: discovery・認可コード + PKCE・素の fetch と WebCrypto で id_token の署名・発行元・宛先・期限・nonce を確かめる)。ライブラリは足さない。
-- **IdP は doany.io の Entra ID の共有のアプリ登録 (Main)**。通すのは、アプリロール (`OIDC_ROLE`、既定 `family`) を割り当てた人だけ。ashi と同じく、誰が使えるかはエンタープライズ アプリケーションのロールの割り当てで決める。
-- **セッションは DB に持ち、180 日で、使うたびに延ばす。** 家族に何度もログインさせない。Web Push は購読してあればセッションが切れても届く。
-- ログイン無しで開けるのは `/login`・`/auth/*`・`/health`・Service Worker と Web アプリのマニフェストだけ。
+- **IdP は doany.io の Entra ID の共有のアプリ登録 (Main)**。通すのは、アプリロール `family` を割り当てた人だけ。ashi と同じく、誰が使えるかはエンタープライズ アプリケーションのロールの割り当てで決める。
+  - ロールの名前は `OIDC_ROLE` (既定 `family`) で変えられる。ロールを読む claim は `OIDC_ROLE_CLAIM` (既定は空で、`roles` と `groups` の両方を読む。noren と同じ)。
+  - **いまは持ち主 1 人に `family` を割り当てるだけ。** 家族は、あとで Entra の Main に B2B のゲストとして招待し、同じロールを割り当てる (アプリ側の変更は要らない)。
+  - 設定値は環境変数で受ける: `OIDC_ISSUER`・`OIDC_CLIENT_ID`・`OIDC_CLIENT_SECRET`・`OIDC_ROLE`・`OIDC_ROLE_CLAIM`・`OIDC_SCOPE`・`PUBLIC_URL` (`https://s.doany.io`)。3 つ (issuer・client id・secret) が揃わないと、画面は開かない (`/health` だけ答える)。手元の開発だけ、`AUTH_DISABLED=1` でログインを飛ばせる (本番の `NODE_ENV=production` では効かない)。
+  - Entra 側の手順 (リダイレクト URI `https://s.doany.io/login/callback` とアプリロール) は [docs/entra.md](entra.md)。
+- **セッションは DB に持ち、180 日で、使うたびに延ばす。** 何度もログインさせない。Web Push は購読してあればセッションが切れても届く。
+- ログイン無しで開けるのは `/login`・`/login/callback`・`/health`・Service Worker と Web アプリのマニフェストだけ。`/logout` は POST だけ。
 
 ## 3. 気象庁 XML の電文の扱い
 
@@ -314,19 +321,19 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 
 ashi・xool と同じく、リポジトリの `deploy/` を Argo CD が同期する (gitops の ApplicationSet が `deploy/argocd.yaml` を探す)。
 
-- `deploy/`: `argocd.yaml`・`deployment.yaml` (レプリカ 1・Recreate・uid 1000・`/health` のプローブ・`TZ=Asia/Tokyo`)・`service.yaml`・`httproute.yaml` (Cilium Gateway の `doany`)・`pvc.yaml` (`local-path` 1Gi、`dataSourceRef` で VolSync から戻す)・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`networkpolicy.yaml` (外向きは DNS と公開のインターネットだけ)・`secrets.sops.yaml` (`SESSION_SECRET`・`OIDC_CLIENT_SECRET`・VAPID の秘密鍵・VolSync の restic)。`.sops.yaml` はほかのリポジトリと同じ鍵。
+- `deploy/`: `argocd.yaml`・`deployment.yaml` (レプリカ 1・Recreate・uid 1000・`/health` のプローブ・`TZ=Asia/Tokyo`)・`service.yaml`・`httproute.yaml` (Cilium Gateway の `doany`、ホスト名 `s.doany.io`)・`pvc.yaml` (`local-path` 1Gi、`dataSourceRef` で VolSync から戻す)・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`networkpolicy.yaml` (外向きは DNS と公開のインターネットだけ)・`secrets.sops.yaml` (`SESSION_SECRET`・`OIDC_CLIENT_SECRET`・VAPID の秘密鍵・VolSync の restic)。`.sops.yaml` はほかのリポジトリと同じ鍵。
 - イメージ: main にマージすると `docker-publish.yml` が `ghcr.io/danything/sonae:<sha>` を作り、`deploy/deployment.yaml` のタグを差し替える PR を作って自分でマージする (`deploy/` ができるまでは何もしない)。
 - 実行のイメージは `oven/bun:<ver>-distroless` (シェル無し・uid 1000)。
 - 外への接続は気象庁・P2P・Wolfx・Web Push の配信サービス (FCM・Mozilla・Apple) だけ。気象庁のフィードは 1 日 1440 回の条件付きの取得で、ほとんどが 304 なので、帯域の上限 (10GB/日) には遠い。
 
 ## 9. 未決の点
 
-持ち主に決めてほしいこと:
+持ち主が決めたこと (2026-11-13):
 
-1. **公開する名前 (ホスト名)。** 例: `sonae.doany.io`・`so.doany.io`。Entra の Main にリダイレクト URI を足す。
-2. **家族のアカウント。** Entra の Main に家族を招待 (B2B のゲスト) してロール `family` を割り当てるか、別の IdP にするか。
-3. **広く公開するか、いつか。** 公開するなら、Wolfx に規約 6 条の事前の許可が要るか確かめる。気象庁の情報だけで出せる範囲 (緊急地震速報なし) に絞る手もある。
-4. **知らせの既定値。** 2.4 の括弧の値 (地震情報は最大震度 4 以上・現在地で震度 3 以上、緊急地震速報の予報は既定でオフ) でよいか。
+1. **ホスト名は `s.doany.io`。** Entra の Main にリダイレクト URI `https://s.doany.io/login/callback` を足す ([docs/entra.md](entra.md))。
+2. **家族との共有はまだやらない。** いまは持ち主 1 人で使う。仕様としてはアプリロール (`OIDC_ROLE`、既定 `family`) で絞る形にしておき、家族の招待 (Entra の Main に B2B のゲスト) はあとでする。
+3. **広く公開はまだしない** (家族用の前提のまま)。公開するときは、Wolfx に規約 6 条の事前の許可が要るか確かめる。気象庁の情報だけで出せる範囲 (緊急地震速報なし) に絞る手もある。
+4. **知らせの既定値は 2.4 の括弧の値のまま** (地震情報は最大震度 4 以上・現在地で震度 3 以上、緊急地震速報の予報は既定でオフ)。
 
 作りながら決めること:
 
