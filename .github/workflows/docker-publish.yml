@@ -1,0 +1,96 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    branches: [main]
+    # 画像タグを差し替える PR のマージは deploy/ しか変えない。ここで起動しないことで
+    # ビルド → 差し替えの PR → マージ → ビルド の輪を止める
+    paths-ignore:
+      - "deploy/**"
+  workflow_dispatch:
+
+# 続けてマージしたときは、いちばん新しいコミットだけを出せばよいので、古い実行は取り消す
+concurrency:
+  group: publish
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      pull-requests: write
+      # 差し替えの PR が自分の必須のチェックを書くため (下の段)
+      statuses: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set lowercase image name
+        run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          build-args: |
+            APP_VERSION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 出すのは、deploy/deployment.yaml の画像タグを差し替える PR を作って自分でマージすることで行う
+      # (ashi と同じ形)。GITHUB_TOKEN で作った PR はワークフローを起こさないので、必須のチェック
+      # (check・build) はここで書く。差し替えるのは画像タグだけで、その画像は上の段で組んで push 済み。
+      # deploy/ がまだ無いあいだ (クラスタに載せる前) は何もしない
+      - name: Open and self-merge PR to update deployment image tag
+        run: |
+          if [ ! -f deploy/deployment.yaml ]; then
+            echo "deploy/deployment.yaml がまだ無いので、出さない"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          branch="bump-sonae-image"
+          git fetch --depth=1 origin main
+          git checkout -B "$branch" FETCH_HEAD
+          sed -i "s#image: ${REGISTRY}/[^:[:space:]]*/sonae:[^[:space:]]*#image: ${REGISTRY}/${IMAGE_NAME}:${GITHUB_SHA}#" deploy/deployment.yaml
+          if git diff --quiet -- deploy/deployment.yaml; then
+            echo "deploy/deployment.yaml already points at ${GITHUB_SHA}; nothing to deploy"
+            exit 0
+          fi
+          git add deploy/deployment.yaml
+          git commit -m "chore: update sonae image to ${GITHUB_SHA}"
+          git push --force origin "$branch"
+          title="chore: update sonae image to ${GITHUB_SHA::7}"
+          body="Automated image tag bump for commit ${GITHUB_SHA}. Merges itself once the checks below are reported."
+          gh pr create --base main --head "$branch" --title "$title" --body "$body" \
+            || gh pr edit "$branch" --title "$title" --body "$body"
+
+          for context in check build; do
+            gh api "repos/${GITHUB_REPOSITORY}/statuses/$(git rev-parse HEAD)" \
+              -f state=success \
+              -f context="$context" \
+              -f description="deploy-only bump; image built by this run" \
+              -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          done
+
+          # マージは squash だけ許してある
+          gh pr merge "$branch" --squash || gh pr merge "$branch" --auto --squash
+        env:
+          REGISTRY: ${{ env.REGISTRY }}
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

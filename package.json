@@ -1,0 +1,32 @@
+{
+  "name": "sonae",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "地震・津波の情報を家で受けて、見て、知らせる。",
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "dev": "bunx --bun vite dev",
+    "build": "bunx --bun vite build",
+    "start": "bun ./build",
+    "test": "bun test tests",
+    "lint": "oxlint && bun fmt --check",
+    "format": "oxlint --fix && bun fmt",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --tsgo --fail-on-warnings"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-bun": "^1.0.1",
+    "@sveltejs/kit": "^3.2.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@types/bun": "^1.4.4",
+    "@typescript/native": "npm:typescript@7",
+    "oxlint": "^1.93.0",
+    "svelte": "^5.57.3",
+    "svelte-check": "^4.7.8",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.8"
+  },
+  "imports": {
+    "#lib/*": "./src/lib/*"
+  }
+}

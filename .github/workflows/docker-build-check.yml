@@ -1,0 +1,42 @@
+name: Docker Build Check
+
+on:
+  pull_request:
+    branches: [main]
+    # deploy/ だけの PR(画像タグの差し替え)では起動しない
+    paths-ignore: ["deploy/**"]
+
+# 読んでビルドするだけ (push はしない)。gha のキャッシュはトークンの権限とは別に渡る
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # 画像タグの差し替えの PR は GITHUB_TOKEN で作られ、ワークフローを起こさない。
+    # その "build" の結果は docker-publish.yml が自分で書く。これは他の人が作ったときの保険
+    if: github.head_ref != 'bump-sonae-image'
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          load: true
+          tags: sonae:check
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 組んだイメージが distroless のまま起動して /health に答えるか
+      - name: Smoke test
+        run: |
+          docker run -d --name sonae -p 3000:3000 sonae:check
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/health; then exit 0; fi
+            sleep 1
+          done
+          docker logs sonae
+          exit 1

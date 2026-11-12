@@ -1,0 +1,28 @@
+# sonae
+
+地震・津波の情報を家のサーバーで受けて、ブラウザで見たり、Web Push で知らせを受けたりするアプリ。
+まずは自分と家族だけで使う (ログインで閉じる)。
+
+**まだ作っている途中です。** いまあるのは骨組みだけで、作りは [docs/design.md](docs/design.md) に書いてある。
+
+- **名前:** 「備え」から。地震を待つのではなく、来たときに慌てないためのもの。
+- **手本:** [Zero Quake](https://github.com/0Quake/Zero-Quake) の機能を参考にした。コードは読んでも写してもいない (一から書いている)。
+- **出典:** 情報は気象庁 (防災情報 XML)・P2P地震情報・Wolfx Project から受け、画面には必ず出典と「公式の情報を優先してください」という注意文を出す。気象庁の情報は加工して出しているので、その旨も書く。
+
+## 開発
+
+依存はホストに入れず、コンテナの中で動かす。
+
+```sh
+docker compose up            # https://sonae.localhost (genkan 経由)
+docker compose run --rm sonae bun run lint    # oxlint・整形の確かめ (bun fmt --check)
+docker compose run --rm sonae bun run check   # 型 (svelte-check --tsgo)
+docker compose run --rm sonae bun test tests
+docker compose run --rm sonae bun run build
+```
+
+docker の代わりに `wslc-compose` でもよい。
+
+## ライセンス
+
+[AGPL-3.0](LICENSE)
