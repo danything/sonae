@@ -1,0 +1,9 @@
+/node_modules
+.env*
+*.tsbuildinfo
+.DS_Store
+# 手元で動かしたときの DB
+/data/
+/.svelte-kit/
+/build/
+compose.override.yml
