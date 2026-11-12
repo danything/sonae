@@ -1,0 +1,32 @@
+name: Check
+
+on:
+  pull_request:
+    # 画像タグを差し替える PR(bump-sonae-image)は deploy/ しか変えない。見るもの(コード)が無いので起動しない
+    paths-ignore: ["deploy/**"]
+  push:
+    branches: [main]
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+# 読むだけなので、トークンにはこれだけ渡す
+permissions:
+  contents: read
+
+# 警告もエラーも落とす: oxlint は correctness を error に、svelte-check は --fail-on-warnings、
+# ビルドは vite.config.ts で警告を失敗に
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun i --frozen-lockfile
+      - run: bun run lint
+      - run: bun run check
+      - run: bun test tests
+      - run: bun run build

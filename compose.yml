@@ -1,0 +1,24 @@
+# 手元の開発。依存はホストに入れず、コンテナの中で動かす (docker の代わりに wslc-compose でもよい)。
+# genkan (https://github.com/danything/genkan) 経由で https://sonae.localhost で開く。
+# 秘密は compose.override.yml に書く (.gitignore 済み)。
+services:
+  sonae:
+    build:
+      target: base
+    volumes:
+      - .:/usr/src/app
+    command: sh -c "bun i && bun run dev"
+    networks:
+      - genkan
+      - default
+    environment:
+      - PROTOCOL_HEADER=x-forwarded-proto
+      - HOST_HEADER=x-forwarded-host
+      - SONAE_DATA=/usr/src/app/data
+    labels:
+      caddy: sonae.localhost
+      caddy.reverse_proxy: "{{upstreams 5173}}"
+
+networks:
+  genkan:
+    external: true

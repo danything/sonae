@@ -1,0 +1,11 @@
+/node_modules
+/.svelte-kit/
+/build/
+/tests
+/data/
+/docs
+/deploy
+.env*
+/.github
+/README.md
+compose*.yml
