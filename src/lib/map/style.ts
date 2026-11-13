@@ -10,8 +10,9 @@ import type {
   ObservedIntensity,
   Quake,
   Tsunami,
+  Volcano,
 } from "#lib/model.ts";
-import { intensityRank, TSUNAMI_ORDER } from "#lib/model.ts";
+import { intensityRank, TSUNAMI_ORDER, volcanoTop } from "#lib/model.ts";
 
 const GSI = "https://cyberjapandata.gsi.go.jp/xyz";
 const TILES = "https://maps.gsi.go.jp/development/ichiran.html";
@@ -37,7 +38,8 @@ export type LayerId =
   | "intensity"
   | "tsunami"
   | "eew"
-  | "faults";
+  | "faults"
+  | "volcano";
 
 export interface LayerInfo {
   id: LayerId;
@@ -58,6 +60,12 @@ export const LAYERS: LayerInfo[] = [
   },
   { id: "tsunami", label: "津波の警報・注意報", on: true },
   { id: "eew", label: "緊急地震速報", on: true },
+  {
+    id: "volcano",
+    label: "火山",
+    on: true,
+    note: "噴火警戒レベル 2 以上の火山 (受けた噴火警報・予報から) と、選んだ火山の情報の火山。色は気象庁の配色の指針",
+  },
   { id: "boundaries", label: "区域の境界", on: true },
   {
     id: "labels",
@@ -253,6 +261,59 @@ export function intensityLabels(
       return at ? [{ int: a.int, at, name: a.name }] : [];
     })
     .sort((a, b) => intensityRank(a.int) - intensityRank(b.int));
+}
+
+/** 地図に置く火山の印 1 つ */
+export interface VolcanoMark {
+  code: string;
+  name: string;
+  at: [number, number];
+  /** 警戒の段 (1〜5)。分からなければ無し */
+  level?: number;
+  kind: string;
+  /** 選んだ情報の火山 */
+  selected: boolean;
+}
+
+/**
+ * 火山の印。いまの噴火警報・予報 (`latestPerVolcano`) で段が 2 以上の火山と、選んだ報の火山。
+ * 位置は電文の位置、無ければ活火山の一覧 (`volcano-points.json`) から引く。段の低いほうから並べる (高い段が上に描かれる)
+ */
+export function volcanoMarks(
+  levels: Volcano[],
+  selected: Volcano | null | undefined,
+  points: Record<string, [number, number, string?]>,
+): VolcanoMark[] {
+  const out = new Map<string, VolcanoMark>();
+  const put = (v: Volcano, isSelected: boolean) => {
+    for (const a of v.volcanoes) {
+      const p = points[a.code];
+      const at: [number, number] | undefined =
+        a.lat !== undefined && a.lon !== undefined
+          ? [a.lon, a.lat]
+          : p
+            ? [p[0], p[1]]
+            : undefined;
+      if (!at) continue;
+      const prev = out.get(a.code);
+      out.set(a.code, {
+        code: a.code,
+        name: a.name,
+        at,
+        // 噴火速報には段が無いので、いまの段を残す
+        level: a.level ?? prev?.level,
+        kind: a.kind,
+        selected: isSelected || prev?.selected === true,
+      });
+    }
+  };
+  for (const v of levels) if (volcanoTop(v) >= 2) put(v, false);
+  if (selected && !selected.cancelled) put(selected, true);
+  return [...out.values()].sort(
+    (a, b) =>
+      Number(a.selected) - Number(b.selected) ||
+      (a.level ?? 0) - (b.level ?? 0),
+  );
 }
 
 /** 下地と、データの無い層。データ (色の式・点) は地図を作ったあとで差し込む */

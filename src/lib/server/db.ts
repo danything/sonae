@@ -117,6 +117,18 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX push_log_sent ON push_log (sent_at);
   `,
+  `
+  -- 火山 (噴火警報・予報 VFVO50 と噴火速報 VFVO56)。報ごとに 1 行。series は種別と識別番号 (取消で引く)
+  CREATE TABLE volcanoes (
+    id TEXT PRIMARY KEY,
+    series TEXT NOT NULL,
+    status TEXT NOT NULL,
+    reported_at TEXT NOT NULL,
+    data TEXT NOT NULL
+  );
+  CREATE INDEX volcanoes_series ON volcanoes (series, reported_at);
+  CREATE INDEX volcanoes_reported ON volcanoes (reported_at);
+  `,
 ];
 
 export function openDb(path: string): Database {

@@ -99,3 +99,25 @@ export const TSUNAMI_COLORS: Record<string, { bg: string; fg: string }> = {
   forecast: { bg: "rgb(120 160 220)", fg: "#000" },
   none: { bg: "rgb(200 200 203)", fg: "#000" },
 };
+
+/**
+ * 噴火警報・予報の色 (同じ指針の表 1-2)。段 (`volcanoLevel`) ごとに、5 は 200,0,255、4 は 255,40,0、
+ * 3 は 255,170,0、2 は 250,245,0、1 は 242,242,255
+ */
+export const VOLCANO_COLORS: Record<number, { bg: string; fg: string }> = {
+  5: { bg: "rgb(200 0 255)", fg: "#fff" },
+  4: { bg: "rgb(255 40 0)", fg: "#fff" },
+  3: { bg: "rgb(255 170 0)", fg: "#000" },
+  2: { bg: "rgb(250 245 0)", fg: "#000" },
+  1: { bg: "rgb(242 242 255)", fg: "#000" },
+};
+
+/**
+ * 火山の種類の名前を短くする (「レベル３（入山規制）」→「レベル3 入山規制」)。
+ * 全角の数字を半角に、終わりの全角の括弧を空白に替える
+ */
+export const volcanoKindText = (kind: string) =>
+  kind
+    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+    .replace(/（([^（）]*)）$/, " $1")
+    .trim();

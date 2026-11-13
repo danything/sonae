@@ -6,7 +6,11 @@
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
   import { untrack } from "svelte";
 
-  import { INTENSITY_COLORS } from "#lib/format.ts";
+  import {
+    INTENSITY_COLORS,
+    VOLCANO_COLORS,
+    volcanoKindText,
+  } from "#lib/format.ts";
   import {
     baseStyle,
     eewFill,
@@ -17,12 +21,14 @@
     type LayerState,
     mapVisibility,
     tsunamiPaint,
+    volcanoMarks,
   } from "#lib/map/style.ts";
   import {
     type Eew,
     intensityLabel,
     type Quake,
     type Tsunami,
+    type Volcano,
   } from "#lib/model.ts";
 
   /**
@@ -35,6 +41,8 @@
     tsunamis,
     eews,
     layers,
+    volcanoes = [],
+    volcano = null,
     shown = true,
   }: {
     quake: Quake | undefined;
@@ -42,6 +50,10 @@
     tsunamis: Tsunami[];
     eews: Eew[];
     layers: LayerState;
+    /** 火山ごとのいまの噴火警報・予報 */
+    volcanoes?: Volcano[];
+    /** 選んだ火山の報 (寄せる) */
+    volcano?: Volcano | null;
     /** 地図が見えているか (スマホの形で一覧の面が上にある間は false) */
     shown?: boolean;
   } = $props();
@@ -55,6 +67,9 @@
   /** 名前 → 細分区域のコード (P2P は名前だけで来る) */
   const codeByName = new Map<string, string>();
   let markers: Marker[] = [];
+  /** 火山の印 (震度のラベルとは別に出し入れする) と、活火山の位置の表 */
+  let volcanoMarkers: Marker[] = [];
+  let volcanoPoints = $state<Record<string, [number, number, string?]>>({});
 
   $effect(() => {
     // WebGL が無い端末では地図を出さない (一覧で見てもらう)
@@ -66,15 +81,20 @@
     let disposed = false;
     let created: MapLibreMap | undefined;
     void (async () => {
-      const [{ Map: MapClass, Marker: M, setWorkerUrl }, pts, areas] =
+      const [{ Map: MapClass, Marker: M, setWorkerUrl }, pts, areas, vpts] =
         await Promise.all([
           import("maplibre-gl"),
           fetch("/areas/quake-points.json").then((r) => r.json()),
           fetch("/areas/quake-areas.geojson").then((r) => r.json()),
+          // 火山の位置の表は無くても地図は出す (印は電文の位置だけで置く)
+          fetch("/areas/volcano-points.json")
+            .then((r) => (r.ok ? r.json() : {}))
+            .catch(() => ({})),
         ]);
       if (disposed || !container) return;
       setWorkerUrl(workerUrl);
       MarkerClass = M;
+      volcanoPoints = vpts as Record<string, [number, number, string?]>;
       points = pts as Record<string, [number, number]>;
       for (const f of (
         areas as { features: { properties: { code: string; name: string } }[] }
@@ -107,8 +127,10 @@
       disposed = true;
       paintedSig = "";
       markedSig = "";
-      for (const m of markers) m.remove();
+      volcanoSig = "";
+      for (const m of [...markers, ...volcanoMarkers]) m.remove();
       markers = [];
+      volcanoMarkers = [];
       created?.remove();
       map = undefined;
     };
@@ -225,6 +247,39 @@
     }
   });
 
+  // 火山の印 (三角と警戒の段の数字)。色は気象庁の配色の指針の噴火警報・予報の色
+  let volcanoSig = "";
+  $effect(() => {
+    if (!map || !MarkerClass) return;
+    const marks = layers.volcano
+      ? volcanoMarks(volcanoes, volcano, volcanoPoints)
+      : [];
+    const next = sig(marks);
+    if (next === volcanoSig) return;
+    volcanoSig = next;
+    for (const m of volcanoMarkers) m.remove();
+    volcanoMarkers = [];
+    for (const v of marks) {
+      const outer = document.createElement("div");
+      const el = document.createElement("span");
+      const c = v.level ? VOLCANO_COLORS[v.level] : undefined;
+      el.className = v.selected ? "volcano-mark selected" : "volcano-mark";
+      el.textContent = v.level ? String(v.level) : "";
+      if (c) {
+        el.style.setProperty("--volcano-bg", c.bg);
+        el.style.color = c.fg;
+      }
+      outer.className = "volcano-wrap";
+      outer.title = `${v.name} ${volcanoKindText(v.kind)}`;
+      outer.append(el);
+      volcanoMarkers.push(
+        new MarkerClass({ element: outer, anchor: "bottom" })
+          .setLngLat(v.at)
+          .addTo(map),
+      );
+    }
+  });
+
   /**
    * 震央の × 。MapLibre は印の要素そのものの transform で場所を決めるので、動かすのは中の要素
    */
@@ -245,12 +300,26 @@
   $effect(() => {
     if (!map) return;
     const eew = eews.find((e) => !e.cancelled);
-    const key = eew ? `eew:${eew.eventId}` : `quake:${quake?.id ?? ""}`;
-    const h = eew?.hypocenter ?? quake?.hypocenter;
+    // 選んだ火山の報があれば、その火山へ (緊急地震速報が出ている間はそちらが先)
+    const vm =
+      !eew && volcano
+        ? volcanoMarks([], volcano, volcanoPoints).find((m) => m.selected)
+        : undefined;
+    const key = eew
+      ? `eew:${eew.eventId}`
+      : vm
+        ? `volcano:${volcano?.id}`
+        : `quake:${quake?.id ?? ""}`;
+    const h = eew?.hypocenter ?? (vm ? undefined : quake?.hypocenter);
     const appeared = shown && !wasShown;
     wasShown = shown;
-    if (h?.lat === undefined || h.lon === undefined) return;
-    const center: [number, number] = [h.lon, h.lat];
+    const at: [number, number] | undefined = vm
+      ? vm.at
+      : h?.lat !== undefined && h.lon !== undefined
+        ? [h.lon, h.lat]
+        : undefined;
+    if (!at) return;
+    const center: [number, number] = at;
     const away = appeared && !map.getBounds().contains(center);
     if (key === focused && !away) return;
     focused = key;
@@ -309,6 +378,27 @@
       linear-gradient(45deg, transparent 42%, #ff2800 42% 58%, transparent 58%),
       linear-gradient(-45deg, transparent 42%, #ff2800 42% 58%, transparent 58%);
     filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff);
+  }
+  /* 火山の印。三角を警戒の段の色で塗り、段の数字を字でも出す (色だけに頼らない)。影は三角で切られないよう外の要素に */
+  .map :global(.volcano-wrap) {
+    filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.7));
+  }
+  .map :global(.volcano-mark) {
+    display: grid;
+    place-items: end center;
+    width: 1.5rem;
+    height: 1.3rem;
+    padding-bottom: 0.05rem;
+    background: var(--volcano-bg, rgb(200 200 203));
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+    font-size: var(--so-text-2xs);
+    font-weight: var(--so-weight-bold);
+    line-height: 1;
+  }
+  .map :global(.volcano-mark.selected) {
+    width: 2rem;
+    height: 1.75rem;
+    font-size: var(--so-text-xs);
   }
   /* 緊急地震速報の震央は、出たときに 3 回だけ大きさで脈打つ (transform だけ) */
   .map :global(.epicenter.eew) {

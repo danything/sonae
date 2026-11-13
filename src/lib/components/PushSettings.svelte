@@ -270,6 +270,14 @@
       </select>
     </label>
     <label>
+      火山
+      <select bind:value={prefs.volcano} data-testid="prefs-volcano">
+        <option value="warning">噴火速報と噴火警報 (レベル 4・5)</option>
+        <option value="all">火口周辺警報 (レベル 2・3) も</option>
+        <option value="off">知らせない</option>
+      </select>
+    </label>
+    <label>
       <input type="checkbox" role="switch" bind:checked={prefs.advisory} />
       南海トラフ地震臨時情報・後発地震注意情報
     </label>

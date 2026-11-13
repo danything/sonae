@@ -234,14 +234,113 @@ export interface Advisory {
   updatedAt: string;
 }
 
-export type EventType = "eew" | "quake" | "tsunami" | "advisory";
+/**
+ * 噴火警報・予報 (VFVO50) と噴火速報 (VFVO56) の 1 つの報。一覧には報ごとに並べる。
+ * 取消を受けたら、同じ一連の情報 (種別と識別番号) のいちばん新しい報に印を付ける
+ */
+export interface Volcano {
+  /** `<種別>-<識別番号>-<発表の時刻 (数字だけ)>` */
+  id: string;
+  code: "VFVO50" | "VFVO56";
+  /** 識別番号。噴火警報・予報は火山のコード、噴火速報は発表の時刻と火山のコード */
+  eventId: string;
+  status: Status;
+  infoType: "発表" | "訂正" | "取消";
+  reportedAt: string;
+  /** 噴火の時刻 (噴火速報。分までで「頃」) */
+  eventTime?: string;
+  title: string;
+  headline: string;
+  volcanoes: VolcanoArea[];
+  /** 警報の種類 (噴火警報・火口周辺警報・噴火予報など)。対象の市町村に出たもの */
+  warning?: { name: string; code?: string; condition?: string };
+  /** 対象の市町村 */
+  cities: string[];
+  /** 火山の活動の状況と、防災上の警戒事項 (噴火警報・予報) */
+  activity?: string;
+  prevention?: string;
+  cancelled: boolean;
+  updatedAt: string;
+}
+
+/** 報の対象の火山 1 つ */
+export interface VolcanoArea {
+  /** 火山名のコード (気象庁のコード表 PointVolcano) */
+  code: string;
+  name: string;
+  lat?: number;
+  lon?: number;
+  /** 電文のままの種類の名前 (「レベル３（入山規制）」「噴火」など) */
+  kind: string;
+  kindCode?: string;
+  /** 引上げ・引下げ・継続など */
+  condition?: string;
+  /** 前の種類の名前 */
+  lastKind?: string;
+  /** 警戒の段 (1〜5)。噴火警戒レベルが無い火山は「居住地域厳重警戒」を 5 のように読み替えた段 */
+  level?: number;
+}
+
+/**
+ * 噴火警報・予報の種類のコード (コード表 VolcanicWarning) から警戒の段。
+ * レベルの無い火山・海底火山は、気象庁の配色の指針 (表 1-2) で同じ色の段に読み替える
+ */
+export function volcanoLevel(kindCode: string | undefined): number | undefined {
+  switch (kindCode) {
+    case "11":
+    case "21":
+    case "35":
+      return 1;
+    case "12":
+    case "22":
+      return 2;
+    case "13":
+    case "23":
+    case "36":
+      return 3;
+    case "14":
+    case "24":
+      return 4;
+    case "15":
+    case "25":
+      return 5;
+  }
+  return undefined;
+}
+
+/** 噴火警報 (居住地域) に当たる段。警戒レベル 4・5 と、レベルの無い火山の山麓・居住地域厳重警戒 */
+export const VOLCANO_RESIDENTIAL = 4;
+
+/** 報の中でいちばん高い段 (無ければ 0) */
+export const volcanoTop = (v: Pick<Volcano, "volcanoes">) =>
+  Math.max(0, ...v.volcanoes.map((a) => a.level ?? 0));
+
+/**
+ * 火山ごとのいまの噴火警報・予報。新しい順に並んだ報から、火山ごとにいちばん新しい VFVO50 を採る
+ * (取り消された報は飛ばして、その前の報を採る)。並びは新しい順のまま
+ */
+export function latestPerVolcano(reports: Volcano[]): Volcano[] {
+  const seen = new Set<string>();
+  const out: Volcano[] = [];
+  for (const r of reports) {
+    if (r.code !== "VFVO50" || r.cancelled || r.status !== "normal") continue;
+    const fresh = r.volcanoes.filter((a) => !seen.has(a.code));
+    if (fresh.length === 0) continue;
+    for (const a of fresh) seen.add(a.code);
+    out.push(r);
+  }
+  return out;
+}
+
+export type EventType = "eew" | "quake" | "tsunami" | "advisory" | "volcano";
 
 /** SSE と DB の events に載る 1 件。中身はその時点のまるごとの姿 */
 export type SonaeEvent =
   | { seq: number; type: "eew"; data: Eew }
   | { seq: number; type: "quake"; data: Quake }
   | { seq: number; type: "tsunami"; data: Tsunami }
-  | { seq: number; type: "advisory"; data: Advisory };
+  | { seq: number; type: "advisory"; data: Advisory }
+  | { seq: number; type: "volcano"; data: Volcano };
 
 export interface SourceStatus {
   id: SourceId;

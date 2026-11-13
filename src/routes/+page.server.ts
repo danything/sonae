@@ -18,6 +18,7 @@ export const load: PageServerLoad = ({ url }) => {
     eewHistory: store.eews(50, view.training),
     quake: kind === "quake" && id ? (store.quake(id) ?? null) : null,
     tsunami: kind === "tsunami" && id ? (store.tsunami(id) ?? null) : null,
+    volcano: kind === "volcano" && id ? (store.volcano(id) ?? null) : null,
     eew:
       kind === "eew" && id
         ? (store.eew(id) ??

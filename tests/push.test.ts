@@ -64,6 +64,7 @@ describe("通知の条件", () => {
       areaMinInt: "3",
       tsunami: "watch",
       advisory: true,
+      volcano: "warning",
     });
   });
 });

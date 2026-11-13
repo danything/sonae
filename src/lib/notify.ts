@@ -17,6 +17,9 @@ import {
   type Tsunami,
   type TsunamiGrade,
   tsunamiGradeLabel,
+  type Volcano,
+  VOLCANO_RESIDENTIAL,
+  volcanoTop,
 } from "#lib/model.ts";
 import type { PushPrefs, TsunamiLevel } from "#lib/push.ts";
 import { selectHref } from "#lib/view.ts";
@@ -49,12 +52,13 @@ export interface Notice {
   event: SonaeEvent;
 }
 
-/** 送るのをやめる古さ。緊急地震速報は数分で意味が無くなる。地震は 1 時間、津波・お知らせは 6 時間 */
+/** 送るのをやめる古さ。緊急地震速報は数分で意味が無くなる。地震は 1 時間、津波・お知らせ・火山は 6 時間 */
 export const FRESH_MS = {
   eew: 3 * 60_000,
   quake: 60 * 60_000,
   tsunami: 6 * 60 * 60_000,
   advisory: 6 * 60 * 60_000,
+  volcano: 6 * 60 * 60_000,
 } as const;
 
 const TTL = {
@@ -62,6 +66,7 @@ const TTL = {
   quake: 60 * 60,
   tsunami: 6 * 60 * 60,
   advisory: 6 * 60 * 60,
+  volcano: 6 * 60 * 60,
 } as const;
 
 const BODY_MAX = 300;
@@ -228,6 +233,43 @@ function advisoryNotice(a: Advisory, event: SonaeEvent): Notice {
 }
 
 /**
+ * 火山。噴火速報は報ごとに、噴火警報・予報は火山ごとに tag を分ける (段が上がったら鳴らし直す)。
+ * 噴火速報は段が無いので、いちばん重い 9 として扱う
+ */
+function volcanoNotice(v: Volcano, event: SonaeEvent): Notice {
+  const flash = v.code === "VFVO56";
+  const names = v.volcanoes.map((a) => a.name).join("・");
+  const top = volcanoTop(v);
+  const ended = v.warning?.code === "04";
+  return {
+    tag: flash
+      ? `volcano:flash:${v.eventId}`
+      : `volcano:${v.volcanoes.map((a) => a.code).join(",") || v.eventId}`,
+    level: v.cancelled ? 0 : flash ? 9 : top,
+    title: v.cancelled
+      ? `${v.title} (取消)`
+      : flash
+        ? `噴火速報 ${names}`
+        : v.title,
+    body: clip(
+      v.cancelled
+        ? "先ほどの火山の情報は取り消されました。"
+        : v.headline
+            .replace(/[＜＞]/g, " ")
+            .replace(/\s+/g, " ")
+            .trim(),
+    ),
+    url: selectHref(NONE, "volcano", v.id),
+    urgency: flash || top >= VOLCANO_RESIDENTIAL ? "high" : "normal",
+    ttl: TTL.volcano,
+    sticky: !v.cancelled && (flash || top >= VOLCANO_RESIDENTIAL),
+    closing: v.cancelled || ended,
+    at: Date.parse(v.eventTime ?? v.reportedAt),
+    event,
+  };
+}
+
+/**
  * イベントから通知を作る。知らせないもの (訓練・試験・遠地地震・定例のお知らせ・古すぎるもの) は null。
  */
 export function noticeOf(event: SonaeEvent, now: number): Notice | null {
@@ -247,6 +289,9 @@ export function noticeOf(event: SonaeEvent, now: number): Notice | null {
     case "advisory":
       if (!isUrgentAdvisory(event.data)) return null;
       n = advisoryNotice(event.data, event);
+      break;
+    case "volcano":
+      n = volcanoNotice(event.data, event);
       break;
   }
   if (!Number.isFinite(n.at) || now - n.at > FRESH_MS[event.type]) return null;
@@ -284,6 +329,11 @@ export function matches(n: Notice, prefs: PushPrefs): boolean {
       return prefs.tsunami !== "off" && n.level >= TSUNAMI_MIN[prefs.tsunami];
     case "advisory":
       return prefs.advisory;
+    case "volcano":
+      // 噴火速報はどちらでも。噴火警報は「warning」なら居住地域 (レベル 4・5)、「all」なら火口周辺 (レベル 2) から
+      if (prefs.volcano === "off") return false;
+      if (e.data.code === "VFVO56") return true;
+      return n.level >= (prefs.volcano === "all" ? 2 : VOLCANO_RESIDENTIAL);
   }
 }
 
