@@ -205,6 +205,13 @@ export class Pusher {
       ) {
         return "full" as const;
       }
+      // 持ち主が替わる (同じブラウザで別の人がログインし直した) なら、前の人に送った控えは捨てる
+      this.db
+        .query(
+          `DELETE FROM push_log WHERE endpoint = ? AND EXISTS (
+             SELECT 1 FROM push_subscriptions WHERE endpoint = ? AND subject <> ?)`,
+        )
+        .run(sub.endpoint, sub.endpoint, subject);
       this.db
         .query(
           `INSERT INTO push_subscriptions (endpoint, subject, p256dh, auth, prefs, label, created_at, updated_at)
@@ -257,7 +264,11 @@ export class Pusher {
   handle(e: SonaeEvent): Promise<SendResult[]> {
     const n = noticeOf(e, this.now());
     if (!n) return Promise.resolve([]);
-    const jobs: { sub: StoredSubscription; renotify: boolean }[] = [];
+    const jobs: {
+      sub: StoredSubscription;
+      renotify: boolean;
+      prev: Sent | undefined;
+    }[] = [];
     this.db.transaction(() => {
       for (const sub of this.list()) {
         const prev = this.sent(sub.endpoint, n.tag);
@@ -270,10 +281,12 @@ export class Pusher {
                digest = excluded.digest, sent_at = excluded.sent_at`,
           )
           .run(sub.endpoint, n.tag, n.level, digestOf(n), this.now());
-        jobs.push({ sub, renotify: p.renotify });
+        jobs.push({ sub, renotify: p.renotify, prev });
       }
     })();
-    return Promise.all(jobs.map((j) => this.deliver(j.sub, n, j.renotify)));
+    return Promise.all(
+      jobs.map((j) => this.deliver(j.sub, n, j.renotify, j.prev)),
+    );
   }
 
   private sent(endpoint: string, tag: string): Sent | undefined {
@@ -290,17 +303,27 @@ export class Pusher {
     sub: StoredSubscription,
     n: Notice,
     renotify: boolean,
+    prev: Sent | undefined,
   ): Promise<SendResult> {
     const r = await this.send(sub, payloadOf(n, renotify), {
       ttl: n.ttl,
       urgency: n.urgency,
       topic: topicOf(n.tag),
     });
-    // 送れなかったら控えを消し、次の続報を「初めて」として扱う (知らせが一度も出ないことを避ける)
+    // 送れなかったら控えを送る前に戻す。初めての知らせなら控えを消し、次の続報を「初めて」として
+    // 扱う (知らせが一度も出ないことを避ける)。前に届いていたなら、その時の控えに戻す (鳴らし直さない)
     if (r === "error") {
-      this.db
-        .query("DELETE FROM push_log WHERE endpoint = ? AND tag = ?")
-        .run(sub.endpoint, n.tag);
+      if (prev) {
+        this.db
+          .query(
+            "UPDATE push_log SET level = ?, digest = ? WHERE endpoint = ? AND tag = ?",
+          )
+          .run(prev.level, prev.digest, sub.endpoint, n.tag);
+      } else {
+        this.db
+          .query("DELETE FROM push_log WHERE endpoint = ? AND tag = ?")
+          .run(sub.endpoint, n.tag);
+      }
     }
     return r;
   }
@@ -339,6 +362,8 @@ export class Pusher {
         headers: req.headers,
         body: req.body,
         signal: AbortSignal.timeout(10_000),
+        // 受け付けた配信サービスの外へ転送させない (転送は失敗として扱う)
+        redirect: "manual",
       });
       if (res.ok) return "ok";
       if (res.status === 404 || res.status === 410) {

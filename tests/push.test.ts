@@ -597,3 +597,41 @@ test("緊急地震速報は報ごとに M が変わっても送り直さず、�
   if (!cancel) throw new Error("知らせが無い");
   expect(plan(cancel, p, warned)).toEqual({ send: true, renotify: false });
 });
+
+test("前に届いた事象の続報が送れなかったら、控えを送る前に戻す (次の続報で鳴らし直さない)。持ち主が替わったら控えを捨てる", async () => {
+  const db = openDb(":memory:");
+  const { vapid } = vapidFromEnv({
+    VAPID_PRIVATE_JWK: await testJwk(),
+    PUBLIC_URL: "https://s.example",
+  });
+  if (!vapid) throw new Error("鍵が無い");
+  let status = 201;
+  const fakeFetch = (async () =>
+    new Response(null, { status })) as unknown as typeof fetch;
+  const pusher = new Pusher(db, vapid, { fetch: fakeFetch, now: () => NOW });
+  const sub = parseSubscription(
+    await testSubscription("https://fcm.googleapis.com/fcm/send/z"),
+  );
+  if (!sub) throw new Error("購読が読めない");
+  pusher.save("me", sub, prefs(), "");
+  const log = () =>
+    db.query("SELECT level, digest FROM push_log").all() as {
+      level: number;
+      digest: string;
+    }[];
+
+  expect(await pusher.handle(quake())).toEqual(["ok"]);
+  const before = log();
+  expect(before).toHaveLength(1);
+
+  status = 500;
+  expect(await pusher.handle(quake({ magnitude: 5.4 }))).toEqual(["error"]);
+  expect(log()).toEqual(before);
+
+  // 転送 (3xx) は追わず、失敗として扱う
+  status = 307;
+  expect(await pusher.handle(quake({ magnitude: 5.5 }))).toEqual(["error"]);
+
+  pusher.save("you", sub, prefs(), "");
+  expect(log()).toEqual([]);
+});
