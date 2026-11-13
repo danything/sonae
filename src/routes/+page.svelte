@@ -5,6 +5,7 @@
   import { tick } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import Ellipsis from "~icons/lucide/ellipsis";
+  import ExternalLink from "~icons/lucide/external-link";
   import Info from "~icons/lucide/info";
   import List from "~icons/lucide/list";
   import MapIcon from "~icons/lucide/map";
@@ -50,7 +51,7 @@
     tsunamiGradeLabel,
     tsunamiTop,
   } from "#lib/model.ts";
-  import { CREDITS, NOTICE } from "#lib/notice.ts";
+  import { CREDITS, KMONI_URL, NOTICE } from "#lib/notice.ts";
   import { PHONE_FORM } from "#lib/phone-form.ts";
   import {
     applyTheme,
@@ -410,6 +411,20 @@
   </svg>
 {/snippet}
 
+{#snippet kmoniItem()}
+  <!-- 防災科研の公式の強震モニタ。リンクだけ (データは取らず、埋め込まない。docs/design.md 1 章) -->
+  <a
+    class="menu-item kmoni"
+    href={KMONI_URL}
+    target="_blank"
+    rel="noopener noreferrer"
+    data-testid="kmoni"
+  >
+    強震モニタを開く
+    <Icon icon={ExternalLink} size={0.875} />
+  </a>
+{/snippet}
+
 {#snippet themeItems()}
   <p class="menu-head">テーマ</p>
   {#each THEMES as t (t.mode)}
@@ -509,6 +524,8 @@
             data-testid="user-menu">{user?.name ?? "メニュー"}</button
           >
         {/snippet}
+        {@render kmoniItem()}
+        <div class="menu-gap"></div>
         {@render themeItems()}
         {@render accountItems()}
       </Menu>
@@ -753,6 +770,7 @@
             onclick={() => (pushOpen = true)}>通知</button
           >
         {/if}
+        {@render kmoniItem()}
         <div class="menu-gap"></div>
         {@render themeItems()}
         {@render accountItems()}
@@ -835,6 +853,11 @@
   }
   .actions :global(:is(a.button, button)) {
     font-size: var(--so-text-sm);
+  }
+  .kmoni {
+    display: flex;
+    align-items: center;
+    gap: var(--so-space-1);
   }
   .trouble {
     display: inline-flex;

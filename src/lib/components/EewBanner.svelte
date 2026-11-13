@@ -1,4 +1,7 @@
 <script lang="ts">
+  import ExternalLink from "~icons/lucide/external-link";
+
+  import Icon from "#lib/components/Icon.svelte";
   import {
     depthText,
     jstClock,
@@ -7,7 +10,7 @@
     STATUS_LABEL,
   } from "#lib/format.ts";
   import type { Eew } from "#lib/model.ts";
-  import { EEW_NOTICE } from "#lib/notice.ts";
+  import { EEW_NOTICE, KMONI_URL } from "#lib/notice.ts";
 
   /**
    * 緊急地震速報の帯。警報は「強い揺れに警戒」と対象の地域、予報は震源と M だけ。
@@ -61,6 +64,19 @@
         .map((s) => SOURCE_LABEL[s])
         .join("、")}
     </p>
+    {#if !eew.cancelled}
+      <!-- 揺れの広がりは防災科研の公式の強震モニタで見てもらう (リンクだけ。docs/design.md 1 章) -->
+      <p class="small">
+        <a
+          class="kmoni"
+          href={KMONI_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="eew-kmoni"
+          >強震モニタを開く<Icon icon={ExternalLink} size={0.875} /></a
+        >
+      </p>
+    {/if}
     <p class="tiny meta">{EEW_NOTICE}</p>
   </div>
 </section>
@@ -108,6 +124,15 @@
     font-size: var(--so-text-xs);
     font-weight: var(--so-weight);
     opacity: 0.85;
+  }
+  .kmoni {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--so-space-1);
+    color: inherit;
+    font-weight: var(--so-weight-bold);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
   }
   .meta {
     opacity: 0.9;
