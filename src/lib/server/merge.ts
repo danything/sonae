@@ -165,15 +165,24 @@ export function mergeQuake(
 }
 
 /**
+ * 番号が合わないときに同じ地震とみなす、発生の時刻 (震度速報は TargetDateTime) の差の上限。
+ * 気象庁の文書に結び方の規則は無い (番号がずれうることだけが書かれている。docs/design.md の 9 章の 5)
+ * ので、自前の値。震度速報の TargetDateTime は最初に検知した時刻で分までしか意味が無く
+ * (地震火山関連 解説資料 Ⅰ-2)、震度速報は発生の約 1 分半後に出る (気象庁の解説)。
+ * 分の切り捨て (最大 59 秒) と検知までの遅れを足しても収まる幅として 90 秒。
+ */
+export const LINK_WINDOW_MS = 90_000;
+
+/**
  * 報と地震が同じ地震か (地震識別番号が合わないとき)。自動の電文 (震度速報) と手動の電文で
- * 番号が一致しないことがあるので、発生の時刻が近く、震度の地域が重なるもので結ぶ。
- * 閾値はまだ仮 (docs/design.md の未決の点): 時刻の差 90 秒以内。
+ * 番号が一致しないことがあるので、発生の時刻が近く、震度の地域が 1 つでも重なるもので結ぶ
+ * (どちらかに地域が無ければ時刻だけ)。閾値は自前 (LINK_WINDOW_MS)。
  */
 export function sameQuakeByTime(q: Quake, r: QuakeReport): boolean {
   const t = ms(r.originTime ?? r.targetTime);
   const qt = ms(q.originTime);
   if (!Number.isFinite(t) || !Number.isFinite(qt)) return false;
-  if (Math.abs(t - qt) > 90_000) return false;
+  if (Math.abs(t - qt) > LINK_WINDOW_MS) return false;
   if (r.areas.length === 0 || q.areas.length === 0) return true;
   const names = new Set(q.areas.map((a) => a.name));
   return r.areas.some((a) => names.has(a.name));
