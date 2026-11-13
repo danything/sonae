@@ -44,6 +44,8 @@ class Alerter {
   private audio: HTMLAudioElement | undefined;
   private url: string | undefined;
   private readonly sent = new Map<string, Sent>();
+  /** 鳴らした回数。無音で動かしている間に本当に鳴らしたら、その音を止めない */
+  private rings = 0;
 
   /** 音か読み上げがオンなのに、いまは鳴らせない */
   get blocked(): boolean {
@@ -96,7 +98,9 @@ class Alerter {
 
   /** 試しに鳴らす (ダイアログのボタン。押した操作の中なので、鳴らせるようにもなる) */
   preview(): void {
-    this.unlock();
+    // 音は ring がこの操作の中で鳴らすので、無音で動かすのは読み上げだけにする
+    // (無音の再生を止める pause で、鳴らした音が切れないように)
+    this.unlock(false);
     this.ring("sonae の通知の試しです");
   }
 
@@ -104,20 +108,24 @@ class Alerter {
    * 人の操作の中で、音と読み上げを無音で一度動かす。iPhone・iPad の Safari は、操作の中で一度
    * 鳴らした `<audio>` と読み上げでないと、後から鳴らせない
    */
-  unlock(): void {
+  unlock(primeAudio = true): void {
     this.activated = true;
     this.failed = false;
-    if (this.settings.sound) {
+    if (primeAudio && this.settings.sound) {
       const a = this.element();
       if (a.paused) {
+        const at = this.rings;
         a.muted = true;
         a.play()
           .then(() => {
+            if (at !== this.rings) return;
             a.pause();
             a.currentTime = 0;
           })
           .catch(() => {})
-          .finally(() => (a.muted = false));
+          .finally(() => {
+            if (at === this.rings) a.muted = false;
+          });
       }
     }
     if (
@@ -146,7 +154,8 @@ class Alerter {
   private async once(key: string, run: () => void): Promise<void> {
     const locks =
       typeof navigator !== "undefined" ? navigator.locks : undefined;
-    if (!locks) return run();
+    // 鳴らせないタブはロックを取らない (操作済みのほかのタブが鳴らせるように)。自分でも鳴らしてはみる
+    if (!locks || this.blocked) return run();
     await locks.request(
       `sonae.alert:${key}`,
       { ifAvailable: true },
@@ -161,6 +170,7 @@ class Alerter {
 
   private ring(title: string): void {
     const { sound, speech } = this.settings;
+    this.rings++;
     if (sound) {
       const a = this.element();
       a.muted = false;
