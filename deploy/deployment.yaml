@@ -29,7 +29,7 @@ spec:
       terminationGracePeriodSeconds: 15
       containers:
         - name: sonae
-          image: ghcr.io/danything/sonae:2ae8fffb3f1849fe54ec764242758faf772614e3
+          image: ghcr.io/danything/sonae:4b327b23fd37081ead5e7b0805b9225838c704a5
           ports:
             - containerPort: 3000
           startupProbe:
@@ -84,6 +84,14 @@ spec:
             # 通すのはアプリロール admin を割り当てられた人だけ。家族と共有するときは family 用のロールに替える
             - name: OIDC_ROLE
               value: admin
+            # Web Push の VAPID の秘密鍵 (JWK の JSON)。Secret に鍵が無ければ環境変数が入らず、Web Push を
+            # 切って普通に動く (optional)。作り方と入れ方は docs/push.md。連絡先 (VAPID_SUBJECT) は PUBLIC_URL を使う
+            - name: VAPID_PRIVATE_JWK
+              valueFrom:
+                secretKeyRef:
+                  name: sonae-secrets
+                  key: vapid-private-jwk
+                  optional: true
           volumeMounts:
             - name: sonae-data
               mountPath: /data

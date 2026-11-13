@@ -45,8 +45,17 @@ const pass: Handle = ({ event, resolve }) => {
   return resolve(event);
 };
 
-/** ログイン無しで開けるところ (docs/design.md の 2.6) */
-const PUBLIC = new Set(["/health", "/auth/login", "/auth/callback"]);
+/**
+ * ログイン無しで開けるところ (docs/design.md の 2.6)。Service Worker とマニフェストは、ブラウザが
+ * Cookie の無い要求で取り直すことがある (中に秘密は無い)
+ */
+const PUBLIC = new Set([
+  "/health",
+  "/auth/login",
+  "/auth/callback",
+  "/service-worker.js",
+  "/manifest.webmanifest",
+]);
 
 /**
  * ロールを持ってログインした人だけが開ける。IdP とのやり取りは /auth/login と /auth/callback に

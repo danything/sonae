@@ -77,7 +77,13 @@ async function run(
 const HTML = "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8";
 
 describe("ログイン無しで開けるところ", () => {
-  for (const path of ["/health", "/auth/login", "/auth/callback"]) {
+  for (const path of [
+    "/health",
+    "/auth/login",
+    "/auth/callback",
+    "/service-worker.js",
+    "/manifest.webmanifest",
+  ]) {
     test(`${path} は Cookie が無くても通す`, async () => {
       const r = await run(path, { accept: HTML });
       expect(r.resolved).toBe(true);

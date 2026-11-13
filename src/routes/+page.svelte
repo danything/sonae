@@ -21,6 +21,7 @@
   import Icon from "#lib/components/Icon.svelte";
   import Intensity from "#lib/components/Intensity.svelte";
   import Menu from "#lib/components/Menu.svelte";
+  import PushSettings from "#lib/components/PushSettings.svelte";
   import QuakeMap from "#lib/components/QuakeMap.svelte";
   import Row from "#lib/components/Row.svelte";
   import SearchField from "#lib/components/SearchField.svelte";
@@ -351,6 +352,8 @@
       replace: true,
     });
 
+  /** 通知 (Web Push) の設定の窓 */
+  let pushOpen = $state(false);
   let userMenu = $state(false);
   let moreMenu = $state(false);
   let dockMenu = $state(false);
@@ -486,6 +489,14 @@
         </span>
       {/if}
       <a class="button ghost small" href={aboutHref}>出典と注意</a>
+      {#if user}
+        <button
+          type="button"
+          class="ghost small"
+          onclick={() => (pushOpen = true)}
+          data-testid="push-open">通知</button
+        >
+      {/if}
       <Menu bind:open={userMenu} align="end">
         {#snippet trigger(props)}
           <button
@@ -741,6 +752,13 @@
         {/snippet}
         {#if user}<p class="menu-head">{user.name}</p>{/if}
         <a class="menu-item" href={aboutHref}>出典と注意</a>
+        {#if user}
+          <button
+            type="button"
+            class="menu-item"
+            onclick={() => (pushOpen = true)}>通知</button
+          >
+        {/if}
         <div class="menu-gap"></div>
         {@render themeItems()}
         {@render accountItems()}
@@ -749,6 +767,9 @@
   </nav>
 
   <AboutDialog open={v.about} onclose={closeAbout} />
+  {#if user}
+    <PushSettings bind:open={pushOpen} />
+  {/if}
 </div>
 
 <style>

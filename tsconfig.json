@@ -9,5 +9,7 @@
     // imports 経由だと .svelte の型(svelte2tsx の出力)に届かず、props も型も検査されなくなる
     "paths": { "#lib/*": ["./src/lib/*"] }
   },
-  "include": ["src", "tests", "vite.config.ts"]
+  "include": ["src", "tests", "vite.config.ts"],
+  // Service Worker は WebWorker の型で、src/service-worker/tsconfig.json が見る
+  "exclude": ["src/service-worker"]
 }

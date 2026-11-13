@@ -91,6 +91,32 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX sessions_expires ON sessions (expires_at);
   `,
+  `
+  -- Web Push の購読 (2.4)。ブラウザごとに 1 つ。subject はログインした人 (IdP の sub)、prefs は知らせの条件 (JSON)。
+  -- セッションとは結ばない (ログインが切れても届く)
+  CREATE TABLE push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    subject TEXT NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    prefs TEXT NOT NULL,
+    label TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX push_subscriptions_subject ON push_subscriptions (subject);
+
+  -- 購読ごとに、事象 (tag) へ最後に送ったもの。同じ事象の続報で鳴らし直さないために使う
+  CREATE TABLE push_log (
+    endpoint TEXT NOT NULL REFERENCES push_subscriptions (endpoint) ON DELETE CASCADE,
+    tag TEXT NOT NULL,
+    level INTEGER NOT NULL,
+    digest TEXT NOT NULL,
+    sent_at INTEGER NOT NULL,
+    PRIMARY KEY (endpoint, tag)
+  );
+  CREATE INDEX push_log_sent ON push_log (sent_at);
+  `,
 ];
 
 export function openDb(path: string): Database {
