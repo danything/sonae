@@ -217,6 +217,73 @@ export interface Tsunami {
   updatedAt: string;
 }
 
+/**
+ * 長周期地震動階級 (気象庁の「長周期地震動に関する観測情報」VXSE62)。0 は階級 1 未満。
+ * 高層ビルの高い階の揺れの大きさで、震度とは別の尺度 (1 やや大きな揺れ・2 大きな揺れ・
+ * 3 非常に大きな揺れ・4 極めて大きな揺れ)
+ */
+export const LG_CLASSES = ["0", "1", "2", "3", "4"] as const;
+export type LgClass = (typeof LG_CLASSES)[number];
+export const isLgClass = (v: unknown): v is LgClass =>
+  typeof v === "string" && (LG_CLASSES as readonly string[]).includes(v);
+
+const LG_WORDS: Record<LgClass, string> = {
+  "0": "階級 1 未満",
+  "1": "やや大きな揺れ",
+  "2": "大きな揺れ",
+  "3": "非常に大きな揺れ",
+  "4": "極めて大きな揺れ",
+};
+/** 気象庁の電文の「簡易な現象表現」 */
+export const lgWords = (c: LgClass) => LG_WORDS[c];
+
+export interface AreaLongPeriod {
+  /** 地震情報／細分区域のコード */
+  code?: string;
+  name: string;
+  pref?: string;
+  lg: LgClass;
+  maxInt?: ObservedIntensity;
+}
+
+export interface StationLongPeriod {
+  name: string;
+  pref?: string;
+  area?: string;
+  lg: LgClass;
+  int?: ObservedIntensity;
+  /** 絶対速度応答スペクトルの最大値 (周期 1.6〜7.8 秒、cm/s) */
+  sva?: number;
+}
+
+/** 長周期地震動に関する観測情報 (VXSE62)。鍵は地震識別番号で、新しい報で置き換える */
+export interface LongPeriod {
+  id: string;
+  eventId: string;
+  status: Status;
+  reportedAt: string;
+  serial?: number;
+  infoType: "発表" | "訂正" | "取消";
+  cancelled: boolean;
+  headline?: string;
+  originTime?: string;
+  hypocenter?: Hypocenter;
+  magnitude?: number | null;
+  magnitudeText?: string;
+  maxInt?: ObservedIntensity;
+  maxLg: LgClass;
+  /**
+   * 情報の種類 (LgCategory)。1・2 は最大の階級が 2 以下、3・4 は 3 以上。
+   * 2・4 は、その階級を観測した地域に最大震度 4 以下の所がある
+   */
+  category?: 1 | 2 | 3 | 4;
+  areas: AreaLongPeriod[];
+  stations: StationLongPeriod[];
+  /** 気象庁の長周期地震動の観測情報のページ (波形・スペクトル) */
+  url?: string;
+  updatedAt: string;
+}
+
 /** 南海トラフ地震臨時情報・関連解説情報・後発地震注意情報・地震・津波に関するお知らせ */
 export interface Advisory {
   id: string;
@@ -332,7 +399,8 @@ export function latestPerVolcano(reports: Volcano[]): Volcano[] {
   return out;
 }
 
-export type EventType = "eew" | "quake" | "tsunami" | "advisory" | "volcano";
+export type EventType =
+  "eew" | "quake" | "tsunami" | "advisory" | "longperiod" | "volcano";
 
 /** SSE と DB の events に載る 1 件。中身はその時点のまるごとの姿 */
 export type SonaeEvent =
@@ -340,7 +408,8 @@ export type SonaeEvent =
   | { seq: number; type: "quake"; data: Quake }
   | { seq: number; type: "tsunami"; data: Tsunami }
   | { seq: number; type: "advisory"; data: Advisory }
-  | { seq: number; type: "volcano"; data: Volcano };
+  | { seq: number; type: "volcano"; data: Volcano }
+  | { seq: number; type: "longperiod"; data: LongPeriod };
 
 export interface SourceStatus {
   id: SourceId;

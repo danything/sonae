@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
-import type { Eew, Quake, SonaeEvent, Tsunami } from "#lib/model.ts";
+import type {
+  Eew,
+  LongPeriod,
+  Quake,
+  SonaeEvent,
+  Tsunami,
+} from "#lib/model.ts";
+import { noticeOf } from "#lib/notify.ts";
 import { parseJmaXml } from "#lib/server/sources/jma-xml.ts";
 import { parseP2p } from "#lib/server/sources/p2p-json.ts";
 import type { Incoming } from "#lib/server/sources/types.ts";
@@ -283,4 +290,69 @@ test("古い原文は捨てるが、鍵は残して取り直さない", () => {
   advance(31 * 24 * 60 * 60 * 1000);
   expect(store.prune()).toBe(1);
   expect(store.seen("jma", "32-35_01_01_100806_VXSE51.xml")).toBe(true);
+});
+
+describe("長周期地震動に関する観測情報", () => {
+  const file = "78_01_01_240613_VXSE62.xml";
+  const xml = fixture(`jma/${file}`);
+  const incoming = (body: string, key: string): Incoming => ({
+    source: "jma",
+    key,
+    code: "VXSE62",
+    body,
+    items: parseJmaXml(body, "VXSE62"),
+  });
+
+  test("地震識別番号で持ち、新しい報で置き換え、古い報は捨て、取消は中身を残して印を付ける", () => {
+    const { store } = memoryStore();
+    const [first] = store.ingest(incoming(xml, "a"));
+    expect(first?.type).toBe("longperiod");
+    expect(dataOf<LongPeriod>(first).id).toBe("20201121023300");
+
+    const later = xml
+      .replace(
+        "<ReportDateTime>2020-11-21T02:33:10+09:00",
+        "<ReportDateTime>2020-11-21T02:43:10+09:00",
+      )
+      .replace("<Serial>1</Serial>", "<Serial>2</Serial>");
+    const [second] = store.ingest(incoming(later, "b"));
+    expect(dataOf<LongPeriod>(second).serial).toBe(2);
+    // 古い報 (第 1 報の訂正の形で後から来た) は捨てる
+    expect(store.ingest(incoming(xml, "c"))).toEqual([]);
+
+    const cancel = later
+      .replace(
+        "<ReportDateTime>2020-11-21T02:43:10+09:00",
+        "<ReportDateTime>2020-11-21T02:53:10+09:00",
+      )
+      .replace("<InfoType>発表</InfoType>", "<InfoType>取消</InfoType>")
+      .replace(/<Body[\s\S]*<\/Body>/, "<Body></Body>");
+    const [gone] = store.ingest(incoming(cancel, "d"));
+    const lp = dataOf<LongPeriod>(gone);
+    expect(lp.cancelled).toBe(true);
+    expect(lp.maxLg).toBe("3");
+    expect(store.longPeriods()).toHaveLength(1);
+    expect(store.longPeriod("20201121023300")?.cancelled).toBe(true);
+  });
+
+  test("知らせない (地震情報で知らせている)", () => {
+    const { store } = memoryStore("2020-11-20T17:34:00Z");
+    const [e] = store.ingest(incoming(xml, "a"));
+    if (!e) throw new Error("イベントが無い");
+    expect(noticeOf(e, Date.parse("2020-11-20T17:35:00Z"))).toBeNull();
+  });
+});
+
+test("長周期地震動は地震識別番号と状態で引く (P2P で先に受けて id が番号でない地震でも)", () => {
+  const { store } = memoryStore();
+  const xml = fixture("jma/78_01_01_240613_VXSE62.xml");
+  store.ingest({
+    source: "jma",
+    key: "lp",
+    code: "VXSE62",
+    body: xml,
+    items: parseJmaXml(xml, "VXSE62"),
+  });
+  expect(store.longPeriodOf("20201121023300", "normal")?.maxLg).toBe("3");
+  expect(store.longPeriodOf("20201121023300", "training")).toBeUndefined();
 });

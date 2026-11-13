@@ -209,6 +209,20 @@
       states: x.cancelled ? [{ label: "取消", tone: "error" }] : [],
     };
   }
+  /** 長周期地震動に関する観測情報 (VXSE62) を地震識別番号で引く (P2P で先に受けた地震は id が番号ではないので、id では引かない) */
+  const longPeriodOf = (q: Quake | null | undefined) =>
+    q?.eventId
+      ? snap.longPeriods.find(
+          (lp) => lp.eventId === q.eventId && lp.status === q.status,
+        )
+      : undefined;
+  /** 一覧の行の補足。長周期地震動階級 1 以上を観測した地震だけ */
+  function lgText(q: Quake): string {
+    const lp = longPeriodOf(q);
+    return lp && !lp.cancelled && lp.maxLg !== "0"
+      ? `長周期地震動階級${lp.maxLg}`
+      : "";
+  }
   function quakeRow(q: Quake): RowData {
     return {
       key: q.id,
@@ -220,6 +234,7 @@
         magnitudeText(q),
         `深さ ${depthText(q.hypocenter)}`,
         q.foreign ? "遠地地震" : "",
+        lgText(q),
       ]
         .filter(Boolean)
         .join("・"),
@@ -306,6 +321,9 @@
       ? (snap.quakes.find((q) => q.id === v.selected?.id) ?? data.quake)
       : null,
   );
+  const selLongPeriod = $derived(
+    longPeriodOf(selQuake) ?? (selQuake ? data.longPeriod : null),
+  );
   const selTsunami = $derived(
     v.selected?.kind === "tsunami"
       ? (snap.tsunamis.find((t) => t.id === v.selected?.id) ?? data.tsunami)
@@ -325,6 +343,9 @@
 
   // ---- 地図 ----
   const mapQuake = $derived(selQuake ?? snap.quakes[0]);
+  const mapLongPeriod = $derived(
+    mapQuake === selQuake ? selLongPeriod : longPeriodOf(mapQuake),
+  );
   const mapTsunamis = $derived(selTsunami ? [selTsunami] : activeTsunamis);
   const mapEews = $derived(selEew ? [selEew] : banners);
   // 層のオン・オフは端末に覚えさせる
@@ -640,7 +661,7 @@
       {#if v.selected}
         <DetailBar {backHref} onmap={() => (tab = "map")} />
         {#if selQuake}
-          <QuakeDetail q={selQuake} />
+          <QuakeDetail q={selQuake} lp={selLongPeriod} />
         {:else if selTsunami}
           <TsunamiDetail t={selTsunami} now={live.now} />
         {:else if selEew}
@@ -757,6 +778,7 @@
     <div class="map-pane">
       <QuakeMap
         quake={mapQuake}
+        longPeriod={mapLongPeriod}
         quakes={snap.quakes}
         tsunamis={mapTsunamis}
         eews={mapEews}

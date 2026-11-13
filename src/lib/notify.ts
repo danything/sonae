@@ -293,6 +293,9 @@ export function noticeOf(event: SonaeEvent, now: number): Notice | null {
     case "volcano":
       n = volcanoNotice(event.data, event);
       break;
+    case "longperiod":
+      // 長周期地震動は地震情報の後に出る観測の詳しい内容なので、知らせない (地震情報で知らせている)
+      return null;
   }
   if (!Number.isFinite(n.at) || now - n.at > FRESH_MS[event.type]) return null;
   return n;
@@ -334,6 +337,8 @@ export function matches(n: Notice, prefs: PushPrefs): boolean {
       if (prefs.volcano === "off") return false;
       if (e.data.code === "VFVO56") return true;
       return n.level >= (prefs.volcano === "all" ? 2 : VOLCANO_RESIDENTIAL);
+    case "longperiod":
+      return false;
   }
 }
 

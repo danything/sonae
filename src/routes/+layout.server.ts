@@ -15,6 +15,7 @@ export const load: LayoutServerLoad = ({ locals }) => {
       advisories: store.advisories(20),
       volcanoes: store.volcanoes(50),
       volcanoLevels: store.volcanoLevels(),
+      longPeriods: store.longPeriods(50),
       statuses: statuses(),
     },
   };

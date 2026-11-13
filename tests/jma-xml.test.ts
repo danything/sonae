@@ -200,3 +200,54 @@ test("サンプルの地震はどれも読める (種類が付く)", () => {
     ).toBeTruthy();
   }
 });
+
+describe("長周期地震動に関する観測情報 (VXSE62)", () => {
+  const file = "78_01_01_240613_VXSE62.xml";
+
+  test("地震の諸要素・最大の階級・情報の種類・地域と観測点の階級を読む", () => {
+    const { report: r } = one(file, "longperiod");
+    expect(WANTED_CODES.has("VXSE62")).toBe(true);
+    expect(r).toMatchObject({
+      eventId: "20201121023300",
+      status: "normal",
+      infoType: "発表",
+      serial: 1,
+      originTime: "2020-11-21T02:23:00+09:00",
+      hypocenter: { name: "岩手県沖", lat: 39.6, lon: 142.7, depthKm: 30 },
+      magnitude: 6.3,
+      maxInt: "5-",
+      maxLg: "3",
+      category: 4,
+    });
+    expect(r.areas[0]).toEqual({
+      code: "220",
+      name: "宮城県北部",
+      pref: "宮城県",
+      lg: "3",
+      maxInt: "4",
+    });
+    expect(r.areas.map((a) => a.lg)).toContain("1");
+    expect(r.stations[0]).toEqual({
+      name: "登米市中田町",
+      pref: "宮城県",
+      area: "宮城県北部",
+      lg: "3",
+      int: "4",
+      sva: 20.5,
+    });
+  });
+
+  test("電文の中のリンクは気象庁のサイトのものだけを使う", () => {
+    const { report } = one(file, "longperiod");
+    expect(report.url).toStartWith(
+      "https://www.data.jma.go.jp/eew/data/ltpgm/",
+    );
+    const xml = fixture(`jma/${file}`).replace(
+      /<URI>[^<]*<\/URI>/,
+      "<URI>https://example.com/x</URI>",
+    );
+    const [item] = parseJmaXml(xml, "VXSE62");
+    if (item?.type !== "longperiod") throw new Error("longperiod ではない");
+    expect(item.report.url).toBeUndefined();
+  });
+});

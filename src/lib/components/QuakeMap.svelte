@@ -19,6 +19,7 @@
     intensityLabels,
     JAPAN_BOUNDS,
     type LayerState,
+    longPeriodLine,
     mapVisibility,
     tsunamiPaint,
     volcanoMarks,
@@ -26,6 +27,7 @@
   import {
     type Eew,
     intensityLabel,
+    type LongPeriod,
     type Quake,
     type Tsunami,
     type Volcano,
@@ -37,6 +39,7 @@
    */
   let {
     quake,
+    longPeriod,
     quakes,
     tsunamis,
     eews,
@@ -46,6 +49,8 @@
     shown = true,
   }: {
     quake: Quake | undefined;
+    /** 地図に出している地震の長周期地震動 (無ければ枠を描かない) */
+    longPeriod?: LongPeriod | null;
     quakes: Quake[];
     tsunamis: Tsunami[];
     eews: Eew[];
@@ -159,6 +164,7 @@
     const next = sig(
       quake?.id,
       quake?.updatedAt,
+      longPeriod?.updatedAt,
       eewSig(eews),
       tsunamis.map((t) => [t.id, t.updatedAt]),
       quakes.slice(0, 50).map((q) => [q.id, q.updatedAt]),
@@ -169,6 +175,13 @@
       "quake-fill",
       "fill-color",
       intensityFill(quake?.areas ?? []) as never,
+    );
+    map.setPaintProperty(
+      "longperiod-line",
+      "line-color",
+      longPeriodLine(
+        longPeriod && !longPeriod.cancelled ? longPeriod.areas : [],
+      ) as never,
     );
     const warn = eewFill(eews, "#d93526");
     map.setPaintProperty("eew-fill", "fill-color", warn as never);

@@ -3,9 +3,10 @@
  * DOM にも MapLibre にも触らない (試験できるように)。
  */
 
-import { INTENSITY_COLORS, TSUNAMI_COLORS } from "#lib/format.ts";
+import { INTENSITY_COLORS, LG_COLORS, TSUNAMI_COLORS } from "#lib/format.ts";
 import type {
   AreaIntensity,
+  AreaLongPeriod,
   Eew,
   ObservedIntensity,
   Quake,
@@ -39,7 +40,8 @@ export type LayerId =
   | "tsunami"
   | "eew"
   | "faults"
-  | "volcano";
+  | "volcano"
+  | "longperiod";
 
 export interface LayerInfo {
   id: LayerId;
@@ -57,6 +59,12 @@ export const LAYERS: LayerInfo[] = [
     label: "震源",
     on: true,
     note: "新しい 50 件。色は深さ (30 km まで赤・100 km まで黄・300 km まで緑・それより深いと青)、大きさは M",
+  },
+  {
+    id: "longperiod",
+    label: "長周期地震動階級",
+    on: false,
+    note: "地図に出している地震で、階級 1 以上を観測した地域を太い枠で囲みます。枠の色は階級 4 紫・3 赤・2 橙・1 黄",
   },
   { id: "tsunami", label: "津波の警報・注意報", on: true },
   { id: "eew", label: "緊急地震速報", on: true },
@@ -113,6 +121,7 @@ export function mapVisibility(s: LayerState): Record<string, boolean> {
     "eew-fill": s.eew,
     "eew-line": s.eew,
     "quake-line": s.boundaries,
+    "longperiod-line": s.longperiod,
     tsunami: s.tsunami,
     hypocenters: s.hypocenters,
   };
@@ -142,6 +151,19 @@ export function intensityFill(areas: AreaIntensity[]): string | Expr {
   const byName = new Map<string, string>();
   for (const a of areas) {
     const color = INTENSITY_COLORS[a.int]?.bg;
+    if (!color) continue;
+    if (a.code) byCode.set(a.code, color);
+    else byName.set(a.name, color);
+  }
+  return matchExpr(byCode, byName, TRANSPARENT);
+}
+
+/** 長周期地震動階級 1 以上の地域の枠の色の式 (階級 0 と取消は透明) */
+export function longPeriodLine(areas: AreaLongPeriod[]): string | Expr {
+  const byCode = new Map<string, string>();
+  const byName = new Map<string, string>();
+  for (const a of areas) {
+    const color = LG_COLORS[a.lg]?.bg;
     if (!color) continue;
     if (a.code) byCode.set(a.code, color);
     else byName.set(a.name, color);
@@ -430,6 +452,13 @@ export function baseStyle(
         type: "line",
         source: "quake-areas",
         paint: { "line-color": "rgba(255,255,255,0.45)", "line-width": 0.6 },
+      },
+      {
+        id: "longperiod-line",
+        type: "line",
+        source: "quake-areas",
+        layout: { "line-join": "round" },
+        paint: { "line-color": TRANSPARENT, "line-width": 3 },
       },
       {
         id: "tsunami",

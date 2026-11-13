@@ -6,6 +6,7 @@
 import type {
   Advisory,
   Eew,
+  LongPeriod,
   Quake,
   SonaeEvent,
   SourceStatus,
@@ -23,6 +24,7 @@ export interface Snapshot {
   volcanoes: Volcano[];
   /** 火山ごとのいまの噴火警報・予報 (地図の火山の印) */
   volcanoLevels: Volcano[];
+  longPeriods: LongPeriod[];
   statuses: SourceStatus[];
 }
 
@@ -52,6 +54,7 @@ export class Live {
   advisories = $state<Advisory[]>([]);
   volcanoes = $state<Volcano[]>([]);
   volcanoLevels = $state<Volcano[]>([]);
+  longPeriods = $state<LongPeriod[]>([]);
   statuses = $state<SourceStatus[]>([]);
   connected = $state(false);
   /** ブラウザで load の中身を入れた (サーバーの描画では false のまま、load の data を使う) */
@@ -71,6 +74,7 @@ export class Live {
     this.advisories = s.advisories;
     this.volcanoes = s.volcanoes;
     this.volcanoLevels = s.volcanoLevels;
+    this.longPeriods = s.longPeriods;
     this.statuses = s.statuses;
     this.seeded = true;
   }
@@ -86,6 +90,7 @@ export class Live {
       advisories: this.advisories,
       volcanoes: this.volcanoes,
       volcanoLevels: this.volcanoLevels,
+      longPeriods: this.longPeriods,
       statuses: this.statuses,
     };
   }
@@ -119,6 +124,15 @@ export class Live {
           e.data,
           (v) => v.reportedAt,
           20,
+        );
+        return true;
+      case "longperiod":
+        if (e.data.status !== "normal") return true;
+        this.longPeriods = upsert(
+          this.longPeriods,
+          e.data,
+          (v) => v.reportedAt,
+          50,
         );
         return true;
       case "volcano":
@@ -168,6 +182,7 @@ export class Live {
     on("tsunami");
     on("advisory");
     on("volcano");
+    on("longperiod");
     es.addEventListener("status", (m) => {
       this.statuses = JSON.parse((m as MessageEvent).data) as SourceStatus[];
     });

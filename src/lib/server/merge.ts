@@ -6,6 +6,7 @@
 import type {
   Advisory,
   Eew,
+  LongPeriod,
   Quake,
   QuakeReport,
   Status,
@@ -13,7 +14,11 @@ import type {
 } from "#lib/model.ts";
 import { intensityRank } from "#lib/model.ts";
 
-import type { EewReport, TsunamiReport } from "./sources/types.ts";
+import type {
+  EewReport,
+  LongPeriodReport,
+  TsunamiReport,
+} from "./sources/types.ts";
 import { ms } from "./time.ts";
 
 const union = <T>(a: readonly T[], b: readonly T[]) => [
@@ -289,4 +294,32 @@ export function mergeAdvisory(
     };
   }
   return { ...a, cancelled: false, updatedAt: now };
+}
+
+/**
+ * 長周期地震動に関する観測情報。報は観測の全体をまるごと持つので、新しい報で置き換える
+ * (続報で地域が足されたり階級が直されたりする。解説資料の Revise)。古い報と同じ報は捨てる。
+ * 取消は、前の報の中身を残して取消の印を付ける
+ */
+export function mergeLongPeriod(
+  prev: LongPeriod | undefined,
+  r: LongPeriodReport,
+  id: string,
+  now: string,
+): LongPeriod | null {
+  if (prev && ms(r.reportedAt) < ms(prev.reportedAt)) return null;
+  if (prev && r.reportedAt === prev.reportedAt && r.infoType === prev.infoType)
+    return null;
+  if (r.infoType === "取消") {
+    const base = prev ?? { ...r, id };
+    return {
+      ...base,
+      id,
+      infoType: "取消",
+      reportedAt: r.reportedAt,
+      cancelled: true,
+      updatedAt: now,
+    };
+  }
+  return { ...r, id, cancelled: false, updatedAt: now };
 }

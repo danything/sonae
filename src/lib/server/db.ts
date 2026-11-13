@@ -118,6 +118,18 @@ const MIGRATIONS: string[] = [
   CREATE INDEX push_log_sent ON push_log (sent_at);
   `,
   `
+  -- 長周期地震動に関する観測情報 (VXSE62)。id は地震識別番号 (訓練・試験は後ろに -training・-test)
+  CREATE TABLE long_periods (
+    id TEXT PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    reported_at TEXT NOT NULL,
+    data TEXT NOT NULL
+  );
+  CREATE INDEX long_periods_event ON long_periods (event_id);
+  CREATE INDEX long_periods_reported ON long_periods (reported_at);
+  `,
+  `
   -- 火山 (噴火警報・予報 VFVO50 と噴火速報 VFVO56)。報ごとに 1 行。series は種別と識別番号 (取消で引く)
   CREATE TABLE volcanoes (
     id TEXT PRIMARY KEY,
