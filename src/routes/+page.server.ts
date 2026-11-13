@@ -25,6 +25,7 @@ export const load: PageServerLoad = ({ url }) => {
     tsunami: kind === "tsunami" && id ? (store.tsunami(id) ?? null) : null,
     volcano: kind === "volcano" && id ? (store.volcano(id) ?? null) : null,
     advisory: kind === "info" && id ? (store.advisory(id) ?? null) : null,
+    foreign: kind === "foreign" && id ? (store.foreignQuake(id) ?? null) : null,
     eew:
       kind === "eew" && id
         ? (store.eew(id) ??

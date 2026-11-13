@@ -63,6 +63,15 @@
         </li>
         <li><a href="https://wolfx.jp/" rel="noopener">Wolfx Project</a></li>
         <li>
+          <a href="https://earthquake.usgs.gov/" rel="noopener"
+            >USGS Earthquake Hazards Program</a
+          >
+          (<a
+            href="https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits"
+            rel="noopener">利用条件</a
+          >)
+        </li>
+        <li>
           <a
             href="https://maps.gsi.go.jp/development/ichiran.html"
             rel="noopener">地理院タイル一覧</a
