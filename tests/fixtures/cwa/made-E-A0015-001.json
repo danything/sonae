@@ -1,0 +1,41 @@
+{
+  "success": "true",
+  "result": {
+    "resource_id": "E-A0015-001",
+    "fields": []
+  },
+  "records": {
+    "datasetDescription": "地震報告",
+    "Earthquake": [
+      {
+        "EarthquakeNo": 115123,
+        "ReportType": "地震報告",
+        "ReportColor": "綠色",
+        "ReportContent": "11/13-10:20花蓮縣政府東南東方 25.0 公里 (位於臺灣東部海域) 發生規模 5.1 有感地震，最大震度花蓮縣和平 3 級。",
+        "ReportImageURI": "https://scweb.cwa.gov.tw/webdata/OLDEQ/202611/2026111310203051123_H.png",
+        "Web": "https://scweb.cwa.gov.tw/zh-tw/earthquake/details/2026111310203051123",
+        "EarthquakeInfo": {
+          "OriginTime": "2026-11-13 10:20:30",
+          "Source": "中央氣象署",
+          "FocalDepth": 15.2,
+          "Epicenter": {
+            "Location": "花蓮縣政府東南東方  25.0  公里 (位於臺灣東部海域)",
+            "EpicenterLatitude": 23.88,
+            "EpicenterLongitude": 121.85
+          },
+          "EarthquakeMagnitude": {
+            "MagnitudeType": "芮氏規模",
+            "MagnitudeValue": 5.1
+          }
+        }
+      },
+      {
+        "EarthquakeNo": 115122,
+        "EarthquakeInfo": {
+          "OriginTime": "不明",
+          "Epicenter": {}
+        }
+      }
+    ]
+  }
+}

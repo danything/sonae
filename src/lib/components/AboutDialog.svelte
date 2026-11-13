@@ -41,6 +41,18 @@
           rel="noopener">緊急地震速報 (警報) 及び (予報) について</a
         >)。sonae は、地点ごとの震度や到達時刻を自分で予想しません。
       </p>
+      <h2>もっと詳しく</h2>
+      <ul class="small">
+        <li>
+          <a
+            href="https://www.data.jma.go.jp/eqev/data/gaikyo/"
+            target="_blank"
+            rel="noopener"
+            data-testid="gaikyo">各月の地震活動のまとめ (気象庁)</a
+          >。月ごとの地震活動の解説と図。sonae
+          には取り込まず、気象庁のページを開きます
+        </li>
+      </ul>
       <h2>出典</h2>
       <ul class="small">
         {#each CREDITS as c (c)}
@@ -80,6 +92,20 @@
           >、<a
             href="https://creativecommons.org/licenses/by/4.0/deed.ja"
             rel="noopener">CC BY 4.0</a
+          >)
+        </li>
+        <li>
+          <a href="https://www.geonet.org.nz/" rel="noopener">GeoNet</a>
+          (<a href="https://www.geonet.org.nz/policy" rel="noopener">利用条件</a
+          >、<a
+            href="https://creativecommons.org/licenses/by/3.0/nz/"
+            rel="noopener">CC BY 3.0 NZ</a
+          >)
+        </li>
+        <li>
+          <a href="https://www.cwa.gov.tw/" rel="noopener">中央氣象署 (台湾)</a>
+          (<a href="https://data.gov.tw/license" rel="noopener"
+            >政府資料開放授權條款</a
           >)
         </li>
         <li>

@@ -1,0 +1,62 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          177.891998291,
+          -37.618480682
+        ]
+      },
+      "properties": {
+        "publicID": "2026p843341",
+        "time": "2026-11-09T00:52:20.712Z",
+        "depth": 10,
+        "magnitude": 3.7228411448175556,
+        "mmi": 4,
+        "locality": "20 km north-east of Te Kaha",
+        "quality": "deleted"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          172.971298218,
+          -42.003051758
+        ]
+      },
+      "properties": {
+        "publicID": "2026p829637",
+        "time": "2026-11-03T23:10:49.061Z",
+        "depth": 59.33455657958984,
+        "magnitude": 4.125881446869914,
+        "mmi": 4,
+        "locality": "20 km south-east of St Arnaud",
+        "quality": "best"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          176.042327881,
+          -39.560283661
+        ]
+      },
+      "properties": {
+        "publicID": "2026p826979",
+        "time": "2026-11-02T23:35:14.950Z",
+        "depth": 40.46538162231445,
+        "magnitude": 4.170805016273881,
+        "mmi": 4,
+        "locality": "20 km north-east of Taihape",
+        "quality": "best"
+      }
+    }
+  ]
+}
