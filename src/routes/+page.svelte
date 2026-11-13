@@ -955,8 +955,13 @@
     display: flex;
     align-items: center;
     gap: var(--so-space-1);
+    bottom: calc(var(--so-tabbar) + var(--so-dock-gap));
     height: var(--dock-h);
     padding-inline: var(--so-space-2) var(--so-space-1);
+    border-radius: var(--so-radius-full);
+    background: var(--so-float);
+    box-shadow: var(--so-shadow-pop);
+    transition: transform var(--so-duration-move) var(--so-ease-spring);
   }
   :global(:where(html[data-phone]))
     .shell[data-retract]

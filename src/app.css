@@ -1033,15 +1033,6 @@ dialog[open] > .modal-box {
   }
 }
 
-/* ---- 下のタブのすぐ上に浮かぶ操作の 1 行 (`.dock`。スマホの形だけ) ---- */
-:where(html[data-phone]) .dock {
-  bottom: calc(var(--so-tabbar, 0px) + var(--so-dock-gap));
-  border-radius: var(--so-radius-full);
-  background: var(--so-float);
-  box-shadow: var(--so-shadow-pop);
-  transition: transform var(--so-duration-move) var(--so-ease-spring);
-}
-
 /* 動きを減らす設定の端末では、移り変わりの時間を 0 にし、繰り返す動きを付けない */
 @media (prefers-reduced-motion: reduce) {
   :root {
