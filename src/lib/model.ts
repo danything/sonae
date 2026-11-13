@@ -247,3 +247,20 @@ export interface SourceStatus {
   lastError?: string;
   since: string;
 }
+
+/**
+ * 津波予報 (若干の海面変動) は、解除の報が出ないまま終わることがある。警報・注意報が無く、
+ * 発表から 6 時間たったものは「いま」の扱いから外す (一覧には残る)
+ */
+export const TSUNAMI_FORECAST_MS = 6 * 60 * 60_000;
+export function isTsunamiActive(t: Tsunami, now: number): boolean {
+  if (t.ended || t.cancelled) return false;
+  const serious = t.areas.some(
+    (a) => a.grade === "major" || a.grade === "warning" || a.grade === "watch",
+  );
+  return serious || now - Date.parse(t.issuedAt) < TSUNAMI_FORECAST_MS;
+}
+
+/** 知らせる種類のお知らせ (南海トラフ地震臨時情報・定例外の解説・後発地震注意情報) */
+export const isUrgentAdvisory = (a: Pick<Advisory, "code">) =>
+  a.code === "VYSE50" || a.code === "VYSE51" || a.code === "VYSE60";

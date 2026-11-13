@@ -1,0 +1,382 @@
+/*
+ * 見た目は denpa にそろえる (denpa の src/app.css と docs/design.md の「作り方」)。土台は Blades の Pico。
+ * 部品は `blades` の層 (@layer) に入るので、層の外のこちらの規則と各画面の <style> は詳細度に関係なく勝つ。
+ *
+ * - 色は主の色ひとつ (Pico の既定の azure をそのまま) と、状態の色 4 つ (denpa と同じ値)
+ * - テーマは暗いのが既定で、明るいのも選べる (app.html と ThemeToggle が <html data-theme> を付ける)
+ * - 角丸・余白・字の大きさ・動きは、下のトークンの段から選ぶ (名前は denpa の --dp-* を --so-* にしたもの)
+ * - 動きは CSS の opacity と transform だけ (docs/design.md の 6 章)。動きを減らす設定では全部止める
+ *
+ * 限られた画面にしか出ない部品 (表など) は、それを描くコンポーネントが <script> で読む。
+ */
+@import "@anyblades/blades/variables";
+@import "@anyblades/blades/layout/document";
+@import "@anyblades/blades/content/typography";
+@import "@anyblades/blades/content/link";
+@import "@anyblades/blades/content/button";
+@import "@anyblades/blades/content/misc";
+@import "@anyblades/blades/forms/basics";
+@import "@anyblades/blades/forms/checkbox-radio-switch";
+@import "@anyblades/blades/utilities";
+
+:root {
+  --pico-font-family-sans-serif:
+    "BIZ UDPGothic", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+  --pico-font-size: 16px;
+  --pico-line-height: 1.6;
+  --pico-spacing: 1rem;
+  --pico-typography-spacing-vertical: 0.75rem;
+  --pico-form-element-spacing-vertical: 0.45rem;
+  --pico-form-element-spacing-horizontal: 0.75rem;
+  --so-fg: var(--pico-color);
+  --so-font-mono:
+    ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
+  /* 角丸。小 (札)・中 (入力欄・行)・大 (メニュー・ダイアログ)。ボタンはカプセル */
+  --so-radius-sm: 0.375rem;
+  --so-radius: 0.5rem;
+  --so-radius-lg: 0.75rem;
+  --so-radius-full: 999px;
+  --pico-border-radius: var(--so-radius);
+  --so-item-radius: calc(var(--so-radius) + 0.5rem);
+  /* 余白の 6 段 (4・8・12・16・24・32px) */
+  --so-space-1: 0.25rem;
+  --so-space-2: 0.5rem;
+  --so-space-3: 0.75rem;
+  --so-space-4: 1rem;
+  --so-space-5: 1.5rem;
+  --so-space-6: 2rem;
+  --so-list-gap: 0.375rem;
+  --so-item-h: 4rem;
+  --so-mark: 2px;
+  /* 字の大きさ */
+  --so-text-xs: 0.75rem;
+  --so-text-sm: 0.875rem;
+  --so-text-base: 1rem;
+  --so-text-lg: 1.125rem;
+  --so-text-xl: 1.5rem;
+  --so-weight: 400;
+  --so-weight-bold: 700;
+  /* 動き。時間と曲線はこの段から (opacity と transform だけに使う) */
+  --so-duration: 120ms;
+  --so-duration-enter: 240ms;
+  --so-ease: cubic-bezier(0.2, 0, 0, 1);
+  /* 重なりの段 */
+  --so-z-header: 40;
+  --so-z-alert: 45;
+  --so-z-map-panel: 10;
+  /* 状態の色 (denpa と同じ。Pico の色見本の red・jade・amber・cyan) */
+  --so-rec: #d93526;
+  --so-ok: #00895a;
+  --so-warn: #c79400;
+  --so-info: #058686;
+}
+@media (pointer: coarse) {
+  :root {
+    --so-item-h: 4.5rem;
+  }
+}
+
+/* 明るいテーマ。値は Pico の色見本の段 (denpa と同じ) */
+:root:not([data-theme="dark"]),
+[data-theme="light"] {
+  color-scheme: light;
+  --pico-background-color: #fff;
+  --so-bg: #fff;
+  --so-surface: #fff;
+  --so-subtle: #eff1f4;
+  --so-line: #dfe3eb;
+  --so-line-strong: #cfd5e2;
+  --so-pop: #fff;
+  --so-muted: #555e70;
+  --so-primary-text: #02659a;
+  --so-item: #fff;
+  --so-item-hover: #f5f6f9;
+  --so-item-shadow:
+    0 1px 2px rgb(24 28 37 / 0.08), 0 2px 8px rgb(24 28 37 / 0.06);
+  --so-shadow-pop:
+    0 4px 12px rgb(24 28 37 / 0.08), 0 16px 32px -8px rgb(24 28 37 / 0.16);
+  --pico-table-border-color: transparent;
+  --pico-muted-border-color: var(--so-line);
+  --pico-secondary: #3d475c;
+  --pico-secondary-hover: #2a3140;
+  --so-rec-text: #9b2318;
+  --so-ok-text: #005f3d;
+  --so-warn-text: #694d00;
+  --so-info-text: #025d5d;
+}
+/* 暗いテーマ (既定)。ほぼ黒で色みを抑えた段 (denpa と同じ) */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --pico-background-color: #0b0c0f;
+  --so-bg: #0b0c0f;
+  --so-surface: #121318;
+  --so-subtle: #1a1b20;
+  --so-line: #26282e;
+  --so-line-strong: #3a3d46;
+  --so-pop: #1f2026;
+  --so-muted: #9aa3b5;
+  --so-primary-text: var(--pico-primary);
+  --so-item: #16171c;
+  --so-item-hover: #1d1e24;
+  --so-item-shadow: none;
+  --so-shadow-pop:
+    0 4px 12px rgb(0 0 0 / 0.3), 0 16px 40px -8px rgb(0 0 0 / 0.5);
+  --pico-table-border-color: transparent;
+  --pico-muted-border-color: var(--so-line);
+  --pico-secondary: #bfc7d9;
+  --pico-secondary-hover: #dfe3eb;
+  --so-rec-text: #f38f79;
+  --so-ok-text: #00cc88;
+  --so-warn-text: #fecc63;
+  --so-info-text: #0ccece;
+}
+:root,
+[data-theme] {
+  /* 操作の層の面 (ヘッダー・地図の上の操作)。下をうっすら見せる。ぼかさない */
+  --so-float: color-mix(in srgb, var(--so-pop) 92%, transparent);
+  --so-hover-soft: color-mix(in srgb, var(--so-subtle) 55%, transparent);
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  [data-theme] {
+    --so-float: var(--so-pop);
+  }
+}
+
+:where(a, button, summary, select, [tabindex], input):focus-visible {
+  outline: 2px solid var(--pico-primary);
+  outline-offset: 2px;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--so-line-strong) transparent;
+}
+body {
+  margin: 0;
+  background: var(--so-bg);
+  word-break: auto-phrase;
+  line-break: strict;
+}
+p,
+li,
+dd {
+  text-wrap: pretty;
+}
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+td,
+th {
+  word-break: normal;
+}
+button,
+[role="button"],
+fieldset,
+table,
+p,
+ul,
+ol,
+dl,
+dd,
+h1,
+h2,
+h3,
+details,
+label,
+section {
+  margin-bottom: 0;
+}
+h1 {
+  font-size: var(--so-text-xl);
+}
+h2,
+h3 {
+  font-size: var(--so-text-lg);
+}
+th,
+td {
+  padding: var(--so-space-2) var(--so-space-3);
+}
+thead th {
+  background: transparent;
+  color: var(--so-muted);
+  font-size: var(--so-text-xs);
+  font-weight: var(--so-weight);
+}
+table {
+  width: 100%;
+}
+
+/* ---- 並べる ---- */
+.page {
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+  padding-inline: var(--so-space-4);
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--so-space-3);
+}
+.cluster {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--so-space-2);
+}
+.grow {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* ---- 文字 ---- */
+.muted {
+  color: var(--so-muted);
+}
+.small {
+  font-size: var(--so-text-sm);
+}
+.tiny {
+  font-size: var(--so-text-xs);
+}
+.bold {
+  font-weight: var(--so-weight-bold);
+}
+/* 変わる数字・縦に並ぶ数字は桁の幅を揃える */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---- 件の面 (1 件が 2〜3 行の一覧) ---- */
+.item {
+  border-radius: var(--so-item-radius);
+  background: var(--so-item);
+  box-shadow: var(--so-item-shadow);
+  transition: opacity var(--so-duration-enter) var(--so-ease);
+}
+@starting-style {
+  .item {
+    opacity: 0;
+  }
+}
+a.item {
+  color: inherit;
+  text-decoration: none;
+}
+a.item:hover {
+  background: var(--so-item-hover);
+}
+.item-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--so-list-gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.item-list > li {
+  margin: 0;
+  list-style: none;
+}
+/* 囲みの面 (詳しい画面の節) */
+.panel {
+  border-radius: var(--so-item-radius);
+  padding: var(--so-space-4);
+  background: var(--so-item);
+  box-shadow: var(--so-item-shadow);
+}
+
+/* ---- 札 (状態だけ。淡い地に状態の色の字。denpa の .tag と同じ形) ---- */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--so-space-1);
+  padding: 0 var(--so-space-2);
+  border-radius: var(--so-radius-full);
+  background: var(--so-subtle);
+  color: inherit;
+  font-size: var(--so-text-xs);
+  line-height: 1.75;
+  white-space: nowrap;
+}
+.tag.error {
+  background: color-mix(in srgb, var(--so-rec) 14%, var(--so-surface));
+  color: var(--so-rec-text);
+}
+.tag.warning {
+  background: color-mix(in srgb, var(--so-warn) 14%, var(--so-surface));
+  color: var(--so-warn-text);
+}
+.tag.info {
+  background: color-mix(in srgb, var(--so-info) 14%, var(--so-surface));
+  color: var(--so-info-text);
+}
+.tag.success {
+  background: color-mix(in srgb, var(--so-ok) 14%, var(--so-surface));
+  color: var(--so-ok-text);
+}
+
+/* ---- チップ (層の切り替えなど) ---- */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--so-space-1);
+}
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 2rem;
+  margin: 0;
+  padding: 0 var(--so-space-3);
+  border-radius: var(--so-radius-full);
+  color: var(--so-fg);
+  font-size: var(--so-text-sm);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.chip:hover {
+  background: var(--so-hover-soft);
+}
+.chip:has(input:checked) {
+  background: color-mix(in srgb, var(--pico-primary) 16%, transparent);
+  color: var(--so-primary-text);
+}
+.chip input[type="checkbox"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.chip:has(input:focus-visible) {
+  outline: 2px solid var(--pico-primary);
+  outline-offset: 2px;
+}
+
+/* 動きを減らす設定の端末では、全部止めて終わった姿を見せる */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --so-duration: 0s;
+    --so-duration-enter: 0s;
+  }
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+  }
+}

@@ -158,7 +158,10 @@ type QuakeReport = {
 **SSE にする。** `GET /api/stream`。
 
 - 各イベントに DB の通し番号を `id:` で付ける。`Last-Event-ID` があれば、それより後を DB から送ってから生の配信に移る。
-- 20 秒ごとにコメント行 (`: ping`) を送る。adapter-bun の `CONNECTION_IDLE_TIMEOUT` (Bun の idleTimeout、上限 255 秒) と Gateway の無通信の切断より十分短くする。
+- **`s.doany.io` は Cloudflare のプロキシを通したワイルドカードの DNS で配信される** (DNS のレコードは足さない)。Cloudflare のプロキシは、応答の間に 100 秒何も流れないと接続を切り (Proxy Read Timeout)、圧縮やバッファリングで SSE を溜めて届けることがある。そのため:
+  - **30 秒ごとにコメント行 (`: ping`) を送る。** Cloudflare の 100 秒、adapter-bun の `CONNECTION_IDLE_TIMEOUT` (Bun の idleTimeout、上限 255 秒)、Gateway の無通信の切断のどれよりも十分短い。同じ間隔で情報源の状況 (`event: status`) も送る。
+  - 応答のヘッダーに `Content-Type: text/event-stream`・`Cache-Control: no-cache, no-transform`・`X-Accel-Buffering: no` を付ける (`no-transform` で圧縮を止め、`X-Accel-Buffering` で途中の溜め込みを止める)。
+  - それでも切れることはあるので、ブラウザの側は切れたら `Last-Event-ID` で取り直す (EventSource が自分で張り直す)。最初の接続は、ページの `load` で渡した最後の番号を `?after=` で付ける。
 - 最初の表示の中身はページの `load` で渡し、SSE は差分だけにする。
 
 ### 2.4 Web Push
@@ -295,7 +298,9 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 - **注意文:** どの画面にも「このアプリは気象庁の公式のものではありません。情報は遅れたり欠けたりすることがあります。身の安全に関わる判断は、気象庁・自治体・テレビやラジオの公式の情報を優先してください。」を出す (`src/lib/notice.ts`)。緊急地震速報の画面には、Wolfx と P2P のどちらも非公式で無保証であることも書く。
 - **Wolfx:** 原文 (`OriginalText`) は保存も公開もしない。Wolfx を使う機能で収益を得ない。広く公開する前に、規約 6 条の「第三者へのデータの提供」に当たるか Wolfx に確かめる (未決の点)。
 
-## 6. 動きの決まり
+## 6. 見た目と動きの決まり
+
+**見た目は denpa にそろえる** (denpa の `src/app.css` と docs/design.md の「作り方」)。土台は Blades の Pico。主の色は Pico の既定の azure のまま、状態の色は denpa と同じ 4 つ (赤・翡翠・琥珀・青緑)。テーマは暗いのが既定で、明るい・端末に合わせるも選べる (`sonae.theme` に覚える)。角丸・余白・字の大きさのトークンは denpa の `--dp-*` を `--so-*` にした段から選ぶ。一覧の件は面 (`.item`) に乗せ、線で区切らない。震度・津波の色だけは気象庁の配色の指針の色 (4 章) を使う。
 
 ほかのアプリ (corp・mado・denpa の [docs/design.md](https://github.com/danything/denpa/blob/main/docs/design.md) 7・8 章) と同じ。
 

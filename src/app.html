@@ -1,9 +1,36 @@
 <!doctype html>
-<html lang="ja">
+<html lang="ja" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link
+      rel="icon"
+      href="%sveltekit.assets%/favicon.svg"
+      type="image/svg+xml"
+    />
+    <meta name="theme-color" content="#0b0c0f" />
+    <script>
+      // 描く前にテーマを当てる (denpa と同じ。保存が無ければ暗いテーマ)。
+      // 端末の控えを読めないとき (サイトのデータを止めた Safari などで投げる) も既定のまま
+      (() => {
+        let saved = null;
+        try {
+          saved = localStorage.getItem("sonae.theme");
+        } catch {
+          // 既定のまま
+        }
+        const mode = saved === "light" || saved === "system" ? saved : "dark";
+        const dark =
+          mode === "dark" ||
+          (mode === "system" &&
+            matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+        document.documentElement.dataset.themeMode = mode;
+        document
+          .querySelector('meta[name="theme-color"]')
+          ?.setAttribute("content", dark ? "#0b0c0f" : "#ffffff");
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
