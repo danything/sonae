@@ -312,7 +312,7 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 
 ## 7. テスト
 
-- **単体 (`bun test tests`)**: 電文の読み取り (fixture → 正規化したモデル)、版の判定と重複の除去 (同じ報の二重受信・報数の逆転・取消・訓練)、知らせるかどうかの判定 (閾値・現在地)、SSE の `Last-Event-ID` からの埋め直し。
+- **単体 (`bun test tests`)**: 電文の読み取り (fixture → 正規化したモデル)、版の判定と重複の除去 (同じ報の二重受信・報数の逆転・取消・訓練)、知らせるかどうかの判定 (閾値・現在地)、SSE の `Last-Event-ID` からの埋め直し、hooks の振り分け (ログイン無しで開けるパス・401・ログインへの送り分け・`AUTH_DISABLED`)。
 - **fixture:**
   - 気象庁の[サンプル電文](https://xml.kishou.go.jp/tec_material.html) (`jmaxml_20260917_Samples.zip`、2026-09-17 一部更新) から、使う種別の分だけを `tests/fixtures/jma/` に写す。
     利用条件は気象庁ホームページの利用規約 (公共データ利用規約 第 1.0 版、CC BY 4.0 と互換) で、`tests/fixtures/jma/README.md` に出典「気象庁防災情報 XML フォーマット 技術資料 サンプルデータ (https://xml.kishou.go.jp/tec_material.html)」と規約を書く。中身は変えない (整形からも外す)。足りない場合 (取消と訓練の組など) は自分で作り、ファイル名で分かるようにする。
