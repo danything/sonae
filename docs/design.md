@@ -208,6 +208,12 @@ devDependencies に入れ、Vite がサーバーに束ねる。テスト (`tests
 - **送り方:** 緊急地震速報と津波は `Urgency: high`。`TTL` は緊急地震速報 120 秒 (遅れて届いても意味が無い)、地震情報 1 時間、津波とお知らせ 6 時間。緊急地震速報の警報と津波警報以上は、閉じるまで残す (`requireInteraction`)。
 - **Service Worker** (`src/service-worker/`、SvelteKit が自動で登録): 通知を出し、押されたらその事象の画面 (1 つの画面でその件を選んだ URL。`/?q=<id>`・`/?k=tsunami&t=<id>`・`/?k=eew&e=<識別番号>`。[ui.md](ui.md)) を開く。開いている画面があればそれを移して前に出す。このサイトの中のパスしか開かない。画面やデータの控え (オフライン) はしない (古い地震情報を出さないため)。型は WebWorker の型で、`bun run check` が別に見る。
 - **iPhone・iPad:** ホーム画面に追加した Web アプリ (iOS 16.4 以降) でだけ Web Push が届く。そのための Web アプリのマニフェスト (`static/manifest.webmanifest`) を置き、ダイアログで案内する。
+- **ホーム画面のアイコン:** iOS と Android のホーム画面は SVG のアイコンを使わないので、`static/favicon.svg` から PNG を作って `static/icons/` に置く (192・512・maskable の 512 をマニフェストに、180 の `apple-touch-icon.png` を `app.html` の `<link rel="apple-touch-icon">` に)。白い地に印を置き、maskable は印を安全な円 (直径 80%) に収まる 55% にする。作り方はホストに何も入れず、コンテナの rsvg-convert で描く。`favicon.svg` を変えたら、次のコマンドで作り直してコミットする。
+
+  ```sh
+  wslc run --rm -v "$PWD:/w" -w /w debian:trixie-slim sh tools/icons/build.sh
+  ```
+
 - **開いているとき:** SSE で受けたら、短い音 (`<audio>`) と見出しの読み上げ (`speechSynthesis`) で知らせる (`src/lib/alerter.svelte.ts`)。
   - **鳴らす判定は Web Push と同じ関数** (`src/lib/notify.ts` の `noticeOf`・`decide`)。サーバーの `plan` も、画面の `alertFor` (`src/lib/alert.ts`) も `decide` を呼び、違うのは控えの置き場 (サーバーは購読ごとの `push_log`、画面はメモリ) と中身の値 (サーバーは SHA-256、画面は元の字) だけ。同じ所で鳴ることを `tests/alert.test.ts` で確かめている。訓練・試験・遠地地震・古すぎるものは鳴らさず、続報は重さが上がったときだけ鳴らし直す。
   - **条件は「通知」のダイアログの条件 1 つ** (Web Push と同じ `PushPrefs`)。端末の localStorage (`sonae.alert.prefs`) に持ち、Web Push に登録してあればサーバーにも送る。新しいルートは作らない。
