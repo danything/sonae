@@ -33,7 +33,8 @@ jobs:
       # 組んだイメージが distroless のまま起動して /health に答えるか
       - name: Smoke test
         run: |
-          docker run -d --name sonae -p 3000:3000 sonae:check
+          # 情報源にはつながない (CI から気象庁・P2P・Wolfx に余計な接続を増やさない)
+          docker run -d --name sonae -p 3000:3000 -e SONAE_RECEIVE=off sonae:check
           for i in $(seq 1 30); do
             if curl -fsS http://localhost:3000/health; then exit 0; fi
             sleep 1
