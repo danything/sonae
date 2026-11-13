@@ -47,6 +47,22 @@ export function sseStream(o: SseOptions): Response {
     start(controller) {
       let last = 0;
       let closed = false;
+      let timer: ReturnType<typeof setInterval> | undefined;
+      let unsubscribe = () => {};
+      // 埋め直しで投げても購読を残さないよう、片付けは最初に決めておく
+      cleanup = () => {
+        if (closed) return;
+        closed = true;
+        clearInterval(timer);
+        unsubscribe();
+        o.signal.removeEventListener("abort", cleanup);
+        try {
+          controller.close();
+        } catch {
+          // もう閉じている
+        }
+      };
+      o.signal.addEventListener("abort", cleanup, { once: true });
       const send = (s: string) => {
         if (closed) return;
         try {
@@ -62,32 +78,23 @@ export function sseStream(o: SseOptions): Response {
         last = e.seq;
         send(eventFrame(e));
       };
-      const unsubscribe = o.subscribe((e) =>
-        live ? deliver(e) : queued.push(e),
-      );
-      // 張り直しの間隔の目安 (ミリ秒)。EventSource の既定 (3 秒ほど) より少し長めに
-      send("retry: 5000\n\n");
-      for (const e of o.backlog()) deliver(e);
-      for (const e of queued) deliver(e);
+      unsubscribe = o.subscribe((e) => (live ? deliver(e) : queued.push(e)));
+      try {
+        // 張り直しの間隔の目安 (ミリ秒)。EventSource の既定 (3 秒ほど) より少し長めに
+        send("retry: 5000\n\n");
+        for (const e of o.backlog()) deliver(e);
+        for (const e of queued) deliver(e);
+      } catch (err) {
+        console.warn(`[sse] 埋め直しに失敗しました: ${err}`);
+        cleanup();
+        return;
+      }
       live = true;
       if (o.status) send(o.status());
-      const timer = setInterval(() => {
+      timer = setInterval(() => {
         send(": ping\n\n");
         if (o.status) send(o.status());
       }, o.pingMs ?? PING_MS);
-      cleanup = () => {
-        if (closed) return;
-        closed = true;
-        clearInterval(timer);
-        unsubscribe();
-        o.signal.removeEventListener("abort", cleanup);
-        try {
-          controller.close();
-        } catch {
-          // もう閉じている
-        }
-      };
-      o.signal.addEventListener("abort", cleanup, { once: true });
     },
     cancel() {
       cleanup();

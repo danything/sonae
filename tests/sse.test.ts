@@ -51,3 +51,17 @@ test("埋め直し → 生の配信。番号で重複を除き、ping と状況�
   ac.abort();
   expect(broker.size).toBe(0);
 });
+
+test("埋め直しで投げたら、購読を残さずに閉じる", async () => {
+  const broker = new Broker();
+  const res = sseStream({
+    backlog: () => {
+      throw new Error("DB が読めない");
+    },
+    subscribe: (fn) => broker.subscribe(fn),
+    signal: new AbortController().signal,
+  });
+  const text = await res.text();
+  expect(text).toContain("retry: 5000");
+  expect(broker.size).toBe(0);
+});
