@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invalidateAll } from "$app/navigation";
 
+  import { alerter } from "#lib/alerter.svelte.ts";
   import { live } from "#lib/live.svelte.ts";
   import "../app.css";
 
@@ -15,7 +16,9 @@
   const resync = (): void => {
     invalidateAll().catch(() => setTimeout(resync, 5000));
   };
-  $effect(() => live.connect(resync));
+  // 開いているときの音と読み上げ (端末ごとのオン/オフ。既定はオフ)
+  $effect(() => alerter.start());
+  $effect(() => live.connect(resync, (e) => alerter.handle(e)));
 </script>
 
 <svelte:head>
