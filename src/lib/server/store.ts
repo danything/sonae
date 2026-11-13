@@ -13,6 +13,7 @@ import type {
   Quake,
   SonaeEvent,
   SourceId,
+  Status,
   Tsunami,
 } from "#lib/model.ts";
 
@@ -32,6 +33,10 @@ import type {
 import { ms, nowIso } from "./time.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
+
+/** eews の鍵。通常は地震識別番号のまま、訓練・試験は後ろに付けて分ける */
+const eewKey = (eventId: string, status: Status) =>
+  status === "normal" ? eventId : `${eventId}-${status}`;
 /** 原文を残す期間 (docs/design.md の未決の点 8) */
 export const RAW_RETENTION_DAYS = 30;
 
@@ -77,17 +82,19 @@ export class Store {
     const now = this.now();
     switch (item.type) {
       case "eew": {
-        const prev = this.eew(item.report.eventId);
+        // 訓練・試験が本番と同じ地震識別番号で来ても混ぜない (Wolfx・P2P がそうしない保証は無い)
+        const prev = this.eew(item.report.eventId, item.report.status);
         const next = mergeEew(prev, item.report, now);
         if (!next) return [];
+        const key = eewKey(next.eventId, next.status);
         this.db
           .query(
             `INSERT INTO eews (event_id, status, issued_at, data) VALUES (?, ?, ?, ?)
              ON CONFLICT (event_id) DO UPDATE SET status = excluded.status,
                issued_at = excluded.issued_at, data = excluded.data`,
           )
-          .run(next.eventId, next.status, next.issuedAt, JSON.stringify(next));
-        return [this.event("eew", next.eventId, next)];
+          .run(key, next.status, next.issuedAt, JSON.stringify(next));
+        return [this.event("eew", key, next)];
       }
       case "quake": {
         const prev = this.findQuake(item);
@@ -229,12 +236,12 @@ export class Store {
     return recent.find((t) => !t.ended && !t.cancelled);
   }
 
-  eew(eventId: string): Eew | undefined {
+  eew(eventId: string, status: Status = "normal"): Eew | undefined {
     const row = this.db
       .query<{ data: string }, [string]>(
         "SELECT data FROM eews WHERE event_id = ?",
       )
-      .get(eventId);
+      .get(eewKey(eventId, status));
     return row ? (JSON.parse(row.data) as Eew) : undefined;
   }
 

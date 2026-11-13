@@ -95,6 +95,14 @@ describe("緊急地震速報の版の判定", () => {
     expect(store.ingest(wolfx({ ...warning, Serial: 4 }))).toEqual([]);
   });
 
+  test("訓練が本番と同じ地震識別番号で来ても混ぜない", () => {
+    const { store } = memoryStore();
+    store.ingest(wolfx(forecast));
+    store.ingest(wolfx({ ...warning, Serial: 5, isTraining: true }));
+    expect(store.eew("20220811005302")?.kind).toBe("forecast");
+    expect(store.eew("20220811005302", "training")?.serial).toBe(5);
+  });
+
   test("訓練は保存するが、一覧には既定で出さない", () => {
     const { store } = memoryStore();
     store.ingest(wolfx({ ...warning, isTraining: true }));
