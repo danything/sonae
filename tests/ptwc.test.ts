@@ -49,6 +49,29 @@ test("Atom でなければ例外 (その回を捨てる)。電報が無ければ
   expect(item.advisory.url).toBeUndefined();
 });
 
+test("リンクの http は https に直し、属性の順が違っても読む。文字参照も戻す", () => {
+  const entry = (link: string, title: string) =>
+    `<feed><title>T</title><entry><id>urn:uuid:x</id><updated>2026-11-13T16:43:19Z</updated><title>${title}</title>${link}</entry></feed>`;
+  const read = (xml: string) => {
+    const item = parsePtwc(xml)[0]?.items[0];
+    if (item?.type !== "advisory") throw new Error("お知らせではない");
+    return item.advisory;
+  };
+  expect(
+    read(
+      entry(
+        '<link href="http://www.tsunami.gov/a.txt" rel="alternate"/>',
+        "A &amp; B &#x41;&#66; <b>C</b>",
+      ),
+    ),
+  ).toMatchObject({
+    url: "https://www.tsunami.gov/a.txt",
+    text: "地域: A & B AB C",
+  });
+  // 入れ子のタグや閉じていない山括弧も残さない
+  expect(read(entry("", "<scr<b>ipt>x")).text).toBe("地域: x");
+});
+
 test("保存して、知らせない", () => {
   const { store } = memoryStore();
   const [m] = parsePtwc(FEED);
