@@ -6,4 +6,6 @@ ignorePatterns = [
   "deploy/*.sops.yaml",
   # 気象庁のサンプル電文などの写し。中身を変えない
   "tests/fixtures/**",
+  # 気象庁の GIS データから tools/areas/build.sh で作るもの
+  "static/areas/**",
 ]
