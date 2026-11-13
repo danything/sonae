@@ -16,8 +16,12 @@
   $effect.pre(() => {
     live.seed(data.snapshot);
   });
-  // 埋め直しが多すぎると SSE が resync を送ってくる。load を走らせ直して一覧を取り直す
-  $effect(() => live.connect(() => void invalidateAll()));
+  // 埋め直しが多すぎると SSE が resync を送ってくる。load を走らせ直して一覧を取り直す。
+  // resync は 1 回しか来ない (張り直しはその番号から始まる) ので、取り直せなければ 5 秒ごとにやり直す
+  const resync = (): void => {
+    invalidateAll().catch(() => setTimeout(resync, 5000));
+  };
+  $effect(() => live.connect(resync));
 
   const eews = $derived(browser ? activeEews(live.eews, live.now) : []);
   const down = $derived(
