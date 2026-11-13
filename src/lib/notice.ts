@@ -15,3 +15,9 @@ export const CREDITS = [
   "地震情報・津波予報の速報: P2P地震情報",
   "地図: 国土地理院 (シームレス空中写真・淡色地図・都市圏活断層図)・気象庁 予報区等 GIS データを加工",
 ] as const;
+
+/**
+ * 防災科研の公式の強震モニタ。リンクだけを置き、データは取らず埋め込みもしない
+ * (docs/design.md 1 章の「入れない」。地図に重ねるのは防災科研に問い合わせてから)
+ */
+export const KMONI_URL = "http://www.kmoni.bosai.go.jp/";
