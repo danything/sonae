@@ -1,5 +1,7 @@
 <script lang="ts">
-  import { jst, TSUNAMI_COLORS } from "#lib/format.ts";
+  import TriangleAlert from "~icons/lucide/triangle-alert";
+
+  import { jst } from "#lib/format.ts";
   import {
     type Tsunami,
     TSUNAMI_ORDER,
@@ -7,8 +9,14 @@
     tsunamiGradeLabel,
   } from "#lib/model.ts";
 
-  /** 津波の区分ごとに、予報区の名前を並べる (色だけに頼らず、区分の名前も出す) */
-  let { tsunami, link = true }: { tsunami: Tsunami; link?: boolean } = $props();
+  import Grade from "./Grade.svelte";
+  import Icon from "./Icon.svelte";
+
+  /**
+   * いま出ている津波の警報・注意報・予報。一覧の上にページの中の通知の形 (淡い面・先頭に ⚠) で出す。
+   * 区分ごとに予報区の名前を並べる (色だけに頼らず、区分の名前も出す)。`href` があれば押すとその津波を選ぶ
+   */
+  let { tsunami, href }: { tsunami: Tsunami; href?: string } = $props();
   const groups = $derived(
     TSUNAMI_ORDER.filter((g) => g !== "none")
       .map((g) => ({
@@ -18,70 +26,55 @@
       .filter((x) => x.areas.length > 0),
   );
   const top = $derived<TsunamiGrade>(groups[0]?.grade ?? "none");
+  const title = $derived(
+    tsunami.cancelled
+      ? "津波の情報は取り消されました"
+      : tsunami.ended
+        ? "津波の警報・注意報・予報は解除されました"
+        : `${tsunamiGradeLabel(top)}${top === "major" || top === "warning" ? "。ただちに避難してください" : ""}`,
+  );
 </script>
 
-<section
-  class="tsunami panel"
-  style:--edge={TSUNAMI_COLORS[top]?.bg}
+<svelte:element
+  this={href ? "a" : "section"}
+  class="notice warning tsunami"
+  {href}
   aria-label="津波"
 >
-  <h2>
-    {#if tsunami.cancelled}
-      津波の情報は取り消されました
-    {:else if tsunami.ended}
-      津波の警報・注意報・予報は解除されました
-    {:else}
-      {tsunamiGradeLabel(top)}{top === "major" || top === "warning"
-        ? "　ただちに避難を"
+  <Icon icon={TriangleAlert} />
+  <div class="body">
+    <p class="bold">{title}</p>
+    <p class="small muted">
+      {jst(tsunami.issuedAt)} 発表{tsunami.provisional
+        ? "・P2P地震情報の速報 (気象庁の XML はまだ)"
         : ""}
-    {/if}
-  </h2>
-  <p class="tiny muted">
-    {jst(tsunami.issuedAt)} 発表{tsunami.provisional
-      ? "・P2P地震情報の速報 (気象庁の XML はまだ)"
-      : ""}
-  </p>
-  {#if tsunami.headline}
-    <p class="small headline">{tsunami.headline}</p>
-  {/if}
-  {#each groups as g (g.grade)}
-    <div class="group">
-      <span
-        class="grade"
-        style:background={TSUNAMI_COLORS[g.grade]?.bg}
-        style:color={TSUNAMI_COLORS[g.grade]?.fg}
-        >{tsunamiGradeLabel(g.grade)}</span
-      >
-      <span class="small">{g.areas.map((a) => a.name).join("・")}</span>
-    </div>
-  {/each}
-  {#if link}
-    <p class="small">
-      <a href="/tsunami/{encodeURIComponent(tsunami.id)}">詳しく見る</a>
     </p>
-  {/if}
-</section>
+    {#each groups as g (g.grade)}
+      <p class="group small">
+        <Grade grade={g.grade} />
+        <span>{g.areas.map((a) => a.name).join("、")}</span>
+      </p>
+    {/each}
+  </div>
+</svelte:element>
 
 <style>
   .tsunami {
-    display: grid;
-    gap: 0.4rem;
-    border-left: 0.5rem solid var(--edge, var(--so-line));
+    color: inherit;
+    text-decoration: none;
   }
-  .headline {
-    white-space: pre-line;
+  a.tsunami:hover {
+    background: var(--so-item-hover);
+  }
+  .body {
+    display: grid;
+    gap: var(--so-space-1);
+    min-width: 0;
   }
   .group {
     display: flex;
     flex-wrap: wrap;
     align-items: baseline;
-    gap: 0.25rem 0.6rem;
-  }
-  .grade {
-    border-radius: 0.35rem;
-    padding: 0 0.45rem;
-    font-size: 0.8rem;
-    font-weight: 700;
-    white-space: nowrap;
+    gap: var(--so-space-1) var(--so-space-2);
   }
 </style>

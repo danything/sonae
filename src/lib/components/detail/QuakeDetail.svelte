@@ -1,21 +1,23 @@
 <script lang="ts">
-  import Intensity from "#lib/components/Intensity.svelte";
+  import "@anyblades/blades/components/accordion";
+
   import { depthText, jst, jstFull, magnitudeText } from "#lib/format.ts";
-  import { live } from "#lib/live.svelte.ts";
   import {
     type AreaIntensity,
     INTENSITIES,
     intensityRank,
     type ObservedIntensity,
+    type Quake,
     type StationIntensity,
     UNRECEIVED,
   } from "#lib/model.ts";
 
-  let { data } = $props();
-  // SSE で続報が来たら差し替える
-  const q = $derived(
-    live.quakes.find((x) => x.id === data.quake.id) ?? data.quake,
-  );
+  import Intensity from "../Intensity.svelte";
+
+  /**
+   * 地震の詳しい内容 (前の `/quakes/[id]` の中身)。節は見出しと余白で分け、囲まない
+   */
+  let { q }: { q: Quake } = $props();
 
   /** 震度の大きい順に、地域 (または観測点) の名前を束ねる */
   function byIntensity<T extends AreaIntensity | StationIntensity>(items: T[]) {
@@ -37,74 +39,64 @@
     foreign: "遠地地震に関する情報",
     other: "その他の情報",
   };
+  /** 事実は控えた字を「・」でつなぐ (バッジにしない) */
+  const facts = $derived(
+    [
+      `${jstFull(q.originTime)} 頃 発生`,
+      magnitudeText(q),
+      `深さ ${depthText(q.hypocenter)}`,
+      q.foreign ? "遠地地震" : "",
+      q.status === "training" ? "訓練" : q.status === "test" ? "試験" : "",
+    ].filter(Boolean),
+  );
 </script>
 
-<svelte:head>
-  <title>{q.hypocenter?.name ?? "地震"} {jst(q.originTime)} - sonae</title>
-</svelte:head>
-
-<article class="stack">
-  <p class="small cluster">
-    <a href="/">← 地震の一覧</a>
-    <a href="/map?quake={encodeURIComponent(q.id)}">地図で見る</a>
-  </p>
+<div class="detail stack">
   <header class="head">
     <Intensity int={q.maxInt} size="lg" />
-    <div>
-      <h1>{q.hypocenter?.name ?? "震源は調査中"}</h1>
-      <p class="muted">
-        {jstFull(q.originTime)} 頃 発生・{magnitudeText(q)}・深さ {depthText(
-          q.hypocenter,
-        )}
-      </p>
-      <p class="tags">
-        {#if q.status !== "normal"}<span class="tag"
-            >{q.status === "training" ? "訓練" : "試験"}</span
-          >{/if}
-        {#if q.cancelled}<span class="tag">取り消されました</span>{/if}
-        {#if q.provisional}<span class="tag"
-            >P2P地震情報の速報 (気象庁の XML はまだ)</span
-          >{/if}
-        {#if q.foreign}<span class="tag">遠地地震</span>{/if}
-      </p>
+    <div class="grow">
+      <h1 id="detail-title">{q.hypocenter?.name ?? "震源は調査中"}</h1>
+      <p class="small muted">{facts.join("・")}</p>
+      {#if q.cancelled || q.provisional}
+        <p class="tags">
+          {#if q.cancelled}<span class="tag error">取消</span>{/if}
+          {#if q.provisional}<span class="tag info"
+              >速報 (気象庁の XML はまだ)</span
+            >{/if}
+        </p>
+      {/if}
     </div>
   </header>
 
-  {#if q.comments.length > 0}
-    <section class="panel">
-      {#each q.comments as c (c)}
-        <p class="small">{c}</p>
-      {/each}
-    </section>
-  {/if}
+  {#each q.comments as c (c)}
+    <p class="small">{c}</p>
+  {/each}
 
   {#if areas.length > 0}
-    <section class="panel">
+    <section>
       <h2>各地域の震度</h2>
       <dl class="ints">
         {#each areas as g (g.int)}
           <dt><Intensity int={g.int} size="sm" /></dt>
-          <dd class="small">{g.items.map((a) => a.name).join("・")}</dd>
+          <dd class="small">{g.items.map((a) => a.name).join("、")}</dd>
         {/each}
       </dl>
     </section>
   {/if}
 
   {#if stations.length > 0}
-    <section class="panel">
-      <details>
-        <summary><h2>観測点の震度 ({q.stations.length} 点)</h2></summary>
-        <dl class="ints">
-          {#each stations as g (g.int)}
-            <dt><Intensity int={g.int} size="sm" /></dt>
-            <dd class="small">{g.items.map((s) => s.name).join("・")}</dd>
-          {/each}
-        </dl>
-      </details>
-    </section>
+    <details>
+      <summary>観測点の震度 ({q.stations.length} 点)</summary>
+      <dl class="ints">
+        {#each stations as g (g.int)}
+          <dt><Intensity int={g.int} size="sm" /></dt>
+          <dd class="small">{g.items.map((s) => s.name).join("、")}</dd>
+        {/each}
+      </dl>
+    </details>
   {/if}
 
-  <section class="panel">
+  <section>
     <h2>発表された情報</h2>
     <ol class="reports small">
       {#each q.reports.toReversed() as r (`${r.source}-${r.code}-${r.reportedAt}-${r.infoType}`)}
@@ -113,47 +105,52 @@
             ? ""
             : ` (${r.infoType})`}
           <span class="muted"
-            >— {r.source === "jma" ? "気象庁 XML" : "P2P地震情報"}</span
+            >・{r.source === "jma" ? "気象庁 XML" : "P2P地震情報"}</span
           >
           {#if r.cancelled}<span class="tag">取消済み</span>{/if}
         </li>
       {/each}
     </ol>
   </section>
-</article>
+</div>
 
 <style>
   .head {
     display: flex;
     align-items: flex-start;
-    gap: 1rem;
+    gap: var(--so-space-3);
   }
   .tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.3rem;
-    margin-top: 0.3rem;
+    gap: var(--so-space-1);
+    margin-top: var(--so-space-1);
   }
   .ints {
     display: grid;
     grid-template-columns: auto 1fr;
     align-items: baseline;
-    gap: 0.5rem 0.75rem;
-    margin: 0.75rem 0 0;
+    gap: var(--so-space-2) var(--so-space-3);
+    margin: var(--so-space-2) 0 0;
   }
   .ints dt,
   .ints dd {
     margin: 0;
   }
-  summary h2 {
-    display: inline;
+  details {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  summary {
+    font-weight: var(--so-weight-bold);
   }
   .reports {
-    margin: 0.5rem 0 0;
-    padding-left: 1.2rem;
+    margin: var(--so-space-2) 0 0;
+    padding-left: var(--so-space-5);
   }
   .gone {
+    color: var(--so-muted);
     text-decoration: line-through;
-    opacity: 0.7;
   }
 </style>

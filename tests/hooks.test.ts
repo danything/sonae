@@ -133,9 +133,17 @@ describe("ログインしていないとき", () => {
 });
 
 describe("ログインしているとき", () => {
+  test("前の画面の URL は 1 つの画面の URL へ 301 で送る", async () => {
+    const s = create("user-1", "テスト 太郎");
+    const r = await run("/quakes/abc", { accept: HTML, cookie: s.id });
+    expect(r.resolved).toBe(false);
+    expect(r.redirect?.status).toBe(301);
+    expect(r.redirect?.location).toBe("/?q=abc");
+  });
+
   test("控えがあれば通し、locals.user を入れる。延ばさないときは Cookie を書かない", async () => {
     const s = create("user-1", "テスト 太郎");
-    const r = await run("/map", { accept: HTML, cookie: s.id });
+    const r = await run("/", { accept: HTML, cookie: s.id });
     expect(r.resolved).toBe(true);
     expect(r.locals.user).toEqual({ subject: "user-1", name: "テスト 太郎" });
     expect(r.set).toEqual([]);

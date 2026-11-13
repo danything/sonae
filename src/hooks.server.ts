@@ -4,6 +4,7 @@ import type { Handle, ServerInit } from "@sveltejs/kit/hooks";
 import { enabled } from "#lib/server/oidc.ts";
 import { startReceiving } from "#lib/server/receiver.ts";
 import { COOKIE, find, SESSION_TTL } from "#lib/server/session.ts";
+import { legacyRedirect } from "#lib/view.ts";
 
 /** 手元の開発でだけ、ログインを飛ばせる (本番の NODE_ENV=production では効かない) */
 const authSkipped = () =>
@@ -33,6 +34,17 @@ export const init: ServerInit = () => {
   startReceiving();
 };
 
+/**
+ * 通した要求を画面へ渡す。前の画面の URL (`/quakes/[id]`・`/map` など) は、1 つの画面の URL へ 301 で送る
+ * (`#lib/view.ts` の `legacyRedirect`。共有したリンクとブックマークを生かす)。ログインの後に送るので、
+ * ログインへの戻り先には元の URL が残る
+ */
+const pass: Handle = ({ event, resolve }) => {
+  const to = legacyRedirect(event.url);
+  if (to !== null) redirect(301, to);
+  return resolve(event);
+};
+
 /** ログイン無しで開けるところ (docs/design.md の 2.6) */
 const PUBLIC = new Set(["/health", "/auth/login", "/auth/callback"]);
 
@@ -47,7 +59,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   if (!enabled()) {
     if (authSkipped()) {
       event.locals.user = { subject: "dev", name: "開発" };
-      return resolve(event);
+      return pass({ event, resolve });
     }
     return new Response("ログインの設定 (OIDC) がまだです", {
       status: 503,
@@ -68,7 +80,7 @@ export const handle: Handle = async ({ event, resolve }) => {
         maxAge: SESSION_TTL,
       });
     }
-    return resolve(event);
+    return pass({ event, resolve });
   }
 
   // 画面の読み込みだけログインへ送る。fetch や SSE は 401 のほうが分かる

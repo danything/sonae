@@ -13,6 +13,13 @@
       // 描く前にテーマを当てる (denpa と同じ。保存が無ければ暗いテーマ)。
       // 端末の控えを読めないとき (サイトのデータを止めた Safari などで投げる) も既定のまま
       (() => {
+        // スマホの形 (上のヘッダーを出さず、下のタブ) の印。条件は `#lib/phone-form.ts` と同じ。
+        // 描く前に付け、当たり外れが変わるたびに付け直す (向きを変えた・窓の幅を変えた)
+        const phone = matchMedia("(max-width: 999.98px)");
+        const markPhone = () =>
+          document.documentElement.toggleAttribute("data-phone", phone.matches);
+        markPhone();
+        phone.addEventListener("change", markPhone);
         let saved = null;
         try {
           saved = localStorage.getItem("sonae.theme");

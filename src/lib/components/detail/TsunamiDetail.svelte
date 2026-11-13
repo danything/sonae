@@ -1,15 +1,14 @@
 <script lang="ts">
   import "@anyblades/blades/content/table";
 
-  import TsunamiSummary from "#lib/components/TsunamiSummary.svelte";
-  import { jst, TSUNAMI_COLORS } from "#lib/format.ts";
-  import { live } from "#lib/live.svelte.ts";
-  import { TSUNAMI_ORDER, tsunamiGradeLabel } from "#lib/model.ts";
+  import { jst } from "#lib/format.ts";
+  import { isTsunamiActive, type Tsunami, TSUNAMI_ORDER } from "#lib/model.ts";
 
-  let { data } = $props();
-  const t = $derived(
-    live.tsunamis.find((x) => x.id === data.tsunami.id) ?? data.tsunami,
-  );
+  import Grade from "../Grade.svelte";
+  import TsunamiSummary from "../TsunamiSummary.svelte";
+
+  /** 津波の詳しい内容 (前の `/tsunami/[id]` の中身)。予報区ごとの表と、沿岸・沖合の観測 */
+  let { t, now }: { t: Tsunami; now: number } = $props();
   const areas = $derived(
     [...t.areas].sort(
       (a, b) => TSUNAMI_ORDER.indexOf(a.grade) - TSUNAMI_ORDER.indexOf(b.grade),
@@ -19,16 +18,19 @@
   const offshore = $derived(t.observations.filter((o) => o.offshore));
 </script>
 
-<svelte:head>
-  <title>津波 {jst(t.issuedAt)} - sonae</title>
-</svelte:head>
-
-<article class="stack">
-  <p class="small"><a href="/tsunami">← 津波</a></p>
-  <TsunamiSummary tsunami={t} link={false} />
+<div class="detail stack">
+  <h1 id="detail-title">津波 {jst(t.issuedAt)} 発表</h1>
+  {#if isTsunamiActive(t, now) || t.cancelled || t.ended}
+    <TsunamiSummary tsunami={t} />
+  {:else}
+    <p class="small muted">この津波予報は終わりました。</p>
+  {/if}
+  {#if t.headline}
+    <p class="small headline">{t.headline}</p>
+  {/if}
 
   {#if areas.length > 0}
-    <section class="panel">
+    <section>
       <h2>津波予報区ごと</h2>
       <table class="small">
         <thead>
@@ -41,14 +43,10 @@
             <tr>
               <td>{a.name}</td>
               <td>
-                <span
-                  class="grade"
-                  style:background={TSUNAMI_COLORS[a.grade]?.bg}
-                  style:color={TSUNAMI_COLORS[a.grade]?.fg}
-                  >{a.grade === "none"
-                    ? a.kindName
-                    : tsunamiGradeLabel(a.grade)}</span
-                >
+                <Grade
+                  grade={a.grade}
+                  label={a.grade === "none" ? a.kindName : undefined}
+                />
               </td>
               <td
                 >{a.condition ??
@@ -64,7 +62,7 @@
 
   {#each [{ title: "沿岸の観測", list: coast }, { title: "沖合の観測", list: offshore }] as part (part.title)}
     {#if part.list.length > 0}
-      <section class="panel">
+      <section>
         <h2>{part.title}</h2>
         <table class="small">
           <thead>
@@ -86,16 +84,17 @@
       </section>
     {/if}
   {/each}
-</article>
+</div>
 
 <style>
-  .grade {
-    border-radius: 0.35rem;
-    padding: 0 0.45rem;
-    font-weight: 700;
-    white-space: nowrap;
+  .headline {
+    white-space: pre-line;
   }
   table {
-    margin-top: 0.5rem;
+    margin-top: var(--so-space-2);
+  }
+  td,
+  th {
+    padding-inline: var(--so-space-2);
   }
 </style>
