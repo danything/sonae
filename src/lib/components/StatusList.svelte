@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { jst } from "#lib/format.ts";
+  import { jst, SOURCE_LABEL } from "#lib/format.ts";
   import type { SourceStatus } from "#lib/model.ts";
 
   /**
@@ -11,11 +11,6 @@
     statuses,
   }: { connected: boolean; statuses: SourceStatus[] } = $props();
 
-  const NAMES: Record<string, string> = {
-    jma: "気象庁 防災情報 XML",
-    p2p: "P2P地震情報",
-    wolfx: "Wolfx Project",
-  };
   const STATES: Record<string, string> = {
     connecting: "接続中",
     connected: "受信中",
@@ -36,7 +31,7 @@
       class="side-item static"
       title={s.lastError ? `${s.lastError}` : undefined}
     >
-      <dt>{NAMES[s.id] ?? s.id}</dt>
+      <dt>{SOURCE_LABEL[s.id] ?? s.id}</dt>
       <dd class="side-sub num" class:bad={s.state !== "connected"}>
         {STATES[s.state] ?? s.state}{s.lastSeenAt
           ? `・${jst(s.lastSeenAt)}`

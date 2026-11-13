@@ -1,10 +1,17 @@
 <script lang="ts">
-  import { depthText, jstFull } from "#lib/format.ts";
+  import {
+    depthText,
+    jstFull,
+    magnitudeText,
+    placeName,
+    SOURCE_LABEL,
+    STATUS_LABEL,
+  } from "#lib/format.ts";
   import type { Eew } from "#lib/model.ts";
   import { EEW_NOTICE } from "#lib/notice.ts";
 
   /**
-   * 緊急地震速報の詳しい内容 (前の `/eew` の表の 1 行)。**予想震度は出さない** (docs/design.md の 5 章)
+   * 緊急地震速報の詳しい内容。**予想震度は出さない** (docs/design.md の 5 章)
    */
   let { e }: { e: Eew } = $props();
   const title = $derived(
@@ -18,10 +25,8 @@
     [
       `${jstFull(e.issuedAt)} 発表`,
       `第 ${e.serial} 報${e.final ? " (最終報)" : ""}`,
-      e.status === "training" ? "訓練" : e.status === "test" ? "試験" : "",
-      e.sources
-        .map((s) => (s === "wolfx" ? "Wolfx Project" : "P2P地震情報"))
-        .join("、"),
+      STATUS_LABEL[e.status],
+      e.sources.map((s) => SOURCE_LABEL[s]).join("、"),
     ].filter(Boolean),
   );
 </script>
@@ -34,12 +39,10 @@
   <dl class="facts">
     <dt>震源</dt>
     <dd>
-      {e.hypocenter?.name ?? "—"}{e.assumed
-        ? " (仮定震源。震源と M は目安)"
-        : ""}
+      {placeName(e.hypocenter)}{e.assumed ? " (仮定震源。震源と M は目安)" : ""}
     </dd>
     <dt>M</dt>
-    <dd>{e.magnitude !== undefined ? `M${e.magnitude.toFixed(1)}` : "—"}</dd>
+    <dd>{magnitudeText(e)}</dd>
     <dt>深さ</dt>
     <dd>{depthText(e.hypocenter)}</dd>
     <dt>警報の地域</dt>

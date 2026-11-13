@@ -117,7 +117,7 @@ const prefs = (over: Partial<PushPrefs> = {}): PushPrefs => ({
   ...over,
 });
 
-describe("知らせの条件", () => {
+describe("通知の条件", () => {
   test("読めない項目は既定値に戻す", () => {
     expect(normalizePrefs(undefined)).toEqual(DEFAULT_PREFS);
     expect(
@@ -147,7 +147,7 @@ describe("知らせの条件", () => {
 });
 
 describe("何を知らせるか", () => {
-  test("最大震度が閾値に届けば知らせ、届かなければ現在地の震度で見る", () => {
+  test("最大震度が閾値に届けば通知し、届かなければ現在地の震度で見る", () => {
     const n3 = noticeOf(
       quake({
         maxInt: "3",
@@ -155,7 +155,7 @@ describe("何を知らせるか", () => {
       }),
       NOW,
     );
-    if (!n3) throw new Error("知らせが無い");
+    if (!n3) throw new Error("通知が無い");
     expect(matches(n3, prefs())).toBe(false);
     expect(
       matches(n3, prefs({ area: { code: "350", name: "東京都２３区" } })),
@@ -217,14 +217,14 @@ describe("何を知らせるか", () => {
 
   test("津波は一番重い区分で決め、解除は前に知らせた購読にだけ置き換えに行く", () => {
     const t = noticeOf(tsunami(), NOW);
-    if (!t) throw new Error("知らせが無い");
+    if (!t) throw new Error("通知が無い");
     expect(t.title).toBe("津波注意報");
     expect(t.body).toBe("岩手県");
     expect(matches(t, prefs())).toBe(true);
     expect(matches(t, prefs({ tsunami: "warning" }))).toBe(false);
 
     const ended = noticeOf(tsunami({ ended: true }), NOW);
-    if (!ended) throw new Error("知らせが無い");
+    if (!ended) throw new Error("通知が無い");
     expect(ended.closing).toBe(true);
     expect(plan(ended, prefs(), undefined)).toEqual({ send: false });
     expect(
@@ -236,7 +236,7 @@ describe("何を知らせるか", () => {
 describe("同じ事象で何度も鳴らさない", () => {
   test("初めては鳴らし、同じ中身は送らず、重さが上がれば鳴らし直し、ほかは黙って置き換える", () => {
     const first = noticeOf(quake(), NOW);
-    if (!first) throw new Error("知らせが無い");
+    if (!first) throw new Error("通知が無い");
     expect(plan(first, prefs(), undefined)).toEqual({
       send: true,
       renotify: true,
@@ -245,7 +245,7 @@ describe("同じ事象で何度も鳴らさない", () => {
     expect(plan(first, prefs(), sent)).toEqual({ send: false });
 
     const detail = noticeOf(quake({ magnitude: 5.3 }), NOW);
-    if (!detail) throw new Error("知らせが無い");
+    if (!detail) throw new Error("通知が無い");
     expect(detail.tag).toBe(first.tag);
     expect(plan(detail, prefs(), sent)).toEqual({
       send: true,
@@ -253,7 +253,7 @@ describe("同じ事象で何度も鳴らさない", () => {
     });
 
     const stronger = noticeOf(quake({ maxInt: "5-" }), NOW);
-    if (!stronger) throw new Error("知らせが無い");
+    if (!stronger) throw new Error("通知が無い");
     expect(plan(stronger, prefs(), sent)).toEqual({
       send: true,
       renotify: true,
@@ -569,17 +569,17 @@ test("送った本文は RFC 8291 (aes128gcm) でブラウザが復号できる"
 test("緊急地震速報は報ごとに M が変わっても送り直さず、警報の地域が増えたら置き換える", () => {
   const p = prefs({ eew: "all" });
   const first = noticeOf(eew(), NOW);
-  if (!first) throw new Error("知らせが無い");
+  if (!first) throw new Error("通知が無い");
   const sent = { level: first.level, digest: digestOf(first) };
   const next = noticeOf(eew({ serial: 2, magnitude: 5.2 }), NOW);
-  if (!next) throw new Error("知らせが無い");
+  if (!next) throw new Error("通知が無い");
   expect(plan(next, p, sent)).toEqual({ send: false });
 
   const warn = noticeOf(
     eew({ serial: 3, kind: "warning", warnAreas: ["茨城県南部"] }),
     NOW,
   );
-  if (!warn) throw new Error("知らせが無い");
+  if (!warn) throw new Error("通知が無い");
   expect(plan(warn, p, sent)).toEqual({ send: true, renotify: true });
   const warned = { level: warn.level, digest: digestOf(warn) };
   const more = noticeOf(
@@ -590,11 +590,11 @@ test("緊急地震速報は報ごとに M が変わっても送り直さず、�
     }),
     NOW,
   );
-  if (!more) throw new Error("知らせが無い");
+  if (!more) throw new Error("通知が無い");
   expect(plan(more, p, warned)).toEqual({ send: true, renotify: false });
 
   const cancel = noticeOf(eew({ serial: 5, cancelled: true }), NOW);
-  if (!cancel) throw new Error("知らせが無い");
+  if (!cancel) throw new Error("通知が無い");
   expect(plan(cancel, p, warned)).toEqual({ send: true, renotify: false });
 });
 

@@ -29,7 +29,16 @@
   import TsunamiSummary from "#lib/components/TsunamiSummary.svelte";
   import ViewList from "#lib/components/ViewList.svelte";
   import { activeEews } from "#lib/eew.ts";
-  import { depthText, jst, jstClock, magnitudeText } from "#lib/format.ts";
+  import {
+    depthText,
+    jst,
+    jstClock,
+    jstTime,
+    magnitudeText,
+    placeName,
+    quakeName,
+    STATUS_LABEL,
+  } from "#lib/format.ts";
   import { live } from "#lib/live.svelte.ts";
   import { type LayerId, type LayerState, readLayers } from "#lib/map/style.ts";
   import {
@@ -38,8 +47,8 @@
     isUrgentAdvisory,
     type Quake,
     type Tsunami,
-    TSUNAMI_ORDER,
     tsunamiGradeLabel,
+    tsunamiTop,
   } from "#lib/model.ts";
   import { CREDITS, NOTICE } from "#lib/notice.ts";
   import { PHONE_FORM } from "#lib/phone-form.ts";
@@ -81,9 +90,6 @@
 
   // ---- 一覧 ----
   let query = $state("");
-  const quakeName = (q: Quake) =>
-    q.hypocenter?.name ??
-    (q.areas[0] ? `${q.areas[0].name} など` : "震源は調査中");
   const quakes = $derived(
     snap.quakes.filter((q) =>
       matches(query, q.hypocenter?.name, ...q.areas.map((a) => a.name)),
@@ -148,13 +154,12 @@
     grade?: Tsunami["areas"][number]["grade"];
     states: { label: string; tone: "error" | "info" | "" }[];
   }
-  const clock = (iso: string | undefined) => jst(iso).split(" ").at(-1) ?? "—";
   function quakeRow(q: Quake): RowData {
     return {
       key: q.id,
       href: selectHref(params, "quake", q.id),
       current: v.selected?.kind === "quake" && v.selected.id === q.id,
-      time: clock(quakeTime(q)),
+      time: jstTime(quakeTime(q)),
       title: quakeName(q),
       meta: [
         magnitudeText(q),
@@ -170,13 +175,6 @@
       ],
     };
   }
-  function tsunamiTop(t: Tsunami) {
-    return (
-      TSUNAMI_ORDER.find(
-        (g) => g !== "none" && t.areas.some((a) => a.grade === g),
-      ) ?? "none"
-    );
-  }
   function tsunamiRow(t: Tsunami): RowData {
     const top = tsunamiTop(t);
     const active = isTsunamiActive(t, live.now);
@@ -184,7 +182,7 @@
       key: t.id,
       href: selectHref(params, "tsunami", t.id),
       current: v.selected?.kind === "tsunami" && v.selected.id === t.id,
-      time: clock(t.issuedAt),
+      time: jstTime(t.issuedAt),
       title: t.cancelled
         ? "津波の情報 (取消)"
         : t.ended
@@ -206,11 +204,11 @@
       href: selectHref(params, "eew", e.eventId),
       current: v.selected?.kind === "eew" && v.selected.id === e.eventId,
       time: jstClock(e.issuedAt),
-      title: e.hypocenter?.name ?? "震源は調査中",
+      title: placeName(e.hypocenter),
       meta: [
         e.kind === "warning" ? "警報" : "予報",
         `第 ${e.serial} 報${e.final ? " (最終)" : ""}`,
-        e.magnitude !== undefined ? `M${e.magnitude.toFixed(1)}` : "",
+        e.magnitude !== undefined ? magnitudeText(e) : "",
         e.warnAreas.length > 0 ? e.warnAreas.join("、") : "",
       ]
         .filter(Boolean)
@@ -218,12 +216,7 @@
       states: [
         ...(e.cancelled ? [{ label: "取消", tone: "error" as const }] : []),
         ...(e.status !== "normal"
-          ? [
-              {
-                label: e.status === "training" ? "訓練" : "試験",
-                tone: "" as const,
-              },
-            ]
+          ? [{ label: STATUS_LABEL[e.status], tone: "" as const }]
           : []),
       ],
     };
@@ -441,6 +434,16 @@
   {/if}
 {/snippet}
 
+{#snippet credits(where: string)}
+  <!-- 注意文と出典 (docs/design.md の 5 章)。広い形はサイドバーの下、スマホの形は一覧の下 -->
+  <footer class="foot {where} tiny muted">
+    <p>{NOTICE}</p>
+    <ul>
+      {#each CREDITS as c (c)}<li>{c}</li>{/each}
+    </ul>
+  </footer>
+{/snippet}
+
 {#snippet dockMenuBody()}
   <p class="menu-head">状態</p>
   <StatusList connected={live.connected} statuses={snap.statuses} />
@@ -616,12 +619,7 @@
       {/if}
 
       <!-- 注意文と出典 (広い形はサイドバーの下にある) -->
-      <footer class="phone-foot tiny muted">
-        <p>{NOTICE}</p>
-        <ul>
-          {#each CREDITS as c (c)}<li>{c}</li>{/each}
-        </ul>
-      </footer>
+      {@render credits("phone-foot")}
     </section>
 
     <div class="map-pane">
@@ -666,12 +664,7 @@
         />
       </div>
 
-      <footer class="side-foot tiny muted">
-        <p>{NOTICE}</p>
-        <ul>
-          {#each CREDITS as c (c)}<li>{c}</li>{/each}
-        </ul>
-      </footer>
+      {@render credits("side-foot")}
     </aside>
   </main>
 
@@ -881,16 +874,13 @@
     min-height: 0;
     padding: 0 0 var(--so-space-3);
   }
-  .side-foot p,
-  .side-foot ul,
-  .phone-foot p,
-  .phone-foot ul {
+  .foot p,
+  .foot ul {
     margin: 0 0 var(--so-space-2);
     padding: 0 var(--so-space-3);
     list-style: none;
   }
-  .side-foot li,
-  .phone-foot li {
+  .foot li {
     margin: 0;
     list-style: none;
   }
@@ -965,8 +955,13 @@
     display: flex;
     align-items: center;
     gap: var(--so-space-1);
+    bottom: calc(var(--so-tabbar) + var(--so-dock-gap));
     height: var(--dock-h);
     padding-inline: var(--so-space-2) var(--so-space-1);
+    border-radius: var(--so-radius-full);
+    background: var(--so-float);
+    box-shadow: var(--so-shadow-pop);
+    transition: transform var(--so-duration-move) var(--so-ease-spring);
   }
   :global(:where(html[data-phone]))
     .shell[data-retract]

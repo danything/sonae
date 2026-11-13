@@ -5,7 +5,7 @@
 
 import { type Intensity, isIntensity } from "./model.ts";
 
-/** 津波の知らせの閾値。注意報以上 / 警報以上 / 大津波警報だけ / 送らない */
+/** 津波の通知の閾値。注意報以上 / 警報以上 / 大津波警報だけ / 送らない */
 export const TSUNAMI_LEVELS = ["watch", "warning", "major", "off"] as const;
 export type TsunamiLevel = (typeof TSUNAMI_LEVELS)[number];
 
@@ -81,7 +81,7 @@ export function normalizePrefs(input: unknown): PushPrefs {
 export interface PushPayload {
   title: string;
   body: string;
-  /** 事象の id。同じ tag の続報は前の知らせを置き換える */
+  /** 事象の id。同じ tag の続報は前の通知を置き換える */
   tag: string;
   /** 押したときに開く所 (このサイトの中のパス) */
   url: string;
@@ -108,7 +108,7 @@ export interface NotificationShape {
   };
 }
 
-/** 届いた中身を知らせの形にする。読めないときも何か出す (iOS は出さないと購読を止める) */
+/** 届いた中身を通知の形にする。読めないときも何か出す (iOS は出さないと購読を止める) */
 export function toNotification(raw: unknown): NotificationShape {
   const p = (typeof raw === "object" && raw !== null ? raw : {}) as Partial<
     Record<keyof PushPayload, unknown>

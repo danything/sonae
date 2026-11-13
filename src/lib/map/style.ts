@@ -181,7 +181,7 @@ export function tsunamiPaint(tsunamis: Tsunami[]): {
 
 /**
  * 震源の点の色 (深さ)。境は 30・100・300 km。深さの分からないものは灰色。
- * 震度の色 (気象庁の配色の指針) と取り違えないよう、震度の札とは別の形 (丸) で描く
+ * 震度の色 (気象庁の配色の指針) と取り違えないよう、震度のラベルとは別の形 (丸) で描く
  */
 export const DEPTH_COLORS = [
   { upto: 30, color: "#ff3b30", label: "30 km まで" },
@@ -240,7 +240,7 @@ export function hypocenterFeatures(quakes: Quake[], n = 50) {
   };
 }
 
-/** 地域ごとの震度の札を置く (大きいほうから。重なるときに大きい震度が上に来るよう、描く順は小さいほうから) */
+/** 地域ごとの震度のラベルを置く (大きいほうから。重なるときに大きい震度が上に来るよう、描く順は小さいほうから) */
 export function intensityLabels(
   areas: AreaIntensity[],
   points: Record<string, [number, number]>,

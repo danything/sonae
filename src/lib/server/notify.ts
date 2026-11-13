@@ -1,9 +1,9 @@
 /**
- * 受けたイベントから、知らせの中身と「誰に・鳴らすか」を決める (docs/design.md の 2.4)。
+ * 受けたイベントから、通知の中身と「誰に・鳴らすか」を決める (docs/design.md の 2.4)。
  * 送ることはしない (push.ts)。時刻と前に送ったものを引数で受ける、副作用の無い関数だけ。
  */
 
-import { jst, magnitudeText } from "#lib/format.ts";
+import { jst, magnitudeText, placeName, quakeName } from "#lib/format.ts";
 import {
   type Advisory,
   type Eew,
@@ -22,9 +22,9 @@ import { selectHref } from "#lib/view.ts";
 /** 押したときに開く所 (1 つの画面で、その件を選んだ URL。docs/ui.md) */
 const NONE = new URLSearchParams();
 
-/** 1 つのイベントから作る知らせ。購読ごとに matches で絞り、plan で鳴らすかを決める */
+/** 1 つのイベントから作る通知。購読ごとに matches で絞り、plan で鳴らすかを決める */
 export interface Notice {
-  /** 事象の id。同じ事象の続報は、この tag で前の知らせを置き換える */
+  /** 事象の id。同じ事象の続報は、この tag で前の通知を置き換える */
   tag: string;
   /** 重さ。前に送ったときより大きくなったら鳴らし直す */
   level: number;
@@ -35,7 +35,7 @@ export interface Notice {
   /** 配信サービスが預かる秒数 (届くのが遅れたら意味が無いものは短く) */
   ttl: number;
   sticky: boolean;
-  /** 取消・解除。前に知らせた購読にだけ、知らせを置き換えに行く */
+  /** 取消・解除。前に知らせた購読にだけ、通知を置き換えに行く */
   closing: boolean;
   /** 事象の時刻 (ミリ秒)。古すぎるもの (起動したときの埋め直しなど) は送らない */
   at: number;
@@ -121,14 +121,13 @@ function eewNotice(e: Eew, event: SonaeEvent): Notice {
       closing: false,
     };
   }
-  const m =
-    typeof e.magnitude === "number" ? ` M${e.magnitude.toFixed(1)}` : "";
+  const m = e.magnitude === undefined ? "" : ` ${magnitudeText(e)}`;
   return {
     ...base,
     level: 1,
     title: "緊急地震速報 (予報)",
     changeKey: "forecast",
-    body: `${place ?? "震源は調査中"}${m}${e.assumed ? " (仮定震源)" : ""}`,
+    body: `${place ?? placeName(undefined)}${m}${e.assumed ? " (仮定震源)" : ""}`,
     sticky: false,
     closing: false,
   };
@@ -158,7 +157,7 @@ function quakeNotice(q: Quake, event: SonaeEvent): Notice {
     };
   }
   const max = q.maxInt ? `最大震度${intensityLabel(q.maxInt)} ` : "";
-  const place = q.hypocenter?.name ?? "震源は調査中";
+  const place = quakeName(q);
   const when = q.originTime ? `${jst(q.originTime)} 頃 ` : "";
   const mag = magnitudeText(q);
   return {
@@ -227,7 +226,7 @@ function advisoryNotice(a: Advisory, event: SonaeEvent): Notice {
 }
 
 /**
- * イベントから知らせを作る。知らせないもの (訓練・試験・遠地地震・定例のお知らせ・古すぎるもの) は null。
+ * イベントから通知を作る。知らせないもの (訓練・試験・遠地地震・定例のお知らせ・古すぎるもの) は null。
  */
 export function noticeOf(event: SonaeEvent, now: number): Notice | null {
   if (event.data.status !== "normal") return null;
@@ -319,8 +318,8 @@ export const digestOf = (n: Pick<Notice, "title" | "body" | "changeKey">) =>
     .slice(0, 16);
 
 /**
- * Web Push の Topic。配信サービスがまだ届けていない同じ Topic の知らせを置き換える。
- * 32 文字までの URL セーフな字なので、tag の SHA-256 の頭を使う
+ * Web Push の Topic。配信サービスがまだ届けていない同じ Topic の通知を置き換える。
+ * 32 文字までの URL セーフな字なので、tag の SHA-256 の先頭を使う
  */
 export const topicOf = (tag: string) =>
   new Bun.CryptoHasher("sha256").update(tag).digest("hex").slice(0, 32);

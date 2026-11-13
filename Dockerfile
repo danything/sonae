@@ -7,7 +7,7 @@ ENV NODE_ENV=production
 COPY package.json bun.lock ./
 RUN bun i --frozen-lockfile
 COPY . .
-# 公開のワークフローがコミットを渡す (開いているタブが古い版だと気づくのに使う予定)
+# 公開のワークフローがコミットを渡す (開いているタブが古いバージョンだと気づくのに使う予定)
 ARG APP_VERSION
 ENV APP_VERSION=$APP_VERSION
 RUN bun run build

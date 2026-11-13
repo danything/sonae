@@ -4,7 +4,7 @@
   import { CREDITS, EEW_NOTICE, NOTICE } from "#lib/notice.ts";
 
   /**
-   * **出典と注意** (前の `/about`)。ヘッダーと「その他」のメニューから開く窓。URL の `about=1` で開いたまま共有できる。
+   * **出典と注意**。ヘッダーと「その他」のメニューから開く窓。URL の `about=1` で開いたまま共有できる。
    * 情報源の状況はサイドバー (スマホの形は dock の「⋯」) の「状態」にある。閉じるのは左下の「閉じる」・幕・Esc
    */
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();

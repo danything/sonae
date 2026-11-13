@@ -60,8 +60,7 @@
     // WebGL が無い端末では地図を出さない (一覧で見てもらう)
     const probe = document.createElement("canvas");
     if (!probe.getContext("webgl2") && !probe.getContext("webgl")) {
-      failed =
-        "この端末では地図を出せません (WebGL が使えません)。一覧から見てください。";
+      failed = "WebGL が使えないため、地図を出せません。一覧から見てください。";
       return;
     }
     let disposed = false;
@@ -162,7 +161,7 @@
       );
   });
 
-  // 震度の札・震央の印 (字を描くのに地図用の字体を落とさないよう、DOM の印で置く)
+  // 震度のラベル・震央の印 (字を描くのに地図用の字体を落とさないよう、DOM の印で置く)
   $effect(() => {
     if (!map || !MarkerClass) return;
     const next = sig(
@@ -288,7 +287,7 @@
   .map :global(.maplibregl-ctrl-attrib-button::after) {
     content: none;
   }
-  /* 地図の上の札 (MapLibre が DOM に置くので :global) */
+  /* 地図の上のラベル (MapLibre が DOM に置くので :global) */
   .map :global(.int-label) {
     display: inline-block;
     min-width: 1.9em;

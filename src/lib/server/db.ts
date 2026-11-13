@@ -1,13 +1,13 @@
 /**
  * SQLite (bun:sqlite)。WAL で、`$SONAE_DATA/sonae.db`。ORM は使わず、素の SQL と
- * `PRAGMA user_version` で版を上げる (docs/design.md の 2.5)。
+ * `PRAGMA user_version` でスキーマのバージョンを上げる (docs/design.md の 2.5)。
  */
 
 import { Database } from "bun:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
-/** 版ごとの DDL。足すときは末尾に足し、前のものは変えない */
+/** バージョンごとの DDL。足すときは末尾に足し、前のものは変えない */
 const MIGRATIONS: string[] = [
   `
   -- 受けた原文 (圧縮)。鍵は情報源の中での重複の除去に使う。Wolfx は原文を残さない (body が NULL)
@@ -92,7 +92,7 @@ const MIGRATIONS: string[] = [
   CREATE INDEX sessions_expires ON sessions (expires_at);
   `,
   `
-  -- Web Push の購読 (2.4)。ブラウザごとに 1 つ。subject はログインした人 (IdP の sub)、prefs は知らせの条件 (JSON)。
+  -- Web Push の購読 (2.4)。ブラウザごとに 1 つ。subject はログインした人 (IdP の sub)、prefs は通知の条件 (JSON)。
   -- セッションとは結ばない (ログインが切れても届く)
   CREATE TABLE push_subscriptions (
     endpoint TEXT PRIMARY KEY,

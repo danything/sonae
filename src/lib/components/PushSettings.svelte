@@ -1,6 +1,6 @@
 <script lang="ts">
   /**
-   * Web Push の登録と知らせの条件 (docs/design.md の 2.4)。ヘッダーのナビ (スマホの形は「その他」) の「通知」から開くダイアログ 1 つに閉じる。
+   * Web Push の登録と通知の条件 (docs/design.md の 2.4)。ヘッダーのナビ (スマホの形は「その他」) の「通知」から開くダイアログ 1 つに閉じる。
    * 開け閉めは `open` で持つ (閉じるのは左下の「閉じる」・幕・Esc)。
    * 条件はブラウザ (購読) ごとにサーバーに持つ。サーバーに VAPID の鍵が無いときは、そう出すだけ。
    */
@@ -120,7 +120,7 @@
     try {
       if ((await Notification.requestPermission()) !== "granted") {
         message =
-          "知らせが許可されていません。ブラウザのサイトの設定で許可してください。";
+          "通知が許可されていません。ブラウザのサイトの設定で許可してください。";
         return;
       }
       const sub = await subscribe(info.publicKey);
@@ -175,7 +175,7 @@
         body: JSON.stringify({ endpoint }),
       });
       message = res.ok
-        ? "送りました。届かないときは、端末の知らせの設定を見てください"
+        ? "送りました。届かないときは、端末の通知の設定を見てください。"
         : `送れませんでした (${res.status})`;
     } finally {
       busy = false;

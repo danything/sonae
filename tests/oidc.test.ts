@@ -82,7 +82,7 @@ beforeEach(async () => {
     }
     if (url.endsWith("/keys"))
       return Response.json({ keys: [{ ...jwk, kid: KID }] });
-    throw new Error(`呼ばれるはずのない口: ${url}`);
+    throw new Error(`呼ばれるはずのないエンドポイント: ${url}`);
   }) as typeof fetch;
 });
 afterEach(() => {
@@ -217,7 +217,7 @@ describe("session", () => {
     expect(find(s.id, d, NOW)?.id).toBe(s.id);
   });
 
-  test("前の版 (平文の ID) の控えは、版を上げると捨てる", () => {
+  test("前のバージョン (平文の ID) の控えは、スキーマのバージョンを上げると捨てる", () => {
     const d = new Database(":memory:", { strict: true });
     d.run(
       "CREATE TABLE sessions (id TEXT PRIMARY KEY, subject TEXT NOT NULL, name TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)",

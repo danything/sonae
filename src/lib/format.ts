@@ -1,6 +1,6 @@
 /** 画面の書き方。時刻はいつも日本時間で出す (気象庁の発表に合わせる) */
 
-import type { Hypocenter, Quake } from "./model.ts";
+import type { Hypocenter, Quake, SourceId, Status } from "./model.ts";
 
 const dateTime = new Intl.DateTimeFormat("ja-JP", {
   timeZone: "Asia/Tokyo",
@@ -34,6 +34,8 @@ export const jst = (iso: string | undefined) =>
 /** 「2026/11/13 08:43:12」 */
 export const jstFull = (iso: string | undefined) =>
   valid(iso) ? fullDateTime.format(new Date(iso)) : "—";
+/** 「08:43」(一覧の行の時刻) */
+export const jstTime = (iso: string | undefined) => jstClock(iso).slice(0, 5);
 /** 「08:43:12」 */
 export const jstClock = (iso: string | undefined) =>
   valid(iso) ? clock.format(new Date(iso)) : "—";
@@ -43,6 +45,30 @@ export function depthText(h: Hypocenter | undefined): string {
   return h.depthKm === 0 ? "ごく浅い" : `約 ${h.depthKm} km`;
 }
 
+/** 震源の名前。まだ決まっていなければ「震源は調査中」 */
+export const placeName = (h: Hypocenter | undefined) =>
+  h?.name ?? "震源は調査中";
+
+/** 地震の名前。震源が決まる前 (震度速報だけ) は、震度を観測した最初の地域で「〜 など」 */
+export const quakeName = (q: Pick<Quake, "hypocenter" | "areas">) =>
+  q.hypocenter?.name ??
+  (q.areas[0] ? `${q.areas[0].name} など` : placeName(undefined));
+
+/** 訓練・試験の印 (通常は空) */
+export const STATUS_LABEL: Record<Status, string> = {
+  normal: "",
+  training: "訓練",
+  test: "試験",
+};
+
+/** 情報源の名前 (状態・発表された情報・緊急地震速報の帯) */
+export const SOURCE_LABEL: Record<SourceId, string> = {
+  jma: "気象庁 防災情報 XML",
+  p2p: "P2P地震情報",
+  wolfx: "Wolfx Project",
+};
+
+/** M の書き方 (「M3.5」)。M が無ければ電文の文のまま、それも無ければ「—」 */
 export function magnitudeText(
   q: Pick<Quake, "magnitude" | "magnitudeText">,
 ): string {

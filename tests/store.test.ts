@@ -42,7 +42,7 @@ function dataOf<T>(e: SonaeEvent | undefined): T {
   return e.data as T;
 }
 
-describe("緊急地震速報の版の判定", () => {
+describe("緊急地震速報の新旧の判定", () => {
   const forecast = json("wolfx/made-forecast.json");
   const warning = json("wolfx/made-warning.json");
   const p2pWarning: Record<string, unknown> = {
@@ -111,7 +111,7 @@ describe("緊急地震速報の版の判定", () => {
   });
 });
 
-describe("地震情報の版の判定", () => {
+describe("地震情報の新旧の判定", () => {
   test("震度速報に、同じ地震識別番号の震源要素更新を重ねる", () => {
     const { store } = memoryStore();
     store.ingest(jma("32-35_01_01_100806_VXSE51.xml"));

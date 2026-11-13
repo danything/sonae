@@ -1,5 +1,11 @@
 <script lang="ts">
-  import { depthText, jstClock } from "#lib/format.ts";
+  import {
+    depthText,
+    jstClock,
+    magnitudeText,
+    SOURCE_LABEL,
+    STATUS_LABEL,
+  } from "#lib/format.ts";
   import type { Eew } from "#lib/model.ts";
   import { EEW_NOTICE } from "#lib/notice.ts";
 
@@ -28,7 +34,7 @@
         緊急地震速報 (予報)
       {/if}
       {#if eew.status !== "normal"}
-        <span class="tag">{eew.status === "training" ? "訓練" : "試験"}</span>
+        <span class="tag">{STATUS_LABEL[eew.status]}</span>
       {/if}
     </p>
     {#if !eew.cancelled}
@@ -43,7 +49,7 @@
           震源 {eew.hypocenter.name}・深さ {depthText(eew.hypocenter)}
         {/if}
         {#if eew.magnitude !== undefined}
-          ・M{eew.magnitude.toFixed(1)}
+          ・{magnitudeText(eew)}
         {/if}
         {#if eew.assumed}
           <span class="tag">仮定震源 (震源と M は目安)</span>
@@ -51,9 +57,9 @@
       </p>
     {/if}
     <p class="tiny meta">
-      第 {eew.serial} 報{eew.final ? " (最終報)" : ""}・{jstClock(eew.issuedAt)} 発表・{eew.sources.join(
-        " / ",
-      )}
+      第 {eew.serial} 報{eew.final ? " (最終報)" : ""}・{jstClock(eew.issuedAt)} 発表・{eew.sources
+        .map((s) => SOURCE_LABEL[s])
+        .join("、")}
     </p>
     <p class="tiny meta">{EEW_NOTICE}</p>
   </div>

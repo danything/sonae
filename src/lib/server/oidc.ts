@@ -2,7 +2,7 @@
  * OIDC (認可コードフロー + PKCE) で、sonae を開いてよい人かを確かめる (docs/design.md の 2.6)。
  * noren の src/lib/server/oidc.ts と同じ作り (同じ持ち主のコード) で、ロールを 1 つにしたもの。
  *
- * **ライブラリは入れていない。** 使う口は discovery・authorize・token・jwks の 4 つで、
+ * **ライブラリは入れていない。** 使うエンドポイントは discovery・authorize・token・jwks の 4 つで、
  * 素の fetch と WebCrypto で足りる。通すのは id_token のロール (またはグループ) に
  * OIDC_ROLE (既定 admin。家族と共有するときは family 用のロールに替える) を持つ人だけ。
  *
@@ -311,7 +311,7 @@ export async function verify(
     alg?: unknown;
     kid?: unknown;
   };
-  // none を受けると署名を見ない道ができる。受けるのは RS256 だけ
+  // none を受けると署名を見ない経路ができる。受けるのは RS256 だけ
   if (header.alg !== "RS256")
     throw new Error(`受けられない署名方式です (${header.alg})`);
   if (typeof header.kid !== "string")

@@ -1,7 +1,15 @@
 <script lang="ts">
   import "@anyblades/blades/components/accordion";
 
-  import { depthText, jst, jstFull, magnitudeText } from "#lib/format.ts";
+  import {
+    depthText,
+    jst,
+    jstFull,
+    magnitudeText,
+    quakeName,
+    SOURCE_LABEL,
+    STATUS_LABEL,
+  } from "#lib/format.ts";
   import {
     type AreaIntensity,
     INTENSITIES,
@@ -15,7 +23,7 @@
   import Intensity from "../Intensity.svelte";
 
   /**
-   * 地震の詳しい内容 (前の `/quakes/[id]` の中身)。節は見出しと余白で分け、囲まない
+   * 地震の詳しい内容。節は見出しと余白で分け、囲まない
    */
   let { q }: { q: Quake } = $props();
 
@@ -46,7 +54,7 @@
       magnitudeText(q),
       `深さ ${depthText(q.hypocenter)}`,
       q.foreign ? "遠地地震" : "",
-      q.status === "training" ? "訓練" : q.status === "test" ? "試験" : "",
+      STATUS_LABEL[q.status],
     ].filter(Boolean),
   );
 </script>
@@ -55,7 +63,7 @@
   <header class="head">
     <Intensity int={q.maxInt} size="lg" />
     <div class="grow">
-      <h1 id="detail-title">{q.hypocenter?.name ?? "震源は調査中"}</h1>
+      <h1 id="detail-title">{quakeName(q)}</h1>
       <p class="small muted">{facts.join("・")}</p>
       {#if q.cancelled || q.provisional}
         <p class="tags">
@@ -104,9 +112,7 @@
           {jst(r.reportedAt)}・{KIND[r.kind] ?? r.kind}{r.infoType === "発表"
             ? ""
             : ` (${r.infoType})`}
-          <span class="muted"
-            >・{r.source === "jma" ? "気象庁 XML" : "P2P地震情報"}</span
-          >
+          <span class="muted">・{SOURCE_LABEL[r.source]}</span>
           {#if r.cancelled}<span class="tag">取消済み</span>{/if}
         </li>
       {/each}
