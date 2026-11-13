@@ -311,18 +311,21 @@ export class Pusher {
       topic: topicOf(n.tag),
     });
     // 送れなかったら控えを送る前に戻す。初めての知らせなら控えを消し、次の続報を「初めて」として
-    // 扱う (知らせが一度も出ないことを避ける)。前に届いていたなら、その時の控えに戻す (鳴らし直さない)
+    // 扱う (知らせが一度も出ないことを避ける)。前に届いていたなら、その時の控えに戻す (鳴らし直さない)。
+    // 待つ間に後の続報が控えを書き換えていたら、そちらを残す
     if (r === "error") {
       if (prev) {
         this.db
           .query(
-            "UPDATE push_log SET level = ?, digest = ? WHERE endpoint = ? AND tag = ?",
+            "UPDATE push_log SET level = ?, digest = ? WHERE endpoint = ? AND tag = ? AND digest = ?",
           )
-          .run(prev.level, prev.digest, sub.endpoint, n.tag);
+          .run(prev.level, prev.digest, sub.endpoint, n.tag, digestOf(n));
       } else {
         this.db
-          .query("DELETE FROM push_log WHERE endpoint = ? AND tag = ?")
-          .run(sub.endpoint, n.tag);
+          .query(
+            "DELETE FROM push_log WHERE endpoint = ? AND tag = ? AND digest = ?",
+          )
+          .run(sub.endpoint, n.tag, digestOf(n));
       }
     }
     return r;
