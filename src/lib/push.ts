@@ -124,7 +124,8 @@ export function toNotification(raw: unknown): NotificationShape {
       renotify: p.renotify === true,
       requireInteraction: p.sticky === true,
       timestamp: typeof p.timestamp === "number" ? p.timestamp : Date.now(),
-      icon: "/favicon.svg",
+      // Android の通知は SVG のアイコンを出さないので PNG (tools/icons/build.sh)
+      icon: "/icons/icon-192.png",
       lang: "ja",
       // このサイトの中だけ開く (外の URL を開かせない)
       data: { url: url.startsWith("/") && !url.startsWith("//") ? url : "/" },

@@ -11,6 +11,11 @@
     <meta name="theme-color" content="#0b0c0f" />
     <!-- iPhone・iPad はホーム画面に追加した Web アプリでだけ Web Push が届く (docs/design.md の 2.4) -->
     <link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
+    <!-- iOS のホーム画面のアイコン (SVG は読まないので PNG。tools/icons/build.sh で作る) -->
+    <link
+      rel="apple-touch-icon"
+      href="%sveltekit.assets%/icons/apple-touch-icon.png"
+    />
     <script>
       // 描く前にテーマを当てる (denpa と同じ。保存が無ければ暗いテーマ)。
       // 端末の控えを読めないとき (サイトのデータを止めた Safari などで投げる) も既定のまま
