@@ -215,6 +215,36 @@ describe("津波", () => {
     expect(store.ingest(p2p(later, "p2p-t2"))).toEqual([]);
   });
 
+  test("P2P の 552 には訓練の印が無いので、P2P だけの津波は normal。番号の無い訓練の津波は id で分ける", () => {
+    const { store } = memoryStore();
+    const v = {
+      ...json("p2p/spec-552.json"),
+      issue: { source: "気象庁", time: "2011/03/11 14:49:30", type: "Focus" },
+    };
+    const [a] = store.ingest(p2p(v, "p2p-t1"));
+    expect(dataOf<Tsunami>(a).status).toBe("normal");
+    expect(dataOf<Tsunami>(a).id).toBe("p2p-20110311144930");
+
+    // 地震識別番号の無い訓練の津波 (いまは P2P から来ないが、来たら本番と混ぜない)
+    const items = parseP2p({
+      ...v,
+      issue: { source: "気象庁", time: "2011/03/11 15:49:30", type: "Focus" },
+    }).map((i) =>
+      i.type === "tsunami"
+        ? { ...i, report: { ...i.report, status: "training" as const } }
+        : i,
+    );
+    const [b] = store.ingest({
+      source: "p2p",
+      key: "p2p-t2",
+      code: "552",
+      body: "{}",
+      items,
+    });
+    expect(dataOf<Tsunami>(b).id).toBe("p2p-20110311154930-training");
+    expect(store.tsunamis().map((t) => t.id)).toEqual([dataOf<Tsunami>(a).id]);
+  });
+
   test("取消", () => {
     const { store } = memoryStore();
     const [a] = store.ingest(jma("38-39_03_01_210805_VTSE41.xml"));
