@@ -74,13 +74,13 @@ export const LAYERS: LayerInfo[] = [
     id: "foreign",
     label: "海外の地震",
     on: true,
-    note: "USGS などの新しい 50 件。白い縁の丸で、色は深さ、大きさは M",
+    note: "新しい 50 件。白い縁の丸 (色と大きさは震源と同じ)",
   },
   {
     id: "volcano",
     label: "火山",
     on: true,
-    note: "噴火警戒レベル 2 以上の火山 (受けた噴火警報・予報から) と、選んだ火山の情報の火山。色は気象庁の配色の指針",
+    note: "噴火警戒レベル 2 以上の火山と、選んだ情報の火山",
   },
   { id: "boundaries", label: "区域の境界", on: true },
   {

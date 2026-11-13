@@ -67,7 +67,9 @@
     font-weight: var(--so-weight);
     line-height: 1.4;
   }
+  /* メニューは高さに収めようと縮めるので、説明の字が次の行に重ならないよう縮めない */
   .menu-item.view-item {
+    flex-shrink: 0;
     min-height: 2.5rem;
   }
   @media (pointer: coarse) {
