@@ -631,6 +631,7 @@
         tsunamis={mapTsunamis}
         eews={mapEews}
         {layers}
+        shown={!phone.current || tab === "map"}
       />
     </div>
 
