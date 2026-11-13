@@ -170,30 +170,45 @@ type QuakeReport = {
 ### 2.4 Web Push
 
 **push-bridge は使えない。** memory にある infisical-push-bridge は、Infisical の Webhook を受けて InfisicalSecret の注釈を書き換える仕組みで、ブラウザへの Web Push とは関係が無い (2026-11-02 に撤去済み)。
-ほかの自分のリポジトリにも Web Push の実装は無いので、sonae の中に書く。
+ほかの自分のリポジトリにも Web Push の実装は無いので、sonae の中に書く。鍵の作り方・入れ方と確かめ方は [docs/push.md](push.md)。
 
-| 候補                                                                                     | 版・更新        | ライセンス | 依存                                      | 所見                                                                                      |
-| ---------------------------------------------------------------------------------------- | --------------- | ---------- | ----------------------------------------- | ----------------------------------------------------------------------------------------- |
-| [web-push](https://github.com/web-push-libs/web-push)                                    | 4.0.0 (2026-11) | MPL-2.0    | jws・asn1.js・http_ece・https-proxy-agent | いちばん使われていて、RFC 8291 (aes128gcm)・VAPID の参照実装の扱い。Node の crypto に頼る |
-| [@pushforge/builder](https://www.npmjs.com/package/@pushforge/builder)                   | 2.0.5 (2026-04) | MIT        | なし                                      | WebCrypto だけ。要求を組むだけで送るのは自分の fetch                                      |
-| [@block65/webcrypto-web-push](https://www.npmjs.com/package/@block65/webcrypto-web-push) | 2.0.0 (2026-09) | MIT        | uint8array-extras                         | WebCrypto だけ。利用者が少ない                                                            |
-| 自前 (WebCrypto で RFC 8291 + RFC 8292)                                                  |                 |            | なし                                      | 200 行ほど。暗号の誤りを自分で背負う                                                      |
+| 候補 (2026-11-14 に確かめた)                                                             | 版・更新        | ライセンス | 依存                                       | 暗号化                      | 所見                                                                                                                                          |
+| ---------------------------------------------------------------------------------------- | --------------- | ---------- | ------------------------------------------ | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| [web-push](https://github.com/web-push-libs/web-push)                                    | 4.0.0 (2026-11) | MPL-2.0    | jws・asn1.js・http_ece・https-proxy-agent  | aes128gcm (既定)            | いちばん使われている (週 1400 万)。Node の crypto と https に頼り、CJS の依存 4 つをサーバーに束ねることになる。型は別 (@types は 3.6 のまま) |
+| [@block65/webcrypto-web-push](https://www.npmjs.com/package/@block65/webcrypto-web-push) | 2.0.0 (2026-09) | MIT        | uint8array-extras (sindresorhus、依存なし) | aes128gcm (RFC 8291)        | WebCrypto だけ。要求の頭と本文を組むだけで、送るのは自分の fetch。週 40 万。npm の provenance 付き。本文を 4KB まで詰めて長さを隠す           |
+| [@pushforge/builder](https://www.npmjs.com/package/@pushforge/builder)                   | 2.0.5 (2026-04) | MIT        | なし                                       | **aesgcm** (旧い草案の形式) | WebCrypto だけ。週 13 万。ただし暗号化が RFC 8291 になる前の `aesgcm` で、配信サービスがいつまで受けるか分からない                            |
+| 自前 (WebCrypto で RFC 8291 + RFC 8292)                                                  |                 |            | なし                                       | aes128gcm                   | 200 行ほど。暗号の誤りを自分で背負う                                                                                                          |
 
-**web-push を使う** (MPL-2.0 は AGPL と組み合わせられる)。devDependencies に入れ、Vite がサーバーに束ねる。
-最初の実装の PR で Bun 1.4 の上で暗号化と送信が通ることを確かめ、通らなければ @pushforge/builder に替える。
+**@block65/webcrypto-web-push を使う。** 最初は web-push の予定だったが、Bun の上で Node の https と CJS の依存を束ねるより、WebCrypto と fetch だけで済むほうが distroless の束ね方 (Dockerfile の「実行時の依存は無い」) に素直に合う。
+@pushforge/builder も WebCrypto だけだが、試したところ `Content-Encoding: aesgcm` (RFC 8291 の前の形式) で送るので外した。
+devDependencies に入れ、Vite がサーバーに束ねる。テスト (`tests/push.test.ts`) で、送った本文をブラウザの側の手順 (RFC 8291) で復号できることまで確かめている。
 
-- **鍵:** VAPID の鍵の組は SOPS の Secret (`deploy/secrets.sops.yaml`) に置く。公開鍵は画面に渡す。
-- **購読:** 端末ごとに `push_subscriptions` に、利用者・endpoint・鍵・閾値 (下)・現在地 (地震情報の細分区域のコード) を持つ。送って 404・410 が返ったら消す。
-- **何を知らせるか (端末ごとに選ぶ。括弧は既定):**
-  - 緊急地震速報: 警報 (オン)・予報 (オフ)。予報を選んでも本文に予想震度は書かない。
-  - 地震情報: 最大震度がいくつ以上 (震度 4)、または現在地の地域で震度いくつ以上 (震度 3)。
-  - 津波: 津波注意報以上 (オン)。現在地の予報区に関わらず送る。
-  - 南海トラフ・後発地震注意情報: オン。
-  - 訓練・試験は送らない。
-- **送り方:** 緊急地震速報と津波は `Urgency: high`。`TTL` は緊急地震速報 120 秒 (遅れて届いても意味が無い)、地震情報 1 時間、津波 6 時間。
-  `Topic` に地震識別番号を元にした短い名前を付け、続報で前の知らせを置き換える。Service Worker の `showNotification` も `tag` で同じことをする。
-- **iPhone・iPad:** ホーム画面に追加した Web アプリ (iOS 16.4 以降) でだけ Web Push が届く。設定の画面で案内する。
-- **開いているとき:** SSE で受けたら、音 (短い音を `<audio>` で) と読み上げ (`speechSynthesis`) をする。どちらも端末ごとに切れる。読み上げは見出しだけ。
+- **鍵:** VAPID の秘密鍵 (P-256 の JWK の JSON) を環境変数 `VAPID_PRIVATE_JWK` で受ける。公開鍵は JWK の x・y から作り、`GET /api/push` で画面に渡す。
+  **鍵が無ければ Web Push だけを切る** (登録を受けず、送らない。ほかは普段どおり)。本番は SOPS の Secret (`deploy/secrets.sops.yaml` の `vapid-private-jwk`) を `optional: true` で読む。連絡先 (`VAPID_SUBJECT`) は既定で `PUBLIC_URL`。
+- **購読:** ブラウザごとに `push_subscriptions` に、ログインした人 (IdP の sub)・endpoint・鍵・条件 (下)・ブラウザの名前を持つ。セッションとは結ばない (ログインが切れても届く)。1 人 20 まで。
+  - endpoint はブラウザから来るので、サーバーから任意の宛先へ POST させないよう、主な配信サービス (FCM・Mozilla・Apple・WNS) の https だけ受ける。転送 (3xx) も追わない。
+  - 送って **404・410 が返ったら購読を消す**。ほかの失敗は記録に残すだけ。
+- **登録の口:** 画面はヘッダーの「知らせ」から開くダイアログ 1 つ (`src/lib/components/PushSettings.svelte`)。API は `GET`・`PUT`・`DELETE /api/push` と、試しに送る `POST /api/push/test`。どれもログインが要る (hooks)。
+- **何を知らせるか (ブラウザごとに選ぶ。括弧は既定と、その理由):**
+  - 緊急地震速報: 警報だけ / 予報も / 送らない (**警報だけ**)。警報は強い揺れが来る地域に出るもので、身を守る動きにつながる。予報は日に何度も出ることがあり、鳴りすぎると知らせ自体を切られてしまう。予報を選んでも本文に予想震度は書かない (5 章)。
+  - 地震情報: 最大震度がいくつ以上 (**震度 4**)。震度 4 は「ほとんどの人が驚く」揺れで、家族の安否を気にし始める境目。震度 3 以下は全国で月に何十回もあり、鳴りすぎる。
+  - 現在地の地域 (地震情報の細分区域、**選ばない**) で震度いくつ以上 (**震度 3**)。最大震度の条件に届かなくても、自分の所で揺れたものは知りたいので、1 段下げる。P2P の震度速報には地域のコードが無いので、名前でも見る。
+  - 津波: 注意報以上 / 警報以上 / 大津波警報だけ / 送らない (**注意報以上**)。注意報でも海の中や海岸の近くでは危ないので、現在地の予報区に関わらず送る (旅先や家族の居場所もあるため)。
+  - 南海トラフ地震臨時情報・定例外の解説情報・後発地震注意情報 (**オン**)。めったに出ず、出たら備えを見直すべきもの。
+  - 訓練・試験・遠地地震は送らない。
+  - 持ち主の決定 (2026-11-13、9 章の 4): 既定値はこのまま。
+- **同じ事象で何度も鳴らさない:**
+  - 事象ごとに tag を決める (`eew:<地震識別番号>`・`quake:<地震の id>`・`tsunami:<津波の id>`・`advisory:<id>`)。Service Worker は `showNotification` の `tag` で前の知らせを置き換える。
+  - 購読ごとに、tag へ最後に送った「重さ」(震度の段・津波の区分・警報か予報か) と中身の要約を `push_log` に持つ。
+    初めては鳴らす。**中身が同じなら送らない。重さが上がったら鳴らし直す** (`renotify`)。それ以外の続報 (震源や M が決まった・取消・解除) は、**同じ tag で鳴らさずに置き換える**。
+  - 取消・解除は、前に知らせた購読にだけ送る (知らせていないものの取消は要らない)。
+  - 鳴らすかどうかを決めて控えるところまでは同期でする (続報が続けて来ても二重に鳴らない)。送れなかったら控えを送る前に戻す (初めての知らせなら消して、次の続報を初めてとして扱う)。購読の持ち主が替わったら控えを捨てる。控えは 30 日で捨てる。
+  - Web Push の `Topic` に tag の SHA-256 の頭 32 字を付ける。配信サービスがまだ届けていない前の知らせは、続報で置き換わる。
+  - 起動したときに長期フィードで埋めた昔の電文を鳴らさないよう、事象の時刻から緊急地震速報は 3 分・地震は 1 時間・津波とお知らせは 6 時間を過ぎたものは送らない。
+- **送り方:** 緊急地震速報と津波は `Urgency: high`。`TTL` は緊急地震速報 120 秒 (遅れて届いても意味が無い)、地震情報 1 時間、津波とお知らせ 6 時間。緊急地震速報の警報と津波警報以上は、閉じるまで残す (`requireInteraction`)。
+- **Service Worker** (`src/service-worker/`、SvelteKit が自動で登録): 知らせを出し、押されたらその事象の画面 (`/quakes/<id>`・`/tsunami/<id>`・`/eew`) を開く。開いている画面があればそれを移して前に出す。このサイトの中のパスしか開かない。画面やデータの控え (オフライン) はしない (古い地震情報を出さないため)。型は WebWorker の型で、`bun run check` が別に見る。
+- **iPhone・iPad:** ホーム画面に追加した Web アプリ (iOS 16.4 以降) でだけ Web Push が届く。そのための Web アプリのマニフェスト (`static/manifest.webmanifest`) を置き、ダイアログで案内する。
+- **開いているとき:** SSE で受けたら、音 (短い音を `<audio>` で) と読み上げ (`speechSynthesis`) をする。どちらも端末ごとに切れる。読み上げは見出しだけ (まだ作っていない)。
 
 ### 2.5 保存: SQLite
 
@@ -207,14 +222,14 @@ type QuakeReport = {
 
 **SQLite にする。** WAL で、PVC (`local-path`) の `/data/sonae.db`。ORM は使わず、既存のアプリと同じく素の SQL と `PRAGMA user_version` で版を上げる。
 
-| 表                                            | 中身                                                        | 残す期間 |
-| --------------------------------------------- | ----------------------------------------------------------- | -------- |
-| `raw_messages`                                | 受けた原文 (圧縮)・情報源・鍵 (Atom の id や P2P の id)     | 30 日    |
-| `events`                                      | 正規化したイベントの通し番号と中身 (SSE の `id` はこの番号) | 無期限   |
-| `eews` / `quakes` / `tsunamis` / `advisories` | 2.2 のモデルのいまの状態                                    | 無期限   |
-| `users` / `sessions`                          | ログインした人とセッション                                  |          |
-| `push_subscriptions`                          | 端末ごとの購読と閾値・現在地                                |          |
-| `source_status`                               | 情報源ごとの最後の受信・エラー                              |          |
+| 表                                            | 中身                                                                | 残す期間     |
+| --------------------------------------------- | ------------------------------------------------------------------- | ------------ |
+| `raw_messages`                                | 受けた原文 (圧縮)・情報源・鍵 (Atom の id や P2P の id)             | 30 日        |
+| `events`                                      | 正規化したイベントの通し番号と中身 (SSE の `id` はこの番号)         | 無期限       |
+| `eews` / `quakes` / `tsunamis` / `advisories` | 2.2 のモデルのいまの状態                                            | 無期限       |
+| `users` / `sessions`                          | ログインした人とセッション                                          |              |
+| `push_subscriptions` / `push_log`             | ブラウザごとの購読と知らせの条件 / 事象ごとに最後に送ったもの (2.4) | 控えは 30 日 |
+| `source_status`                               | 情報源ごとの最後の受信・エラー                                      |              |
 
 ### 2.6 認証
 
@@ -329,7 +344,7 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 
 ashi・xool と同じく、リポジトリの `deploy/` を Argo CD が同期する (gitops の ApplicationSet が `deploy/argocd.yaml` を探す)。
 
-- `deploy/`: `argocd.yaml`・`deployment.yaml` (レプリカ 1・Recreate・uid 1000・`/health` のプローブ・`TZ=Asia/Tokyo`)・`service.yaml`・`httproute.yaml` (Cilium Gateway の `doany`、ホスト名 `s.doany.io`)・`pvc.yaml` (`local-path` 1Gi、`dataSourceRef` で VolSync から戻す)・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`networkpolicy.yaml` (外向きは DNS と公開のインターネットだけ)・`secrets.sops.yaml` (`OIDC_CLIENT_SECRET` (Main の共用のもの)・VolSync の restic。VAPID の秘密鍵は Web Push を作るときに足す)。R2 にまだバックアップが無い最初の 1 回は、populator が空の PVC を作る (gitops の recovery/README.md の 6)。`.sops.yaml` はほかのリポジトリと同じ鍵。
+- `deploy/`: `argocd.yaml`・`deployment.yaml` (レプリカ 1・Recreate・uid 1000・`/health` のプローブ・`TZ=Asia/Tokyo`)・`service.yaml`・`httproute.yaml` (Cilium Gateway の `doany`、ホスト名 `s.doany.io`)・`pvc.yaml` (`local-path` 1Gi、`dataSourceRef` で VolSync から戻す)・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`networkpolicy.yaml` (外向きは DNS と公開のインターネットだけ)・`secrets.sops.yaml` (`OIDC_CLIENT_SECRET` (Main の共用のもの)・VolSync の restic。VAPID の秘密鍵 `vapid-private-jwk` は任意で、入れ方は docs/push.md)。R2 にまだバックアップが無い最初の 1 回は、populator が空の PVC を作る (gitops の recovery/README.md の 6)。`.sops.yaml` はほかのリポジトリと同じ鍵。
 - 環境変数 (`deploy/deployment.yaml`): `PUBLIC_URL` と `ORIGIN` (adapter-bun) はどちらも `https://s.doany.io`。`CONNECTION_IDLE_TIMEOUT=255` (既定の 10 秒だと 30 秒ごとの `: ping` を待つ間に SSE が切れる)。`SHUTDOWN_TIMEOUT=5` (SSE は終わらないので長く待たない)。OIDC は docs/entra.md の表のとおり。
 - 外向きの NetworkPolicy は ashi と同じ形 (kube-dns と、プライベートでないアドレス全部)。クラスタに既定で閉じるポリシーは無いので、これが無くても外へは出られる。家の LAN とクラスタの中を閉じるために置く。
 - イメージ: main にマージすると `docker-publish.yml` が `ghcr.io/danything/sonae:<sha>` を作り、`deploy/deployment.yaml` のタグを差し替える PR を作って自分でマージする (`deploy/` ができるまでは何もしない)。
@@ -353,7 +368,7 @@ ashi・xool と同じく、リポジトリの `deploy/` を Argo CD が同期す
      - 震度速報の TargetDateTime は「最初に地震波を自動検知した観測点における地震波の検知時刻」で、分まで有効 (解説資料 Ⅰ-2)。震度速報は地震発生の約 1 分半後に出る ([気象庁の解説](https://www.jma.go.jp/jma/kishou/know/jishin/joho/seisinfo.html))。
      - 地域の重なりで同じ地震とみなす記述は無い。逆に、震度速報に別の地震の震度が混ざる例がある (解説資料の出現例 4)。地域が重なっても同じ地震とは限らない。
    - そのため値は自前のまま。90 秒は、分の切り捨て (最大 59 秒) と検知までの遅れを足しても収まる幅として置いた。実際の電文で外れる例が見つかったら直す。
-6. web-push が Bun の上で動くか (だめなら @pushforge/builder)。
+6. ~~web-push が Bun の上で動くか~~ → @block65/webcrypto-web-push にした (2.4、2026-11-14)。WebCrypto と fetch だけで、Bun の上で RFC 8291 の暗号化が通ることをテストで確かめた。
 7. 区域の GeoJSON の簡略化の度合い (いまは 300m 間隔)。GIS データの更新 (年に 1〜2 回) をどう気づくか (pin-watch の `page-text-gone` で一覧のページを見張る案)。
 8. 原文を残す期間 (いまは 30 日)。
 9. 長周期地震動・推計震度分布を入れる時期。

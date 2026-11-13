@@ -1,0 +1,11 @@
+{
+  // Service Worker は DOM ではなく WebWorker の型で見る (SvelteKit 3 の作法)。
+  // ルートの tsconfig.json からは外してあり、`bun run check` が別に svelte-check をかける
+  "extends": "$app/tsconfig/service-worker",
+  "compilerOptions": {
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "paths": { "#lib/*": ["../lib/*"] }
+  },
+  "include": ["."]
+}
