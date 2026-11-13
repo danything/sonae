@@ -1,7 +1,7 @@
 # Pod の外向きの通信を、DNS と公開のインターネットだけにする (docs/design.md の 8)。
 #
 # 外へ出るのは公開の宛先だけ: 気象庁 (www.data.jma.go.jp の防災情報 XML)・P2P地震情報 (api.p2pquake.net、
-# WebSocket と履歴の API)・Wolfx (ws-api.wolfx.jp)・USGS (earthquake.usgs.gov、海外の地震の GeoJSON)・EMSC (www.seismicportal.eu、海外の地震の WebSocket)・PTWC (www.tsunami.gov、太平洋の津波の Atom)・Entra ID (login.microsoftonline.com、ログインのトークン)・
+# WebSocket と履歴の API)・Wolfx (ws-api.wolfx.jp)・気象庁ホームページ (www.jma.go.jp の bosai、国際津波の JSON とテキスト)・USGS (earthquake.usgs.gov、海外の地震の GeoJSON)・EMSC (www.seismicportal.eu、海外の地震の WebSocket)・PTWC (www.tsunami.gov、太平洋の津波の Atom)・Entra ID (login.microsoftonline.com、ログインのトークン)・
 # Web Push の配信サービス (FCM・Mozilla・Apple・WNS)。地図のタイル (地理院) はブラウザが直接取るので、ここは通らない。
 # クラスタの中と家の LAN には用が無いので、プライベートアドレスは閉じる。受ける側 (Gateway からの HTTP) は絞らない。
 apiVersion: networking.k8s.io/v1

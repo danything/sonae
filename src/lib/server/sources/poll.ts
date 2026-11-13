@@ -13,6 +13,15 @@ import type { SourceId } from "#lib/model.ts";
 import { sleep, StatusTracker, USER_AGENT } from "./retry.ts";
 import type { Incoming, Source, SourceContext } from "./types.ts";
 
+/** 読むときに使える道具。一覧から本文を取りに行く情報源 (気象庁 bosai の国際津波など) が使う */
+export interface PollTools {
+  /** 本文を 1 つ取る (同じ頭を付け、20 秒で諦める)。200 でなければ例外 */
+  fetchText(url: string): Promise<string>;
+  signal: AbortSignal;
+  /** この回で取り残したものがある (次の回も一覧を 304 にせず読み直す) */
+  leftLater(): void;
+}
+
 export interface PollOptions {
   id: SourceId;
   url: string;
@@ -25,7 +34,11 @@ export interface PollOptions {
   /** 付ける要求の頭 (Accept・鍵など) */
   headers?: Record<string, string>;
   /** 受けた本文から、渡すもの (鍵が付いた Incoming) を作る。読めなければ例外を投げる */
-  parse(text: string, url: string): Incoming[];
+  parse(
+    text: string,
+    url: string,
+    tools: PollTools,
+  ): Incoming[] | Promise<Incoming[]>;
   fetch?: typeof fetch;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   log?: (m: string) => void;
@@ -40,6 +53,19 @@ export function pollSource(ctx: SourceContext, o: PollOptions): Source {
   const maxBackoff = Math.max(interval, o.maxBackoffMs ?? 15 * 60_000);
   const gap = o.gapMs ?? 10 * 60_000;
   const cache = new Map<string, { etag?: string; modified?: string }>();
+
+  async function fetchText(url: string, signal?: AbortSignal): Promise<string> {
+    const res = await doFetch(url, {
+      headers: { "user-agent": USER_AGENT, ...o.headers },
+      signal: AbortSignal.any([
+        ...(signal ? [signal] : []),
+        AbortSignal.timeout(20_000),
+      ]),
+      redirect: "follow",
+    });
+    if (!res.ok) throw new Error(`${url} が ${res.status} を返しました`);
+    return res.text();
+  }
 
   async function once(url: string, signal: AbortSignal): Promise<void> {
     const c = cache.get(url) ?? {};
@@ -57,19 +83,29 @@ export function pollSource(ctx: SourceContext, o: PollOptions): Source {
     if (res.status === 304) return;
     if (!res.ok) throw new Error(`${res.status} が返りました`);
     const text = await res.text();
-    const items = o.parse(text, url);
+    let leftover = false;
+    const items = await o.parse(text, url, {
+      fetchText: (u) => fetchText(u, signal),
+      signal,
+      leftLater: () => {
+        leftover = true;
+      },
+    });
     let fresh = false;
     for (const m of items) {
       if (ctx.seen(m.source, m.key)) continue;
       ctx.emit(m);
       fresh = true;
     }
-    // 渡し終えてから控える (途中で失敗したら、次も 304 にならず読み直す)。
+    // 渡し終えてから控える (途中で失敗したら、次も 304 にならず読み直す)。取り残しがあれば控えない
+    // (次の回も一覧を読み直して、取り残しを取りに行く)。
     // 1 日分の URL も同じ控えを使うが、相手が毎分作り直すので、途切れた後に 304 になることはほぼ無い
-    cache.set(url, {
-      etag: res.headers.get("etag") ?? undefined,
-      modified: res.headers.get("last-modified") ?? undefined,
-    });
+    if (leftover) cache.delete(url);
+    else
+      cache.set(url, {
+        etag: res.headers.get("etag") ?? undefined,
+        modified: res.headers.get("last-modified") ?? undefined,
+      });
     status.seen(fresh);
   }
 
