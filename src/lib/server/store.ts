@@ -305,6 +305,10 @@ export class Store {
     return row ? (JSON.parse(row.data) as LongPeriod) : undefined;
   }
 
+  longPeriodOf(eventId: string, status: Status): LongPeriod | undefined {
+    return this.longPeriod(eewKey(eventId, status));
+  }
+
   longPeriods(limit = 50, includeTraining = false): LongPeriod[] {
     return this.db
       .query<{ data: string }, [number]>(

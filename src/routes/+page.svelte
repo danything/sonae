@@ -157,9 +157,13 @@
     grade?: Tsunami["areas"][number]["grade"];
     states: { label: string; tone: "error" | "info" | "" }[];
   }
-  /** 長周期地震動に関する観測情報 (VXSE62) を、地震の id (地震識別番号) で引く */
+  /** 長周期地震動に関する観測情報 (VXSE62) を地震識別番号で引く (P2P で先に受けた地震は id が番号ではないので、id では引かない) */
   const longPeriodOf = (q: Quake | null | undefined) =>
-    q ? snap.longPeriods.find((lp) => lp.id === q.id) : undefined;
+    q?.eventId
+      ? snap.longPeriods.find(
+          (lp) => lp.eventId === q.eventId && lp.status === q.status,
+        )
+      : undefined;
   /** 一覧の行の補足。長周期地震動階級 1 以上を観測した地震だけ */
   function lgText(q: Quake): string {
     const lp = longPeriodOf(q);

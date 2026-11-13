@@ -342,3 +342,17 @@ describe("長周期地震動に関する観測情報", () => {
     expect(noticeOf(e, Date.parse("2020-11-20T17:35:00Z"))).toBeNull();
   });
 });
+
+test("長周期地震動は地震識別番号と状態で引く (P2P で先に受けて id が番号でない地震でも)", () => {
+  const { store } = memoryStore();
+  const xml = fixture("jma/78_01_01_240613_VXSE62.xml");
+  store.ingest({
+    source: "jma",
+    key: "lp",
+    code: "VXSE62",
+    body: xml,
+    items: parseJmaXml(xml, "VXSE62"),
+  });
+  expect(store.longPeriodOf("20201121023300", "normal")?.maxLg).toBe("3");
+  expect(store.longPeriodOf("20201121023300", "training")).toBeUndefined();
+});
