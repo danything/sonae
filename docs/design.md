@@ -44,7 +44,7 @@
 | 気象庁 防災情報 XML の火山 (VFVO50・56)  | 噴火速報・噴火警報・予報                          | 公共データ利用規約 1.0。出典「気象庁ホームページ」、加工したら書く。警報を自分で作らない (気象業務法 23 条)            | 入れた   |
 | 気象庁 防災情報 XML の VXSE56・60        | 地震の活動状況・地震回数の文                      | 同上                                                                                                                   | 入れた   |
 | USGS の GeoJSON フィード                 | 海外の地震                                        | U.S. Public Domain。出典「Credit: U.S. Geological Survey」                                                             | 入れた   |
-| PTWC の Atom (tsunami.gov)               | 太平洋の津波の情報 (米国の参考)                   | public domain。NWS のロゴは商標で使わない。政府の公式の発表のように見せない                                            | これから |
+| PTWC の Atom (tsunami.gov)               | 太平洋の津波の情報 (米国の参考)                   | public domain。NWS のロゴは商標で使わない。政府の公式の発表のように見せない                                            | 入れた   |
 | EMSC Seismic Portal の WebSocket         | 海外の地震 (USGS より速い)                        | CC BY 4.0。サービスの丸ごと・大部分の再配布は書面の許可が要る (広く公開するときは問い合わせる)                         | これから |
 | 気象庁 bosai の国際津波 (pacifictsunami) | 北西太平洋の M6.5 以上の国際津波関連情報 (WEPA40) | 気象庁ホームページの規約 (利用は可)。公式の API ではなく、予告なく変わる。壊れても他に響かない独立したアダプターにする | これから |
 | Wolfx の jma_eqlist                      | P2P地震情報の予備 (気象庁の地震情報)              | Wolfx を使う機能は全員に無料・遅延なし、OriginalText は公開で再配布しない、出典は「Wolfx Project」を固定の 1 か所      | これから |
@@ -119,6 +119,7 @@ interface Source {
 | P2P地震情報 API v2         | WebSocket `wss://api.p2pquake.net/v2/ws`                                                        | 551 地震情報・552 津波予報・554 緊急地震速報の発表検出・556 緊急地震速報 (警報) | IP ごとに 2 接続まで (1 つだけ使う)。同じ情報が何度も届くので `id` で除く。張り直したら `/v2/history?codes=551&codes=552&codes=556` で埋める (60 回/分まで)                                                                         |
 | Wolfx Open API             | WebSocket `wss://ws-api.wolfx.jp/jma_eew`                                                       | 気象庁の緊急地震速報 (予報と警報)                                               | 1 クライアント 1 接続。約 1 分ごとの `heartbeat` に合わせて `ping` を送る。`OriginalText` は受けたら捨てる                                                                                                                          |
 | USGS の GeoJSON フィード   | `https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_hour.geojson` を 60 秒ごとに取る | M4.5 以上の海外の地震                                                           | `Cache-Control: max-age=60` なので 60 秒より短くしない。`If-Modified-Since` を付ける。起動したときと 10 分以上途切れた後に 1 回だけ `4.5_day.geojson` を読む。失敗したら間隔を倍々に空ける (上限 15 分)。鍵は地震の id と更新の時刻 |
+| PTWC の Atom               | `https://www.tsunami.gov/events/xml/PHEBAtom.xml` を 60 秒ごとに取る                            | 太平洋の津波の情報 (いちばん新しい電報 1 つ)                                    | NWS が再試行を 1 分あけるよう求めているので 60 秒より短くしない。`If-Modified-Since` を付ける。鍵は電報の id。電報の本文 (英文) は取りに行かない                                                                                    |
 
 - **緊急地震速報は気象庁の公開フィードに載らない** (公開電文の一覧に「緊急地震速報等、公開されない電文もあります」とある。<https://xml.kishou.go.jp/xmllist.pdf>)。そのため予報と警報を Wolfx から、警報を P2P からも受け、2 つで欠けを補う。どちらも非公式で無保証なので、画面にはそう書く。
 - **張り直し:** 指数のバックオフに揺らぎを足す (1 秒から倍々、上限 30 秒、full jitter)。60 秒つながっていたら間隔を戻す。Wolfx は 90 秒何も来なければ (heartbeat も含めて) 死んだとみなして張り直す。P2P は heartbeat を送ってこず、静かなときは何分も何も来ない (2026-11-13 に実際につないで確かめた) ので、無通信では切らず、切れたことは close で知る。つながるまでは、どちらも 30 秒で諦める。
@@ -180,6 +181,8 @@ type QuakeReport = {
   - 残る危うさ: P2P が訓練の津波を流したら、本番として仮に出る。気象庁の XML (訓練) は状態が違うので重ならず、P2P の仮のものは置き換わらない。訓練は事前に告知されるので、いまはこのままにする。
 
 **お知らせ `Advisory`** — 南海トラフ地震臨時情報 (VYSE50)・関連解説情報 (VYSE51/52)・北海道・三陸沖後発地震注意情報 (VYSE60)・地震・津波に関するお知らせ (VZSE40)・地震の活動状況等に関する情報 (VXSE56)・地震回数に関する情報 (VXSE60)。一覧の種類「お知らせ」に新しい順に並べ、選ぶと本文 (VXSE60 は期間ごとの回数の表) を出す。一覧の上の通知には、VXSE56・60 を出さない (地震回数は活動が続く間に何度も出るため)。
+
+米国の太平洋津波警報センター (PTWC) の電報も `Advisory` (code は `PTWC`、`source` は `ptwc`) にして、お知らせの一覧に出す。持つのはフィードの要約 (種類・地域・規模・位置) と電報のページへのリンクで、英文の電報そのものは取りに行かない。米国の参考の情報なので、一覧の上の通知には出さず、知らせない。詳しい内容には「気象庁の発表ではない。日本の沿岸の津波は気象庁の津波の情報を確かめる」と書く。
 見出しと本文と種類 (調査中・巨大地震警戒・巨大地震注意・調査終了など) を持つ。VYSE50/60 の識別番号は物理的な意味を持たない任意の番号。
 
 **海外の地震 `ForeignQuake`** — USGS などの海外の機関の地震。機関ごとの発表 (`ForeignReport`: 機関・その機関の id・時刻・位置・深さ・M・場所・ページ) を、同じ地震ごとに 1 つにまとめる。
@@ -465,7 +468,7 @@ ashi・xool と同じく、リポジトリの `deploy/` を Argo CD が同期す
 - 外向きの NetworkPolicy は ashi と同じ形 (kube-dns と、プライベートでないアドレス全部)。クラスタに既定で閉じるポリシーは無いので、これが無くても外へは出られる。家の LAN とクラスタの中を閉じるために置く。
 - イメージ: main にマージすると `docker-publish.yml` が `ghcr.io/danything/sonae:<sha>` を作り、`deploy/deployment.yaml` のタグを差し替える PR を作って自分でマージする (`deploy/` ができるまでは何もしない)。
 - 実行のイメージは `oven/bun:<ver>-distroless` (シェル無し・uid 1000)。
-- 外への接続は気象庁・P2P・Wolfx・USGS (earthquake.usgs.gov)・Entra ID・Web Push の配信サービス (FCM・Mozilla・Apple・WNS) だけ。気象庁のフィードは 1 日 1440 回の条件付きの取得で、ほとんどが 304 なので、帯域の上限 (10GB/日) には遠い。
+- 外への接続は気象庁・P2P・Wolfx・USGS (earthquake.usgs.gov)・PTWC (www.tsunami.gov)・Entra ID・Web Push の配信サービス (FCM・Mozilla・Apple・WNS) だけ。気象庁のフィードは 1 日 1440 回の条件付きの取得で、ほとんどが 304 なので、帯域の上限 (10GB/日) には遠い。
 
 ## 9. 未決の点
 

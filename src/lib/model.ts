@@ -9,7 +9,8 @@ export type Status = "normal" | "training" | "test";
 /** 海外の地震の情報源 (docs/design.md の 2.2「海外の地震」) */
 export type ForeignSource = "usgs" | "emsc" | "geonet" | "cwa";
 
-export type SourceId = "jma" | "p2p" | "wolfx" | ForeignSource;
+export type SourceId =
+  "jma" | "p2p" | "wolfx" | ForeignSource | "ptwc" | "jma-bosai";
 
 /** 震度の階級。気象庁の XML の書き方 (`5-` は 5 弱) に合わせる */
 export const INTENSITIES = [
@@ -294,7 +295,21 @@ export interface LongPeriod {
 export interface Advisory {
   id: string;
   code:
-    "VYSE50" | "VYSE51" | "VYSE52" | "VYSE60" | "VZSE40" | "VXSE56" | "VXSE60";
+    | "VYSE50"
+    | "VYSE51"
+    | "VYSE52"
+    | "VYSE60"
+    | "VZSE40"
+    | "VXSE56"
+    | "VXSE60"
+    /** 米国の太平洋津波警報センター (PTWC) の津波の情報 */
+    | "PTWC"
+    /** 気象庁の国際津波関連情報 (北西太平洋) */
+    | "WEPA40";
+  /** 気象庁の防災情報 XML 以外から来たとき、その情報源 */
+  source?: "ptwc" | "jma-bosai";
+  /** 元の電報のページ (英文など) */
+  url?: string;
   /** 地震回数 (VXSE60)。期間ごとの回数と、そのうち震度 1 以上の回数 */
   counts?: EarthquakeCount[];
   /** 次の発表の予定 (VXSE60 の NextAdvisory) */
@@ -323,9 +338,9 @@ export interface EarthquakeCount {
   felt?: number;
 }
 
-/** 一覧の上に通知の形で出すお知らせ (地震回数・活動状況の情報は、お知らせの一覧にだけ出す) */
+/** 一覧の上に通知の形で出すお知らせ (南海トラフ等と地震・津波に関するお知らせ。地震回数・活動状況・国際津波の情報は、お知らせの一覧にだけ出す) */
 export const isPinnedAdvisory = (a: Pick<Advisory, "code">) =>
-  a.code !== "VXSE56" && a.code !== "VXSE60";
+  a.code.startsWith("VYSE") || a.code === "VZSE40";
 
 /**
  * 噴火警報・予報 (VFVO50) と噴火速報 (VFVO56) の 1 つの報。一覧には報ごとに並べる。

@@ -29,6 +29,15 @@
     {/if}
   </header>
 
+  {#if a.code === "PTWC" || a.code === "WEPA40"}
+    <p class="small">
+      {a.code === "PTWC"
+        ? "米国の太平洋津波警報センター (PTWC) が出した参考の情報で、気象庁の発表ではありません。"
+        : "気象庁が各国の機関に向けて出す国際津波関連情報 (北西太平洋) で、日本の沿岸の津波予報ではありません。"}
+      日本の沿岸の津波の警報・注意報・予報は、気象庁の津波の情報を確かめてください。
+    </p>
+  {/if}
+
   {#if a.headline}
     <p class="small text">{a.headline}</p>
   {/if}
@@ -62,6 +71,13 @@
   {/if}
   {#if a.next}
     <p class="small muted">{a.next}</p>
+  {/if}
+  {#if a.url}
+    <p class="small">
+      <a href={a.url} target="_blank" rel="noopener noreferrer"
+        >元の電報 (英文) を開く</a
+      >
+    </p>
   {/if}
 </div>
 
