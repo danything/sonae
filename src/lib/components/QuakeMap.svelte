@@ -44,7 +44,8 @@
 
   let container = $state<HTMLDivElement>();
   let map = $state<MapLibreMap | undefined>();
-  let failed = $state(false);
+  /** 地図を出せない理由 (出せるときは空) */
+  let failed = $state("");
   let MarkerClass: typeof Marker | undefined;
   let points: Record<string, [number, number]> = {};
   /** 名前 → 細分区域のコード (P2P は名前だけで来る) */
@@ -55,7 +56,8 @@
     // WebGL が無い端末では地図を出さない (一覧で見てもらう)
     const probe = document.createElement("canvas");
     if (!probe.getContext("webgl2") && !probe.getContext("webgl")) {
-      failed = true;
+      failed =
+        "この端末では地図を出せません (WebGL が使えません)。一覧から見てください。";
       return;
     }
     let disposed = false;
@@ -91,10 +93,13 @@
       });
     })().catch((err: unknown) => {
       console.warn(`地図を開けませんでした: ${err}`);
-      failed = true;
+      failed =
+        "地図を読み込めませんでした。つながりを確かめて、読み込み直してください。";
     });
     return () => {
       disposed = true;
+      paintedSig = "";
+      markedSig = "";
       for (const m of markers) m.remove();
       markers = [];
       created?.remove();
@@ -114,9 +119,28 @@
     }
   });
 
+  /**
+   * 中身が変わったときだけ描き直す。画面は 10 秒ごとに時刻を進めて並びを作り直すので、
+   * 並びが替わっただけで描き直すと、印の脈打ちが繰り返し始まり、要らない描き直しも増える
+   */
+  const sig = (...parts: unknown[]) => JSON.stringify(parts);
+  const eewSig = (es: Eew[]) =>
+    es.map((e) => [e.eventId, e.serial, e.cancelled, e.warnAreas.length]);
+  let paintedSig = "";
+  let markedSig = "";
+
   // 震度の色・津波の線・緊急地震速報の地域・震源の点
   $effect(() => {
     if (!map) return;
+    const next = sig(
+      quake?.id,
+      quake?.updatedAt,
+      eewSig(eews),
+      tsunamis.map((t) => [t.id, t.updatedAt]),
+      quakes.slice(0, 50).map((q) => [q.id, q.updatedAt]),
+    );
+    if (next === paintedSig) return;
+    paintedSig = next;
     map.setPaintProperty(
       "quake-fill",
       "fill-color",
@@ -138,6 +162,16 @@
   // 震度の札・震央の印 (字を描くのに地図用の字体を落とさないよう、DOM の印で置く)
   $effect(() => {
     if (!map || !MarkerClass) return;
+    const next = sig(
+      quake?.id,
+      quake?.updatedAt,
+      eewSig(eews),
+      layers.intensity,
+      layers.hypocenters,
+      layers.eew,
+    );
+    if (next === markedSig) return;
+    markedSig = next;
     for (const m of markers) m.remove();
     markers = [];
     if (layers.intensity && quake) {
@@ -216,9 +250,7 @@
 </script>
 
 {#if failed}
-  <p class="panel muted">
-    この端末では地図を出せません (WebGL が使えません)。一覧から見てください。
-  </p>
+  <p class="panel muted">{failed}</p>
 {:else}
   <div class="map" bind:this={container} role="region" aria-label="地図"></div>
 {/if}
