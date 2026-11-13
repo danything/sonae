@@ -141,6 +141,17 @@ const MIGRATIONS: string[] = [
   CREATE INDEX volcanoes_series ON volcanoes (series, reported_at);
   CREATE INDEX volcanoes_reported ON volcanoes (reported_at);
   `,
+  `
+  -- 海外の地震 (USGS・EMSC・GeoNet・CWA をまとめたもの)。sources は「 機関:id 」を並べたもの (同じ発表を引く)
+  CREATE TABLE foreign_quakes (
+    id TEXT PRIMARY KEY,
+    origin_time TEXT NOT NULL,
+    sources TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    data TEXT NOT NULL
+  );
+  CREATE INDEX foreign_quakes_origin ON foreign_quakes (origin_time);
+  `,
 ];
 
 export function openDb(path: string): Database {

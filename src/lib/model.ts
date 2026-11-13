@@ -6,7 +6,10 @@
 /** 通常 / 訓練 / 試験。通常以外は保存するが知らせず、一覧では既定で隠す */
 export type Status = "normal" | "training" | "test";
 
-export type SourceId = "jma" | "p2p" | "wolfx";
+/** 海外の地震の情報源 (docs/design.md の 2.2「海外の地震」) */
+export type ForeignSource = "usgs" | "emsc" | "geonet" | "cwa";
+
+export type SourceId = "jma" | "p2p" | "wolfx" | ForeignSource;
 
 /** 震度の階級。気象庁の XML の書き方 (`5-` は 5 弱) に合わせる */
 export const INTENSITIES = [
@@ -422,8 +425,114 @@ export function latestPerVolcano(reports: Volcano[]): Volcano[] {
   return out;
 }
 
+/** 海外の機関の 1 つの地震の発表 (いまの姿。続報が来たら置き換える) */
+export interface ForeignReport {
+  source: ForeignSource;
+  /** その機関の地震の id */
+  sourceId: string;
+  /** その機関の地震のページ */
+  url?: string;
+  originTime: string;
+  lat: number;
+  lon: number;
+  depthKm?: number;
+  magnitude?: number;
+  /** M の種類 (mww・mb など) */
+  magType?: string;
+  /** その機関の書いた場所 (英語のことが多い) */
+  place: string;
+  /** その機関が付けた津波の印 (USGS の tsunami。津波の予報ではない) */
+  tsunami?: boolean;
+  /** その機関が最後に直した時刻 */
+  updatedAt?: string;
+}
+
+/**
+ * 海外の地震。同じ地震を幾つかの機関が出すので、時刻・位置・M の近いものを 1 つにまとめる
+ * (`sameForeignQuake`)。いまの姿は、機関の順 (`FOREIGN_ORDER`) で先のものから採る
+ */
+export interface ForeignQuake {
+  /** `<最初に受けた機関>-<その機関の id>` */
+  id: string;
+  originTime: string;
+  lat: number;
+  lon: number;
+  depthKm?: number;
+  magnitude?: number;
+  magType?: string;
+  place: string;
+  tsunami: boolean;
+  reports: ForeignReport[];
+  updatedAt: string;
+}
+
+/** いまの姿に採る機関の順。地元の機関 (台湾・ニュージーランド) を先に、速報の EMSC を後に */
+export const FOREIGN_ORDER: ForeignSource[] = ["cwa", "geonet", "usgs", "emsc"];
+
+/** 同じ地震とみなす近さ: 発生の時刻 60 秒・震央 150 km・M 1.0 (どちらかに M が無ければ見ない) */
+export const FOREIGN_MATCH = { ms: 60_000, km: 150, mag: 1.0 } as const;
+
+/** 2 点の距離 (km、球面) */
+export function distanceKm(
+  a: { lat: number; lon: number },
+  b: { lat: number; lon: number },
+): number {
+  const r = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * r;
+  const dLon = (b.lon - a.lon) * r;
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLon / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+/** 2 つの発表が同じ地震か (時刻・位置・M の近さ) */
+export function sameForeignQuake(
+  a: Pick<ForeignReport, "originTime" | "lat" | "lon" | "magnitude">,
+  b: Pick<ForeignReport, "originTime" | "lat" | "lon" | "magnitude">,
+): boolean {
+  const dt = Math.abs(Date.parse(a.originTime) - Date.parse(b.originTime));
+  if (!(dt <= FOREIGN_MATCH.ms)) return false;
+  if (distanceKm(a, b) > FOREIGN_MATCH.km) return false;
+  if (a.magnitude !== undefined && b.magnitude !== undefined)
+    return Math.abs(a.magnitude - b.magnitude) <= FOREIGN_MATCH.mag;
+  return true;
+}
+
+/** 発表の並びから、いまの姿を組む (機関の順で先のものの値を採る) */
+export function foreignFromReports(
+  id: string,
+  reports: ForeignReport[],
+  updatedAt: string,
+): ForeignQuake {
+  const sorted = [...reports].sort(
+    (a, b) => FOREIGN_ORDER.indexOf(a.source) - FOREIGN_ORDER.indexOf(b.source),
+  );
+  const main = sorted[0];
+  if (!main) throw new Error("発表がありません");
+  return {
+    id,
+    originTime: main.originTime,
+    lat: main.lat,
+    lon: main.lon,
+    depthKm: main.depthKm,
+    magnitude: main.magnitude,
+    magType: main.magType,
+    place: main.place,
+    tsunami: reports.some((r) => r.tsunami === true),
+    reports: sorted,
+    updatedAt,
+  };
+}
+
 export type EventType =
-  "eew" | "quake" | "tsunami" | "advisory" | "longperiod" | "volcano";
+  | "eew"
+  | "quake"
+  | "tsunami"
+  | "advisory"
+  | "longperiod"
+  | "volcano"
+  | "foreign";
 
 /** SSE と DB の events に載る 1 件。中身はその時点のまるごとの姿 */
 export type SonaeEvent =
@@ -432,7 +541,8 @@ export type SonaeEvent =
   | { seq: number; type: "tsunami"; data: Tsunami }
   | { seq: number; type: "advisory"; data: Advisory }
   | { seq: number; type: "volcano"; data: Volcano }
-  | { seq: number; type: "longperiod"; data: LongPeriod };
+  | { seq: number; type: "longperiod"; data: LongPeriod }
+  | { seq: number; type: "foreign"; data: ForeignQuake };
 
 export interface SourceStatus {
   id: SourceId;

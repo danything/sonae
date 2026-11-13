@@ -18,6 +18,7 @@
   import AdvisoryDetail from "#lib/components/detail/AdvisoryDetail.svelte";
   import DetailBar from "#lib/components/detail/DetailBar.svelte";
   import EewDetail from "#lib/components/detail/EewDetail.svelte";
+  import ForeignDetail from "#lib/components/detail/ForeignDetail.svelte";
   import QuakeDetail from "#lib/components/detail/QuakeDetail.svelte";
   import TsunamiDetail from "#lib/components/detail/TsunamiDetail.svelte";
   import VolcanoDetail from "#lib/components/detail/VolcanoDetail.svelte";
@@ -51,6 +52,7 @@
   import {
     type Advisory,
     type Eew,
+    type ForeignQuake,
     isPinnedAdvisory,
     isTsunamiActive,
     isUrgentAdvisory,
@@ -140,6 +142,11 @@
       ),
     ),
   );
+  const foreigns = $derived(
+    snap.foreignQuakes.filter((x) =>
+      matches(query, x.place, ...x.reports.map((r) => r.place)),
+    ),
+  );
   const infos = $derived(
     snap.advisories.filter((a) =>
       matches(query, a.title, a.headline, a.serialName, a.text),
@@ -151,6 +158,7 @@
     eew: eews.length,
     volcano: volcanoes.length,
     info: infos.length,
+    foreign: foreigns.length,
   });
 
   const quakeTime = (q: Quake) => q.originTime ?? q.updatedAt;
@@ -176,6 +184,11 @@
           day: g.day,
           rows: g.items.map((x) => volcanoRow(x)),
         }));
+      case "foreign":
+        return groupByDay(foreigns, (x) => x.originTime).map((g) => ({
+          day: g.day,
+          rows: g.items.map((x) => foreignRow(x)),
+        }));
       case "info":
         return groupByDay(infos, (a) => a.reportedAt).map((g) => ({
           day: g.day,
@@ -183,6 +196,23 @@
         }));
     }
   });
+  function foreignRow(x: ForeignQuake): RowData {
+    return {
+      key: x.id,
+      href: selectHref(params, "foreign", x.id),
+      current: v.selected?.kind === "foreign" && v.selected.id === x.id,
+      time: jstTime(x.originTime),
+      title: x.place || "場所は不明",
+      meta: [
+        x.magnitude === undefined ? "" : `M${x.magnitude.toFixed(1)}`,
+        x.depthKm === undefined ? "" : `深さ 約 ${Math.round(x.depthKm)} km`,
+        x.reports.map((r) => r.source.toUpperCase()).join("・"),
+      ]
+        .filter(Boolean)
+        .join("・"),
+      states: [],
+    };
+  }
   function infoRow(a: Advisory): RowData {
     return {
       key: a.id,
@@ -367,6 +397,12 @@
       ? (snap.volcanoes.find((x) => x.id === v.selected?.id) ?? data.volcano)
       : null,
   );
+  const selForeign = $derived(
+    v.selected?.kind === "foreign"
+      ? (snap.foreignQuakes.find((x) => x.id === v.selected?.id) ??
+          data.foreign)
+      : null,
+  );
   const selInfo = $derived(
     v.selected?.kind === "info"
       ? (snap.advisories.find((a) => a.id === v.selected?.id) ?? data.advisory)
@@ -435,7 +471,9 @@
             ? dayKey(selVolcano.reportedAt)
             : selInfo
               ? dayKey(selInfo.reportedAt)
-              : picked,
+              : selForeign
+                ? dayKey(selForeign.originTime)
+                : picked,
   );
   async function pickDay(day: string) {
     picked = day;
@@ -518,7 +556,9 @@
             ? `${selVolcano.title} ${jst(selVolcano.reportedAt)} - sonae`
             : selInfo
               ? `${selInfo.title} ${jst(selInfo.reportedAt)} - sonae`
-              : `${KIND_LABEL[v.kind]} - sonae`,
+              : selForeign
+                ? `${selForeign.place} ${jst(selForeign.originTime)} - sonae`
+                : `${KIND_LABEL[v.kind]} - sonae`,
   );
   const user = $derived(data.user);
 </script>
@@ -705,6 +745,8 @@
           <EewDetail e={selEew} />
         {:else if selVolcano}
           <VolcanoDetail v={selVolcano} />
+        {:else if selForeign}
+          <ForeignDetail q={selForeign} />
         {:else if selInfo}
           <AdvisoryDetail a={selInfo} />
         {:else}
@@ -825,6 +867,8 @@
         {layers}
         volcanoes={snap.volcanoLevels}
         volcano={selVolcano}
+        foreign={snap.foreignQuakes}
+        foreignQuake={selForeign}
         shown={!phone.current || tab === "map"}
       />
     </div>

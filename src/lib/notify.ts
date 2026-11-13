@@ -273,6 +273,8 @@ function volcanoNotice(v: Volcano, event: SonaeEvent): Notice {
  * イベントから通知を作る。知らせないもの (訓練・試験・遠地地震・定例のお知らせ・古すぎるもの) は null。
  */
 export function noticeOf(event: SonaeEvent, now: number): Notice | null {
+  // 海外の地震は知らせない (遠地地震と同じ。日本に津波のおそれがあれば気象庁が津波の情報を出す)
+  if (event.type === "foreign") return null;
   if (event.data.status !== "normal") return null;
   let n: Notice;
   switch (event.type) {
@@ -338,6 +340,7 @@ export function matches(n: Notice, prefs: PushPrefs): boolean {
       if (e.data.code === "VFVO56") return true;
       return n.level >= (prefs.volcano === "all" ? 2 : VOLCANO_RESIDENTIAL);
     case "longperiod":
+    case "foreign":
       return false;
   }
 }

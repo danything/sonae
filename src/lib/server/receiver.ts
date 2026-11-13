@@ -13,6 +13,7 @@ import { Pusher, vapidFromEnv } from "./push.ts";
 import { jmaSource } from "./sources/jma.ts";
 import { p2pSource } from "./sources/p2p.ts";
 import type { Incoming, Source, SourceContext } from "./sources/types.ts";
+import { usgsSource } from "./sources/usgs.ts";
 import { wolfxSource } from "./sources/wolfx.ts";
 import { Store } from "./store.ts";
 
@@ -63,7 +64,12 @@ export function startReceiving(): void {
       console.log(`[${s.id}] ${s.state}${why}`);
     },
   };
-  a.sources = [jmaSource(ctx), p2pSource(ctx), wolfxSource(ctx)];
+  a.sources = [
+    jmaSource(ctx),
+    p2pSource(ctx),
+    wolfxSource(ctx),
+    usgsSource(ctx),
+  ];
   for (const s of a.sources) {
     s.run(controller.signal).catch((err: unknown) =>
       console.error(`[${s.id}] 受信が止まりました: ${err}`),
@@ -103,5 +109,5 @@ export function startReceiving(): void {
   // adapter-bun は SIGTERM で HTTP を止めたあと、この合図を出して、イベントループが空くのを待つ。
   // 受信の輪を止めないと、いつまでも終わらない (k8s の入れ替えが遅れる)
   (process as EventEmitter).once("sveltekit:shutdown", () => a.stop?.());
-  console.log("[receiver] 気象庁・P2P地震情報・Wolfx の受信を始めました");
+  console.log("[receiver] 気象庁・P2P地震情報・Wolfx・USGS の受信を始めました");
 }

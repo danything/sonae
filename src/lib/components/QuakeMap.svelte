@@ -14,6 +14,7 @@
   import {
     baseStyle,
     eewFill,
+    foreignFeatures,
     hypocenterFeatures,
     intensityFill,
     intensityLabels,
@@ -26,6 +27,7 @@
   } from "#lib/map/style.ts";
   import {
     type Eew,
+    type ForeignQuake,
     intensityLabel,
     type LongPeriod,
     type Quake,
@@ -46,6 +48,8 @@
     layers,
     volcanoes = [],
     volcano = null,
+    foreign = [],
+    foreignQuake = null,
     shown = true,
   }: {
     quake: Quake | undefined;
@@ -59,6 +63,9 @@
     volcanoes?: Volcano[];
     /** 選んだ火山の報 (寄せる) */
     volcano?: Volcano | null;
+    /** 海外の地震 (点) と、選んだ海外の地震 (震央の × と寄せ先) */
+    foreign?: ForeignQuake[];
+    foreignQuake?: ForeignQuake | null;
     /** 地図が見えているか (スマホの形で一覧の面が上にある間は false) */
     shown?: boolean;
   } = $props();
@@ -168,6 +175,7 @@
       eewSig(eews),
       tsunamis.map((t) => [t.id, t.updatedAt]),
       quakes.slice(0, 50).map((q) => [q.id, q.updatedAt]),
+      foreign.slice(0, 50).map((q) => [q.id, q.updatedAt]),
     );
     if (next === paintedSig) return;
     paintedSig = next;
@@ -194,6 +202,9 @@
       (src as { setData(d: unknown): void }).setData(
         hypocenterFeatures(quakes),
       );
+    const fsrc = map.getSource("foreign");
+    if (fsrc && "setData" in fsrc)
+      (fsrc as { setData(d: unknown): void }).setData(foreignFeatures(foreign));
   });
 
   // 震度のラベル・震央の印 (字を描くのに地図用の字体を落とさないよう、DOM の印で置く)
@@ -203,9 +214,11 @@
       quake?.id,
       quake?.updatedAt,
       eewSig(eews),
+      foreignQuake?.id,
       layers.intensity,
       layers.hypocenters,
       layers.eew,
+      layers.foreign,
     );
     if (next === markedSig) return;
     markedSig = next;
@@ -236,6 +249,14 @@
       markers.push(
         new MarkerClass({ element: el })
           .setLngLat([quake.hypocenter.lon, quake.hypocenter.lat])
+          .addTo(map),
+      );
+    }
+    if (layers.foreign && foreignQuake) {
+      const el = epicenter(`震央 ${foreignQuake.place}`, false);
+      markers.push(
+        new MarkerClass({ element: el })
+          .setLngLat([foreignQuake.lon, foreignQuake.lat])
           .addTo(map),
       );
     }
@@ -318,25 +339,31 @@
       !eew && volcano
         ? volcanoMarks([], volcano, volcanoPoints).find((m) => m.selected)
         : undefined;
+    // 選んだ海外の地震は、日本から遠いことが多いので、寄せずに引いて見せる
+    const fq = !eew && !vm ? foreignQuake : null;
     const key = eew
       ? `eew:${eew.eventId}`
       : vm
         ? `volcano:${volcano?.id}`
-        : `quake:${quake?.id ?? ""}`;
-    const h = eew?.hypocenter ?? (vm ? undefined : quake?.hypocenter);
+        : fq
+          ? `foreign:${fq.id}`
+          : `quake:${quake?.id ?? ""}`;
+    const h = eew?.hypocenter ?? (vm || fq ? undefined : quake?.hypocenter);
     const appeared = shown && !wasShown;
     wasShown = shown;
     const at: [number, number] | undefined = vm
       ? vm.at
-      : h?.lat !== undefined && h.lon !== undefined
-        ? [h.lon, h.lat]
-        : undefined;
+      : fq
+        ? [fq.lon, fq.lat]
+        : h?.lat !== undefined && h.lon !== undefined
+          ? [h.lon, h.lat]
+          : undefined;
     if (!at) return;
     const center: [number, number] = at;
     const away = appeared && !map.getBounds().contains(center);
     if (key === focused && !away) return;
     focused = key;
-    map.jumpTo({ center, zoom: Math.max(map.getZoom(), 5.5) });
+    map.jumpTo({ center, zoom: fq ? 4 : Math.max(map.getZoom(), 5.5) });
   });
 </script>
 

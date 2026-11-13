@@ -8,6 +8,7 @@ import type {
   AreaIntensity,
   AreaLongPeriod,
   Eew,
+  ForeignQuake,
   ObservedIntensity,
   Quake,
   Tsunami,
@@ -41,7 +42,8 @@ export type LayerId =
   | "eew"
   | "faults"
   | "volcano"
-  | "longperiod";
+  | "longperiod"
+  | "foreign";
 
 export interface LayerInfo {
   id: LayerId;
@@ -69,10 +71,16 @@ export const LAYERS: LayerInfo[] = [
   { id: "tsunami", label: "津波の警報・注意報", on: true },
   { id: "eew", label: "緊急地震速報", on: true },
   {
+    id: "foreign",
+    label: "海外の地震",
+    on: true,
+    note: "新しい 50 件。白い縁の丸 (色と大きさは震源と同じ)",
+  },
+  {
     id: "volcano",
     label: "火山",
     on: true,
-    note: "噴火警戒レベル 2 以上の火山 (受けた噴火警報・予報から) と、選んだ火山の情報の火山。色は気象庁の配色の指針",
+    note: "噴火警戒レベル 2 以上の火山と、選んだ情報の火山",
   },
   { id: "boundaries", label: "区域の境界", on: true },
   {
@@ -124,6 +132,7 @@ export function mapVisibility(s: LayerState): Record<string, boolean> {
     "longperiod-line": s.longperiod,
     tsunami: s.tsunami,
     hypocenters: s.hypocenters,
+    foreign: s.foreign,
   };
 }
 
@@ -285,6 +294,27 @@ export function intensityLabels(
     .sort((a, b) => intensityRank(a.int) - intensityRank(b.int));
 }
 
+/** 海外の地震の点の出典 (機関を足したらここにも足す) */
+export const FOREIGN_ATTRIBUTION =
+  '海外の地震: <a href="https://earthquake.usgs.gov/" target="_blank" rel="noopener">Credit: U.S. Geological Survey</a>';
+
+/** 海外の地震の点 (新しい順に最大 n 件)。色は深さ、大きさは M */
+export function foreignFeatures(quakes: ForeignQuake[], n = 50) {
+  return {
+    type: "FeatureCollection" as const,
+    features: quakes.slice(0, n).map((q, i) => ({
+      type: "Feature" as const,
+      properties: {
+        id: q.id,
+        m: q.magnitude ?? 4.5,
+        depth: q.depthKm ?? -1,
+        order: n - i,
+      },
+      geometry: { type: "Point" as const, coordinates: [q.lon, q.lat] },
+    })),
+  };
+}
+
 /** 地図に置く火山の印 1 つ */
 export interface VolcanoMark {
   code: string;
@@ -378,6 +408,11 @@ export function baseStyle(
       "tsunami-areas": {
         type: "geojson",
         data: "/areas/tsunami-areas.geojson",
+      },
+      foreign: {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+        attribution: FOREIGN_ATTRIBUTION,
       },
       hypocenters: {
         type: "geojson",
@@ -487,6 +522,29 @@ export function baseStyle(
           "circle-opacity": 0.8,
           "circle-stroke-color": "rgba(0,0,0,0.6)",
           "circle-stroke-width": 1,
+        },
+        layout: { "circle-sort-key": ["get", "order"] },
+      },
+      {
+        id: "foreign",
+        type: "circle",
+        source: "foreign",
+        paint: {
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["get", "m"],
+            4,
+            5,
+            6,
+            9,
+            9,
+            18,
+          ],
+          "circle-color": depthColorExpr(),
+          "circle-opacity": 0.55,
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 1.5,
         },
         layout: { "circle-sort-key": ["get", "order"] },
       },

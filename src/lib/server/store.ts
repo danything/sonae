@@ -10,6 +10,8 @@ import type {
   Advisory,
   Eew,
   EventType,
+  ForeignQuake,
+  ForeignReport,
   LongPeriod,
   Quake,
   SonaeEvent,
@@ -18,7 +20,11 @@ import type {
   Tsunami,
   Volcano,
 } from "#lib/model.ts";
-import { latestPerVolcano } from "#lib/model.ts";
+import {
+  foreignFromReports,
+  latestPerVolcano,
+  sameForeignQuake,
+} from "#lib/model.ts";
 
 import {
   mergeAdvisory,
@@ -174,6 +180,8 @@ export class Store {
           .run(next.id, next.status, next.reportedAt, JSON.stringify(next));
         return [this.event("advisory", next.id, next)];
       }
+      case "foreign":
+        return this.applyForeign(item.report, now);
       case "volcano":
         return this.applyVolcano(item.volcano, now);
       case "longperiod": {
@@ -198,6 +206,89 @@ export class Store {
       case "other":
         return [];
     }
+  }
+
+  /**
+   * 海外の地震。同じ機関の同じ id の発表は置き換え、無ければ時刻・位置・M の近い地震にまとめる。
+   * 中身が変わらなければイベントを出さない
+   */
+  private applyForeign(r: ForeignReport, now: string): SonaeEvent[] {
+    const key = ` ${r.source}:${r.sourceId} `;
+    const t = Date.parse(r.originTime);
+    if (!Number.isFinite(t)) return [];
+    const candidates = this.db
+      .query<{ data: string }, [string, string, string]>(
+        `SELECT data FROM foreign_quakes
+         WHERE instr(sources, ?) > 0
+            OR datetime(origin_time) BETWEEN datetime(?) AND datetime(?)`,
+      )
+      .all(
+        key,
+        new Date(t - 10 * 60_000).toISOString(),
+        new Date(t + 10 * 60_000).toISOString(),
+      )
+      .map((row) => JSON.parse(row.data) as ForeignQuake);
+    const prev =
+      candidates.find((q) =>
+        q.reports.some(
+          (x) => x.source === r.source && x.sourceId === r.sourceId,
+        ),
+      ) ??
+      candidates.find(
+        (q) =>
+          // 同じ機関の別の地震とは結ばない
+          !q.reports.some((x) => x.source === r.source) &&
+          sameForeignQuake(q, r),
+      );
+    const reports = [
+      ...(prev?.reports.filter(
+        (x) => !(x.source === r.source && x.sourceId === r.sourceId),
+      ) ?? []),
+      r,
+    ];
+    const id = prev?.id ?? `${r.source}-${r.sourceId}`;
+    const next = foreignFromReports(id, reports, now);
+    if (
+      prev &&
+      JSON.stringify({ ...prev, updatedAt: "" }) ===
+        JSON.stringify({ ...next, updatedAt: "" })
+    )
+      return [];
+    this.db
+      .query(
+        `INSERT INTO foreign_quakes (id, origin_time, sources, updated_at, data)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET origin_time = excluded.origin_time,
+           sources = excluded.sources, updated_at = excluded.updated_at,
+           data = excluded.data`,
+      )
+      .run(
+        next.id,
+        next.originTime,
+        ` ${next.reports.map((x) => `${x.source}:${x.sourceId}`).join("  ")} `,
+        next.updatedAt,
+        JSON.stringify(next),
+      );
+    return [this.event("foreign", next.id, next)];
+  }
+
+  foreignQuake(id: string): ForeignQuake | undefined {
+    const row = this.db
+      .query<{ data: string }, [string]>(
+        "SELECT data FROM foreign_quakes WHERE id = ?",
+      )
+      .get(id);
+    return row ? (JSON.parse(row.data) as ForeignQuake) : undefined;
+  }
+
+  /** 新しい順の海外の地震 */
+  foreignQuakes(limit = 100): ForeignQuake[] {
+    return this.db
+      .query<{ data: string }, [number]>(
+        "SELECT data FROM foreign_quakes ORDER BY datetime(origin_time) DESC LIMIT ?",
+      )
+      .all(limit)
+      .map((r) => JSON.parse(r.data) as ForeignQuake);
   }
 
   /**

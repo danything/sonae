@@ -66,6 +66,10 @@ export const SOURCE_LABEL: Record<SourceId, string> = {
   jma: "気象庁 防災情報 XML",
   p2p: "P2P地震情報",
   wolfx: "Wolfx Project",
+  usgs: "USGS (米国地質調査所)",
+  emsc: "EMSC (欧州地中海地震センター)",
+  geonet: "GeoNet (ニュージーランド)",
+  cwa: "中央氣象署 (台湾)",
 };
 
 /** M の書き方 (「M3.5」)。M が無ければ電文の文のまま、それも無ければ「—」 */

@@ -1,6 +1,7 @@
 import type {
   Advisory,
   Eew,
+  ForeignReport,
   LongPeriod,
   QuakeReport,
   SourceId,
@@ -42,6 +43,7 @@ export type Normalized =
   | { type: "tsunami"; report: TsunamiReport }
   | { type: "advisory"; advisory: Omit<Advisory, "updatedAt" | "cancelled"> }
   | { type: "volcano"; volcano: Omit<Volcano, "updatedAt" | "cancelled"> }
+  | { type: "foreign"; report: ForeignReport }
   | { type: "longperiod"; report: LongPeriodReport }
   /** 保存だけする電文 (地震の活動状況・地震回数・長周期地震動など) */
   | { type: "other"; code: string };

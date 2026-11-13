@@ -13,6 +13,7 @@ export const load: LayoutServerLoad = ({ locals }) => {
       quakes: store.quakes(100),
       tsunamis: store.tsunamis(20),
       advisories: store.advisories(50),
+      foreignQuakes: store.foreignQuakes(100),
       volcanoes: store.volcanoes(50),
       volcanoLevels: store.volcanoLevels(),
       longPeriods: store.longPeriods(50),

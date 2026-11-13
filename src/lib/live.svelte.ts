@@ -6,6 +6,7 @@
 import type {
   Advisory,
   Eew,
+  ForeignQuake,
   LongPeriod,
   Quake,
   SonaeEvent,
@@ -21,6 +22,7 @@ export interface Snapshot {
   quakes: Quake[];
   tsunamis: Tsunami[];
   advisories: Advisory[];
+  foreignQuakes: ForeignQuake[];
   volcanoes: Volcano[];
   /** 火山ごとのいまの噴火警報・予報 (地図の火山の印) */
   volcanoLevels: Volcano[];
@@ -52,6 +54,7 @@ export class Live {
   quakes = $state<Quake[]>([]);
   tsunamis = $state<Tsunami[]>([]);
   advisories = $state<Advisory[]>([]);
+  foreignQuakes = $state<ForeignQuake[]>([]);
   volcanoes = $state<Volcano[]>([]);
   volcanoLevels = $state<Volcano[]>([]);
   longPeriods = $state<LongPeriod[]>([]);
@@ -72,6 +75,7 @@ export class Live {
     this.quakes = s.quakes;
     this.tsunamis = s.tsunamis;
     this.advisories = s.advisories;
+    this.foreignQuakes = s.foreignQuakes;
     this.volcanoes = s.volcanoes;
     this.volcanoLevels = s.volcanoLevels;
     this.longPeriods = s.longPeriods;
@@ -88,6 +92,7 @@ export class Live {
       quakes: this.quakes,
       tsunamis: this.tsunamis,
       advisories: this.advisories,
+      foreignQuakes: this.foreignQuakes,
       volcanoes: this.volcanoes,
       volcanoLevels: this.volcanoLevels,
       longPeriods: this.longPeriods,
@@ -133,6 +138,14 @@ export class Live {
           e.data,
           (v) => v.reportedAt,
           50,
+        );
+        return true;
+      case "foreign":
+        this.foreignQuakes = upsert(
+          this.foreignQuakes,
+          e.data,
+          (v) => v.originTime,
+          100,
         );
         return true;
       case "volcano":
@@ -182,6 +195,7 @@ export class Live {
     on("tsunami");
     on("advisory");
     on("volcano");
+    on("foreign");
     on("longperiod");
     es.addEventListener("status", (m) => {
       this.statuses = JSON.parse((m as MessageEvent).data) as SourceStatus[];
