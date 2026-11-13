@@ -112,7 +112,11 @@ export class Live {
     }
   }
 
-  connect(): () => void {
+  /**
+   * `onResync`: 長く切れていて、埋め直しが上限を超えたときに呼ぶ (サーバーが `event: resync` を送る)。
+   * 一覧を取り直す (load を走らせ直し、seed で入れ替える)。
+   */
+  connect(onResync: () => void = () => {}): () => void {
     const es = new EventSource(`/api/stream?after=${this.lastSeq}`);
     this.source = es;
     const on = (type: SonaeEvent["type"]) =>
@@ -131,6 +135,7 @@ export class Live {
     es.addEventListener("status", (m) => {
       this.statuses = JSON.parse((m as MessageEvent).data) as SourceStatus[];
     });
+    es.addEventListener("resync", () => onResync());
     es.addEventListener("open", () => (this.connected = true));
     es.addEventListener("error", () => (this.connected = false));
     const tick = setInterval(() => (this.now = Date.now()), 10_000);

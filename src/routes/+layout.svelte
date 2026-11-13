@@ -1,5 +1,6 @@
 <script lang="ts">
   import { browser } from "$app/env";
+  import { invalidateAll } from "$app/navigation";
   import { page } from "$app/state";
 
   import EewBanner from "#lib/components/EewBanner.svelte";
@@ -15,7 +16,8 @@
   $effect.pre(() => {
     live.seed(data.snapshot);
   });
-  $effect(() => live.connect());
+  // 埋め直しが多すぎると SSE が resync を送ってくる。load を走らせ直して一覧を取り直す
+  $effect(() => live.connect(() => void invalidateAll()));
 
   const eews = $derived(browser ? activeEews(live.eews, live.now) : []);
   const down = $derived(

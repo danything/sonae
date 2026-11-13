@@ -158,6 +158,7 @@ type QuakeReport = {
 **SSE にする。** `GET /api/stream`。
 
 - 各イベントに DB の通し番号を `id:` で付ける。`Last-Event-ID` があれば、それより後を DB から送ってから生の配信に移る。
+  - 埋め直しは 500 件まで。**超えるときは埋め直しを送らず、`event: resync` を送る** (`id:` はいまの最後の番号、`data` は `{"after": 番号}`)。そこから生の配信に移る。ブラウザは受けたら `invalidateAll()` で `load` を走らせ直し、一覧を取り直す。
 - **`s.doany.io` は Cloudflare のプロキシを通したワイルドカードの DNS で配信される** (DNS のレコードは足さない)。Cloudflare のプロキシは、応答の間に 100 秒何も流れないと接続を切り (Proxy Read Timeout)、圧縮やバッファリングで SSE を溜めて届けることがある。そのため:
   - **30 秒ごとにコメント行 (`: ping`) を送る。** Cloudflare の 100 秒、adapter-bun の `CONNECTION_IDLE_TIMEOUT` (Bun の idleTimeout、上限 255 秒)、Gateway の無通信の切断のどれよりも十分短い。同じ間隔で情報源の状況 (`event: status`) も送る。
   - 応答のヘッダーに `Content-Type: text/event-stream`・`Cache-Control: no-cache, no-transform`・`X-Accel-Buffering: no` を付ける (`no-transform` で圧縮を止め、`X-Accel-Buffering` で途中の溜め込みを止める)。

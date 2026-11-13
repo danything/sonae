@@ -14,7 +14,8 @@ export const GET: RequestHandler = ({ request, url }) => {
   const after =
     raw !== null && /^\d+$/.test(raw) ? Number(raw) : store.lastSeq();
   return sseStream({
-    backlog: () => store.eventsAfter(after),
+    backlog: (limit) => store.eventsAfter(after, limit),
+    latestSeq: () => store.lastSeq(),
     subscribe: (fn) => broker.subscribe(fn),
     status: () => sseFrame({ event: "status", data: statuses() }),
     signal: request.signal,

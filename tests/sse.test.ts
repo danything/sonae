@@ -26,6 +26,7 @@ test("埋め直し → 生の配信。番号で重複を除き、ping と状況�
   const ac = new AbortController();
   const res = sseStream({
     backlog: () => [ev(2), ev(3)],
+    latestSeq: () => 3,
     subscribe: (fn) => broker.subscribe(fn),
     status: () => sseFrame({ event: "status", data: [] }),
     signal: ac.signal,
@@ -55,6 +56,7 @@ test("埋め直し → 生の配信。番号で重複を除き、ping と状況�
 test("埋め直しで投げたら、購読を残さずに閉じる", async () => {
   const broker = new Broker();
   const res = sseStream({
+    latestSeq: () => 0,
     backlog: () => {
       throw new Error("DB が読めない");
     },
@@ -64,4 +66,53 @@ test("埋め直しで投げたら、購読を残さずに閉じる", async () =>
   const text = await res.text();
   expect(text).toContain("retry: 5000");
   expect(broker.size).toBe(0);
+});
+
+test("埋め直しが上限を超えたら、送らずに resync を送り、いまの最後から生の配信に移る", async () => {
+  const broker = new Broker();
+  const ac = new AbortController();
+  let asked = 0;
+  const res = sseStream({
+    backlog: (limit) => {
+      asked = limit;
+      return [ev(2), ev(3), ev(4), ev(5)].slice(0, limit);
+    },
+    latestSeq: () => 5,
+    backlogLimit: 3,
+    subscribe: (fn) => broker.subscribe(fn),
+    signal: ac.signal,
+    pingMs: 20,
+  });
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("本文が無い");
+  const first = await readUntil(reader, "event: resync");
+  // 超えたと分かるよう、上限より 1 件多く尋ねる
+  expect(asked).toBe(4);
+  expect(first).toContain('id: 5\nevent: resync\ndata: {"after":5}\n\n');
+  expect(first).not.toContain("event: advisory");
+
+  broker.publish(ev(5)); // resync の番号までは送らない
+  broker.publish(ev(6));
+  const later = await readUntil(reader, ": ping");
+  expect(later).not.toContain("id: 5\n");
+  expect(later).toContain("id: 6\n");
+  ac.abort();
+});
+
+test("上限ちょうどなら、resync は送らずに全部埋め直す", async () => {
+  const ac = new AbortController();
+  const res = sseStream({
+    backlog: (limit) => [ev(2), ev(3), ev(4)].slice(0, limit),
+    latestSeq: () => 4,
+    backlogLimit: 3,
+    subscribe: () => () => {},
+    signal: ac.signal,
+    pingMs: 20,
+  });
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("本文が無い");
+  const text = await readUntil(reader, ": ping");
+  expect(text).not.toContain("resync");
+  expect(text).toContain("id: 4\n");
+  ac.abort();
 });
