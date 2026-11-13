@@ -7,7 +7,7 @@
 
 - 名前は「備え」から。地震を待つのではなく、来たときに慌てないためのもの。
 - [Zero Quake](https://github.com/0Quake/Zero-Quake) の機能を参考にした。コードは読んでも写してもいない (一から書いている)。
-- 地震・津波・火山 (噴火速報・噴火警報) の情報を気象庁 (防災情報 XML)・P2P地震情報・Wolfx Project から、海外の地震を USGS から、太平洋の津波の参考情報を PTWC (米国) から受け、画面には必ず出典と「公式の情報を優先してください」という注意文を出す。気象庁の情報は加工して出しているので、その旨も書く。
+- 地震・津波・火山 (噴火速報・噴火警報) の情報を気象庁 (防災情報 XML)・P2P地震情報・Wolfx Project から、海外の地震を USGS・EMSC から、太平洋の津波の参考情報を PTWC (米国) から受け、画面には必ず出典と「公式の情報を優先してください」という注意文を出す。気象庁の情報は加工して出しているので、その旨も書く。
 
 ## 開発
 
@@ -26,7 +26,7 @@ docker の代わりに `wslc-compose` でもよい。
 手元ではログインを飛ばす (`AUTH_DISABLED=1`、compose.yml)。本番のログインの設定は [docs/entra.md](docs/entra.md)。
 Web Push は VAPID の鍵が無ければ切って動く。鍵の作り方と入れ方は [docs/push.md](docs/push.md)。
 
-起動すると気象庁・P2P地震情報・Wolfx・USGS・PTWC に実際につなぐ。画面だけ触りたいときは `SONAE_RECEIVE=off` で止める。
+起動すると気象庁・P2P地震情報・Wolfx・USGS・PTWC・EMSC に実際につなぐ。画面だけ触りたいときは `SONAE_RECEIVE=off` で止める。
 
 ## ライセンス
 

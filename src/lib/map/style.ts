@@ -296,7 +296,7 @@ export function intensityLabels(
 
 /** 海外の地震の点の出典 (機関を足したらここにも足す) */
 export const FOREIGN_ATTRIBUTION =
-  '海外の地震: <a href="https://earthquake.usgs.gov/" target="_blank" rel="noopener">Credit: U.S. Geological Survey</a>';
+  '海外の地震: <a href="https://earthquake.usgs.gov/" target="_blank" rel="noopener">Credit: U.S. Geological Survey</a> | <a href="https://www.seismicportal.eu" target="_blank" rel="noopener">Credit: EMSC-CSEM SeismicPortal</a> (CC BY 4.0)';
 
 /** 海外の地震の点 (新しい順に最大 n 件)。色は深さ、大きさは M */
 export function foreignFeatures(quakes: ForeignQuake[], n = 50) {

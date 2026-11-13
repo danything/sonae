@@ -72,6 +72,17 @@
           >)
         </li>
         <li>
+          <a href="https://www.seismicportal.eu/" rel="noopener"
+            >EMSC-CSEM SeismicPortal</a
+          >
+          (<a href="https://www.seismicportal.eu/terms.html" rel="noopener"
+            >利用条件</a
+          >、<a
+            href="https://creativecommons.org/licenses/by/4.0/deed.ja"
+            rel="noopener">CC BY 4.0</a
+          >)
+        </li>
+        <li>
           <a href="https://www.tsunami.gov/" rel="noopener"
             >tsunami.gov (PTWC)</a
           >
