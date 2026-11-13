@@ -226,7 +226,7 @@ type QuakeReport = {
   - **家族と共有するときは**、Main に family 用のアプリロールを足し、家族を B2B のゲストとして招待してそのロールを割り当て、`OIDC_ROLE` をそのロールの値にする (コードの変更は要らない)。
   - 設定値は環境変数で受ける: `OIDC_ISSUER` (`https://login.microsoftonline.com/<テナント ID>/v2.0`)・`OIDC_CLIENT_ID`・`OIDC_CLIENT_SECRET`・`OIDC_ROLE`・`OIDC_ROLE_CLAIM`・`OIDC_SCOPE`・`PUBLIC_URL` (`https://s.doany.io`。リダイレクト URI はここから組み、要求の Host を信じない)。3 つ (issuer・client id・secret) が揃わないと、画面は開かない (`/health` だけ答える)。手元の開発だけ、`AUTH_DISABLED=1` でログインを飛ばせる (本番の `NODE_ENV=production` では効かない)。
   - クライアントシークレットは Main の共用のもの。載せるときに `deploy/secrets.sops.yaml` に入れる (ほかのアプリと同じ値)。
-- **セッションは DB に持ち、180 日で、使うたびに延ばす。** 何度もログインさせない。Web Push は購読してあればセッションが切れても届く。
+- **セッションは DB に持ち、180 日で、使うたびに延ばす。** 何度もログインさせない。**ID は Cookie にだけ生の値を置き、DB には SHA-256 (16 進) を持つ** (DB が漏れても、そのままでは成りすませない)。Web Push は購読してあればセッションが切れても届く。
 - ログイン無しで開けるのは `/auth/login`・`/auth/callback`・`/health`・Service Worker と Web アプリのマニフェストだけ。`/auth/logout` は POST だけ。
 
 ## 3. 気象庁 XML の電文の扱い
@@ -314,7 +314,7 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 
 ## 7. テスト
 
-- **単体 (`bun test tests`)**: 電文の読み取り (fixture → 正規化したモデル)、版の判定と重複の除去 (同じ報の二重受信・報数の逆転・取消・訓練)、知らせるかどうかの判定 (閾値・現在地)、SSE の `Last-Event-ID` からの埋め直し。
+- **単体 (`bun test tests`)**: 電文の読み取り (fixture → 正規化したモデル)、版の判定と重複の除去 (同じ報の二重受信・報数の逆転・取消・訓練)、知らせるかどうかの判定 (閾値・現在地)、SSE の `Last-Event-ID` からの埋め直し、hooks の振り分け (ログイン無しで開けるパス・401・ログインへの送り分け・`AUTH_DISABLED`)。
 - **fixture:**
   - 気象庁の[サンプル電文](https://xml.kishou.go.jp/tec_material.html) (`jmaxml_20260917_Samples.zip`、2026-09-17 一部更新) から、使う種別の分だけを `tests/fixtures/jma/` に写す。
     利用条件は気象庁ホームページの利用規約 (公共データ利用規約 第 1.0 版、CC BY 4.0 と互換) で、`tests/fixtures/jma/README.md` に出典「気象庁防災情報 XML フォーマット 技術資料 サンプルデータ (https://xml.kishou.go.jp/tec_material.html)」と規約を書く。中身は変えない (整形からも外す)。足りない場合 (取消と訓練の組など) は自分で作り、ファイル名で分かるようにする。
