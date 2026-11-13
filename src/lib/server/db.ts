@@ -79,6 +79,18 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX sessions_expires ON sessions (expires_at);
   `,
+  `
+  -- セッションの ID は DB に平文で持たず、SHA-256 (16 進) を持つ。前の控えは捨てる (ログインし直し)
+  DROP TABLE sessions;
+  CREATE TABLE sessions (
+    id_hash TEXT PRIMARY KEY,
+    subject TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE INDEX sessions_expires ON sessions (expires_at);
+  `,
 ];
 
 export function openDb(path: string): Database {
