@@ -123,7 +123,7 @@ export class Live {
           this.advisories,
           e.data,
           (v) => v.reportedAt,
-          20,
+          50,
         );
         return true;
       case "longperiod":

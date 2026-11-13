@@ -2,13 +2,13 @@
  * 1 つの画面の「いま何を見ているか」。どれも URL の query に持つので、リンクを送ればそのまま開ける
  * (docs/ui.md の「URL」)。
  *
- * - `k` … 一覧の種類 (`quake` 地震・`tsunami` 津波・`eew` 緊急地震速報・`volcano` 火山)。無ければ地震
- * - `q` / `t` / `e` / `v` … 選んだ地震 (id)・津波 (id)・緊急地震速報 (地震の識別番号)・火山の報 (id)。1 つだけ
+ * - `k` … 一覧の種類 (`quake` 地震・`tsunami` 津波・`eew` 緊急地震速報・`volcano` 火山・`info` お知らせ)。無ければ地震
+ * - `q` / `t` / `e` / `v` / `i` … 選んだ地震 (id)・津波 (id)・緊急地震速報 (地震の識別番号)・火山の報 (id)・お知らせ (id)。1 つだけ
  * - `training=1` … 緊急地震速報の訓練・試験も出す
  * - `about=1` … 「出典と注意」を開く
  */
 
-export const KINDS = ["quake", "tsunami", "eew", "volcano"] as const;
+export const KINDS = ["quake", "tsunami", "eew", "volcano", "info"] as const;
 export type Kind = (typeof KINDS)[number];
 
 export const KIND_LABEL: Record<Kind, string> = {
@@ -16,6 +16,7 @@ export const KIND_LABEL: Record<Kind, string> = {
   tsunami: "津波",
   eew: "緊急地震速報",
   volcano: "火山",
+  info: "お知らせ",
 };
 
 export interface View {
@@ -31,6 +32,7 @@ const SELECT_KEYS = {
   tsunami: "t",
   eew: "e",
   volcano: "v",
+  info: "i",
 } as const satisfies Record<Kind, string>;
 type SelectKey = (typeof SELECT_KEYS)[Kind];
 const SELECT_PARAMS = Object.values(SELECT_KEYS) as SelectKey[];
@@ -65,7 +67,7 @@ export function readView(params: Params): View {
 }
 
 /**
- * いまの query に `patch` を当てたリンク。`null` の鍵は外す。選ぶもの (`q`・`t`・`e`・`v`) は 1 つだけなので、
+ * いまの query に `patch` を当てたリンク。`null` の鍵は外す。選ぶもの (`q`・`t`・`e`・`v`・`i`) は 1 つだけなので、
  * どれかを入れたらほかは外す。既定の値 (`k=quake`) は書かない
  */
 export function viewHref(

@@ -11,6 +11,7 @@ import { XML } from "bun";
 import {
   type AreaIntensity,
   type AreaLongPeriod,
+  type EarthquakeCount,
   type Hypocenter,
   isIntensity,
   isLgClass,
@@ -327,10 +328,31 @@ const ADVISORY_CODES = [
   "VYSE52",
   "VYSE60",
   "VZSE40",
+  "VXSE56",
+  "VXSE60",
 ] as const;
 type AdvisoryCode = (typeof ADVISORY_CODES)[number];
-/** 保存だけする電文 */
-const STORE_ONLY = ["VXSE56", "VXSE60"] as const;
+
+/** 地震回数に関する情報 (VXSE60) の期間ごとの回数と、次の発表の予定 */
+function readEarthquakeCount(body: V): {
+  counts: EarthquakeCount[];
+  next?: string;
+} {
+  const num = (v: string | undefined) => {
+    const n = v === undefined ? Number.NaN : Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  return {
+    counts: children(child(body, "EarthquakeCount"), "Item").map((item) => ({
+      type: attr(item, "type") ?? "",
+      start: textAt(item, "StartTime"),
+      end: textAt(item, "EndTime"),
+      number: num(textAt(item, "Number")),
+      felt: num(textAt(item, "FeltNumber")),
+    })),
+    next: textAt(body, "NextAdvisory"),
+  };
+}
 
 /** 火山: 噴火警報・予報と噴火速報 (docs/design.md の 3 章) */
 const VOLCANO_CODES = ["VFVO50", "VFVO56"] as const;
@@ -434,7 +456,6 @@ export const WANTED_CODES: ReadonlySet<string> = new Set([
   "VTSE52",
   ...ADVISORY_CODES,
   "VXSE62",
-  ...STORE_ONLY,
   ...VOLCANO_CODES,
 ]);
 
@@ -528,7 +549,13 @@ export function parseJmaXml(xml: string, code: string): Normalized[] {
           infoType,
           reportedAt,
           headline: headline ?? "",
-          text: textAt(info, "Text") ?? textAt(body, "Text") ?? "",
+          text:
+            textAt(info, "Text") ??
+            textAt(body, "Text") ??
+            // 地震回数に関する情報は、本文の代わりに付加文がある
+            textAt(body, "Comments/FreeFormComment") ??
+            "",
+          ...(code === "VXSE60" ? readEarthquakeCount(body) : {}),
         },
       },
     ];

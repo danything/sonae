@@ -284,10 +284,18 @@ export interface LongPeriod {
   updatedAt: string;
 }
 
-/** 南海トラフ地震臨時情報・関連解説情報・後発地震注意情報・地震・津波に関するお知らせ */
+/**
+ * 文の情報。南海トラフ地震臨時情報・関連解説情報・後発地震注意情報・地震・津波に関するお知らせ・
+ * 地震の活動状況等に関する情報 (VXSE56)・地震回数に関する情報 (VXSE60)
+ */
 export interface Advisory {
   id: string;
-  code: "VYSE50" | "VYSE51" | "VYSE52" | "VYSE60" | "VZSE40";
+  code:
+    "VYSE50" | "VYSE51" | "VYSE52" | "VYSE60" | "VZSE40" | "VXSE56" | "VXSE60";
+  /** 地震回数 (VXSE60)。期間ごとの回数と、そのうち震度 1 以上の回数 */
+  counts?: EarthquakeCount[];
+  /** 次の発表の予定 (VXSE60 の NextAdvisory) */
+  next?: string;
   eventId: string;
   title: string;
   /** 調査中・巨大地震警戒・巨大地震注意・調査終了など (VYSE50 の InfoSerial) */
@@ -300,6 +308,21 @@ export interface Advisory {
   cancelled: boolean;
   updatedAt: string;
 }
+
+/** 地震回数に関する情報の 1 つの期間 */
+export interface EarthquakeCount {
+  /** 電文のままの種類 (「地震回数」「１時間地震回数」「累積地震回数」) */
+  type: string;
+  start?: string;
+  end?: string;
+  number?: number;
+  /** そのうち震度 1 以上を観測した回数 */
+  felt?: number;
+}
+
+/** 一覧の上に通知の形で出すお知らせ (地震回数・活動状況の情報は、お知らせの一覧にだけ出す) */
+export const isPinnedAdvisory = (a: Pick<Advisory, "code">) =>
+  a.code !== "VXSE56" && a.code !== "VXSE60";
 
 /**
  * 噴火警報・予報 (VFVO50) と噴火速報 (VFVO56) の 1 つの報。一覧には報ごとに並べる。

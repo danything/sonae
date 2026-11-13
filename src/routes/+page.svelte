@@ -15,6 +15,7 @@
   import { alerter } from "#lib/alerter.svelte.ts";
   import AboutDialog from "#lib/components/AboutDialog.svelte";
   import Calendar from "#lib/components/Calendar.svelte";
+  import AdvisoryDetail from "#lib/components/detail/AdvisoryDetail.svelte";
   import DetailBar from "#lib/components/detail/DetailBar.svelte";
   import EewDetail from "#lib/components/detail/EewDetail.svelte";
   import QuakeDetail from "#lib/components/detail/QuakeDetail.svelte";
@@ -48,7 +49,9 @@
   import { live } from "#lib/live.svelte.ts";
   import { type LayerId, type LayerState, readLayers } from "#lib/map/style.ts";
   import {
+    type Advisory,
     type Eew,
+    isPinnedAdvisory,
     isTsunamiActive,
     isUrgentAdvisory,
     type Quake,
@@ -137,11 +140,17 @@
       ),
     ),
   );
+  const infos = $derived(
+    snap.advisories.filter((a) =>
+      matches(query, a.title, a.headline, a.serialName, a.text),
+    ),
+  );
   const counts = $derived<Record<Kind, number>>({
     quake: quakes.length,
     tsunami: tsunamis.length,
     eew: eews.length,
     volcano: volcanoes.length,
+    info: infos.length,
   });
 
   const quakeTime = (q: Quake) => q.originTime ?? q.updatedAt;
@@ -167,8 +176,24 @@
           day: g.day,
           rows: g.items.map((x) => volcanoRow(x)),
         }));
+      case "info":
+        return groupByDay(infos, (a) => a.reportedAt).map((g) => ({
+          day: g.day,
+          rows: g.items.map((a) => infoRow(a)),
+        }));
     }
   });
+  function infoRow(a: Advisory): RowData {
+    return {
+      key: a.id,
+      href: selectHref(params, "info", a.id),
+      current: v.selected?.kind === "info" && v.selected.id === a.id,
+      time: jstTime(a.reportedAt),
+      title: a.serialName ? `${a.title} (${a.serialName})` : a.title,
+      meta: a.headline,
+      states: a.cancelled ? [{ label: "取消", tone: "error" }] : [],
+    };
+  }
 
   interface RowData {
     key: string;
@@ -299,7 +324,10 @@
   const WEEK = 7 * 24 * 60 * 60_000;
   const advisories = $derived(
     snap.advisories.filter(
-      (a) => !a.cancelled && Date.parse(a.reportedAt) > live.now - WEEK,
+      (a) =>
+        isPinnedAdvisory(a) &&
+        !a.cancelled &&
+        Date.parse(a.reportedAt) > live.now - WEEK,
     ),
   );
   const banners = $derived(browser ? activeEews(snap.eews, live.now) : []);
@@ -337,6 +365,11 @@
   const selVolcano = $derived(
     v.selected?.kind === "volcano"
       ? (snap.volcanoes.find((x) => x.id === v.selected?.id) ?? data.volcano)
+      : null,
+  );
+  const selInfo = $derived(
+    v.selected?.kind === "info"
+      ? (snap.advisories.find((a) => a.id === v.selected?.id) ?? data.advisory)
       : null,
   );
   const backHref = $derived(viewHref(params, { ...UNSELECT }));
@@ -400,7 +433,9 @@
           ? dayKey(selEew.issuedAt)
           : selVolcano
             ? dayKey(selVolcano.reportedAt)
-            : picked,
+            : selInfo
+              ? dayKey(selInfo.reportedAt)
+              : picked,
   );
   async function pickDay(day: string) {
     picked = day;
@@ -481,7 +516,9 @@
           ? `緊急地震速報 ${jst(selEew.issuedAt)} - sonae`
           : selVolcano
             ? `${selVolcano.title} ${jst(selVolcano.reportedAt)} - sonae`
-            : `${KIND_LABEL[v.kind]} - sonae`,
+            : selInfo
+              ? `${selInfo.title} ${jst(selInfo.reportedAt)} - sonae`
+              : `${KIND_LABEL[v.kind]} - sonae`,
   );
   const user = $derived(data.user);
 </script>
@@ -668,6 +705,8 @@
           <EewDetail e={selEew} />
         {:else if selVolcano}
           <VolcanoDetail v={selVolcano} />
+        {:else if selInfo}
+          <AdvisoryDetail a={selInfo} />
         {:else}
           <div class="empty-state">
             <p class="bold">この情報はありません</p>
@@ -687,7 +726,7 @@
             {/each}
             {#each volcanoAlerts as x (x.id)}
               <a
-                class="notice warning volcano-alert"
+                class="notice warning notice-link"
                 href={selectHref(params, "volcano", x.id)}
               >
                 <Icon icon={TriangleAlert} />
@@ -703,10 +742,11 @@
               </a>
             {/each}
             {#each advisories as a (a.id)}
-              <section
-                class="notice"
+              <a
+                class="notice notice-link"
                 class:warning={isUrgentAdvisory(a)}
                 class:info={!isUrgentAdvisory(a)}
+                href={selectHref(params, "info", a.id)}
               >
                 <Icon icon={isUrgentAdvisory(a) ? TriangleAlert : Info} />
                 <div>
@@ -714,7 +754,7 @@
                   <p class="small muted">{jst(a.reportedAt)} 発表</p>
                   <p class="small">{a.headline}</p>
                 </div>
-              </section>
+              </a>
             {/each}
           </div>
         {/if}
@@ -1038,15 +1078,15 @@
   .alerts-in-list {
     gap: var(--so-space-2);
   }
-  .volcano-alert {
+  .notice-link {
     color: inherit;
     text-decoration: none;
   }
-  .volcano-alert .small:last-child {
+  .notice-link .small:last-child {
     white-space: pre-line;
   }
   @media (hover: hover) {
-    .volcano-alert:hover {
+    .notice-link:hover {
       background: var(--so-item-hover);
     }
   }
