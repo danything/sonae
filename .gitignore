@@ -7,3 +7,5 @@
 /.svelte-kit/
 /build/
 compose.override.yml
+# svelte-check --tsgo が作る
+.svelte-check/
