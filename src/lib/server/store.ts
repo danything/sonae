@@ -16,7 +16,9 @@ import type {
   SourceId,
   Status,
   Tsunami,
+  Volcano,
 } from "#lib/model.ts";
+import { latestPerVolcano } from "#lib/model.ts";
 
 import {
   mergeAdvisory,
@@ -172,6 +174,8 @@ export class Store {
           .run(next.id, next.status, next.reportedAt, JSON.stringify(next));
         return [this.event("advisory", next.id, next)];
       }
+      case "volcano":
+        return this.applyVolcano(item.volcano, now);
       case "longperiod": {
         const r = item.report;
         const id = eewKey(r.eventId, r.status);
@@ -194,6 +198,46 @@ export class Store {
       case "other":
         return [];
     }
+  }
+
+  /**
+   * 火山の報は 1 つずつ行にする。取消は、同じ一連の情報 (種別と識別番号) のいちばん新しい報に印を付ける
+   * (取り消す報が無ければ、取消の報そのものを取消の印つきで残す)
+   */
+  private applyVolcano(
+    v: Omit<Volcano, "updatedAt" | "cancelled">,
+    now: string,
+  ): SonaeEvent[] {
+    const series = `${v.code}-${v.eventId}`;
+    let next: Volcano = {
+      ...v,
+      cancelled: v.infoType === "取消",
+      updatedAt: now,
+    };
+    if (v.infoType !== "発表") {
+      const row = this.db
+        .query<{ data: string }, [string, string]>(
+          `SELECT data FROM volcanoes WHERE series = ? AND status = ?
+           ORDER BY datetime(reported_at) DESC LIMIT 1`,
+        )
+        .get(series, v.status);
+      const prev = row ? (JSON.parse(row.data) as Volcano) : undefined;
+      if (prev && v.infoType === "取消") {
+        if (prev.cancelled) return [];
+        next = { ...prev, cancelled: true, updatedAt: now };
+      } else if (prev) {
+        // 訂正は前の報を置き換える (同じ id のまま。一覧に 2 つ並べない)
+        next = { ...next, id: prev.id };
+      }
+    }
+    this.db
+      .query(
+        `INSERT INTO volcanoes (id, series, status, reported_at, data) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET reported_at = excluded.reported_at,
+           data = excluded.data`,
+      )
+      .run(next.id, series, next.status, next.reportedAt, JSON.stringify(next));
+    return [this.event("volcano", next.id, next)];
   }
 
   private event(type: EventType, key: string, data: unknown): SonaeEvent {
@@ -348,6 +392,41 @@ export class Store {
       )
       .all(limit)
       .map((r) => JSON.parse(r.data) as Eew);
+  }
+
+  volcano(id: string): Volcano | undefined {
+    const row = this.db
+      .query<{ data: string }, [string]>(
+        "SELECT data FROM volcanoes WHERE id = ?",
+      )
+      .get(id);
+    return row ? (JSON.parse(row.data) as Volcano) : undefined;
+  }
+
+  /** 新しい順の火山の報 */
+  volcanoes(limit = 50, includeTraining = false): Volcano[] {
+    return this.db
+      .query<{ data: string }, [number]>(
+        `SELECT data FROM volcanoes ${includeTraining ? "" : "WHERE status = 'normal'"}
+         ORDER BY datetime(reported_at) DESC LIMIT ?`,
+      )
+      .all(limit)
+      .map((r) => JSON.parse(r.data) as Volcano);
+  }
+
+  /**
+   * 火山ごとの、いまの噴火警報・予報 (受けた中でいちばん新しいもの。取り消されたものは除く)。
+   * 地図の火山の印に使う。受けていない火山 (発表が長く変わっていない火山) は入らない
+   */
+  volcanoLevels(): Volcano[] {
+    const rows = this.db
+      .query<{ data: string }, []>(
+        `SELECT data FROM volcanoes WHERE series LIKE 'VFVO50-%' AND status = 'normal'
+         ORDER BY datetime(reported_at) DESC LIMIT 2000`,
+      )
+      .all()
+      .map((r) => JSON.parse(r.data) as Volcano);
+    return latestPerVolcano(rows);
   }
 
   advisories(limit = 20, includeTraining = false): Advisory[] {

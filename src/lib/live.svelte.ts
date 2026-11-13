@@ -11,7 +11,9 @@ import type {
   SonaeEvent,
   SourceStatus,
   Tsunami,
+  Volcano,
 } from "./model.ts";
+import { latestPerVolcano } from "./model.ts";
 
 export interface Snapshot {
   lastSeq: number;
@@ -19,6 +21,9 @@ export interface Snapshot {
   quakes: Quake[];
   tsunamis: Tsunami[];
   advisories: Advisory[];
+  volcanoes: Volcano[];
+  /** 火山ごとのいまの噴火警報・予報 (地図の火山の印) */
+  volcanoLevels: Volcano[];
   longPeriods: LongPeriod[];
   statuses: SourceStatus[];
 }
@@ -47,6 +52,8 @@ export class Live {
   quakes = $state<Quake[]>([]);
   tsunamis = $state<Tsunami[]>([]);
   advisories = $state<Advisory[]>([]);
+  volcanoes = $state<Volcano[]>([]);
+  volcanoLevels = $state<Volcano[]>([]);
   longPeriods = $state<LongPeriod[]>([]);
   statuses = $state<SourceStatus[]>([]);
   connected = $state(false);
@@ -65,6 +72,8 @@ export class Live {
     this.quakes = s.quakes;
     this.tsunamis = s.tsunamis;
     this.advisories = s.advisories;
+    this.volcanoes = s.volcanoes;
+    this.volcanoLevels = s.volcanoLevels;
     this.longPeriods = s.longPeriods;
     this.statuses = s.statuses;
     this.seeded = true;
@@ -79,6 +88,8 @@ export class Live {
       quakes: this.quakes,
       tsunamis: this.tsunamis,
       advisories: this.advisories,
+      volcanoes: this.volcanoes,
+      volcanoLevels: this.volcanoLevels,
       longPeriods: this.longPeriods,
       statuses: this.statuses,
     };
@@ -124,6 +135,24 @@ export class Live {
           50,
         );
         return true;
+      case "volcano":
+        if (e.data.status !== "normal") return true;
+        this.volcanoes = upsert(
+          this.volcanoes,
+          e.data,
+          (v) => v.reportedAt,
+          50,
+        );
+        // 火山ごとのいまの姿は、新しい報 (取消なら前の報) を足して選び直す
+        this.volcanoLevels = latestPerVolcano(
+          [
+            ...this.volcanoes,
+            ...this.volcanoLevels.filter(
+              (l) => !this.volcanoes.some((v) => v.id === l.id),
+            ),
+          ].sort((a, b) => Date.parse(b.reportedAt) - Date.parse(a.reportedAt)),
+        );
+        return true;
     }
   }
 
@@ -152,6 +181,7 @@ export class Live {
     on("quake");
     on("tsunami");
     on("advisory");
+    on("volcano");
     on("longperiod");
     es.addEventListener("status", (m) => {
       this.statuses = JSON.parse((m as MessageEvent).data) as SourceStatus[];

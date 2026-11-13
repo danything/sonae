@@ -2,19 +2,20 @@
  * 1 つの画面の「いま何を見ているか」。どれも URL の query に持つので、リンクを送ればそのまま開ける
  * (docs/ui.md の「URL」)。
  *
- * - `k` … 一覧の種類 (`quake` 地震・`tsunami` 津波・`eew` 緊急地震速報)。無ければ地震
- * - `q` / `t` / `e` … 選んだ地震 (id)・津波 (id)・緊急地震速報 (地震の識別番号)。1 つだけ
+ * - `k` … 一覧の種類 (`quake` 地震・`tsunami` 津波・`eew` 緊急地震速報・`volcano` 火山)。無ければ地震
+ * - `q` / `t` / `e` / `v` … 選んだ地震 (id)・津波 (id)・緊急地震速報 (地震の識別番号)・火山の報 (id)。1 つだけ
  * - `training=1` … 緊急地震速報の訓練・試験も出す
  * - `about=1` … 「出典と注意」を開く
  */
 
-export const KINDS = ["quake", "tsunami", "eew"] as const;
+export const KINDS = ["quake", "tsunami", "eew", "volcano"] as const;
 export type Kind = (typeof KINDS)[number];
 
 export const KIND_LABEL: Record<Kind, string> = {
   quake: "地震",
   tsunami: "津波",
   eew: "緊急地震速報",
+  volcano: "火山",
 };
 
 export interface View {
@@ -25,11 +26,19 @@ export interface View {
   about: boolean;
 }
 
-const SELECT_KEYS: Record<Kind, string> = {
+const SELECT_KEYS = {
   quake: "q",
   tsunami: "t",
   eew: "e",
-};
+  volcano: "v",
+} as const satisfies Record<Kind, string>;
+type SelectKey = (typeof SELECT_KEYS)[Kind];
+const SELECT_PARAMS = Object.values(SELECT_KEYS) as SelectKey[];
+
+/** 選んだものを外す patch (`viewHref` に渡す) */
+export const UNSELECT = Object.fromEntries(
+  SELECT_PARAMS.map((k) => [k, null]),
+) as Record<SelectKey, null>;
 
 /** 読むだけの問い合わせ (`page.url.searchParams` は書き換えられない形) */
 type Params = Pick<URLSearchParams, "get" | "has" | "toString">;
@@ -56,18 +65,16 @@ export function readView(params: Params): View {
 }
 
 /**
- * いまの query に `patch` を当てたリンク。`null` の鍵は外す。選ぶもの (`q`・`t`・`e`) は 1 つだけなので、
+ * いまの query に `patch` を当てたリンク。`null` の鍵は外す。選ぶもの (`q`・`t`・`e`・`v`) は 1 つだけなので、
  * どれかを入れたらほかは外す。既定の値 (`k=quake`) は書かない
  */
 export function viewHref(
   params: Params,
-  patch: Partial<
-    Record<"k" | "q" | "t" | "e" | "training" | "about", string | null>
-  >,
+  patch: Partial<Record<"k" | SelectKey | "training" | "about", string | null>>,
 ): string {
   const next = new URLSearchParams(params.toString());
-  if (["q", "t", "e"].some((key) => patch[key as "q"] !== undefined))
-    for (const key of ["q", "t", "e"]) next.delete(key);
+  if (SELECT_PARAMS.some((key) => patch[key] !== undefined))
+    for (const key of SELECT_PARAMS) next.delete(key);
   for (const [key, value] of Object.entries(patch)) {
     if (value === null || value === undefined) next.delete(key);
     else next.set(key, value);

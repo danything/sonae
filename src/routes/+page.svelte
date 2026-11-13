@@ -19,6 +19,7 @@
   import EewDetail from "#lib/components/detail/EewDetail.svelte";
   import QuakeDetail from "#lib/components/detail/QuakeDetail.svelte";
   import TsunamiDetail from "#lib/components/detail/TsunamiDetail.svelte";
+  import VolcanoDetail from "#lib/components/detail/VolcanoDetail.svelte";
   import EewBanner from "#lib/components/EewBanner.svelte";
   import Grade from "#lib/components/Grade.svelte";
   import Icon from "#lib/components/Icon.svelte";
@@ -31,6 +32,7 @@
   import StatusList from "#lib/components/StatusList.svelte";
   import TsunamiSummary from "#lib/components/TsunamiSummary.svelte";
   import ViewList from "#lib/components/ViewList.svelte";
+  import VolcanoLevel from "#lib/components/VolcanoLevel.svelte";
   import { activeEews } from "#lib/eew.ts";
   import {
     depthText,
@@ -41,6 +43,7 @@
     placeName,
     quakeName,
     STATUS_LABEL,
+    volcanoKindText,
   } from "#lib/format.ts";
   import { live } from "#lib/live.svelte.ts";
   import { type LayerId, type LayerState, readLayers } from "#lib/map/style.ts";
@@ -52,6 +55,9 @@
     type Tsunami,
     tsunamiGradeLabel,
     tsunamiTop,
+    type Volcano,
+    VOLCANO_RESIDENTIAL,
+    volcanoTop,
   } from "#lib/model.ts";
   import { CREDITS, KMONI_URL, NOTICE } from "#lib/notice.ts";
   import { PHONE_FORM } from "#lib/phone-form.ts";
@@ -71,6 +77,7 @@
     matches,
     readView,
     selectHref,
+    UNSELECT,
     viewHref,
   } from "#lib/view.ts";
 
@@ -119,10 +126,22 @@
   const eews = $derived(
     allEews.filter((e) => matches(query, e.hypocenter?.name, ...e.warnAreas)),
   );
+  const volcanoes = $derived(
+    snap.volcanoes.filter((x) =>
+      matches(
+        query,
+        x.title,
+        x.headline,
+        ...x.volcanoes.map((a) => a.name),
+        ...x.cities,
+      ),
+    ),
+  );
   const counts = $derived<Record<Kind, number>>({
     quake: quakes.length,
     tsunami: tsunamis.length,
     eew: eews.length,
+    volcano: volcanoes.length,
   });
 
   const quakeTime = (q: Quake) => q.originTime ?? q.updatedAt;
@@ -143,6 +162,11 @@
           day: g.day,
           rows: g.items.map((e) => eewRow(e)),
         }));
+      case "volcano":
+        return groupByDay(volcanoes, (x) => x.reportedAt).map((g) => ({
+          day: g.day,
+          rows: g.items.map((x) => volcanoRow(x)),
+        }));
     }
   });
 
@@ -155,7 +179,35 @@
     meta: string;
     quake?: Quake;
     grade?: Tsunami["areas"][number]["grade"];
+    /** 火山の警戒の段のラベル */
+    volcano?: { level: number | undefined; label: string };
     states: { label: string; tone: "error" | "info" | "" }[];
+  }
+  function volcanoRow(x: Volcano): RowData {
+    const flash = x.code === "VFVO56";
+    const first = x.volcanoes[0];
+    const top = volcanoTop(x);
+    return {
+      key: x.id,
+      href: selectHref(params, "volcano", x.id),
+      current: v.selected?.kind === "volcano" && v.selected.id === x.id,
+      time: jstTime(x.eventTime ?? x.reportedAt),
+      title: flash
+        ? `${x.volcanoes.map((a) => a.name).join("・")} 噴火速報`
+        : x.title,
+      meta: flash
+        ? x.headline.replace(/[＜＞]/g, " ").trim()
+        : [first?.condition, x.cities.slice(0, 4).join("、")]
+            .filter(Boolean)
+            .join("・"),
+      volcano: flash
+        ? { level: 5, label: "噴火速報" }
+        : {
+            level: top || undefined,
+            label: first ? volcanoKindText(first.kind) : "火山",
+          },
+      states: x.cancelled ? [{ label: "取消", tone: "error" }] : [],
+    };
   }
   /** 長周期地震動に関する観測情報 (VXSE62) を地震識別番号で引く (P2P で先に受けた地震は id が番号ではないので、id では引かない) */
   const longPeriodOf = (q: Quake | null | undefined) =>
@@ -251,6 +303,17 @@
     ),
   );
   const banners = $derived(browser ? activeEews(snap.eews, live.now) : []);
+  /** 火山: 1 日以内の噴火速報と、いま噴火警報 (レベル 4・5 相当) が出ている火山 */
+  const DAY = 24 * 60 * 60_000;
+  const volcanoAlerts = $derived([
+    ...snap.volcanoes.filter(
+      (x) =>
+        x.code === "VFVO56" &&
+        !x.cancelled &&
+        Date.parse(x.eventTime ?? x.reportedAt) > live.now - DAY,
+    ),
+    ...snap.volcanoLevels.filter((x) => volcanoTop(x) >= VOLCANO_RESIDENTIAL),
+  ]);
 
   // ---- 選んだもの (SSE で続報が来たら差し替える) ----
   const selQuake = $derived(
@@ -271,7 +334,12 @@
       ? (allEews.find((e) => e.eventId === v.selected?.id) ?? data.eew)
       : null,
   );
-  const backHref = $derived(viewHref(params, { q: null, t: null, e: null }));
+  const selVolcano = $derived(
+    v.selected?.kind === "volcano"
+      ? (snap.volcanoes.find((x) => x.id === v.selected?.id) ?? data.volcano)
+      : null,
+  );
+  const backHref = $derived(viewHref(params, { ...UNSELECT }));
 
   // ---- 地図 ----
   const mapQuake = $derived(selQuake ?? snap.quakes[0]);
@@ -330,7 +398,9 @@
         ? dayKey(selTsunami.issuedAt)
         : selEew
           ? dayKey(selEew.issuedAt)
-          : picked,
+          : selVolcano
+            ? dayKey(selVolcano.reportedAt)
+            : picked,
   );
   async function pickDay(day: string) {
     picked = day;
@@ -409,7 +479,9 @@
         ? `津波 ${jst(selTsunami.issuedAt)} - sonae`
         : selEew
           ? `緊急地震速報 ${jst(selEew.issuedAt)} - sonae`
-          : `${KIND_LABEL[v.kind]} - sonae`,
+          : selVolcano
+            ? `${selVolcano.title} ${jst(selVolcano.reportedAt)} - sonae`
+            : `${KIND_LABEL[v.kind]} - sonae`,
   );
   const user = $derived(data.user);
 </script>
@@ -594,6 +666,8 @@
           <TsunamiDetail t={selTsunami} now={live.now} />
         {:else if selEew}
           <EewDetail e={selEew} />
+        {:else if selVolcano}
+          <VolcanoDetail v={selVolcano} />
         {:else}
           <div class="empty-state">
             <p class="bold">この情報はありません</p>
@@ -603,13 +677,30 @@
           </div>
         {/if}
       {:else}
-        {#if activeTsunamis.length > 0 || advisories.length > 0}
+        {#if activeTsunamis.length > 0 || advisories.length > 0 || volcanoAlerts.length > 0}
           <div class="alerts-in-list stack">
             {#each activeTsunamis as t (t.id)}
               <TsunamiSummary
                 tsunami={t}
                 href={selectHref(params, "tsunami", t.id)}
               />
+            {/each}
+            {#each volcanoAlerts as x (x.id)}
+              <a
+                class="notice warning volcano-alert"
+                href={selectHref(params, "volcano", x.id)}
+              >
+                <Icon icon={TriangleAlert} />
+                <div>
+                  <p class="bold">
+                    {x.code === "VFVO56"
+                      ? `噴火速報 ${x.volcanoes.map((a) => a.name).join("・")}`
+                      : x.title}
+                  </p>
+                  <p class="small muted">{jst(x.reportedAt)} 発表</p>
+                  <p class="small">{x.headline}</p>
+                </div>
+              </a>
             {/each}
             {#each advisories as a (a.id)}
               <section
@@ -648,6 +739,11 @@
                       <Intensity int={r.quake?.maxInt} />
                     {:else if v.kind === "tsunami" && r.grade}
                       <Grade grade={r.grade} />
+                    {:else if r.volcano}
+                      <VolcanoLevel
+                        level={r.volcano.level}
+                        label={r.volcano.label}
+                      />
                     {/if}
                   {/snippet}
                   {#snippet tags()}
@@ -687,6 +783,8 @@
         tsunamis={mapTsunamis}
         eews={mapEews}
         {layers}
+        volcanoes={snap.volcanoLevels}
+        volcano={selVolcano}
         shown={!phone.current || tab === "map"}
       />
     </div>
@@ -702,7 +800,7 @@
         {#each KINDS as k (k)}
           <a
             class="side-item"
-            href={viewHref(params, { k, q: null, t: null, e: null })}
+            href={viewHref(params, { k, ...UNSELECT })}
             aria-current={!v.selected && v.kind === k ? "true" : undefined}
             data-testid="filter-{k}"
           >
@@ -733,7 +831,7 @@
         {#each KINDS as k (k)}
           <a
             class="chip"
-            href={viewHref(params, { k, q: null, t: null, e: null })}
+            href={viewHref(params, { k, ...UNSELECT })}
             aria-current={!v.selected && v.kind === k ? "true" : undefined}
           >
             {KIND_LABEL[k]} <span class="num">{counts[k]}</span>
@@ -939,6 +1037,18 @@
   }
   .alerts-in-list {
     gap: var(--so-space-2);
+  }
+  .volcano-alert {
+    color: inherit;
+    text-decoration: none;
+  }
+  .volcano-alert .small:last-child {
+    white-space: pre-line;
+  }
+  @media (hover: hover) {
+    .volcano-alert:hover {
+      background: var(--so-item-hover);
+    }
   }
   .map-pane {
     --map-radius: var(--so-item-radius);

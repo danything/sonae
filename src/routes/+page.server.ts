@@ -23,6 +23,7 @@ export const load: PageServerLoad = ({ url }) => {
       ? (store.longPeriodOf(quake.eventId, quake.status) ?? null)
       : null,
     tsunami: kind === "tsunami" && id ? (store.tsunami(id) ?? null) : null,
+    volcano: kind === "volcano" && id ? (store.volcano(id) ?? null) : null,
     eew:
       kind === "eew" && id
         ? (store.eew(id) ??

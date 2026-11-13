@@ -8,6 +8,7 @@ import type {
   Status,
   TsunamiArea,
   TsunamiObservation,
+  Volcano,
 } from "#lib/model.ts";
 
 /** 1 つの情報源の、1 つの報。まとめ方 (新旧の判定) は store.ts がする */
@@ -40,6 +41,7 @@ export type Normalized =
   | QuakeIncoming
   | { type: "tsunami"; report: TsunamiReport }
   | { type: "advisory"; advisory: Omit<Advisory, "updatedAt" | "cancelled"> }
+  | { type: "volcano"; volcano: Omit<Volcano, "updatedAt" | "cancelled"> }
   | { type: "longperiod"; report: LongPeriodReport }
   /** 保存だけする電文 (地震の活動状況・地震回数・長周期地震動など) */
   | { type: "other"; code: string };

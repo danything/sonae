@@ -13,6 +13,12 @@ export type TsunamiLevel = (typeof TSUNAMI_LEVELS)[number];
 export const EEW_LEVELS = ["warning", "all", "off"] as const;
 export type EewLevel = (typeof EEW_LEVELS)[number];
 
+/**
+ * 火山。噴火速報と噴火警報 (居住地域、警戒レベル 4・5) / それに火口周辺警報 (レベル 2・3) も / 送らない
+ */
+export const VOLCANO_LEVELS = ["warning", "all", "off"] as const;
+export type VolcanoLevel = (typeof VOLCANO_LEVELS)[number];
+
 /** 端末 (ブラウザの購読) ごとに選ぶ、何を知らせるか */
 export interface PushPrefs {
   eew: EewLevel;
@@ -25,11 +31,14 @@ export interface PushPrefs {
   tsunami: TsunamiLevel;
   /** 南海トラフ地震臨時情報・定例外の解説情報・後発地震注意情報 */
   advisory: boolean;
+  /** 火山 (噴火速報・噴火警報) */
+  volcano: VolcanoLevel;
 }
 
 /**
  * 既定値。理由は docs/design.md の 2.4 (持ち主の決定、2026-11-13)。
  * 警報だけ・最大震度 4 以上・現在地で 3 以上・津波注意報以上・南海トラフ等はオン。
+ * 火山は噴火速報と噴火警報 (居住地域) だけ (2026-11-14 に足した。理由は同じ節)。
  */
 export const DEFAULT_PREFS: PushPrefs = {
   eew: "warning",
@@ -38,6 +47,7 @@ export const DEFAULT_PREFS: PushPrefs = {
   areaMinInt: "3",
   tsunami: "watch",
   advisory: true,
+  volcano: "warning",
 };
 
 const pick = <T extends string>(
@@ -74,6 +84,7 @@ export function normalizePrefs(input: unknown): PushPrefs {
     tsunami: pick(TSUNAMI_LEVELS, o.tsunami, DEFAULT_PREFS.tsunami),
     advisory:
       typeof o.advisory === "boolean" ? o.advisory : DEFAULT_PREFS.advisory,
+    volcano: pick(VOLCANO_LEVELS, o.volcano, DEFAULT_PREFS.volcano),
   };
 }
 
