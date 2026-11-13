@@ -188,7 +188,7 @@ devDependencies に入れ、Vite がサーバーに束ねる。テスト (`tests
 - **購読:** ブラウザごとに `push_subscriptions` に、ログインした人 (IdP の sub)・endpoint・鍵・条件 (下)・ブラウザの名前を持つ。セッションとは結ばない (ログインが切れても届く)。1 人 20 まで。
   - endpoint はブラウザから来るので、サーバーから任意の宛先へ POST させないよう、主な配信サービス (FCM・Mozilla・Apple・WNS) の https だけ受ける。転送 (3xx) も追わない。
   - 送って **404・410 が返ったら購読を消す**。ほかの失敗は記録に残すだけ。
-- **登録の画面と API:** 画面はヘッダーの「通知」(スマホの形は「その他」の「通知」) から開くダイアログ 1 つ (`src/lib/components/PushSettings.svelte`)。API は `GET`・`PUT`・`DELETE /api/push` と、試しに送る `POST /api/push/test`。どれもログインが要る (hooks)。
+- **登録の画面と API:** 画面はヘッダーの「通知」(スマホの形は「その他」の「通知」) から開くダイアログ 1 つ (`src/lib/components/PushSettings.svelte`)。API は `GET`・`PUT`・`DELETE /api/push` と、試しに送る `POST /api/push/test` (1 人 10 分に 5 回まで。超えたら 429 と `Retry-After`。`src/lib/server/rate.ts`)。どれもログインが要る (hooks)。
 - **何を知らせるか (ブラウザごとに選ぶ。括弧は既定と、その理由):**
   - 緊急地震速報: 警報だけ / 予報も / 送らない (**警報だけ**)。警報は強い揺れが来る地域に出るもので、身を守る動きにつながる。予報は日に何度も出ることがあり、鳴りすぎると通知自体を切られてしまう。予報を選んでも本文に予想震度は書かない (5 章)。
   - 地震情報: 最大震度がいくつ以上 (**震度 4**)。震度 4 は「ほとんどの人が驚く」揺れで、家族の安否を気にし始める境目。震度 3 以下は全国で月に何十回もあり、鳴りすぎる。
@@ -382,7 +382,7 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 
 ashi・xool と同じく、リポジトリの `deploy/` を Argo CD が同期する (gitops の ApplicationSet が `deploy/argocd.yaml` を探す)。
 
-- `deploy/`: `argocd.yaml`・`deployment.yaml` (レプリカ 1・Recreate・uid 1000・`/health` のプローブ・`TZ=Asia/Tokyo`)・`service.yaml`・`httproute.yaml` (Cilium Gateway の `doany`、ホスト名 `s.doany.io`)・`pvc.yaml` (`local-path` 1Gi、`dataSourceRef` で VolSync から戻す)・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`networkpolicy.yaml` (外向きは DNS と公開のインターネットだけ)・`secrets.sops.yaml` (`OIDC_CLIENT_SECRET` (Main の共用のもの)・VolSync の restic。VAPID の秘密鍵 `vapid-private-jwk` は任意で、入れ方は docs/push.md)。R2 にまだバックアップが無い最初の 1 回は、populator が空の PVC を作る (gitops の recovery/README.md の 6)。`.sops.yaml` はほかのリポジトリと同じ鍵。
+- `deploy/`: `argocd.yaml`・`deployment.yaml` (レプリカ 1・Recreate・uid 1000・`/health` のプローブ (起きていることだけを見る。情報源の受信の状態は見ない)・`TZ=Asia/Tokyo`)・`service.yaml`・`httproute.yaml` (Cilium Gateway の `doany`、ホスト名 `s.doany.io`)・`pvc.yaml` (`local-path` 1Gi、`dataSourceRef` で VolSync から戻す)・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`networkpolicy.yaml` (外向きは DNS と公開のインターネットだけ)・`secrets.sops.yaml` (`OIDC_CLIENT_SECRET` (Main の共用のもの)・VolSync の restic。VAPID の秘密鍵 `vapid-private-jwk` は任意で、入れ方は docs/push.md)。R2 にまだバックアップが無い最初の 1 回は、populator が空の PVC を作る (gitops の recovery/README.md の 6)。`.sops.yaml` はほかのリポジトリと同じ鍵。
 - 環境変数 (`deploy/deployment.yaml`): `PUBLIC_URL` と `ORIGIN` (adapter-bun) はどちらも `https://s.doany.io`。`CONNECTION_IDLE_TIMEOUT=255` (既定の 10 秒だと 30 秒ごとの `: ping` を待つ間に SSE が切れる)。`SHUTDOWN_TIMEOUT=5` (SSE は終わらないので長く待たない)。OIDC は docs/entra.md の表のとおり。
 - 外向きの NetworkPolicy は ashi と同じ形 (kube-dns と、プライベートでないアドレス全部)。クラスタに既定で閉じるポリシーは無いので、これが無くても外へは出られる。家の LAN とクラスタの中を閉じるために置く。
 - イメージ: main にマージすると `docker-publish.yml` が `ghcr.io/danything/sonae:<sha>` を作り、`deploy/deployment.yaml` のタグを差し替える PR を作って自分でマージする (`deploy/` ができるまでは何もしない)。

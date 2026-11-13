@@ -1,11 +1,21 @@
 import { describe, expect, test } from "bun:test";
 
+import type { SonaeEvent } from "#lib/model.ts";
 import { DEFAULT_PREFS, normalizePrefs, toNotification } from "#lib/push.ts";
 import { openDb } from "#lib/server/db.ts";
-import { digestOf, matches, noticeOf, plan } from "#lib/server/notify.ts";
+import {
+  digestOf,
+  matches,
+  noticeOf,
+  plan,
+  type Sent,
+} from "#lib/server/notify.ts";
 import { parseSubscription, Pusher, vapidFromEnv } from "#lib/server/push.ts";
+import { RateLimit } from "#lib/server/rate.ts";
+import { parseJmaXml } from "#lib/server/sources/jma-xml.ts";
 
 import { eew, NOW, prefs, quake, tsunami } from "./events.ts";
+import { codeOf, fixture, memoryStore } from "./helpers.ts";
 
 const b64url = (b: ArrayBuffer | Uint8Array) =>
   Buffer.from(b instanceof Uint8Array ? b : new Uint8Array(b)).toString(
@@ -556,4 +566,181 @@ test("前に届いた事象の続報が送れなかったら、控えを送る�
 
   pusher.save("you", sub, prefs(), "");
   expect(log()).toEqual([]);
+});
+
+describe("震源が決まる前の通知の文言", () => {
+  test("気象庁の震度速報 (VXSE51): 見出しは最大震度と最初の地域「など」、本文は検知の時刻 (分まで) と「頃」", () => {
+    const file = "32-35_01_01_100806_VXSE51.xml";
+    const body = fixture(`jma/${file}`);
+    const { store } = memoryStore("2009-08-10T20:09:00Z");
+    const [e] = store.ingest({
+      source: "jma",
+      key: file,
+      code: codeOf(file),
+      body,
+      items: parseJmaXml(body, codeOf(file)),
+    });
+    if (!e) throw new Error("イベントが無い");
+    const n = noticeOf(e, Date.parse("2009-08-10T20:10:00Z"));
+    expect(n && { title: n.title, body: n.body, level: n.level }).toEqual({
+      title: "最大震度6弱 静岡県中部 など",
+      body: "8/11 05:07 頃",
+      level: 7,
+    });
+  });
+
+  test("震源も M も時刻も無いときは、本文を「震度速報」にする", () => {
+    const n = noticeOf(
+      quake({
+        hypocenter: undefined,
+        magnitude: undefined,
+        originTime: undefined,
+        reports: [
+          {
+            kind: "scale",
+            source: "p2p",
+            infoType: "発表",
+            reportedAt: "2026-11-14T00:06:30Z",
+            targetTime: "2026-11-14T00:05:00Z",
+            areas: [],
+            stations: [],
+            comments: [],
+          },
+        ],
+      }),
+      NOW,
+    );
+    expect(n && { title: n.title, body: n.body }).toEqual({
+      title: "最大震度4 千葉県北西部 など",
+      body: "震度速報",
+    });
+  });
+
+  test("震源が決まった続報は、同じ tag で鳴らさずに置き換える (見出しは震源の名前)", () => {
+    const p = prefs();
+    const first = noticeOf(
+      quake({
+        hypocenter: undefined,
+        magnitude: undefined,
+        originTime: undefined,
+      }),
+      NOW,
+    );
+    if (!first) throw new Error("通知が無い");
+    const sent = { level: first.level, digest: digestOf(first) };
+    const next = noticeOf(quake(), NOW);
+    if (!next) throw new Error("通知が無い");
+    expect(next.tag).toBe(first.tag);
+    expect(next.title).toBe("最大震度4 千葉県北西部");
+    expect(next.body).toBe("11/14 09:05 頃 M5.1");
+    expect(plan(next, p, sent)).toEqual({ send: true, renotify: false });
+  });
+});
+
+describe("送れなかったことと続報が重なるとき", () => {
+  /** 返事を後から決められる fetch。呼ばれた順に resolve を持つ */
+  function heldFetch() {
+    const waiting: ((status: number) => void)[] = [];
+    const fetch = ((_url: string) =>
+      new Promise<Response>((resolve) => {
+        waiting.push((status) => resolve(new Response(null, { status })));
+      })) as unknown as typeof globalThis.fetch;
+    const called = async (n: number) => {
+      for (let i = 0; i < 200 && waiting.length < n; i++) await Bun.sleep(5);
+      if (waiting.length < n) throw new Error(`fetch が ${n} 回呼ばれていない`);
+    };
+    return { fetch, waiting, called };
+  }
+
+  async function setup() {
+    const db = openDb(":memory:");
+    const { vapid } = vapidFromEnv({
+      VAPID_PRIVATE_JWK: await testJwk(),
+      PUBLIC_URL: "https://s.example",
+    });
+    if (!vapid) throw new Error("鍵が無い");
+    const held = heldFetch();
+    const pusher = new Pusher(db, vapid, { fetch: held.fetch, now: () => NOW });
+    const sub = parseSubscription(
+      await testSubscription("https://fcm.googleapis.com/fcm/send/held"),
+    );
+    if (!sub) throw new Error("購読が読めない");
+    pusher.save("me", sub, prefs(), "");
+    const log = () =>
+      db.query("SELECT level, digest FROM push_log").all() as Sent[];
+    return { pusher, held, log };
+  }
+
+  const digestOfEvent = (e: SonaeEvent) => {
+    const n = noticeOf(e, NOW);
+    if (!n) throw new Error("通知が無い");
+    return { level: n.level, digest: digestOf(n) };
+  };
+
+  test("初めての通知を送っている間に続報が来て、初めての通知が失敗しても、続報の控えを消さない", async () => {
+    const { pusher, held, log } = await setup();
+    const first = pusher.handle(quake());
+    await held.called(1);
+    // 重さが上がった続報は、初めての通知が届く前でも鳴らし直す
+    const next = pusher.handle(quake({ maxInt: "5-" }));
+    await held.called(2);
+    held.waiting[0]?.(500);
+    held.waiting[1]?.(201);
+    expect(await first).toEqual(["error"]);
+    expect(await next).toEqual(["ok"]);
+    expect(log()).toEqual([digestOfEvent(quake({ maxInt: "5-" }))]);
+    // 同じ中身はもう送らない
+    expect(await pusher.handle(quake({ maxInt: "5-" }))).toEqual([]);
+  });
+
+  test("続報を送っている間に次の続報が来て、前の続報が失敗しても、控えを前に戻さない", async () => {
+    const { pusher, held, log } = await setup();
+    const first = pusher.handle(quake());
+    await held.called(1);
+    held.waiting[0]?.(201);
+    expect(await first).toEqual(["ok"]);
+
+    const update1 = pusher.handle(quake({ magnitude: 5.3 }));
+    await held.called(2);
+    const update2 = pusher.handle(quake({ magnitude: 5.4 }));
+    await held.called(3);
+    held.waiting[1]?.(500);
+    held.waiting[2]?.(201);
+    expect(await update1).toEqual(["error"]);
+    expect(await update2).toEqual(["ok"]);
+    expect(log()).toEqual([digestOfEvent(quake({ magnitude: 5.4 }))]);
+  });
+
+  test("初めての通知も続報も失敗したら、控えを消して次の続報を初めてとして鳴らす", async () => {
+    const { pusher, held, log } = await setup();
+    const first = pusher.handle(quake());
+    await held.called(1);
+    const next = pusher.handle(quake({ magnitude: 5.3 }));
+    await held.called(2);
+    // 続報が先に失敗すると控えを初めての通知のものに戻し、初めての通知が失敗するとそれも消す
+    held.waiting[1]?.(500);
+    expect(await next).toEqual(["error"]);
+    held.waiting[0]?.(500);
+    expect(await first).toEqual(["error"]);
+    expect(log()).toEqual([]);
+    // どれも届いていないので、次の続報は初めてとして送る
+    const again = pusher.handle(quake({ magnitude: 5.4 }));
+    await held.called(3);
+    held.waiting[2]?.(201);
+    expect(await again).toEqual(["ok"]);
+    expect(log()).toEqual([digestOfEvent(quake({ magnitude: 5.4 }))]);
+  });
+});
+
+test("試しの通知の回数の制限: 窓の中で max 回まで、超えたら待つ秒数を返す。人ごとに数える", () => {
+  let t = 0;
+  const limit = new RateLimit(2, 60_000, () => t);
+  expect(limit.take("me")).toBe(0);
+  t = 10_000;
+  expect(limit.take("me")).toBe(0);
+  t = 20_000;
+  expect(limit.take("me")).toBe(40);
+  expect(limit.take("you")).toBe(0);
+  t = 60_000;
+  expect(limit.take("me")).toBe(0);
 });
