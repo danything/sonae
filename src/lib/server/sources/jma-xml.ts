@@ -448,100 +448,6 @@ function readVolcano(body: V, code: VolcanoCode) {
   };
 }
 
-/** 火山: 噴火警報・予報と噴火速報 (docs/design.md の 3 章) */
-const VOLCANO_CODES = ["VFVO50", "VFVO56"] as const;
-type VolcanoCode = (typeof VOLCANO_CODES)[number];
-const isVolcanoCode = (c: string): c is VolcanoCode =>
-  (VOLCANO_CODES as readonly string[]).includes(c);
-
-/**
- * 火山の位置 (`+3624.38+13831.38+2568/`)。緯度・経度は「度分」(36 度 24.38 分) で、最後は標高 (m)。
- * 度で書かれていても (小数点の前が 2〜3 桁) 読む
- */
-export function readVolcanoCoordinate(
-  value: string | undefined,
-): { lat: number; lon: number } | undefined {
-  const m = /^([+-])(\d+(?:\.\d+)?)([+-])(\d+(?:\.\d+)?)/.exec(
-    value?.trim() ?? "",
-  );
-  if (!m) return undefined;
-  const deg = (sign: string, v: string, degDigits: number) => {
-    const [int = "", frac] = v.split(".");
-    const n =
-      int.length > degDigits
-        ? Number(int.slice(0, -2)) +
-          Number(`${int.slice(-2)}${frac ? `.${frac}` : ""}`) / 60
-        : Number(v);
-    return ((sign === "-" ? -1 : 1) * Math.round(n * 1000)) / 1000;
-  };
-  return {
-    lat: deg(m[1] ?? "+", m[2] ?? "", 2),
-    lon: deg(m[3] ?? "+", m[4] ?? "", 3),
-  };
-}
-
-function readVolcano(body: V, code: VolcanoCode) {
-  const infos = children(body, "VolcanoInfo");
-  const ofType = (type: string) => infos.find((i) => attr(i, "type") === type);
-  const target =
-    code === "VFVO56"
-      ? ofType("噴火速報")
-      : ofType("噴火警報・予報（対象火山）");
-  const cityInfo =
-    code === "VFVO56"
-      ? ofType("噴火速報（対象市町村等）")
-      : ofType("噴火警報・予報（対象市町村等）");
-  const volcanoes: VolcanoArea[] = children(target, "Item").flatMap((item) => {
-    const kind = child(item, "Kind");
-    const kindCode = textAt(kind, "Code");
-    return children(child(item, "Areas"), "Area").flatMap(
-      (area): VolcanoArea[] => {
-        const name = textAt(area, "Name");
-        const areaCode = textAt(area, "Code");
-        if (!name || !areaCode) return [];
-        return [
-          {
-            code: areaCode,
-            name,
-            ...readVolcanoCoordinate(text(child(area, "Coordinate"))),
-            kind: textAt(kind, "Name") ?? "",
-            kindCode,
-            condition: textAt(kind, "Condition"),
-            lastKind: textAt(item, "LastKind/Name"),
-            level: volcanoLevel(kindCode),
-          },
-        ];
-      },
-    );
-  });
-  const cityItems = children(cityInfo, "Item");
-  const cities = cityItems.flatMap((item) =>
-    children(child(item, "Areas"), "Area").flatMap((a) => {
-      const n = textAt(a, "Name");
-      return n ? [n] : [];
-    }),
-  );
-  const wKind = child(cityItems[0], "Kind");
-  const warningName = textAt(wKind, "Name");
-  const content = child(body, "VolcanoInfoContent");
-  return {
-    volcanoes,
-    warning:
-      code === "VFVO50" && warningName
-        ? {
-            name: warningName,
-            code: textAt(wKind, "Code"),
-            condition: textAt(wKind, "Condition"),
-          }
-        : undefined,
-    cities: [...new Set(cities)],
-    eventTime: textAt(at(target, "Item/EventTime"), "EventDateTime"),
-    contentHeadline: textAt(content, "VolcanoHeadline"),
-    activity: textAt(content, "VolcanoActivity"),
-    prevention: textAt(content, "VolcanoPrevention"),
-  };
-}
-
 /** フィードから取る電文の種別。知らない種別は取らない (帯域を使わない) */
 export const WANTED_CODES: ReadonlySet<string> = new Set([
   ...QUAKE_CODES,
@@ -550,10 +456,6 @@ export const WANTED_CODES: ReadonlySet<string> = new Set([
   "VTSE52",
   ...ADVISORY_CODES,
   "VXSE62",
-<<<<<<< HEAD
-=======
-  ...STORE_ONLY,
->>>>>>> origin/main
   ...VOLCANO_CODES,
 ]);
 
