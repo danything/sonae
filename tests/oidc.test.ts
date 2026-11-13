@@ -1,6 +1,7 @@
+import { Database } from "bun:sqlite";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { openDb } from "#lib/server/db.ts";
+import { migrate, openDb } from "#lib/server/db.ts";
 import {
   allowed,
   challengeOf,
@@ -10,7 +11,13 @@ import {
   safeReturn,
   verify,
 } from "#lib/server/oidc.ts";
-import { create, destroy, find, SESSION_TTL } from "#lib/server/session.ts";
+import {
+  create,
+  destroy,
+  find,
+  hashOf,
+  SESSION_TTL,
+} from "#lib/server/session.ts";
 const ISSUER = "https://login.example/tenant/v2.0";
 const CLIENT_ID = "test-client";
 
@@ -195,6 +202,33 @@ describe("session", () => {
     expect(find(undefined, d, NOW)).toBeNull();
     destroy(s.id, d);
     expect(find(s.id, d, NOW)).toBeNull();
+  });
+
+  test("DB には生の ID を持たず、SHA-256 を持つ", () => {
+    const d = openDb(":memory:");
+    const s = create("user-1", "x", d, NOW);
+    const rows = d
+      .query<{ id_hash: string }, []>("SELECT id_hash FROM sessions")
+      .all();
+    expect(rows).toEqual([{ id_hash: hashOf(s.id) }]);
+    expect(rows[0]?.id_hash).toMatch(/^[0-9a-f]{64}$/);
+    // ハッシュの値を Cookie に入れても通らない
+    expect(find(hashOf(s.id), d, NOW)).toBeNull();
+    expect(find(s.id, d, NOW)?.id).toBe(s.id);
+  });
+
+  test("前の版 (平文の ID) の控えは、版を上げると捨てる", () => {
+    const d = new Database(":memory:", { strict: true });
+    d.run(
+      "CREATE TABLE sessions (id TEXT PRIMARY KEY, subject TEXT NOT NULL, name TEXT NOT NULL, created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)",
+    );
+    d.run("INSERT INTO sessions VALUES ('plain', 'u', 'x', 0, 9e15)");
+    d.run("PRAGMA user_version = 2");
+    migrate(d);
+    expect(find("plain", d, NOW)).toBeNull();
+    expect(
+      d.query<{ n: number }, []>("SELECT count(*) AS n FROM sessions").get()?.n,
+    ).toBe(0);
   });
 
   test("180 日で切れ、使えば延びる (1 日に 1 回まで)", () => {
