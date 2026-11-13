@@ -1,0 +1,22 @@
+# 状態ディレクトリ (SONAE_DATA=/data)。SQLite (WAL) の DB。スナップショットから自分で立ち直る。
+# バックアップは VolSync が PVC ごとのスナップショットを取る (volsync.yaml)。
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sonae-data
+  namespace: sonae
+spec:
+  # 新しく作るときは VolSync が R2 の最新から中身を埋める (volsync.yaml の sonae-data-dst)。今ある PVC には効かない。
+  # R2 にまだ何も無い最初の 1 回は、空のまま渡す
+  dataSourceRef:
+    {
+      apiGroup: volsync.backube,
+      kind: ReplicationDestination,
+      name: sonae-data-dst,
+    }
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 1Gi

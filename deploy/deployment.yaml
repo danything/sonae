@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonae
+  namespace: sonae
+  annotations:
+    # 参照している Secret が変わったら、Reloader が Pod を入れ替える
+    reloader.stakater.com/auto: "true"
+spec:
+  # **レプリカは 1 つ、入れ替えは Recreate** (docs/design.md の 2.1)。2 つ立つと情報源への接続が倍になり
+  # (Wolfx は 1 クライアント 1 接続)、Push も二重に出る。入れ替えの数秒は受けられないが、戻ったときに
+  # 履歴の API で埋める
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: sonae
+  template:
+    metadata:
+      labels:
+        app: sonae
+    spec:
+      # イメージは uid 1000 で動く (distroless)。ボリュームをその group にそろえる
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      # SHUTDOWN_TIMEOUT (5 秒) に余裕を足す
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: sonae
+          image: ghcr.io/danything/sonae:d1a3e7e68841bd7fe3d65a4334c2c930f8d935fc
+          ports:
+            - containerPort: 3000
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 10
+            failureThreshold: 6
+          env:
+            # 公開の URL。ログインの戻り先 (/auth/callback) はここから組む (要求の Host を信じない)
+            - name: PUBLIC_URL
+              value: https://s.doany.io
+            # adapter-bun の ORIGIN。SvelteKit の url.origin と CSRF の判定がこれを使う
+            # (Gateway の後ろでも要求の Host・プロトコルに頼らない)
+            - name: ORIGIN
+              value: https://s.doany.io
+            - name: SONAE_DATA
+              value: /data
+            - name: TZ
+              value: Asia/Tokyo
+            # 何も流れない接続を切るまでの秒数 (adapter-bun、Bun.serve の idleTimeout)。既定の 10 秒だと
+            # 30 秒ごとの `: ping` を待つ間に SSE (/api/stream) が切れる。上限の 255 にする
+            - name: CONNECTION_IDLE_TIMEOUT
+              value: "255"
+            # 止めるとき、処理中の要求を待つ上限 (秒、adapter-bun)。SSE は終わらないので、長く待っても意味が無い
+            # (ブラウザは Last-Event-ID で張り直す)
+            - name: SHUTDOWN_TIMEOUT
+              value: "5"
+            # Entra ID は doany.io の共用のアプリ登録 Main (docs/entra.md)。ID は秘密ではないので平文。
+            # リダイレクト URI https://s.doany.io/auth/callback は gitops の pulumi/entra.ts で Main に足してある
+            - name: OIDC_ISSUER
+              value: https://login.microsoftonline.com/22ac977d-b140-4dc8-8150-90d645d3475b/v2.0
+            - name: OIDC_CLIENT_ID
+              value: b0fa498f-7e6a-4fe1-a1c6-16fbbb6f397e
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: sonae-secrets
+                  key: oidc-client-secret
+            # 通すのはアプリロール admin を割り当てられた人だけ。家族と共有するときは family 用のロールに替える
+            - name: OIDC_ROLE
+              value: admin
+          volumeMounts:
+            - name: sonae-data
+              mountPath: /data
+      volumes:
+        - name: sonae-data
+          persistentVolumeClaim:
+            claimName: sonae-data

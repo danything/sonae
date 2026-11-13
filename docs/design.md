@@ -329,7 +329,9 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 
 ashi・xool と同じく、リポジトリの `deploy/` を Argo CD が同期する (gitops の ApplicationSet が `deploy/argocd.yaml` を探す)。
 
-- `deploy/`: `argocd.yaml`・`deployment.yaml` (レプリカ 1・Recreate・uid 1000・`/health` のプローブ・`TZ=Asia/Tokyo`)・`service.yaml`・`httproute.yaml` (Cilium Gateway の `doany`、ホスト名 `s.doany.io`)・`pvc.yaml` (`local-path` 1Gi、`dataSourceRef` で VolSync から戻す)・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`networkpolicy.yaml` (外向きは DNS と公開のインターネットだけ)・`secrets.sops.yaml` (`OIDC_CLIENT_SECRET` (Main の共用のもの)・VAPID の秘密鍵・VolSync の restic)。`.sops.yaml` はほかのリポジトリと同じ鍵。
+- `deploy/`: `argocd.yaml`・`deployment.yaml` (レプリカ 1・Recreate・uid 1000・`/health` のプローブ・`TZ=Asia/Tokyo`)・`service.yaml`・`httproute.yaml` (Cilium Gateway の `doany`、ホスト名 `s.doany.io`)・`pvc.yaml` (`local-path` 1Gi、`dataSourceRef` で VolSync から戻す)・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`networkpolicy.yaml` (外向きは DNS と公開のインターネットだけ)・`secrets.sops.yaml` (`OIDC_CLIENT_SECRET` (Main の共用のもの)・VolSync の restic。VAPID の秘密鍵は Web Push を作るときに足す)。R2 にまだバックアップが無い最初の 1 回は、populator が空の PVC を作る (gitops の recovery/README.md の 6)。`.sops.yaml` はほかのリポジトリと同じ鍵。
+- 環境変数 (`deploy/deployment.yaml`): `PUBLIC_URL` と `ORIGIN` (adapter-bun) はどちらも `https://s.doany.io`。`CONNECTION_IDLE_TIMEOUT=255` (既定の 10 秒だと 30 秒ごとの `: ping` を待つ間に SSE が切れる)。`SHUTDOWN_TIMEOUT=5` (SSE は終わらないので長く待たない)。OIDC は docs/entra.md の表のとおり。
+- 外向きの NetworkPolicy は ashi と同じ形 (kube-dns と、プライベートでないアドレス全部)。クラスタに既定で閉じるポリシーは無いので、これが無くても外へは出られる。家の LAN とクラスタの中を閉じるために置く。
 - イメージ: main にマージすると `docker-publish.yml` が `ghcr.io/danything/sonae:<sha>` を作り、`deploy/deployment.yaml` のタグを差し替える PR を作って自分でマージする (`deploy/` ができるまでは何もしない)。
 - 実行のイメージは `oven/bun:<ver>-distroless` (シェル無し・uid 1000)。
 - 外への接続は気象庁・P2P・Wolfx・Web Push の配信サービス (FCM・Mozilla・Apple) だけ。気象庁のフィードは 1 日 1440 回の条件付きの取得で、ほとんどが 304 なので、帯域の上限 (10GB/日) には遠い。

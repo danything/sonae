@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sonae
+  namespace: sonae
+spec:
+  selector:
+    app: sonae
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
