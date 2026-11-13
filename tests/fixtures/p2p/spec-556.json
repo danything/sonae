@@ -1,0 +1,28 @@
+{
+  "code": 556,
+  "cancelled": false,
+  "earthquake": {
+    "condition": "",
+    "hypocenter": {
+      "name": "宗谷地方北部",
+      "reduceName": "北海道道北",
+      "latitude": 44.9,
+      "longitude": 142.1,
+      "depth": 10.0,
+      "magnitude": 5.5
+    },
+    "originTime": "2022/08/11 00:53:00",
+    "arrivalTime": "2022/08/11 00:53:10"
+  },
+  "issue": { "time": "2022/08/11 00:53:24", "eventId": "20220811005302", "serial": "1" },
+  "areas": [
+    {
+      "pref": "北海道道北",
+      "name": "上川地方北部",
+      "scaleFrom": 45.0,
+      "scaleTo": 45.0,
+      "kindCode": "11",
+      "arrivalTime": null
+    }
+  ]
+}

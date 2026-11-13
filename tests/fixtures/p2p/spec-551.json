@@ -1,0 +1,29 @@
+{
+  "id": "5ee1681202add671a1e1ae39",
+  "code": 551,
+  "time": "2019/08/26 21:04:06.958",
+  "issue": {
+    "source": "気象庁",
+    "time": "2019/08/26 20:57:00",
+    "correct": "None",
+    "type": "DetailScale"
+  },
+  "earthquake": {
+    "domesticTsunami": "None",
+    "foreignTsunami": "Unknown",
+    "hypocenter": {
+      "depth": 50,
+      "latitude": 24.4,
+      "longitude": 125.2,
+      "magnitude": 4.0,
+      "name": "宮古島近海"
+    },
+    "maxScale": 10,
+    "time": "2019/08/26 20:53:00"
+  },
+  "points": [
+    { "addr": "宮古島市城辺福北", "isArea": false, "pref": "沖縄県", "scale": 10 },
+    { "addr": "宮古島市伊良部長浜", "isArea": false, "pref": "沖縄県", "scale": 10 }
+  ],
+  "comments": { "freeFormComment": "" }
+}

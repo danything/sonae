@@ -23,6 +23,8 @@ docker compose run --rm sonae bun run build
 
 docker の代わりに `wslc-compose` でもよい。
 
+起動すると気象庁・P2P地震情報・Wolfx に実際につなぐ。画面だけ触りたいときは `SONAE_RECEIVE=off` で止める。
+
 ## ライセンス
 
 [AGPL-3.0](LICENSE)

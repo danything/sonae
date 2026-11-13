@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" lang="ja">
+  <title>高頻度（地震火山）</title>
+  <subtitle>JMAXML publishing feed</subtitle>
+  <updated>2026-11-13T08:00:56+09:00</updated>
+  <id>https://example.invalid/eqvol.xml#made</id>
+  <entry>
+    <title>降灰予報（定時）</title>
+    <id>https://example.invalid/data/20261112230034_0_VFVO53_010000.xml</id>
+    <updated>2026-11-12T23:00:00Z</updated>
+    <author><name>気象庁</name></author>
+    <link type="application/xml" href="https://example.invalid/data/20261112230034_0_VFVO53_010000.xml"/>
+    <content type="text">火山の電文 (sonae は取らない)</content>
+  </entry>
+  <entry>
+    <title>震源・震度に関する情報</title>
+    <id>https://example.invalid/data/32-35_06_04_240613_VXSE53.xml</id>
+    <updated>2008-06-13T23:53:02Z</updated>
+    <author><name>気象庁</name></author>
+    <link type="application/xml" href="https://example.invalid/data/20080613235302_0_VXSE53_010000.xml"/>
+    <content type="text">新しいほう</content>
+  </entry>
+  <entry>
+    <title>震源に関する情報</title>
+    <id>https://example.invalid/data/32-35_06_01_240613_VXSE52.xml</id>
+    <updated>2008-06-13T23:47:00Z</updated>
+    <author><name>気象庁</name></author>
+    <link type="application/xml" href="https://example.invalid/data/20080613234700_0_VXSE52_010000.xml"/>
+    <content type="text">古いほう</content>
+  </entry>
+  <entry>
+    <title>地震の活動状況等に関する情報</title>
+    <id>https://example.invalid/data/20080613230000_0_VXSE56_010000.xml</id>
+    <updated>2008-06-13T23:00:00Z</updated>
+    <author><name>気象庁</name></author>
+    <link type="application/xml" href="https://example.invalid/data/20080613230000_0_VXSE56_010000.xml"/>
+    <content type="text">保存だけする電文</content>
+  </entry>
+</feed>
