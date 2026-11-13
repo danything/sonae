@@ -6,6 +6,7 @@
 import type {
   Advisory,
   Eew,
+  LongPeriod,
   Quake,
   SonaeEvent,
   SourceStatus,
@@ -18,6 +19,7 @@ export interface Snapshot {
   quakes: Quake[];
   tsunamis: Tsunami[];
   advisories: Advisory[];
+  longPeriods: LongPeriod[];
   statuses: SourceStatus[];
 }
 
@@ -45,6 +47,7 @@ export class Live {
   quakes = $state<Quake[]>([]);
   tsunamis = $state<Tsunami[]>([]);
   advisories = $state<Advisory[]>([]);
+  longPeriods = $state<LongPeriod[]>([]);
   statuses = $state<SourceStatus[]>([]);
   connected = $state(false);
   /** ブラウザで load の中身を入れた (サーバーの描画では false のまま、load の data を使う) */
@@ -62,6 +65,7 @@ export class Live {
     this.quakes = s.quakes;
     this.tsunamis = s.tsunamis;
     this.advisories = s.advisories;
+    this.longPeriods = s.longPeriods;
     this.statuses = s.statuses;
     this.seeded = true;
   }
@@ -75,6 +79,7 @@ export class Live {
       quakes: this.quakes,
       tsunamis: this.tsunamis,
       advisories: this.advisories,
+      longPeriods: this.longPeriods,
       statuses: this.statuses,
     };
   }
@@ -110,6 +115,15 @@ export class Live {
           20,
         );
         return true;
+      case "longperiod":
+        if (e.data.status !== "normal") return true;
+        this.longPeriods = upsert(
+          this.longPeriods,
+          e.data,
+          (v) => v.reportedAt,
+          50,
+        );
+        return true;
     }
   }
 
@@ -138,6 +152,7 @@ export class Live {
     on("quake");
     on("tsunami");
     on("advisory");
+    on("longperiod");
     es.addEventListener("status", (m) => {
       this.statuses = JSON.parse((m as MessageEvent).data) as SourceStatus[];
     });

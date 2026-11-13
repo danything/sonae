@@ -1,6 +1,7 @@
 import type {
   Advisory,
   Eew,
+  LongPeriod,
   QuakeReport,
   SourceId,
   SourceStatus,
@@ -39,8 +40,15 @@ export type Normalized =
   | QuakeIncoming
   | { type: "tsunami"; report: TsunamiReport }
   | { type: "advisory"; advisory: Omit<Advisory, "updatedAt" | "cancelled"> }
+  | { type: "longperiod"; report: LongPeriodReport }
   /** 保存だけする電文 (地震の活動状況・地震回数・長周期地震動など) */
   | { type: "other"; code: string };
+
+/** 長周期地震動に関する観測情報の 1 つの報。まとめ方は store.ts */
+export type LongPeriodReport = Omit<
+  LongPeriod,
+  "id" | "cancelled" | "updatedAt"
+>;
 
 /** 情報源から受けたもの。raw は原文 (Wolfx は原文を残さないので body が無い) */
 export interface Incoming {

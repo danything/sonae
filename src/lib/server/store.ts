@@ -10,6 +10,7 @@ import type {
   Advisory,
   Eew,
   EventType,
+  LongPeriod,
   Quake,
   SonaeEvent,
   SourceId,
@@ -20,6 +21,7 @@ import type {
 import {
   mergeAdvisory,
   mergeEew,
+  mergeLongPeriod,
   mergeQuake,
   mergeTsunami,
   sameQuakeByTime,
@@ -170,6 +172,25 @@ export class Store {
           .run(next.id, next.status, next.reportedAt, JSON.stringify(next));
         return [this.event("advisory", next.id, next)];
       }
+      case "longperiod": {
+        const r = item.report;
+        const id = eewKey(r.eventId, r.status);
+        const next = mergeLongPeriod(this.longPeriod(id), r, id, now);
+        if (!next) return [];
+        this.db
+          .query(
+            `INSERT INTO long_periods (id, event_id, status, reported_at, data) VALUES (?, ?, ?, ?, ?)
+             ON CONFLICT (id) DO UPDATE SET reported_at = excluded.reported_at, data = excluded.data`,
+          )
+          .run(
+            next.id,
+            next.eventId,
+            next.status,
+            next.reportedAt,
+            JSON.stringify(next),
+          );
+        return [this.event("longperiod", next.id, next)];
+      }
       case "other":
         return [];
     }
@@ -272,6 +293,26 @@ export class Store {
       )
       .get(id);
     return row ? (JSON.parse(row.data) as Advisory) : undefined;
+  }
+
+  /** 長周期地震動に関する観測情報。id は地震識別番号 (訓練・試験は後ろに付く) */
+  longPeriod(id: string): LongPeriod | undefined {
+    const row = this.db
+      .query<{ data: string }, [string]>(
+        "SELECT data FROM long_periods WHERE id = ?",
+      )
+      .get(id);
+    return row ? (JSON.parse(row.data) as LongPeriod) : undefined;
+  }
+
+  longPeriods(limit = 50, includeTraining = false): LongPeriod[] {
+    return this.db
+      .query<{ data: string }, [number]>(
+        `SELECT data FROM long_periods ${includeTraining ? "" : "WHERE status = 'normal'"}
+         ORDER BY datetime(reported_at) DESC LIMIT ?`,
+      )
+      .all(limit)
+      .map((r) => JSON.parse(r.data) as LongPeriod);
   }
 
   /** 新しい順の地震。発生の時刻が無いもの (震度速報だけ) は更新の時刻で並べる */

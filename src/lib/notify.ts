@@ -248,6 +248,9 @@ export function noticeOf(event: SonaeEvent, now: number): Notice | null {
       if (!isUrgentAdvisory(event.data)) return null;
       n = advisoryNotice(event.data, event);
       break;
+    case "longperiod":
+      // 長周期地震動は地震情報の後に出る観測の詳しい内容なので、知らせない (地震情報で知らせている)
+      return null;
   }
   if (!Number.isFinite(n.at) || now - n.at > FRESH_MS[event.type]) return null;
   return n;
@@ -284,6 +287,8 @@ export function matches(n: Notice, prefs: PushPrefs): boolean {
       return prefs.tsunami !== "off" && n.level >= TSUNAMI_MIN[prefs.tsunami];
     case "advisory":
       return prefs.advisory;
+    case "longperiod":
+      return false;
   }
 }
 

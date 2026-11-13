@@ -17,6 +17,8 @@ export const load: PageServerLoad = ({ url }) => {
     // 訓練・試験は既定で隠す。`?training=1` で出す
     eewHistory: store.eews(50, view.training),
     quake: kind === "quake" && id ? (store.quake(id) ?? null) : null,
+    // 選んだ地震の長周期地震動 (いまの姿の新しい 50 件に無い、古い地震のため)
+    longPeriod: kind === "quake" && id ? (store.longPeriod(id) ?? null) : null,
     tsunami: kind === "tsunami" && id ? (store.tsunami(id) ?? null) : null,
     eew:
       kind === "eew" && id

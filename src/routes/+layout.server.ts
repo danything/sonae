@@ -13,6 +13,7 @@ export const load: LayoutServerLoad = ({ locals }) => {
       quakes: store.quakes(100),
       tsunamis: store.tsunamis(20),
       advisories: store.advisories(20),
+      longPeriods: store.longPeriods(50),
       statuses: statuses(),
     },
   };

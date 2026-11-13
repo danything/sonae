@@ -10,12 +10,16 @@ import { XML } from "bun";
 
 import {
   type AreaIntensity,
+  type AreaLongPeriod,
   type Hypocenter,
   isIntensity,
+  isLgClass,
+  type LgClass,
   type ObservedIntensity,
   type QuakeKind,
   type QuakeReport,
   type StationIntensity,
+  type StationLongPeriod,
   type Status,
   type TsunamiArea,
   type TsunamiGrade,
@@ -159,6 +163,61 @@ function readObservation(body: V): {
   return { maxInt: readIntensity(textAt(obs, "MaxInt")), areas, stations };
 }
 
+/** 長周期地震動に関する観測情報の観測 (Body/Intensity/Observation。都道府県・地域・観測点の 3 段) */
+function readLongPeriod(body: V): {
+  maxInt?: ObservedIntensity;
+  maxLg: LgClass;
+  category?: 1 | 2 | 3 | 4;
+  areas: AreaLongPeriod[];
+  stations: StationLongPeriod[];
+} {
+  const obs = at(body, "Intensity/Observation");
+  const lg = (v: string | undefined): LgClass | undefined =>
+    isLgClass(v) ? v : undefined;
+  const areas: AreaLongPeriod[] = [];
+  const stations: StationLongPeriod[] = [];
+  for (const pref of children(obs, "Pref")) {
+    const prefName = textAt(pref, "Name");
+    for (const area of children(pref, "Area")) {
+      const name = textAt(area, "Name");
+      const areaLg = lg(textAt(area, "MaxLgInt"));
+      if (name && areaLg)
+        areas.push({
+          code: textAt(area, "Code"),
+          name,
+          pref: prefName,
+          lg: areaLg,
+          maxInt: readIntensity(textAt(area, "MaxInt")),
+        });
+      for (const st of children(area, "IntensityStation")) {
+        const sName = textAt(st, "Name");
+        const sLg = lg(textAt(st, "LgInt"));
+        const sva = Number(textAt(st, "Sva"));
+        if (sName && sLg)
+          stations.push({
+            name: sName,
+            pref: prefName,
+            area: name,
+            lg: sLg,
+            int: readIntensity(textAt(st, "Int")),
+            sva: Number.isFinite(sva) ? sva : undefined,
+          });
+      }
+    }
+  }
+  const category = Number(textAt(obs, "LgCategory"));
+  return {
+    maxInt: readIntensity(textAt(obs, "MaxInt")),
+    maxLg: lg(textAt(obs, "MaxLgInt")) ?? "0",
+    category:
+      category === 1 || category === 2 || category === 3 || category === 4
+        ? category
+        : undefined,
+    areas,
+    stations,
+  };
+}
+
 function readComments(body: V): string[] {
   const c = child(body, "Comments");
   const out: string[] = [];
@@ -269,7 +328,7 @@ const ADVISORY_CODES = [
 ] as const;
 type AdvisoryCode = (typeof ADVISORY_CODES)[number];
 /** 保存だけする電文 */
-const STORE_ONLY = ["VXSE56", "VXSE60", "VXSE62"] as const;
+const STORE_ONLY = ["VXSE56", "VXSE60"] as const;
 
 /** フィードから取る電文の種別。知らない種別は取らない (帯域を使わない) */
 export const WANTED_CODES: ReadonlySet<string> = new Set([
@@ -278,6 +337,7 @@ export const WANTED_CODES: ReadonlySet<string> = new Set([
   "VTSE51",
   "VTSE52",
   ...ADVISORY_CODES,
+  "VXSE62",
   ...STORE_ONLY,
 ]);
 
@@ -377,6 +437,28 @@ export function parseJmaXml(xml: string, code: string): Normalized[] {
     ];
   }
 
+  if (code === "VXSE62") {
+    const eventId = eventIds[0];
+    if (!eventId) throw new Error("EventID がありません");
+    const serial = Number(textAt(head, "Serial"));
+    return [
+      {
+        type: "longperiod",
+        report: {
+          eventId,
+          status,
+          infoType,
+          reportedAt,
+          serial: Number.isFinite(serial) && serial > 0 ? serial : undefined,
+          headline,
+          ...readEarthquake(body),
+          ...readLongPeriod(body),
+          url: jmaUrl(textAt(body, "Comments/URI")),
+        },
+      },
+    ];
+  }
+
   return [{ type: "other", code }];
 }
 
@@ -408,4 +490,18 @@ export function parseFeed(xml: string): FeedEntry[] {
       },
     ];
   });
+}
+
+/** 電文の中のリンクは、気象庁のサイトのものだけを使う (画面でリンクにするため) */
+function jmaUrl(v: string | undefined): string | undefined {
+  if (!v) return undefined;
+  try {
+    const u = new URL(v);
+    return u.protocol === "https:" &&
+      (u.hostname === "www.data.jma.go.jp" || u.hostname === "www.jma.go.jp")
+      ? u.href
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
