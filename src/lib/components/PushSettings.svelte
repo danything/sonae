@@ -1,11 +1,14 @@
 <script lang="ts">
   /**
-   * Web Push の登録と通知の条件 (docs/design.md の 2.4)。ヘッダーのナビ (スマホの形は「その他」) の「通知」から開くダイアログ 1 つに閉じる。
+   * 通知の条件と、開いているときの音・読み上げと、Web Push の登録 (docs/design.md の 2.4)。
+   * ヘッダーのナビ (スマホの形は「その他」) の「通知」から開くダイアログ 1 つに閉じる。
    * 開け閉めは `open` で持つ (閉じるのは左下の「閉じる」・幕・Esc)。
-   * 条件はブラウザ (購読) ごとにサーバーに持つ。サーバーに VAPID の鍵が無いときは、そう出すだけ。
+   * 条件はブラウザごとに 1 つで、音・読み上げのために端末 (localStorage) に、Web Push のためにサーバー (購読) に持つ。
+   * サーバーに VAPID の鍵が無いときは、Web Push の節にそう出すだけ (条件と音・読み上げは使える)。
    */
   import "@anyblades/blades/components/modal";
 
+  import { alerter } from "#lib/alerter.svelte.ts";
   import { INTENSITIES, intensityLabel } from "#lib/model.ts";
   import {
     base64UrlToBytes,
@@ -49,15 +52,18 @@
     return navigator.serviceWorker.ready;
   }
 
+  /** 条件は、このブラウザが Web Push に登録してあればその条件、無ければ端末に覚えた条件 */
   async function load(): Promise<void> {
     message = "";
+    prefs = normalizePrefs(alerter.prefs);
+    if (areas.length === 0) void loadAreas();
     supported =
       "serviceWorker" in navigator &&
       "PushManager" in window &&
       "Notification" in window;
     const res = await fetch("/api/push");
     if (!res.ok) {
-      message = `読めませんでした (${res.status})`;
+      message = `Web Push の登録を読めませんでした (${res.status})`;
       return;
     }
     info = (await res.json()) as Info;
@@ -65,8 +71,27 @@
     const sub = await (await registration()).pushManager.getSubscription();
     endpoint = sub?.endpoint;
     const mine = info.subscriptions.find((s) => s.endpoint === endpoint);
-    prefs = normalizePrefs(mine?.prefs ?? DEFAULT_PREFS);
-    if (areas.length === 0) void loadAreas();
+    if (mine) prefs = normalizePrefs(mine.prefs);
+  }
+
+  /** 条件を端末に覚え、Web Push に登録してあればサーバーにも送る */
+  async function savePrefs(): Promise<void> {
+    alerter.setPrefs(prefs);
+    if (!registered) {
+      message = "保存しました";
+      return;
+    }
+    await save();
+  }
+
+  function setSound(on: boolean): void {
+    alerter.setSettings({ ...alerter.settings, sound: on });
+    // 押した操作の中で鳴らして、音の大きさを確かめてもらう (鳴らせるようにもなる)
+    if (on) alerter.preview();
+  }
+  function setSpeech(on: boolean): void {
+    alerter.setSettings({ ...alerter.settings, speech: on });
+    if (on) alerter.preview();
   }
 
   /** 現在地の候補 (地震情報の細分区域)。地図と同じファイルから名前だけ取る */
@@ -124,6 +149,7 @@
         return;
       }
       const sub = await subscribe(info.publicKey);
+      alerter.setPrefs(prefs);
       const res = await fetch("/api/push", {
         method: "PUT",
         headers: { "content-type": "application/json" },
@@ -195,75 +221,125 @@
   onclose={() => (open = false)}
 >
   <article class="modal-box stack">
-    <h1 id="push-title">通知 (Web Push)</h1>
+    <h1 id="push-title">通知</h1>
+    <p class="small muted">
+      条件はこのブラウザごとに覚え、開いているときの音・読み上げと Web Push
+      の両方に使います。訓練・試験は知らせません。
+    </p>
+    <label>
+      緊急地震速報
+      <select bind:value={prefs.eew}>
+        <option value="warning">警報だけ</option>
+        <option value="all">予報も</option>
+        <option value="off">知らせない</option>
+      </select>
+    </label>
+    <label>
+      地震 (最大震度)
+      <select bind:value={prefs.quakeMinInt}>
+        {#each INTENSITIES as i (i)}
+          <option value={i}>震度{intensityLabel(i)}以上</option>
+        {/each}
+        <option value="off">知らせない</option>
+      </select>
+    </label>
+    <label>
+      現在地 (地震情報の地域)
+      <select bind:value={() => prefs.area?.code ?? "", setArea}>
+        <option value="">選ばない</option>
+        {#each areas as a (a.code)}
+          <option value={a.code}>{a.name}</option>
+        {/each}
+      </select>
+    </label>
+    <label>
+      現在地の震度
+      <select bind:value={prefs.areaMinInt} disabled={!prefs.area}>
+        {#each INTENSITIES as i (i)}
+          <option value={i}>震度{intensityLabel(i)}以上</option>
+        {/each}
+      </select>
+    </label>
+    <label>
+      津波
+      <select bind:value={prefs.tsunami}>
+        <option value="watch">津波注意報以上</option>
+        <option value="warning">津波警報以上</option>
+        <option value="major">大津波警報だけ</option>
+        <option value="off">知らせない</option>
+      </select>
+    </label>
+    <label>
+      <input type="checkbox" role="switch" bind:checked={prefs.advisory} />
+      南海トラフ地震臨時情報・後発地震注意情報
+    </label>
+    <div class="cluster">
+      <button
+        type="button"
+        onclick={savePrefs}
+        disabled={busy}
+        data-testid="prefs-save">条件を保存</button
+      >
+    </div>
+
+    <h2 class="section-head">開いているとき</h2>
+    <p class="small muted">
+      sonae
+      を開いている間に条件に合う情報を受けたら、短い音と見出しの読み上げで知らせます。ブラウザは、画面を一度押すまで音を出させません。
+    </p>
+    <label>
+      <input
+        type="checkbox"
+        role="switch"
+        checked={alerter.settings.sound}
+        onchange={(e) => setSound(e.currentTarget.checked)}
+        data-testid="alert-sound"
+      />
+      音を鳴らす
+    </label>
+    <label>
+      <input
+        type="checkbox"
+        role="switch"
+        checked={alerter.settings.speech}
+        disabled={!alerter.speechSupported}
+        onchange={(e) => setSpeech(e.currentTarget.checked)}
+        data-testid="alert-speech"
+      />
+      見出しを読み上げる{alerter.speechSupported
+        ? ""
+        : " (このブラウザは読み上げに対応していません)"}
+    </label>
+    {#if alerter.settings.sound || alerter.settings.speech}
+      <div class="cluster">
+        <button
+          type="button"
+          class="secondary"
+          onclick={() => alerter.preview()}>試しに鳴らす</button
+        >
+      </div>
+    {/if}
+
+    <h2 class="section-head">Web Push (タブを閉じていても届く)</h2>
     {#if !info}
-      <p class="muted">読んでいます…</p>
+      <p class="small muted">読んでいます…</p>
     {:else if !info.enabled}
-      <p>
+      <p class="small">
         サーバーに VAPID の鍵が入っていないので、Web Push は切ってあります。
       </p>
     {:else if !supported}
-      <p>
+      <p class="small">
         このブラウザは Web Push に対応していません。iPhone・iPad
         は、共有ボタンから「ホーム画面に追加」した sonae (iOS 16.4 以降)
         で開いてください。
       </p>
     {:else}
       <p class="small muted">
-        条件はこのブラウザごとに覚えます。訓練・試験は知らせません。
-        {registered ? "このブラウザは登録済みです。" : ""}
+        {registered
+          ? "このブラウザは登録済みです。条件を保存すると、Web Push にも使います。"
+          : "登録すると、上の条件でこのブラウザに通知を送ります。"}
       </p>
-      <label>
-        緊急地震速報
-        <select bind:value={prefs.eew}>
-          <option value="warning">警報だけ</option>
-          <option value="all">予報も</option>
-          <option value="off">知らせない</option>
-        </select>
-      </label>
-      <label>
-        地震 (最大震度)
-        <select bind:value={prefs.quakeMinInt}>
-          {#each INTENSITIES as i (i)}
-            <option value={i}>震度{intensityLabel(i)}以上</option>
-          {/each}
-          <option value="off">知らせない</option>
-        </select>
-      </label>
-      <label>
-        現在地 (地震情報の地域)
-        <select bind:value={() => prefs.area?.code ?? "", setArea}>
-          <option value="">選ばない</option>
-          {#each areas as a (a.code)}
-            <option value={a.code}>{a.name}</option>
-          {/each}
-        </select>
-      </label>
-      <label>
-        現在地の震度
-        <select bind:value={prefs.areaMinInt} disabled={!prefs.area}>
-          {#each INTENSITIES as i (i)}
-            <option value={i}>震度{intensityLabel(i)}以上</option>
-          {/each}
-        </select>
-      </label>
-      <label>
-        津波
-        <select bind:value={prefs.tsunami}>
-          <option value="watch">津波注意報以上</option>
-          <option value="warning">津波警報以上</option>
-          <option value="major">大津波警報だけ</option>
-          <option value="off">知らせない</option>
-        </select>
-      </label>
-      <label>
-        <input type="checkbox" bind:checked={prefs.advisory} />
-        南海トラフ地震臨時情報・後発地震注意情報
-      </label>
       <div class="cluster">
-        <button type="button" onclick={save} disabled={busy}>
-          {registered ? "条件を保存" : "このブラウザで受ける"}
-        </button>
         {#if registered}
           <button type="button" class="secondary" onclick={test} disabled={busy}
             >試しに送る</button
@@ -273,6 +349,10 @@
             class="secondary"
             onclick={() => remove(endpoint)}
             disabled={busy}>解除</button
+          >
+        {:else}
+          <button type="button" onclick={save} disabled={busy}
+            >このブラウザで受ける</button
           >
         {/if}
       </div>
@@ -307,3 +387,10 @@
     </div>
   </article>
 </dialog>
+
+<style>
+  .section-head {
+    margin: var(--so-space-3) 0 0;
+    font-size: var(--so-text-base);
+  }
+</style>
