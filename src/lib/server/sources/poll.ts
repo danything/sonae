@@ -58,16 +58,18 @@ export function pollSource(ctx: SourceContext, o: PollOptions): Source {
     if (!res.ok) throw new Error(`${res.status} が返りました`);
     const text = await res.text();
     const items = o.parse(text, url);
-    cache.set(url, {
-      etag: res.headers.get("etag") ?? undefined,
-      modified: res.headers.get("last-modified") ?? undefined,
-    });
     let fresh = false;
     for (const m of items) {
       if (ctx.seen(m.source, m.key)) continue;
       ctx.emit(m);
       fresh = true;
     }
+    // 渡し終えてから控える (途中で失敗したら、次も 304 にならず読み直す)。
+    // 1 日分の URL も同じ控えを使うが、相手が毎分作り直すので、途切れた後に 304 になることはほぼ無い
+    cache.set(url, {
+      etag: res.headers.get("etag") ?? undefined,
+      modified: res.headers.get("last-modified") ?? undefined,
+    });
     status.seen(fresh);
   }
 
