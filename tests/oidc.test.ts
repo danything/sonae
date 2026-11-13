@@ -168,6 +168,9 @@ describe("oidc", () => {
     expect(safeReturn(null)).toBe("/");
     expect(safeReturn("//evil.example")).toBe("/");
     expect(safeReturn("/\\evil.example")).toBe("/");
+    expect(safeReturn("/\t/evil.example")).toBe("/");
+    expect(safeReturn("/\n/evil.example")).toBe("/");
+    expect(safeReturn("/a\\b")).toBe("/");
     expect(safeReturn("https://evil.example")).toBe("/");
     expect(safeReturn("/quakes/x")).toBe("/quakes/x");
     expect(readPending(undefined)).toBeNull();

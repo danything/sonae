@@ -10,10 +10,21 @@ import type { RequestHandler } from "./$types";
 export const GET: RequestHandler = async ({ url, cookies }) => {
   if (!enabled())
     return new Response("OIDC が設定されていません", { status: 404 });
-  const { url: authorize, pending } = await start(
-    redirectUri(siteOrigin(url)),
-    safeReturn(url.searchParams.get("to")),
-  );
+  let started: Awaited<ReturnType<typeof start>>;
+  try {
+    started = await start(
+      redirectUri(siteOrigin(url)),
+      safeReturn(url.searchParams.get("to")),
+    );
+  } catch (cause) {
+    // IdP の設定 (discovery) を読めないとき。素の 500 では切り分けられない
+    console.warn(`[auth] ログインを始められませんでした: ${cause}`);
+    return new Response(
+      `ログインを始められませんでした: ${cause instanceof Error ? cause.message : String(cause)}`,
+      { status: 502, headers: { "content-type": "text/plain; charset=utf-8" } },
+    );
+  }
+  const { url: authorize, pending } = started;
   cookies.set(PENDING_COOKIE, JSON.stringify(pending), {
     path: "/",
     httpOnly: true,

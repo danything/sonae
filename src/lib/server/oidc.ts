@@ -107,6 +107,12 @@ export interface Pending {
  */
 export function safeReturn(to: string | null): string {
   if (to === null || !to.startsWith("/") || /^\/[/\\]/.test(to)) return "/";
+  // URL として読むとき、タブや改行は捨てられる (`/\t/evil` が `//evil` になる)。
+  // 制御文字・空白・バックスラッシュを含むものは、どこにあっても通さない
+  for (const ch of to) {
+    const c = ch.charCodeAt(0);
+    if (c <= 0x20 || c === 0x7f || ch === "\\") return "/";
+  }
   return to;
 }
 
