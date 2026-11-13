@@ -202,7 +202,10 @@
       });
       message = res.ok
         ? "送りました。届かないときは、端末の通知の設定を見てください。"
-        : `送れませんでした (${res.status})`;
+        : res.status === 429
+          ? (((await res.json()) as { message?: string }).message ??
+            "試しの通知は続けて送れません")
+          : `送れませんでした (${res.status})`;
     } finally {
       busy = false;
     }
