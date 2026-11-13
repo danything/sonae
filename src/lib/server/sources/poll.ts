@@ -44,6 +44,13 @@ export interface PollOptions {
   log?: (m: string) => void;
 }
 
+/** 文の中の URL の鍵 (`Authorization=`・`key=`・`token=` の値) を伏せる */
+export const redact = (s: string) =>
+  s.replace(
+    /([?&](?:authorization|api_?key|key|token)=)[^&\s"'<>]+/gi,
+    "$1***",
+  );
+
 export function pollSource(ctx: SourceContext, o: PollOptions): Source {
   const status = new StatusTracker(o.id, ctx.onStatus);
   const doFetch = o.fetch ?? fetch;
@@ -63,7 +70,8 @@ export function pollSource(ctx: SourceContext, o: PollOptions): Source {
       ]),
       redirect: "follow",
     });
-    if (!res.ok) throw new Error(`${url} が ${res.status} を返しました`);
+    if (!res.ok)
+      throw new Error(`${redact(url)} が ${res.status} を返しました`);
     return res.text();
   }
 
@@ -127,8 +135,10 @@ export function pollSource(ctx: SourceContext, o: PollOptions): Source {
         } catch (err) {
           if (signal.aborted) break;
           failures++;
-          log(`[${o.id}] 取れませんでした: ${err}`);
-          status.set("retrying", String(err));
+          // 鍵 (中央氣象署の授権碼など) が URL の query に入っていても、ログと状態の欄には出さない
+          const why = redact(String(err));
+          log(`[${o.id}] 取れませんでした: ${why}`);
+          status.set("retrying", why);
         }
         const delay =
           failures === 0

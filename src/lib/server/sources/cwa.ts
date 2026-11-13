@@ -95,7 +95,7 @@ export function cwaSource(
   opts: Partial<PollOptions> = {},
 ): Source | undefined {
   if (!key?.trim()) return undefined;
-  // 授権碼は仕様のとおり query の Authorization で渡す。取りに行く輪は URL をログに出さない
+  // 授権碼は仕様のとおり query の Authorization で渡す。取りに行く輪は、ログと状態の欄で鍵を伏せる (poll.ts の redact)
   const url = `${CWA_URL}?${new URLSearchParams({
     Authorization: key.trim(),
     format: "JSON",

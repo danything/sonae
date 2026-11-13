@@ -99,6 +99,24 @@ describe("中央氣象署 (台湾)", () => {
     expect(() => parseCwa('{"success":"false"}')).toThrow();
   });
 
+  test("取れなかったとき、授権碼をログにも状態の欄にも出さない", async () => {
+    const { ctx } = context();
+    const logs: string[] = [];
+    const controller = new AbortController();
+    const source = cwaSource(ctx, "CWA-SECRET-123", {
+      // fetch の例外の文に URL が入る場合
+      fetch: (async (url: string) => {
+        throw new TypeError(`Unable to connect: ${url}`);
+      }) as unknown as typeof fetch,
+      log: (m) => logs.push(m),
+      sleep: async () => controller.abort(),
+    });
+    await source?.run(controller.signal);
+    expect(logs.join("\n")).not.toContain("CWA-SECRET-123");
+    expect(logs.join("\n")).toContain("Authorization=***");
+    expect(source?.status().lastError).not.toContain("CWA-SECRET-123");
+  });
+
   test("授権碼が無ければ作らない。あれば query で渡す", async () => {
     const { ctx } = context();
     expect(cwaSource(ctx, undefined)).toBeUndefined();
