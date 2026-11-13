@@ -131,11 +131,15 @@ export class Store {
       }
       case "tsunami": {
         const prev = this.findTsunami(item.report);
+        // 訓練・試験は地震と同じく後ろに付けて分ける。P2P の 552 には訓練の印が無い (仕様書 v2.3.0)
+        // ので、P2P だけの津波はいまは必ず normal になる (docs/design.md の 2.2)
+        const suffix =
+          item.report.status === "normal" ? "" : `-${item.report.status}`;
         const id =
           prev?.id ??
           (item.report.eventIds[0]
-            ? `${item.report.eventIds[0]}${item.report.status === "normal" ? "" : `-${item.report.status}`}`
-            : `p2p-${item.report.reportedAt.replace(/[^0-9]/g, "").slice(0, 14)}`);
+            ? `${item.report.eventIds[0]}${suffix}`
+            : `p2p-${item.report.reportedAt.replace(/[^0-9]/g, "").slice(0, 14)}${suffix}`);
         const next = mergeTsunami(prev, item.report, id, now);
         if (!next) return [];
         this.db
