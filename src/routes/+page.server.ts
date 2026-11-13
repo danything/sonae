@@ -24,7 +24,10 @@ export const load: PageServerLoad = ({ url }) => {
       : null,
     tsunami: kind === "tsunami" && id ? (store.tsunami(id) ?? null) : null,
     volcano: kind === "volcano" && id ? (store.volcano(id) ?? null) : null,
+<<<<<<< HEAD
     advisory: kind === "info" && id ? (store.advisory(id) ?? null) : null,
+=======
+>>>>>>> origin/main
     eew:
       kind === "eew" && id
         ? (store.eew(id) ??

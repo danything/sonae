@@ -309,6 +309,7 @@ export interface Advisory {
   updatedAt: string;
 }
 
+<<<<<<< HEAD
 /** 地震回数に関する情報の 1 つの期間 */
 export interface EarthquakeCount {
   /** 電文のままの種類 (「地震回数」「１時間地震回数」「累積地震回数」) */
@@ -324,6 +325,8 @@ export interface EarthquakeCount {
 export const isPinnedAdvisory = (a: Pick<Advisory, "code">) =>
   a.code !== "VXSE56" && a.code !== "VXSE60";
 
+=======
+>>>>>>> origin/main
 /**
  * 噴火警報・予報 (VFVO50) と噴火速報 (VFVO56) の 1 つの報。一覧には報ごとに並べる。
  * 取消を受けたら、同じ一連の情報 (種別と識別番号) のいちばん新しい報に印を付ける

@@ -140,17 +140,23 @@
       ),
     ),
   );
+<<<<<<< HEAD
   const infos = $derived(
     snap.advisories.filter((a) =>
       matches(query, a.title, a.headline, a.serialName, a.text),
     ),
   );
+=======
+>>>>>>> origin/main
   const counts = $derived<Record<Kind, number>>({
     quake: quakes.length,
     tsunami: tsunamis.length,
     eew: eews.length,
     volcano: volcanoes.length,
+<<<<<<< HEAD
     info: infos.length,
+=======
+>>>>>>> origin/main
   });
 
   const quakeTime = (q: Quake) => q.originTime ?? q.updatedAt;
@@ -176,11 +182,14 @@
           day: g.day,
           rows: g.items.map((x) => volcanoRow(x)),
         }));
+<<<<<<< HEAD
       case "info":
         return groupByDay(infos, (a) => a.reportedAt).map((g) => ({
           day: g.day,
           rows: g.items.map((a) => infoRow(a)),
         }));
+=======
+>>>>>>> origin/main
     }
   });
   function infoRow(a: Advisory): RowData {
@@ -367,11 +376,14 @@
       ? (snap.volcanoes.find((x) => x.id === v.selected?.id) ?? data.volcano)
       : null,
   );
+<<<<<<< HEAD
   const selInfo = $derived(
     v.selected?.kind === "info"
       ? (snap.advisories.find((a) => a.id === v.selected?.id) ?? data.advisory)
       : null,
   );
+=======
+>>>>>>> origin/main
   const backHref = $derived(viewHref(params, { ...UNSELECT }));
 
   // ---- 地図 ----
@@ -433,9 +445,13 @@
           ? dayKey(selEew.issuedAt)
           : selVolcano
             ? dayKey(selVolcano.reportedAt)
+<<<<<<< HEAD
             : selInfo
               ? dayKey(selInfo.reportedAt)
               : picked,
+=======
+            : picked,
+>>>>>>> origin/main
   );
   async function pickDay(day: string) {
     picked = day;
@@ -516,9 +532,13 @@
           ? `緊急地震速報 ${jst(selEew.issuedAt)} - sonae`
           : selVolcano
             ? `${selVolcano.title} ${jst(selVolcano.reportedAt)} - sonae`
+<<<<<<< HEAD
             : selInfo
               ? `${selInfo.title} ${jst(selInfo.reportedAt)} - sonae`
               : `${KIND_LABEL[v.kind]} - sonae`,
+=======
+            : `${KIND_LABEL[v.kind]} - sonae`,
+>>>>>>> origin/main
   );
   const user = $derived(data.user);
 </script>
@@ -705,8 +725,11 @@
           <EewDetail e={selEew} />
         {:else if selVolcano}
           <VolcanoDetail v={selVolcano} />
+<<<<<<< HEAD
         {:else if selInfo}
           <AdvisoryDetail a={selInfo} />
+=======
+>>>>>>> origin/main
         {:else}
           <div class="empty-state">
             <p class="bold">この情報はありません</p>
@@ -726,7 +749,11 @@
             {/each}
             {#each volcanoAlerts as x (x.id)}
               <a
+<<<<<<< HEAD
                 class="notice warning notice-link"
+=======
+                class="notice warning volcano-alert"
+>>>>>>> origin/main
                 href={selectHref(params, "volcano", x.id)}
               >
                 <Icon icon={TriangleAlert} />
@@ -1078,6 +1105,7 @@
   .alerts-in-list {
     gap: var(--so-space-2);
   }
+<<<<<<< HEAD
   .notice-link {
     color: inherit;
     text-decoration: none;
@@ -1087,6 +1115,17 @@
   }
   @media (hover: hover) {
     .notice-link:hover {
+=======
+  .volcano-alert {
+    color: inherit;
+    text-decoration: none;
+  }
+  .volcano-alert .small:last-child {
+    white-space: pre-line;
+  }
+  @media (hover: hover) {
+    .volcano-alert:hover {
+>>>>>>> origin/main
       background: var(--so-item-hover);
     }
   }
