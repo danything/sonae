@@ -222,7 +222,7 @@ function advisoryNotice(a: Advisory, event: SonaeEvent): Notice {
         ? `${a.title} (${a.serialName})`
         : a.title,
     body: clip(a.cancelled ? "先ほどの情報は取り消されました。" : a.headline),
-    url: "/",
+    url: selectHref(NONE, "info", a.id),
     urgency: "normal",
     ttl: TTL.advisory,
     sticky: false,
