@@ -50,11 +50,21 @@ export interface LayerInfo {
 /** 重ねる層。並びは画面の切り替えの並び */
 export const LAYERS: LayerInfo[] = [
   { id: "intensity", label: "各地の震度", on: true },
-  { id: "hypocenters", label: "震源", on: true },
+  {
+    id: "hypocenters",
+    label: "震源",
+    on: true,
+    note: "新しい 50 件。色は深さ (30 km まで赤・100 km まで黄・300 km まで緑・それより深いと青)、大きさは M",
+  },
   { id: "tsunami", label: "津波の警報・注意報", on: true },
   { id: "eew", label: "緊急地震速報", on: true },
   { id: "boundaries", label: "区域の境界", on: true },
-  { id: "labels", label: "地名 (淡色地図)", on: false },
+  {
+    id: "labels",
+    label: "地名 (淡色地図)",
+    on: false,
+    note: "下地を写真から、地名の入った淡色地図に替えます",
+  },
   {
     id: "faults",
     label: "活断層",
@@ -82,17 +92,23 @@ export function readLayers(raw: string | null): LayerState {
   return state;
 }
 
-/** MapLibre の層の id と、それがどの切り替えに属するか */
-export const MAP_LAYERS: Record<string, LayerId> = {
-  pale: "labels",
-  faults: "faults",
-  "quake-fill": "intensity",
-  "eew-fill": "eew",
-  "eew-line": "eew",
-  "quake-line": "boundaries",
-  tsunami: "tsunami",
-  hypocenters: "hypocenters",
-};
+/**
+ * 切り替えから、MapLibre の層ごとに出すかどうかを決める。淡色地図は写真の上に透かして重ねると
+ * 地図全体がくすむので、オンのときは写真の代わりの下地にする
+ */
+export function mapVisibility(s: LayerState): Record<string, boolean> {
+  return {
+    photo: !s.labels,
+    pale: s.labels,
+    faults: s.faults,
+    "quake-fill": s.intensity,
+    "eew-fill": s.eew,
+    "eew-line": s.eew,
+    "quake-line": s.boundaries,
+    tsunami: s.tsunami,
+    hypocenters: s.hypocenters,
+  };
+}
 
 const TRANSPARENT = "rgba(0,0,0,0)";
 
@@ -163,7 +179,40 @@ export function tsunamiPaint(tsunamis: Tsunami[]): {
   };
 }
 
-/** 震源の点 (新しい順に最大 n 件)。M で大きさを変える */
+/**
+ * 震源の点の色 (深さ)。境は 30・100・300 km。深さの分からないものは灰色。
+ * 震度の色 (気象庁の配色の指針) と取り違えないよう、震度の札とは別の形 (丸) で描く
+ */
+export const DEPTH_COLORS = [
+  { upto: 30, color: "#ff3b30", label: "30 km まで" },
+  { upto: 100, color: "#ffcc00", label: "100 km まで" },
+  { upto: 300, color: "#34c759", label: "300 km まで" },
+  { upto: Infinity, color: "#2f80ff", label: "それより深い" },
+] as const;
+
+/** 深さ (km、無ければ -1) から色を引く MapLibre の式 */
+export function depthColorExpr(): Expr {
+  return [
+    "case",
+    ["<", ["get", "depth"], 0],
+    "#9aa0a6",
+    [
+      "step",
+      ["get", "depth"],
+      DEPTH_COLORS[0].color,
+      DEPTH_COLORS[0].upto + 0.5,
+      DEPTH_COLORS[1].color,
+      DEPTH_COLORS[1].upto + 0.5,
+      DEPTH_COLORS[2].color,
+      DEPTH_COLORS[2].upto + 0.5,
+      DEPTH_COLORS[3].color,
+    ],
+  ];
+}
+
+/**
+ * 震源の点 (新しい順に最大 n 件)。色は深さ、大きさは M。新しいものほど上に描く (`order`)
+ */
 export function hypocenterFeatures(quakes: Quake[], n = 50) {
   return {
     type: "FeatureCollection" as const,
@@ -180,7 +229,8 @@ export function hypocenterFeatures(quakes: Quake[], n = 50) {
         properties: {
           id: q.id,
           m: typeof q.magnitude === "number" ? q.magnitude : 3,
-          recent: i === 0,
+          depth: q.hypocenter?.depthKm ?? -1,
+          order: n - i,
         },
         geometry: {
           type: "Point" as const,
@@ -206,7 +256,10 @@ export function intensityLabels(
 }
 
 /** 下地と、データの無い層。データ (色の式・点) は地図を作ったあとで差し込む */
-export function baseStyle(): Record<string, unknown> {
+export function baseStyle(
+  state: LayerState = defaultLayers(),
+): Record<string, unknown> {
+  const shown = mapVisibility(state);
   return {
     version: 8,
     sources: {
@@ -248,15 +301,45 @@ export function baseStyle(): Record<string, unknown> {
         data: { type: "FeatureCollection", features: [] },
       },
     },
-    layers: [
-      { id: "photo", type: "raster", source: "photo" },
-      // 地名は淡色地図を透かして重ねる (写真の上でも字が読める濃さ)
+    layers: withVisibility(shown, [
       {
-        id: "pale",
+        id: "photo",
         type: "raster",
-        source: "pale",
-        paint: { "raster-opacity": 0.6 },
+        source: "photo",
+        // ズーム 8 までの世界衛星モザイクは、海に撮った時期の違う画像の継ぎ目 (暗い筋と四角) が目立つ。
+        // 暗い所を少し持ち上げ、明暗の差と色を抑えて目立たなくする。陸の写真が細かくなる 10 からは元のまま
+        paint: {
+          "raster-brightness-min": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            8,
+            0.05,
+            10,
+            0,
+          ],
+          "raster-contrast": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            8,
+            -0.15,
+            10,
+            0,
+          ],
+          "raster-saturation": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            8,
+            -0.1,
+            10,
+            0,
+          ],
+        },
       },
+      // 地名は淡色地図。写真に透かして重ねると全体がくすむので、オンのときは写真の代わりの下地にする
+      { id: "pale", type: "raster", source: "pale" },
       {
         id: "faults",
         type: "raster",
@@ -310,23 +393,29 @@ export function baseStyle(): Record<string, unknown> {
             8,
             16,
           ],
-          "circle-color": [
-            "case",
-            ["get", "recent"],
-            "rgba(255,40,0,0.6)",
-            "rgba(255,255,255,0.35)",
-          ],
-          "circle-stroke-color": [
-            "case",
-            ["get", "recent"],
-            "#ff2800",
-            "#ffffff",
-          ],
-          "circle-stroke-width": 1.5,
+          "circle-color": depthColorExpr(),
+          "circle-opacity": 0.8,
+          "circle-stroke-color": "rgba(0,0,0,0.6)",
+          "circle-stroke-width": 1,
         },
+        layout: { "circle-sort-key": ["get", "order"] },
       },
-    ],
+    ]),
   };
+}
+
+/** 切っている層は作るときから隠す (淡色地図・活断層のタイルを読みに行かない) */
+function withVisibility(
+  shown: Record<string, boolean>,
+  layers: ({ id: string; layout?: object } & Record<string, unknown>)[],
+) {
+  return layers.map((l) => ({
+    ...l,
+    layout: {
+      ...l.layout,
+      visibility: shown[l.id] === false ? "none" : "visible",
+    },
+  }));
 }
 
 /** 日本の全体が入る範囲 (南西・北東) */

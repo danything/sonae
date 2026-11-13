@@ -4,6 +4,7 @@
   // MapLibre の描き手の worker。既定では本体の隣の maplibre-gl-worker.mjs を探すが、束ねると
   // 見つからないので、Vite に別に束ねさせて URL を渡す
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+  import { untrack } from "svelte";
 
   import { INTENSITY_COLORS } from "#lib/format.ts";
   import {
@@ -14,7 +15,7 @@
     intensityLabels,
     JAPAN_BOUNDS,
     type LayerState,
-    MAP_LAYERS,
+    mapVisibility,
     tsunamiPaint,
   } from "#lib/map/style.ts";
   import {
@@ -34,12 +35,15 @@
     tsunamis,
     eews,
     layers,
+    shown = true,
   }: {
     quake: Quake | undefined;
     quakes: Quake[];
     tsunamis: Tsunami[];
     eews: Eew[];
     layers: LayerState;
+    /** 地図が見えているか (スマホの形で一覧の面が上にある間は false) */
+    shown?: boolean;
   } = $props();
 
   let container = $state<HTMLDivElement>();
@@ -79,7 +83,7 @@
         codeByName.set(f.properties.name, f.properties.code);
       created = new MapClass({
         container,
-        style: baseStyle() as never,
+        style: baseStyle(untrack(() => layers)) as never,
         bounds: JAPAN_BOUNDS,
         attributionControl: { compact: true },
         // 回すと読みにくいだけなので、北を上に固定する
@@ -114,13 +118,8 @@
   // 層の出し入れ
   $effect(() => {
     if (!map) return;
-    for (const [layer, id] of Object.entries(MAP_LAYERS)) {
-      map.setLayoutProperty(
-        layer,
-        "visibility",
-        layers[id] ? "visible" : "none",
-      );
-    }
+    for (const [layer, on] of Object.entries(mapVisibility(layers)))
+      map.setLayoutProperty(layer, "visibility", on ? "visible" : "none");
   });
 
   /**
@@ -240,16 +239,23 @@
   }
 
   // 選んだ地震 (と、出ている緊急地震速報) の震央へ寄せる。飛ばさない。
-  // 続報で中身が変わるたびに寄せ直すと、見ている所が勝手に動くので、選んだものが替わったときだけ
+  // 続報で中身が変わるたびに寄せ直すと、見ている所が勝手に動くので、寄せるのは選んだものが替わったときと、
+  // 地図が見えたとき (スマホの形で地図のタブに移ったとき) に震央が画面の外にあるときだけ
   let focused = "";
+  let wasShown = false;
   $effect(() => {
     if (!map) return;
     const eew = eews.find((e) => !e.cancelled);
     const key = eew ? `eew:${eew.eventId}` : `quake:${quake?.id ?? ""}`;
     const h = eew?.hypocenter ?? quake?.hypocenter;
-    if (key === focused || h?.lat === undefined || h.lon === undefined) return;
+    const appeared = shown && !wasShown;
+    wasShown = shown;
+    if (h?.lat === undefined || h.lon === undefined) return;
+    const center: [number, number] = [h.lon, h.lat];
+    const away = appeared && !map.getBounds().contains(center);
+    if (key === focused && !away) return;
     focused = key;
-    map.jumpTo({ center: [h.lon, h.lat], zoom: Math.max(map.getZoom(), 5.5) });
+    map.jumpTo({ center, zoom: Math.max(map.getZoom(), 5.5) });
   });
 </script>
 
@@ -274,6 +280,13 @@
   /* 地図の右下の出典。スマホの形では下のタブと dock の上に出す (`--map-bottom` は置く側が決める) */
   .map :global(.maplibregl-ctrl-bottom-right) {
     bottom: var(--map-bottom, 0px);
+  }
+  /*
+   * 出典の (i) は MapLibre の <details> と <summary>。詳しい内容の折り畳み (Blades の accordion) の
+   * `details summary::after` (開閉の矢印) が (i) に重なるので、ここでは外す
+   */
+  .map :global(.maplibregl-ctrl-attrib-button::after) {
+    content: none;
   }
   /* 地図の上の札 (MapLibre が DOM に置くので :global) */
   .map :global(.int-label) {

@@ -1,17 +1,20 @@
 import { expect, test } from "bun:test";
 
 import {
+  baseStyle,
   defaultLayers,
+  DEPTH_COLORS,
   eewFill,
+  hypocenterFeatures,
   intensityFill,
   intensityLabels,
   LAYERS,
-  MAP_LAYERS,
+  mapVisibility,
   matchExpr,
   readLayers,
   tsunamiPaint,
 } from "#lib/map/style.ts";
-import type { Eew, Tsunami } from "#lib/model.ts";
+import type { Eew, Quake, Tsunami } from "#lib/model.ts";
 
 test("色の式: コード (気象庁) と名前 (P2P) で引き、どちらも無ければ透明", () => {
   expect(matchExpr(new Map(), new Map(), "x")).toBe("x");
@@ -83,7 +86,27 @@ test("層のオン・オフ: 覚えたものを読み、壊れていれば既定
   expect(readLayers(null)).toEqual(defaultLayers());
   expect(readLayers("{壊れた")).toEqual(defaultLayers());
   expect(readLayers('{"faults":true,"unknown":1}').faults).toBe(true);
-  // 地図の層はどれも、どれかの切り替えに属する
-  const ids = new Set(LAYERS.map((l) => l.id));
-  for (const id of Object.values(MAP_LAYERS)) expect(ids.has(id)).toBe(true);
+});
+
+test("層の出し入れ: style のどの層も切り替えで決まり、淡色地図は写真と入れ替わる", () => {
+  const style = baseStyle() as {
+    layers: { id: string; layout: { visibility: string } }[];
+  };
+  const shown = mapVisibility(defaultLayers());
+  for (const l of style.layers) {
+    expect(l.id in shown).toBe(true);
+    expect(l.layout.visibility).toBe(shown[l.id] ? "visible" : "none");
+  }
+  const labels = mapVisibility({ ...defaultLayers(), labels: true });
+  expect([labels.photo, labels.pale]).toEqual([false, true]);
+  expect(LAYERS.some((l) => l.id === "labels")).toBe(true);
+});
+
+test("震源: 深さで色、新しいものほど上に描く", () => {
+  const q = (id: string, depthKm?: number) =>
+    ({ id, hypocenter: { name: "", lat: 35, lon: 135, depthKm } }) as Quake;
+  const f = hypocenterFeatures([q("a", 10), q("b"), q("c", 400)]);
+  expect(f.features.map((x) => x.properties.depth)).toEqual([10, -1, 400]);
+  expect(f.features.map((x) => x.properties.order)).toEqual([50, 49, 48]);
+  expect(DEPTH_COLORS.at(-1)?.upto).toBe(Infinity);
 });

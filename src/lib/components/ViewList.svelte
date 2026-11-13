@@ -3,7 +3,8 @@
 
   /**
    * **表示の切り替え** (地図に重ねる層と、緊急地震速報の訓練・試験)。オン/オフは右のスイッチ (`.s-switch`)。
-   * サイドバーの並び (`list`) と、dock の「⋯」の中 (`menu`) で同じ中身。形と読み上げの役割だけが変わる (denpa の `ViewList`)
+   * サイドバーの並び (`list`) と、dock の「⋯」の中 (`menu`) で同じ中身。形と読み上げの役割だけが変わる (denpa の `ViewList`)。
+   * 層の説明 (震源の色の意味など) は、指の端末でも読めるよう `title` ではなく名前の下に控えた字で出す
    */
   let {
     layers,
@@ -25,8 +26,10 @@
   const role = $derived(variant === "menu" ? "menuitemcheckbox" : "switch");
 </script>
 
-{#snippet toggleBody(label: string, on: boolean)}
-  <span>{label}</span>
+{#snippet toggleBody(label: string, on: boolean, note?: string)}
+  <span class="view-label"
+    >{label}{#if note}<span class="view-note">{note}</span>{/if}</span
+  >
   <span class="s-switch" class:on aria-hidden="true"></span>
 {/snippet}
 
@@ -36,12 +39,11 @@
     {role}
     class={item}
     aria-checked={layers[l.id]}
-    title={l.note}
     onclick={() => toggle(l.id)}
     data-keep-open
     data-layer={l.id}
   >
-    {@render toggleBody(l.label, layers[l.id])}
+    {@render toggleBody(l.label, layers[l.id], l.note)}
   </button>
 {/each}
 <a {role} class={item} aria-checked={training} href={trainingHref}>
@@ -52,6 +54,18 @@
   .view-item {
     justify-content: space-between;
     gap: var(--so-space-4);
+  }
+  .view-label {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding-block: var(--so-space-1);
+  }
+  .view-note {
+    color: var(--so-muted);
+    font-size: var(--so-text-xs);
+    font-weight: var(--so-weight);
+    line-height: 1.4;
   }
   .menu-item.view-item {
     min-height: 2.5rem;
