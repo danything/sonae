@@ -215,13 +215,14 @@ type QuakeReport = {
 ロールを持つ人だけが開けるようにする。ほかのアプリと同じく、パスワードは持たず OIDC でログインする。
 
 - **OIDC のクライアントは自前** (noren の `src/lib/server/oidc.ts` と同じ形: discovery・認可コード + PKCE・素の fetch と WebCrypto で id_token の署名・発行元・宛先・期限・nonce を確かめる)。ライブラリは足さない。
-- **IdP は doany.io の Entra ID の共有のアプリ登録 (Main)**。通すのは、アプリロール `family` を割り当てた人だけ。ashi と同じく、誰が使えるかはエンタープライズ アプリケーションのロールの割り当てで決める。
-  - ロールの名前は `OIDC_ROLE` (既定 `family`) で変えられる。ロールを読む claim は `OIDC_ROLE_CLAIM` (既定は空で、`roles` と `groups` の両方を読む。noren と同じ)。
-  - **いまは持ち主 1 人に `family` を割り当てるだけ。** 家族は、あとで Entra の Main に B2B のゲストとして招待し、同じロールを割り当てる (アプリ側の変更は要らない)。
-  - 設定値は環境変数で受ける: `OIDC_ISSUER`・`OIDC_CLIENT_ID`・`OIDC_CLIENT_SECRET`・`OIDC_ROLE`・`OIDC_ROLE_CLAIM`・`OIDC_SCOPE`・`PUBLIC_URL` (`https://s.doany.io`)。3 つ (issuer・client id・secret) が揃わないと、画面は開かない (`/health` だけ答える)。手元の開発だけ、`AUTH_DISABLED=1` でログインを飛ばせる (本番の `NODE_ENV=production` では効かない)。
-  - Entra 側の手順 (リダイレクト URI `https://s.doany.io/login/callback` とアプリロール) は [docs/entra.md](entra.md)。
+- **IdP は doany.io の Entra ID の共用のアプリ登録 (Main、アプリケーション ID `b0fa498f-7e6a-4fe1-a1c6-16fbbb6f397e`)。新しくアプリは登録しない。** ashi と同じく、誰が使えるかはエンタープライズ アプリケーションのロールの割り当てで決める。
+  - リダイレクト URI `https://s.doany.io/auth/callback` は gitops の `pulumi/entra.ts` で Main に足してある (ashi と同じパス)。
+  - 通すロールは `OIDC_ROLE` で変えられ、**既定は `admin`** (Main のアプリロールはいま `admin` だけなので、まずは持ち主 1 人)。ロールを読む claim は `OIDC_ROLE_CLAIM` (既定は空で、`roles` と `groups` の両方を読む。noren と同じ)。
+  - **家族と共有するときは**、Main に family 用のアプリロールを足し、家族を B2B のゲストとして招待してそのロールを割り当て、`OIDC_ROLE` をそのロールの値にする (コードの変更は要らない)。
+  - 設定値は環境変数で受ける: `OIDC_ISSUER` (`https://login.microsoftonline.com/<テナント ID>/v2.0`)・`OIDC_CLIENT_ID`・`OIDC_CLIENT_SECRET`・`OIDC_ROLE`・`OIDC_ROLE_CLAIM`・`OIDC_SCOPE`・`PUBLIC_URL` (`https://s.doany.io`。リダイレクト URI はここから組み、要求の Host を信じない)。3 つ (issuer・client id・secret) が揃わないと、画面は開かない (`/health` だけ答える)。手元の開発だけ、`AUTH_DISABLED=1` でログインを飛ばせる (本番の `NODE_ENV=production` では効かない)。
+  - クライアントシークレットは Main の共用のもの。載せるときに `deploy/secrets.sops.yaml` に入れる (ほかのアプリと同じ値)。
 - **セッションは DB に持ち、180 日で、使うたびに延ばす。** 何度もログインさせない。Web Push は購読してあればセッションが切れても届く。
-- ログイン無しで開けるのは `/login`・`/login/callback`・`/health`・Service Worker と Web アプリのマニフェストだけ。`/logout` は POST だけ。
+- ログイン無しで開けるのは `/auth/login`・`/auth/callback`・`/health`・Service Worker と Web アプリのマニフェストだけ。`/auth/logout` は POST だけ。
 
 ## 3. 気象庁 XML の電文の扱い
 
@@ -330,8 +331,8 @@ ashi・xool と同じく、リポジトリの `deploy/` を Argo CD が同期す
 
 持ち主が決めたこと (2026-11-13):
 
-1. **ホスト名は `s.doany.io`。** Entra の Main にリダイレクト URI `https://s.doany.io/login/callback` を足す ([docs/entra.md](entra.md))。
-2. **家族との共有はまだやらない。** いまは持ち主 1 人で使う。仕様としてはアプリロール (`OIDC_ROLE`、既定 `family`) で絞る形にしておき、家族の招待 (Entra の Main に B2B のゲスト) はあとでする。
+1. **ホスト名は `s.doany.io`。** Entra は共用の Main を使い回し、リダイレクト URI `https://s.doany.io/auth/callback` は gitops の `pulumi/entra.ts` で足した。
+2. **家族との共有はまだやらない。** いまは持ち主 1 人で使う。仕様としてはアプリロール (`OIDC_ROLE`、既定 `admin`) で絞る形にしておき、family 用のロールと家族の招待 (Entra の Main に B2B のゲスト) はあとでする。
 3. **広く公開はまだしない** (家族用の前提のまま)。公開するときは、Wolfx に規約 6 条の事前の許可が要るか確かめる。気象庁の情報だけで出せる範囲 (緊急地震速報なし) に絞る手もある。
 4. **知らせの既定値は 2.4 の括弧の値のまま** (地震情報は最大震度 4 以上・現在地で震度 3 以上、緊急地震速報の予報は既定でオフ)。
 
