@@ -12,10 +12,11 @@
     "test": "bun test tests",
     "lint": "oxlint && bun fmt --check",
     "format": "oxlint --fix && bun fmt",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --tsgo --fail-on-warnings"
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --tsgo --fail-on-warnings && svelte-check --workspace ./src/service-worker --tsconfig ./tsconfig.json --tsgo --fail-on-warnings"
   },
   "devDependencies": {
     "@anyblades/blades": "^3.1.3",
+    "@block65/webcrypto-web-push": "^2.0.0",
     "@sveltejs/adapter-bun": "^1.0.1",
     "@sveltejs/kit": "^3.2.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",

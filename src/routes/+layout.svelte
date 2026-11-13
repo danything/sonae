@@ -4,6 +4,7 @@
   import { page } from "$app/state";
 
   import EewBanner from "#lib/components/EewBanner.svelte";
+  import PushSettings from "#lib/components/PushSettings.svelte";
   import { activeEews } from "#lib/eew.ts";
   import { live } from "#lib/live.svelte.ts";
   import { CREDITS, NOTICE } from "#lib/notice.ts";
@@ -106,6 +107,9 @@
                 ? "配信につながっていません"
                 : `受信に問題: ${down.join("・")}`}
             </a>
+          {/if}
+          {#if data.user}
+            <PushSettings />
           {/if}
           {#if data.user && data.user.subject !== "dev"}
             <form method="POST" action="/auth/logout" class="logout">
