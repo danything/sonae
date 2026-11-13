@@ -37,6 +37,16 @@ test("M4.5 以上の地震だけを、海外の地震の発表に読む", () => 
   expect(() => parseEmsc("not json")).toThrow();
 });
 
+test("更新の時刻が無い続報でも、M が直れば別の鍵になる", () => {
+  const v = JSON.parse(BIG);
+  delete v.data.properties.lastupdate;
+  const a = parseEmsc(JSON.stringify(v));
+  v.action = "update";
+  v.data.properties.mag = 5.2;
+  const b = parseEmsc(JSON.stringify(v));
+  expect(a?.key).not.toBe(b?.key);
+});
+
 test("USGS と同じ地震は 1 つにまとめる (重ねて出さない)", () => {
   const { store } = memoryStore();
   for (const m of parseUsgs(fixture("usgs/4.5_day.geojson"))) store.ingest(m);

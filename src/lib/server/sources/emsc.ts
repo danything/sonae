@@ -48,7 +48,7 @@ export function parseEmsc(text: string): Incoming | null {
   if (!Number.isFinite(Date.parse(time))) return null;
   // ke は地震 (known earthquake)。爆破 (km・kx) などは採らない。印が無ければ地震とみなす
   const evtype = str(p.evtype);
-  if (evtype && !evtype.startsWith("ke") && evtype !== "se") return null;
+  if (evtype && evtype !== "ke" && evtype !== "se") return null;
   if (mag === undefined || mag < EMSC_MIN_MAGNITUDE) return null;
   const depth = num(p.depth);
   const updated = str(p.lastupdate);
@@ -73,7 +73,8 @@ export function parseEmsc(text: string): Incoming | null {
   };
   return {
     source: "emsc",
-    key: `${unid}@${report.updatedAt ?? report.originTime}`,
+    // 更新の時刻が無い続報でも、M・位置・深さが変われば別の鍵にする (直った値を受け損ねない)
+    key: `${unid}@${report.updatedAt ?? `${report.originTime}:${mag}:${lat}:${lon}:${depth ?? ""}`}`,
     code: "websocket",
     body: text,
     items: [{ type: "foreign", report }],
