@@ -24,6 +24,7 @@
 
   const NAV = [
     { href: "/", label: "地震" },
+    { href: "/map", label: "地図" },
     { href: "/tsunami", label: "津波" },
     { href: "/eew", label: "緊急地震速報" },
     { href: "/about", label: "出典・状況" },

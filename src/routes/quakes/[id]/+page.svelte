@@ -44,7 +44,10 @@
 </svelte:head>
 
 <article class="stack">
-  <p class="small"><a href="/">← 地震の一覧</a></p>
+  <p class="small cluster">
+    <a href="/">← 地震の一覧</a>
+    <a href="/map?quake={encodeURIComponent(q.id)}">地図で見る</a>
+  </p>
   <header class="head">
     <Intensity int={q.maxInt} size="lg" />
     <div>

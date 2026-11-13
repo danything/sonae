@@ -1,0 +1,299 @@
+<script lang="ts">
+  import "maplibre-gl/dist/maplibre-gl.css";
+  import type { Map as MapLibreMap, Marker } from "maplibre-gl";
+  // MapLibre の描き手の worker。既定では本体の隣の maplibre-gl-worker.mjs を探すが、束ねると
+  // 見つからないので、Vite に別に束ねさせて URL を渡す
+  import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+
+  import { INTENSITY_COLORS } from "#lib/format.ts";
+  import {
+    baseStyle,
+    eewFill,
+    hypocenterFeatures,
+    intensityFill,
+    intensityLabels,
+    JAPAN_BOUNDS,
+    type LayerState,
+    MAP_LAYERS,
+    tsunamiPaint,
+  } from "#lib/map/style.ts";
+  import {
+    type Eew,
+    intensityLabel,
+    type Quake,
+    type Tsunami,
+  } from "#lib/model.ts";
+
+  /**
+   * 地図 (docs/map.md)。下地は国土地理院のシームレス空中写真。その上に層を重ね、層ごとに出し入れする。
+   * カメラは飛ばさない (jumpTo)。MapLibre は止まっている間は描かないので、開いているだけで CPU は使わない。
+   */
+  let {
+    quake,
+    quakes,
+    tsunamis,
+    eews,
+    layers,
+  }: {
+    quake: Quake | undefined;
+    quakes: Quake[];
+    tsunamis: Tsunami[];
+    eews: Eew[];
+    layers: LayerState;
+  } = $props();
+
+  let container = $state<HTMLDivElement>();
+  let map = $state<MapLibreMap | undefined>();
+  /** 地図を出せない理由 (出せるときは空) */
+  let failed = $state("");
+  let MarkerClass: typeof Marker | undefined;
+  let points: Record<string, [number, number]> = {};
+  /** 名前 → 細分区域のコード (P2P は名前だけで来る) */
+  const codeByName = new Map<string, string>();
+  let markers: Marker[] = [];
+
+  $effect(() => {
+    // WebGL が無い端末では地図を出さない (一覧で見てもらう)
+    const probe = document.createElement("canvas");
+    if (!probe.getContext("webgl2") && !probe.getContext("webgl")) {
+      failed =
+        "この端末では地図を出せません (WebGL が使えません)。一覧から見てください。";
+      return;
+    }
+    let disposed = false;
+    let created: MapLibreMap | undefined;
+    void (async () => {
+      const [{ Map: MapClass, Marker: M, setWorkerUrl }, pts, areas] =
+        await Promise.all([
+          import("maplibre-gl"),
+          fetch("/areas/quake-points.json").then((r) => r.json()),
+          fetch("/areas/quake-areas.geojson").then((r) => r.json()),
+        ]);
+      if (disposed || !container) return;
+      setWorkerUrl(workerUrl);
+      MarkerClass = M;
+      points = pts as Record<string, [number, number]>;
+      for (const f of (
+        areas as { features: { properties: { code: string; name: string } }[] }
+      ).features)
+        codeByName.set(f.properties.name, f.properties.code);
+      created = new MapClass({
+        container,
+        style: baseStyle() as never,
+        bounds: JAPAN_BOUNDS,
+        attributionControl: { compact: true },
+        // 回すと読みにくいだけなので、北を上に固定する
+        dragRotate: false,
+        pitchWithRotate: false,
+        touchPitch: false,
+      });
+      created.touchZoomRotate.disableRotation();
+      created.on("load", () => {
+        if (!disposed) map = created;
+      });
+    })().catch((err: unknown) => {
+      console.warn(`地図を開けませんでした: ${err}`);
+      failed =
+        "地図を読み込めませんでした。つながりを確かめて、読み込み直してください。";
+    });
+    return () => {
+      disposed = true;
+      paintedSig = "";
+      markedSig = "";
+      for (const m of markers) m.remove();
+      markers = [];
+      created?.remove();
+      map = undefined;
+    };
+  });
+
+  // 層の出し入れ
+  $effect(() => {
+    if (!map) return;
+    for (const [layer, id] of Object.entries(MAP_LAYERS)) {
+      map.setLayoutProperty(
+        layer,
+        "visibility",
+        layers[id] ? "visible" : "none",
+      );
+    }
+  });
+
+  /**
+   * 中身が変わったときだけ描き直す。画面は 10 秒ごとに時刻を進めて並びを作り直すので、
+   * 並びが替わっただけで描き直すと、印の脈打ちが繰り返し始まり、要らない描き直しも増える
+   */
+  const sig = (...parts: unknown[]) => JSON.stringify(parts);
+  const eewSig = (es: Eew[]) =>
+    es.map((e) => [e.eventId, e.serial, e.cancelled, e.warnAreas.length]);
+  let paintedSig = "";
+  let markedSig = "";
+
+  // 震度の色・津波の線・緊急地震速報の地域・震源の点
+  $effect(() => {
+    if (!map) return;
+    const next = sig(
+      quake?.id,
+      quake?.updatedAt,
+      eewSig(eews),
+      tsunamis.map((t) => [t.id, t.updatedAt]),
+      quakes.slice(0, 50).map((q) => [q.id, q.updatedAt]),
+    );
+    if (next === paintedSig) return;
+    paintedSig = next;
+    map.setPaintProperty(
+      "quake-fill",
+      "fill-color",
+      intensityFill(quake?.areas ?? []) as never,
+    );
+    const warn = eewFill(eews, "#d93526");
+    map.setPaintProperty("eew-fill", "fill-color", warn as never);
+    map.setPaintProperty("eew-line", "line-color", warn as never);
+    const t = tsunamiPaint(tsunamis);
+    map.setPaintProperty("tsunami", "line-color", t.color as never);
+    map.setPaintProperty("tsunami", "line-width", t.width as never);
+    const src = map.getSource("hypocenters");
+    if (src && "setData" in src)
+      (src as { setData(d: unknown): void }).setData(
+        hypocenterFeatures(quakes),
+      );
+  });
+
+  // 震度の札・震央の印 (字を描くのに地図用の字体を落とさないよう、DOM の印で置く)
+  $effect(() => {
+    if (!map || !MarkerClass) return;
+    const next = sig(
+      quake?.id,
+      quake?.updatedAt,
+      eewSig(eews),
+      layers.intensity,
+      layers.hypocenters,
+      layers.eew,
+    );
+    if (next === markedSig) return;
+    markedSig = next;
+    for (const m of markers) m.remove();
+    markers = [];
+    if (layers.intensity && quake) {
+      for (const l of intensityLabels(quake.areas, points, codeByName)) {
+        const el = document.createElement("span");
+        const c = INTENSITY_COLORS[l.int];
+        el.className = "int-label";
+        el.textContent = intensityLabel(l.int);
+        el.title = `${l.name} 震度${intensityLabel(l.int)}`;
+        if (c) {
+          el.style.background = c.bg;
+          el.style.color = c.fg;
+        }
+        markers.push(
+          new MarkerClass({ element: el }).setLngLat(l.at).addTo(map),
+        );
+      }
+    }
+    if (
+      layers.hypocenters &&
+      quake?.hypocenter?.lat !== undefined &&
+      quake.hypocenter.lon !== undefined
+    ) {
+      const el = epicenter(`震央 ${quake.hypocenter.name}`, false);
+      markers.push(
+        new MarkerClass({ element: el })
+          .setLngLat([quake.hypocenter.lon, quake.hypocenter.lat])
+          .addTo(map),
+      );
+    }
+    if (layers.eew) {
+      for (const e of eews) {
+        if (
+          e.cancelled ||
+          e.hypocenter?.lat === undefined ||
+          e.hypocenter.lon === undefined
+        )
+          continue;
+        const el = epicenter(
+          `緊急地震速報の震央 ${e.hypocenter.name}${e.assumed ? " (仮定震源)" : ""}`,
+          true,
+        );
+        markers.push(
+          new MarkerClass({ element: el })
+            .setLngLat([e.hypocenter.lon, e.hypocenter.lat])
+            .addTo(map),
+        );
+      }
+    }
+  });
+
+  /**
+   * 震央の × 。MapLibre は印の要素そのものの transform で場所を決めるので、動かすのは中の要素
+   */
+  function epicenter(title: string, eew: boolean): HTMLElement {
+    const outer = document.createElement("div");
+    const inner = document.createElement("span");
+    inner.className = eew ? "epicenter eew" : "epicenter";
+    outer.title = title;
+    outer.append(inner);
+    return outer;
+  }
+
+  // 選んだ地震 (と、出ている緊急地震速報) の震央へ寄せる。飛ばさない。
+  // 続報で中身が変わるたびに寄せ直すと、見ている所が勝手に動くので、選んだものが替わったときだけ
+  let focused = "";
+  $effect(() => {
+    if (!map) return;
+    const eew = eews.find((e) => !e.cancelled);
+    const key = eew ? `eew:${eew.eventId}` : `quake:${quake?.id ?? ""}`;
+    const h = eew?.hypocenter ?? quake?.hypocenter;
+    if (key === focused || h?.lat === undefined || h.lon === undefined) return;
+    focused = key;
+    map.jumpTo({ center: [h.lon, h.lat], zoom: Math.max(map.getZoom(), 5.5) });
+  });
+</script>
+
+{#if failed}
+  <p class="panel muted">{failed}</p>
+{:else}
+  <div class="map" bind:this={container} role="region" aria-label="地図"></div>
+{/if}
+
+<style>
+  .map {
+    width: 100%;
+    height: 100%;
+    min-height: 20rem;
+    border-radius: var(--so-item-radius);
+    overflow: hidden;
+    background: #0b1a2e;
+  }
+  /* 地図の上の札 (MapLibre が DOM に置くので :global) */
+  .map :global(.int-label) {
+    display: inline-block;
+    min-width: 1.9em;
+    border: 1px solid rgb(0 0 0 / 0.35);
+    border-radius: var(--so-radius-sm);
+    padding: 0 0.25em;
+    font-size: var(--so-text-xs);
+    font-weight: var(--so-weight-bold);
+    line-height: 1.6;
+    text-align: center;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+  /* 震央の × */
+  .map :global(.epicenter) {
+    display: block;
+    width: 1.6rem;
+    height: 1.6rem;
+    background:
+      linear-gradient(45deg, transparent 42%, #ff2800 42% 58%, transparent 58%),
+      linear-gradient(-45deg, transparent 42%, #ff2800 42% 58%, transparent 58%);
+    filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff);
+  }
+  /* 緊急地震速報の震央は、出たときに 3 回だけ大きさで脈打つ (transform だけ) */
+  .map :global(.epicenter.eew) {
+    animation: eew-pulse 0.9s ease-in-out 3;
+  }
+  @keyframes -global-eew-pulse {
+    50% {
+      transform: scale(1.35);
+    }
+  }
+</style>
