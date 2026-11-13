@@ -124,10 +124,12 @@ export function bosaiTsunamiSource(
   async function parse(text: string, _url: string, tools: PollTools) {
     const list = parseBosaiTsunamiList(text);
     const now = Date.now();
-    const todo = list
-      .filter((i) => !ctx.seen("jma-bosai", i.fname))
-      .filter((i) => now - (failed.get(i.fname) ?? 0) > RETRY_AFTER_MS)
-      .slice(0, MAX_TEXTS);
+    // 取り直さない控えは 30 分で捨てる (増え続けない)
+    for (const [f, t] of failed) if (now - t > RETRY_AFTER_MS) failed.delete(f);
+    const unseen = list.filter((i) => !ctx.seen("jma-bosai", i.fname));
+    const todo = unseen.filter((i) => !failed.has(i.fname)).slice(0, MAX_TEXTS);
+    // 取り残し (上限で次に回したもの・取れなかったもの) があれば、次の回も一覧を読み直す
+    if (unseen.length > todo.length) tools.leftLater();
     const out: Incoming[] = [];
     // 古い順に渡す (一覧の並びと同じ向きに保存する)
     for (const item of todo.reverse()) {
@@ -136,6 +138,7 @@ export function bosaiTsunamiSource(
         body = await tools.fetchText(bosaiTsunamiText(item.fname));
       } catch (err) {
         failed.set(item.fname, now);
+        tools.leftLater();
         console.warn(`[jma-bosai] ${item.fname} を取れませんでした: ${err}`);
         continue;
       }
