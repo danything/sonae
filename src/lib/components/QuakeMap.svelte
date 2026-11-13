@@ -90,6 +90,10 @@
       created.touchZoomRotate.disableRotation();
       created.on("load", () => {
         if (!disposed) map = created;
+        // 出典は (i) に畳んでおく (開くと地図の下を覆う)。同じ出典は画面の下の注意文の下にもいつも出している
+        container
+          ?.querySelector(".maplibregl-ctrl-attrib")
+          ?.classList.remove("maplibregl-compact-show");
       });
     })().catch((err: unknown) => {
       console.warn(`地図を開けませんでした: ${err}`);
@@ -250,7 +254,7 @@
 </script>
 
 {#if failed}
-  <p class="panel muted">{failed}</p>
+  <div class="map-failed empty-state"><p class="muted">{failed}</p></div>
 {:else}
   <div class="map" bind:this={container} role="region" aria-label="地図"></div>
 {/if}
@@ -259,10 +263,17 @@
   .map {
     width: 100%;
     height: 100%;
-    min-height: 20rem;
-    border-radius: var(--so-item-radius);
+    border-radius: var(--map-radius, 0);
     overflow: hidden;
     background: #0b1a2e;
+  }
+  .map-failed {
+    height: 100%;
+    justify-content: center;
+  }
+  /* 地図の右下の出典。スマホの形では下のタブと dock の上に出す (`--map-bottom` は置く側が決める) */
+  .map :global(.maplibregl-ctrl-bottom-right) {
+    bottom: var(--map-bottom, 0px);
   }
   /* 地図の上の札 (MapLibre が DOM に置くので :global) */
   .map :global(.int-label) {

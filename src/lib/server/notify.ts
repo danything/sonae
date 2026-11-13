@@ -17,6 +17,10 @@ import {
   tsunamiGradeLabel,
 } from "#lib/model.ts";
 import type { PushPayload, PushPrefs, TsunamiLevel } from "#lib/push.ts";
+import { selectHref } from "#lib/view.ts";
+
+/** 押したときに開く所 (1 つの画面で、その件を選んだ URL。docs/ui.md) */
+const NONE = new URLSearchParams();
 
 /** 1 つのイベントから作る知らせ。購読ごとに matches で絞り、plan で鳴らすかを決める */
 export interface Notice {
@@ -86,7 +90,7 @@ function eewNotice(e: Eew, event: SonaeEvent): Notice {
   const place = e.hypocenter?.name;
   const base = {
     tag: `eew:${e.eventId}`,
-    url: "/eew",
+    url: selectHref(NONE, "eew", e.eventId),
     urgency: "high" as const,
     ttl: TTL.eew,
     at: Date.parse(e.issuedAt),
@@ -137,7 +141,7 @@ function quakeNotice(q: Quake, event: SonaeEvent): Notice {
   );
   const base = {
     tag: `quake:${q.id}`,
-    url: `/quakes/${encodeURIComponent(q.id)}`,
+    url: selectHref(NONE, "quake", q.id),
     urgency: "normal" as const,
     ttl: TTL.quake,
     at,
@@ -170,7 +174,7 @@ function tsunamiNotice(t: Tsunami, event: SonaeEvent): Notice {
   const top = topGrade(t);
   const base = {
     tag: `tsunami:${t.id}`,
-    url: `/tsunami/${encodeURIComponent(t.id)}`,
+    url: selectHref(NONE, "tsunami", t.id),
     urgency: "high" as const,
     ttl: TTL.tsunami,
     at: Date.parse(t.issuedAt),

@@ -179,7 +179,7 @@ describe("何を知らせるか", () => {
     const n4 = noticeOf(quake(), NOW);
     expect(n4 && matches(n4, prefs())).toBe(true);
     expect(n4?.title).toBe("最大震度4 千葉県北西部");
-    expect(n4?.url).toBe("/quakes/20261114090000");
+    expect(n4?.url).toBe("/?q=20261114090000");
     expect(n4 && matches(n4, prefs({ quakeMinInt: "off" }))).toBe(false);
   });
 

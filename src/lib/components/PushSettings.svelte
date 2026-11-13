@@ -1,8 +1,11 @@
 <script lang="ts">
   /**
-   * Web Push の登録と知らせの条件 (docs/design.md の 2.4)。ヘッダーのボタンから開くダイアログ 1 つに閉じる。
+   * Web Push の登録と知らせの条件 (docs/design.md の 2.4)。ヘッダーのナビ (スマホの形は「その他」) の「通知」から開くダイアログ 1 つに閉じる。
+   * 開け閉めは `open` で持つ (閉じるのは左下の「閉じる」・幕・Esc)。
    * 条件はブラウザ (購読) ごとにサーバーに持つ。サーバーに VAPID の鍵が無いときは、そう出すだけ。
    */
+  import "@anyblades/blades/components/modal";
+
   import { INTENSITIES, intensityLabel } from "#lib/model.ts";
   import {
     base64UrlToBytes,
@@ -17,6 +20,8 @@
     prefs: PushPrefs;
     createdAt: number;
   }
+  let { open = $bindable(false) }: { open?: boolean } = $props();
+
   type Info =
     | { enabled: false }
     | { enabled: true; publicKey: string; subscriptions: Registered[] };
@@ -82,10 +87,14 @@
     }
   }
 
-  function open(): void {
-    dialog?.showModal();
-    load().catch((err: unknown) => (message = `読めませんでした: ${err}`));
-  }
+  // 開いたら、そのたびに購読と条件を読み直す
+  $effect(() => {
+    if (!dialog) return;
+    if (open && !dialog.open) {
+      dialog.showModal();
+      load().catch((err: unknown) => (message = `読めませんでした: ${err}`));
+    } else if (!open && dialog.open) dialog.close();
+  });
 
   /** 公開鍵が替わっていたら、購読を作り直す (古い鍵の購読には送れない) */
   async function subscribe(key: string): Promise<PushSubscription> {
@@ -179,15 +188,14 @@
   }
 </script>
 
-<button type="button" class="open" onclick={open} title="知らせの設定">
-  知らせ
-</button>
-
-<dialog bind:this={dialog} closedby="any" aria-labelledby="push-title">
-  <article class="stack">
-    <header>
-      <h2 id="push-title">知らせ (Web Push)</h2>
-    </header>
+<dialog
+  bind:this={dialog}
+  closedby="any"
+  aria-labelledby="push-title"
+  onclose={() => (open = false)}
+>
+  <article class="modal-box stack">
+    <h1 id="push-title">通知 (Web Push)</h1>
     {#if !info}
       <p class="muted">読んでいます…</p>
     {:else if !info.enabled}
@@ -292,25 +300,10 @@
     {#if message}
       <p class="small" role="status">{message}</p>
     {/if}
-    <footer>
+    <div class="modal-foot">
       <button type="button" class="secondary" onclick={() => dialog?.close()}
         >閉じる</button
       >
-    </footer>
+    </div>
   </article>
 </dialog>
-
-<style>
-  .open {
-    min-height: 0;
-    padding: var(--so-space-1) var(--so-space-3);
-    border: 0;
-    border-radius: var(--so-radius-full);
-    background: transparent;
-    color: var(--so-fg);
-    font-size: var(--so-text-sm);
-  }
-  .open:hover {
-    background: var(--so-hover-soft);
-  }
-</style>

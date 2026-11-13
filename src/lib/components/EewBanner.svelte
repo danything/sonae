@@ -18,7 +18,7 @@
 </script>
 
 <section class="eew {kind}" role="alert" aria-live="assertive">
-  <div class="page inner">
+  <div class="inner">
     <p class="title">
       {#if eew.cancelled}
         緊急地震速報は取り消されました
@@ -61,41 +61,46 @@
 
 <style>
   .eew {
-    border-bottom: 1px solid rgb(0 0 0 / 0.2);
+    position: relative;
+    z-index: var(--so-z-header);
     /* 出るときに一度だけ、上から滑り込む (transform と opacity だけ) */
-    animation: enter 0.25s ease-out both;
+    animation: enter var(--so-duration-enter) var(--so-ease-spring) both;
   }
   .inner {
-    padding-block: 0.75rem;
+    padding: var(--so-space-3) var(--so-space-4);
   }
   .warning {
     background: var(--so-rec);
     color: #fff;
   }
+  /* 予報と取消は塗らず、淡い面に注意の色のタイトル (ページの中の通知と同じ) */
   .forecast {
-    background: #f5c518;
-    color: #1a1300;
+    background: var(--so-subtle);
+    color: var(--so-fg);
+  }
+  .forecast .title {
+    color: var(--so-warn-text);
   }
   .cancelled {
     background: var(--so-subtle);
     color: var(--so-fg);
   }
   .title {
-    font-size: 1.25rem;
-    font-weight: 700;
+    font-size: var(--so-text-lg);
+    font-weight: var(--so-weight-bold);
   }
   /* 警報は、決めた回数だけ脈打って止まる (常時は回さない) */
   .warning .title {
     animation: pulse 0.9s ease-in-out 3;
   }
   .areas {
-    font-size: 1.05rem;
-    font-weight: 700;
+    font-size: var(--so-text-base);
+    font-weight: var(--so-weight-bold);
   }
   .label {
-    margin-right: 0.5rem;
-    font-size: 0.8rem;
-    font-weight: 400;
+    margin-right: var(--so-space-2);
+    font-size: var(--so-text-xs);
+    font-weight: var(--so-weight);
     opacity: 0.85;
   }
   .meta {

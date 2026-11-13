@@ -1,13 +1,14 @@
 /*
- * 見た目は denpa にそろえる (denpa の src/app.css と docs/design.md の「作り方」)。土台は Blades の Pico。
- * 部品は `blades` の層 (@layer) に入るので、層の外のこちらの規則と各画面の <style> は詳細度に関係なく勝つ。
+ * 見た目は denpa の決まりに従う (docs/design.md。denpa の docs/design.md と src/app.css を写したもの)。土台は Blades の Pico。
+ * 部品は `blades` の層 (@layer) に入るので、層の外のこちらの規則と各部品の <style> は詳細度に関係なく勝つ。
  *
- * - 色は主の色ひとつ (Pico の既定の azure をそのまま) と、状態の色 4 つ (denpa と同じ値)
- * - テーマは暗いのが既定で、明るいのも選べる (app.html と ThemeToggle が <html data-theme> を付ける)
- * - 角丸・余白・字の大きさ・動きは、下のトークンの段から選ぶ (名前は denpa の --dp-* を --so-* にしたもの)
- * - 動きは CSS の opacity と transform だけ (docs/design.md の 6 章)。動きを減らす設定では全部止める
+ * - トークンの名前は denpa の `--dp-*` を `--so-*` にしたもの。値は denpa と同じ
+ * - 層は地・件の面・操作の層の 3 つ (denpa の design.md 2 章)
+ * - テーマは暗いのが既定で、明るい・端末に合わせるも選べる (app.html と `#lib/prefs.ts` が <html data-theme> を付ける)
+ * - スマホの形は `<html data-phone>` (1000px 未満。app.html が描く前に付ける)。上のヘッダーを出さず、下のタブと dock に寄せる
+ * - 動きは CSS の透明度と transform だけ。動きを減らす設定では全部止める (ファイルの最後)
  *
- * 限られた画面にしか出ない部品 (表など) は、それを描くコンポーネントが <script> で読む。
+ * 限られた所にしか出ない部品 (表・<details>・ダイアログ) は、それを描くコンポーネントが <script> で読む。
  */
 @import "@anyblades/blades/variables";
 @import "@anyblades/blades/layout/document";
@@ -17,6 +18,7 @@
 @import "@anyblades/blades/content/misc";
 @import "@anyblades/blades/forms/basics";
 @import "@anyblades/blades/forms/checkbox-radio-switch";
+@import "@anyblades/blades/components/card";
 @import "@anyblades/blades/utilities";
 
 :root {
@@ -31,7 +33,7 @@
   --so-fg: var(--pico-color);
   --so-font-mono:
     ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
-  /* 角丸。小 (札)・中 (入力欄・行)・大 (メニュー・ダイアログ)。ボタンはカプセル */
+  /* 角丸。小 (震度の札)・中 (入力欄・行)・大 (メニュー・ダイアログ)。ボタンはカプセル */
   --so-radius-sm: 0.375rem;
   --so-radius: 0.5rem;
   --so-radius-lg: 0.75rem;
@@ -45,10 +47,26 @@
   --so-space-4: 1rem;
   --so-space-5: 1.5rem;
   --so-space-6: 2rem;
+  /* 重なりの段 (denpa と同じ並び) */
+  --so-z-heading: 3; /* 貼り付く日付の見出し */
+  --so-z-dock: 30; /* 下のタブのすぐ上に浮かせる操作の 1 行 */
+  --so-z-header: 40; /* ヘッダー・下のタブ・緊急地震速報の帯 */
+  --so-z-toast: 50; /* 検索の候補 */
+  --so-z-modal: 60; /* ダイアログ */
+  --so-z-skip: 70; /* 本文へ移動のリンク */
   --so-list-gap: 0.375rem;
   --so-item-h: 4rem;
   --so-mark: 2px;
-  /* 字の大きさ */
+  /* 浮いた角丸の面の形 (denpa の --dp-bar-*) */
+  --so-bar-inset: 0.75rem;
+  --so-bar-radius: 0.875rem;
+  --so-bar-gap: 0.25rem;
+  --so-bar-pad: 0.375rem;
+  /* 下のタブとの隙間と、窓の端からの離れ */
+  --so-dock-gap: 0.375rem;
+  --so-dock-inset: 0.75rem;
+  /* 字の大きさの 6 段。`-2xs` は幅か高さの決まった所 (下のタブの名前・カレンダーの曜日) だけ */
+  --so-text-2xs: 0.6875rem;
   --so-text-xs: 0.75rem;
   --so-text-sm: 0.875rem;
   --so-text-base: 1rem;
@@ -56,20 +74,34 @@
   --so-text-xl: 1.5rem;
   --so-weight: 400;
   --so-weight-bold: 700;
-  /* 動き。時間と曲線はこの段から (opacity と transform だけに使う) */
+  /* 動き。時間は 4 つ、曲線は 3 つ (denpa の design.md 7 章) */
   --so-duration: 120ms;
   --so-duration-enter: 240ms;
+  --so-duration-move: 300ms;
+  --so-duration-exit: 150ms;
   --so-ease: cubic-bezier(0.2, 0, 0, 1);
-  /* 重なりの段 */
-  --so-z-header: 40;
-  --so-z-alert: 45;
-  --so-z-map-panel: 10;
+  --so-ease-spring: linear(
+    0,
+    0.06 4%,
+    0.24 9%,
+    0.5 15%,
+    0.74 22%,
+    0.9 30%,
+    1.02 40%,
+    1.04 48%,
+    1.02 60%,
+    1 75%,
+    1
+  );
+  --so-ease-exit: cubic-bezier(0.3, 0, 1, 1);
+  --pico-transition: var(--so-duration) var(--so-ease);
   /* 状態の色 (denpa と同じ。Pico の色見本の red・jade・amber・cyan) */
   --so-rec: #d93526;
   --so-ok: #00895a;
   --so-warn: #c79400;
   --so-info: #058686;
 }
+/* 指で押す端末の件は 72px */
 @media (pointer: coarse) {
   :root {
     --so-item-h: 4.5rem;
@@ -87,14 +119,20 @@
   --so-line: #dfe3eb;
   --so-line-strong: #cfd5e2;
   --so-pop: #fff;
+  --so-pop-hover: var(--so-subtle);
   --so-muted: #555e70;
   --so-primary-text: #02659a;
+  --so-field: rgb(0 37 92 / 0.11);
   --so-item: #fff;
   --so-item-hover: #f5f6f9;
   --so-item-shadow:
     0 1px 2px rgb(24 28 37 / 0.08), 0 2px 8px rgb(24 28 37 / 0.06);
   --so-shadow-pop:
     0 4px 12px rgb(24 28 37 / 0.08), 0 16px 32px -8px rgb(24 28 37 / 0.16);
+  --so-shadow-tight: 0 1px 3px rgb(24 28 37 / 0.12);
+  --so-backdrop: rgb(24 28 37 / 0.16);
+  --pico-form-element-background-color: #fff;
+  --pico-form-element-border-color: var(--so-line-strong);
   --pico-table-border-color: transparent;
   --pico-muted-border-color: var(--so-line);
   --pico-secondary: #3d475c;
@@ -114,15 +152,26 @@
   --so-line: #26282e;
   --so-line-strong: #3a3d46;
   --so-pop: #1f2026;
+  --so-pop-hover: #2c2e35;
   --so-muted: #9aa3b5;
   --so-primary-text: var(--pico-primary);
+  --so-field: rgb(211 220 255 / 0.13);
   --so-item: #16171c;
   --so-item-hover: #1d1e24;
   --so-item-shadow: none;
   --so-shadow-pop:
     0 4px 12px rgb(0 0 0 / 0.3), 0 16px 40px -8px rgb(0 0 0 / 0.5);
+  --so-shadow-tight: 0 1px 3px rgb(0 0 0 / 0.45);
+  --so-backdrop: rgb(0 0 0 / 0.45);
+  --pico-form-element-background-color: var(--so-bg);
+  --pico-form-element-active-background-color: var(--so-surface);
+  --pico-form-element-selected-background-color: var(--so-line);
+  --pico-form-element-border-color: var(--so-line-strong);
   --pico-table-border-color: transparent;
   --pico-muted-border-color: var(--so-line);
+  --pico-card-background-color: var(--so-surface);
+  --pico-card-sectioning-background-color: var(--so-subtle);
+  --pico-switch-background-color: var(--so-line-strong);
   --pico-secondary: #bfc7d9;
   --pico-secondary-hover: #dfe3eb;
   --so-rec-text: #f38f79;
@@ -132,8 +181,9 @@
 }
 :root,
 [data-theme] {
-  /* 操作の層の面 (ヘッダー・地図の上の操作)。下をうっすら見せる。ぼかさない */
+  /* 操作の層の面 (ヘッダー・下のタブ・dock・主のボタン)。メニューの面を 92% 残して下をうっすら見せる。ぼかさない */
   --so-float: color-mix(in srgb, var(--so-pop) 92%, transparent);
+  --so-hover: var(--so-subtle);
   --so-hover-soft: color-mix(in srgb, var(--so-subtle) 55%, transparent);
 }
 @media (prefers-reduced-transparency: reduce) {
@@ -143,13 +193,27 @@
   }
 }
 
-:where(a, button, summary, select, [tabindex], input):focus-visible {
+:where(
+  a,
+  button,
+  summary,
+  select,
+  [tabindex],
+  input:is([type="checkbox"], [type="radio"])
+):focus-visible {
   outline: 2px solid var(--pico-primary);
   outline-offset: 2px;
+}
+html,
+body {
+  height: 100%;
 }
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--so-line-strong) transparent;
+}
+*:hover {
+  scrollbar-color: var(--so-muted) transparent;
 }
 body {
   margin: 0;
@@ -171,7 +235,13 @@ td,
 th {
   word-break: normal;
 }
+html:has(dialog:modal) {
+  overflow: hidden;
+}
+input:not([type="checkbox"], [type="radio"]),
 button,
+[type="button"],
+[type="submit"],
 [role="button"],
 fieldset,
 table,
@@ -184,6 +254,7 @@ h1,
 h2,
 h3,
 details,
+[role="group"],
 label,
 section {
   margin-bottom: 0;
@@ -210,12 +281,6 @@ table {
 }
 
 /* ---- 並べる ---- */
-.page {
-  width: 100%;
-  max-width: 72rem;
-  margin-inline: auto;
-  padding-inline: var(--so-space-4);
-}
 .stack {
   display: flex;
   flex-direction: column;
@@ -245,7 +310,6 @@ table {
 .bold {
   font-weight: var(--so-weight-bold);
 }
-/* 変わる数字・縦に並ぶ数字は桁の幅を揃える */
 .num {
   font-variant-numeric: tabular-nums;
 }
@@ -257,24 +321,178 @@ table {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-/* ---- 件の面 (1 件が 2〜3 行の一覧) ---- */
+/* ---- ボタン (denpa の「ボタン」。強弱は層と字の太さで付け、色では塗らない) ---- */
+:root,
+[data-theme] {
+  --so-btn-solid: var(--so-float);
+  --so-btn-solid-hover: var(--so-pop);
+  --so-btn-lift: var(--so-shadow-pop);
+  --so-btn-solid-text: var(--so-fg);
+  --so-btn-tonal: transparent;
+  --so-btn-tonal-hover: var(--so-hover-soft);
+  --so-btn-text: var(--pico-secondary-hover);
+}
+:root {
+  --so-btn-radius: var(--so-radius-full);
+  --so-btn-h: 2.625rem;
+  --so-btn-h-sm: 2.125rem;
+  --so-btn-h-xs: 1.625rem;
+}
+@media (pointer: coarse) {
+  :root {
+    --so-btn-h-sm: 2.5rem;
+    --so-btn-h-xs: 2.5rem;
+  }
+}
+:where(
+  button,
+  [type="button"],
+  [type="submit"],
+  [type="reset"],
+  [role="button"],
+  a.button
+):not(div) {
+  --pico-background-color: var(--so-btn-solid);
+  --pico-border-color: transparent;
+  --pico-color: var(--so-btn-solid-text);
+  --pico-box-shadow: none;
+  border-radius: var(--so-btn-radius);
+}
+/* 操作の層に乗せるのは主のボタンだけ (クラスが無いか、大きさのクラスだけのもの) */
+:where(button:not([class]), :is(button, a.button):is(.small, .xs)):where(
+    :not(.secondary, .outline, .ghost, [aria-pressed="true"])
+  ):not(div) {
+  --pico-box-shadow: var(--so-btn-lift);
+  font-weight: var(--so-weight-bold);
+}
+:where(button:not([class]), :is(button, a.button):is(.small, .xs)):where(
+    :not(.secondary, .outline, .ghost, [aria-pressed="true"])
+  ):not(div):where(:hover) {
+  --pico-background-color: var(--so-btn-solid-hover);
+}
+:where(button:not([class]), :is(button, a.button):is(.small, .xs)):where(
+    :not(.secondary, .outline, .ghost, [aria-pressed="true"])
+  ):not(div):where(:active) {
+  scale: 0.97;
+  transition: scale var(--so-duration) var(--so-ease);
+}
+:where(button, a.button) {
+  transition:
+    background-color var(--so-duration) var(--so-ease),
+    color var(--so-duration) var(--so-ease),
+    box-shadow var(--so-duration) var(--so-ease),
+    scale var(--so-duration-move) var(--so-ease-spring);
+}
+/* 浮いたものの中と件の面では、主のボタンも浮かせず太字だけ */
+:where(dialog, [popover], .modal-box, .item, .dock) {
+  --so-btn-solid: transparent;
+  --so-btn-solid-hover: var(--so-btn-tonal-hover);
+  --so-btn-lift: none;
+}
+a.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding: var(--pico-form-element-spacing-vertical)
+    var(--pico-form-element-spacing-horizontal);
+  border: var(--pico-border-width) solid var(--pico-border-color);
+  background-color: var(--pico-background-color);
+  box-shadow: var(--pico-box-shadow);
+  color: var(--pico-color);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+:where(button, [type="button"], [type="submit"], [role="button"], a.button):is(
+  .secondary,
+  .outline
+) {
+  --pico-background-color: var(--so-btn-tonal);
+  --pico-color: var(--so-btn-text);
+  --pico-box-shadow: none;
+  font-weight: var(--so-weight);
+}
+:where(
+  button,
+  [type="button"],
+  [type="submit"],
+  [role="button"],
+  a.button
+).ghost {
+  --pico-background-color: transparent;
+  --pico-color: inherit;
+  --pico-box-shadow: none;
+  font-weight: var(--so-weight);
+}
+:where(button, [type="button"], [type="submit"], [role="button"], a.button):is(
+    .secondary,
+    .outline,
+    .ghost
+  ):where(:hover, :active) {
+  --pico-background-color: var(--so-btn-tonal-hover);
+  --pico-box-shadow: none;
+}
+:where(button, [type="button"], [type="submit"], a.button):is(
+  .small,
+  .xs,
+  .icon
+) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  padding-block: 0;
+}
+:where(button, [type="button"], [type="submit"], a.button).small {
+  min-height: var(--so-btn-h-sm);
+  padding-inline: var(--so-space-3);
+  font-size: var(--so-text-sm);
+}
+:where(button, [type="button"], [type="submit"], a.button).xs {
+  min-height: var(--so-btn-h-xs);
+  padding-inline: var(--so-space-2);
+  font-size: var(--so-text-xs);
+}
+:where(button, a.button).icon {
+  width: var(--so-btn-h);
+  min-height: var(--so-btn-h);
+  padding: 0;
+}
+:where(button, a.button).icon.small {
+  width: var(--so-btn-h-sm);
+  min-height: var(--so-btn-h-sm);
+}
+/* メニューを開くボタンは、中の設定が既定から変わっている間だけ短い下線 (denpa の `data-on`) */
+button[data-on] {
+  background-image: linear-gradient(var(--pico-primary), var(--pico-primary));
+  background-repeat: no-repeat;
+  background-position: center bottom 0.2rem;
+  background-size: 1rem var(--so-mark);
+}
+
+/* ---- 件の面 (1 件が 2〜3 行の一覧)。線で区切らず、件の間の余白で 1 本ずつに見せる ---- */
 .item {
   border-radius: var(--so-item-radius);
   background: var(--so-item);
   box-shadow: var(--so-item-shadow);
-  transition: opacity var(--so-duration-enter) var(--so-ease);
+  transition:
+    background-color var(--so-duration) var(--so-ease),
+    opacity var(--so-duration-enter) var(--so-ease);
 }
+/* 件は出てくるときに透明度だけでふわっと出る (場所は動かさない) */
 @starting-style {
   .item {
     opacity: 0;
   }
 }
-a.item {
-  color: inherit;
-  text-decoration: none;
-}
-a.item:hover {
+.item:hover {
   background: var(--so-item-hover);
 }
 .item-list {
@@ -289,15 +507,45 @@ a.item:hover {
   margin: 0;
   list-style: none;
 }
-/* 囲みの面 (詳しい画面の節) */
-.panel {
-  border-radius: var(--so-item-radius);
-  padding: var(--so-space-4);
-  background: var(--so-item);
-  box-shadow: var(--so-item-shadow);
+
+/* ---- 日付の見出し。貼り付いて行がその裏を流れるときだけ小さなカプセル ---- */
+.day-head {
+  position: sticky;
+  top: var(--so-space-2);
+  z-index: var(--so-z-heading);
+  width: fit-content;
+  margin: var(--so-space-2) 0 var(--so-space-1);
+  color: var(--so-muted);
+  font-size: var(--so-text-xs);
+  font-weight: var(--so-weight-bold);
+  container-type: scroll-state;
+}
+.day-head-chip {
+  display: flex;
+  align-items: baseline;
+  gap: var(--so-space-2);
+  padding: var(--so-space-1) var(--so-space-3);
+  border-radius: var(--so-radius-full);
+  background: var(--so-float);
+  box-shadow: var(--so-shadow-pop);
+  transition:
+    background-color var(--so-duration) var(--so-ease),
+    box-shadow var(--so-duration) var(--so-ease);
+}
+@supports (container-type: scroll-state) {
+  .day-head-chip {
+    background: transparent;
+    box-shadow: none;
+  }
+  @container scroll-state(stuck: top) {
+    .day-head-chip {
+      background: var(--so-float);
+      box-shadow: var(--so-shadow-pop);
+    }
+  }
 }
 
-/* ---- 札 (状態だけ。淡い地に状態の色の字。denpa の .tag と同じ形) ---- */
+/* ---- タグ (状態だけ。淡い地に状態の色の字) ---- */
 .tag {
   display: inline-flex;
   align-items: center;
@@ -307,6 +555,7 @@ a.item:hover {
   background: var(--so-subtle);
   color: inherit;
   font-size: var(--so-text-xs);
+  font-weight: var(--so-weight);
   line-height: 1.75;
   white-space: nowrap;
 }
@@ -322,57 +571,499 @@ a.item:hover {
   background: color-mix(in srgb, var(--so-info) 14%, var(--so-surface));
   color: var(--so-info-text);
 }
-.tag.success {
-  background: color-mix(in srgb, var(--so-ok) 14%, var(--so-surface));
-  color: var(--so-ok-text);
+
+/* ---- 通知 (ページの中。淡い面に、種類は先頭のアイコンと言葉。地は状態の色で塗らない) ---- */
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--so-space-2);
+  padding: var(--so-space-3);
+  border-radius: var(--so-radius);
+  background: var(--so-subtle);
+  color: var(--so-fg);
+}
+.notice > svg {
+  margin-top: 0.2rem;
+}
+.notice.warning > svg {
+  color: var(--so-warn-text);
+}
+.notice.error > svg {
+  color: var(--so-rec-text);
+}
+.notice.info > svg {
+  color: var(--so-info-text);
 }
 
-/* ---- チップ (層の切り替えなど) ---- */
+/* ---- 空の状態 (一覧の場所の真ん中に、太字の一言と控えた字の案内) ---- */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--so-space-2);
+  padding: var(--so-space-6) var(--so-space-4);
+  text-align: center;
+}
+.empty-state p {
+  margin: 0;
+}
+
+/* ---- チップ (横に並ぶ選択。塗らず、主の色の太字と字の幅いっぱいの下線) ---- */
 .chips {
   display: flex;
   flex-wrap: wrap;
   gap: var(--so-space-1);
 }
+.chips.scroll {
+  flex: 1 1 0%;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(to right, #000 calc(100% - 1.5rem), transparent);
+}
 .chip {
+  --pico-background-color: transparent;
+  --pico-color: var(--so-btn-text);
+  --pico-box-shadow: none;
   position: relative;
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 0.375rem;
-  min-height: 2rem;
+  width: auto;
+  min-height: var(--so-btn-h-sm);
   margin: 0;
   padding: 0 var(--so-space-3);
+  border: 0;
   border-radius: var(--so-radius-full);
-  color: var(--so-fg);
+  background-color: var(--pico-background-color);
+  color: var(--pico-color);
   font-size: var(--so-text-sm);
+  font-weight: var(--so-weight);
+  line-height: 1.2;
+  text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
+  transition: background-color var(--so-duration) var(--so-ease);
 }
 .chip:hover {
+  --pico-background-color: var(--so-hover-soft);
+}
+.chip .num {
+  color: var(--so-muted);
+}
+.chip:is([aria-pressed="true"], [aria-current]:not([aria-current="false"])) {
+  --pico-color: var(--so-primary-text);
+  color: var(--so-primary-text);
+  font-weight: var(--so-weight-bold);
+}
+.chip:is(
+    [aria-pressed="true"],
+    [aria-current]:not([aria-current="false"])
+  )::after {
+  content: "";
+  position: absolute;
+  inset-inline: var(--so-space-3);
+  bottom: 0.3rem;
+  height: var(--so-mark);
+  border-radius: var(--so-mark);
+  background: var(--pico-primary);
+  pointer-events: none;
+}
+
+/* ---- メニュー (`Menu.svelte`)。開け閉めは popover、見た目はここ (denpa と同じ) ---- */
+.menu {
+  inset: auto;
+  margin: 0;
+  min-width: 10rem;
+  min-width: max(10rem, anchor-size(width));
+  max-height: 100%;
+  overflow-y: auto;
+  --menu-pad: var(--so-space-2);
+  padding: var(--menu-pad);
+  gap: 0.125rem;
+  border: 0;
+  border-radius: var(--so-radius-lg);
+  --so-hover: var(--so-pop-hover);
+  background: var(--so-pop);
+  color: var(--pico-color);
+  box-shadow: var(--so-shadow-pop);
+  outline: none;
+  position-try-fallbacks: flip-block;
+  flex-direction: column;
+  --menu-rise: -0.375rem;
+  opacity: 0;
+  transform: translateY(var(--menu-rise)) scale(0.94);
+  transform-origin: top left;
+  transition:
+    opacity var(--so-duration-exit) var(--so-ease-exit),
+    transform var(--so-duration-exit) var(--so-ease-exit),
+    overlay var(--so-duration-exit) allow-discrete,
+    display var(--so-duration-exit) allow-discrete;
+}
+.menu[data-align="end"] {
+  transform-origin: top right;
+}
+.menu[data-side="top"] {
+  --menu-rise: 0.375rem;
+  margin-bottom: var(--so-space-1);
+  transform-origin: bottom left;
+}
+.menu[data-side="bottom"] {
+  margin-top: var(--so-space-1);
+}
+.menu[data-side="top"][data-align="end"] {
+  transform-origin: bottom right;
+}
+.menu:popover-open {
+  display: flex;
+  opacity: 1;
+  transform: none;
+  transition-duration: var(--so-duration-enter);
+  transition-timing-function: var(--so-ease-spring);
+}
+@starting-style {
+  .menu:popover-open {
+    opacity: 0;
+    transform: translateY(var(--menu-rise)) scale(0.94);
+  }
+}
+.menu[data-side="bottom"][data-align="start"] {
+  position-area: bottom span-right;
+}
+.menu[data-side="bottom"][data-align="end"] {
+  position-area: bottom span-left;
+}
+.menu[data-side="top"][data-align="start"] {
+  position-area: top span-right;
+}
+.menu[data-side="top"][data-align="end"] {
+  position-area: top span-left;
+}
+.menu-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--so-space-2);
+  width: 100%;
+  margin: 0;
+  padding: var(--so-space-2) var(--so-space-3);
+  border: 0;
+  border-radius: calc(var(--so-radius-lg) - var(--menu-pad, var(--so-space-2)));
+  box-shadow: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  outline: none;
+}
+.menu-form {
+  display: contents;
+}
+.menu-item:where(:hover, :active, :focus, :focus-visible) {
+  box-shadow: none;
+  color: inherit;
+}
+.menu-item:focus {
+  background: var(--so-hover);
+}
+.menu-note,
+.menu-head {
+  margin: 0;
+  padding: var(--so-space-2) var(--so-space-3);
+}
+.menu-head {
+  color: var(--so-muted);
+  font-size: var(--so-text-xs);
+  font-weight: var(--so-weight-bold);
+}
+/* 選択肢の選んでいる項目は左の縦線と主の色の太字 */
+.menu-item:where(
+  [aria-current]:not([aria-current="false"]),
+  [role="menuitemradio"][aria-checked="true"]
+) {
+  color: var(--so-primary-text);
+  font-weight: var(--so-weight-bold);
+}
+.menu-item:where(
+    [aria-current]:not([aria-current="false"]),
+    [role="menuitemradio"][aria-checked="true"]
+  )::before {
+  content: "";
+  position: absolute;
+  inset-block: 0.5rem;
+  left: 0;
+  width: var(--so-mark);
+  border-radius: var(--so-mark);
+  background: var(--pico-primary);
+}
+.menu .menu-gap {
+  height: var(--so-space-2);
+}
+
+/* ---- オン/オフの印 (メニューとサイドバーの切り替え。押せるのは項目ぜんぶで、これは印だけ) ---- */
+.s-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 1.25rem;
+  margin-inline-start: auto;
+  border-radius: var(--so-radius-full);
+  background: var(--so-line-strong);
+  transition: background-color var(--so-duration) var(--so-ease);
+}
+.s-switch::after {
+  content: "";
+  position: absolute;
+  top: 0.125rem;
+  left: 0.125rem;
+  width: 1rem;
+  height: 1rem;
+  border-radius: var(--so-radius-full);
+  background: #fff;
+  transition: transform var(--so-duration-move) var(--so-ease-spring);
+}
+.s-switch.on {
+  background: var(--pico-primary-background);
+}
+.s-switch.on::after {
+  transform: translateX(1rem);
+}
+
+/* ---- サイドバー (`.side-panel`・`.side-label`・`.side-list`・`.side-item`・`.side-foot`)。地のまま、線を引かない ---- */
+.side-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--so-space-3);
+}
+.side-label {
+  display: flex;
+  align-items: center;
+  min-height: 1.25rem;
+  margin: var(--so-space-4) 0 0.125rem;
+  padding: 0 var(--so-space-3);
+  color: var(--so-fg);
+  font-size: var(--so-text-sm);
+  font-weight: var(--so-weight-bold);
+  line-height: 1.5;
+}
+.side-panel > .side-label:first-child {
+  margin-top: 0;
+}
+.side-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0 0 0 var(--so-space-3);
+  list-style: none;
+  box-shadow: none;
+}
+.side-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--so-space-3);
+  width: 100%;
+  min-height: 3rem;
+  margin: 0;
+  padding: 0 var(--so-space-3);
+  border: 0;
+  border-radius: var(--so-radius);
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  font-size: var(--so-text-sm);
+  font-weight: var(--so-weight);
+  text-align: left;
+  text-decoration: none;
+  transition: background-color var(--so-duration) var(--so-ease);
+}
+.side-item:hover {
   background: var(--so-hover-soft);
 }
-.chip:has(input:checked) {
-  background: color-mix(in srgb, var(--pico-primary) 16%, transparent);
+/* 選んでいるものは主の色の左の縦線と太字。塗らない */
+.side-item:is(
+  [aria-current]:not([aria-current="false"]),
+  [aria-pressed="true"]
+) {
   color: var(--so-primary-text);
+  font-weight: var(--so-weight-bold);
 }
-.chip input[type="checkbox"] {
+.side-item:is(
+    [aria-current]:not([aria-current="false"]),
+    [aria-pressed="true"]
+  )::before {
+  content: "";
   position: absolute;
+  inset-block: 0.625rem;
+  left: 0;
+  width: var(--so-mark);
+  border-radius: var(--so-mark);
+  background: var(--pico-primary);
+}
+/* 選び直すと、左の縦線が前の場所から縦に滑る (並びの疑似要素 1 本を CSS のアンカーで付ける) */
+@supports (anchor-name: --a) {
+  .side-list {
+    position: relative;
+    anchor-scope: --side;
+  }
+  .side-list .side-item:is([aria-pressed="true"], [aria-current="true"]) {
+    anchor-name: --side;
+  }
+  .side-list
+    .side-item:is([aria-pressed="true"], [aria-current="true"])::before {
+    content: none;
+  }
+  .side-list:has(
+      .side-item:is([aria-pressed="true"], [aria-current="true"])
+    )::after {
+    content: "";
+    position: absolute;
+    position-anchor: --side;
+    top: calc(anchor(top) + 0.625rem);
+    bottom: calc(anchor(bottom) + 0.625rem);
+    left: anchor(left);
+    width: var(--so-mark);
+    border-radius: var(--so-mark);
+    background: var(--pico-primary);
+    pointer-events: none;
+    transition:
+      top var(--so-duration-move) var(--so-ease-spring),
+      bottom var(--so-duration-move) var(--so-ease-spring);
+  }
+}
+/* 見せるだけの行 (状態)。指を乗せても塗らない */
+.side-item.static:hover {
+  background: transparent;
+}
+.side-item .side-sub {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--so-space-1);
+  color: var(--so-muted);
+  font-size: var(--so-text-xs);
+}
+/* メニューの中に置いた並び (スマホの形の「⋯」の状態)。メニューの項目と同じ余白と高さにそろえる */
+.menu .side-list {
+  padding: 0;
+}
+.menu .side-item {
+  min-height: 2.5rem;
+}
+.side-foot {
+  margin-top: auto;
+  padding-top: var(--so-space-4);
+}
+
+/* ---- ダイアログ (`<dialog>` の中の `article.modal-box`)。閉じるのは左下の「閉じる」 ---- */
+dialog {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background-color: var(--so-backdrop);
+  transition:
+    opacity var(--so-duration-exit) var(--so-ease-exit),
+    overlay var(--so-duration-exit) allow-discrete,
+    display var(--so-duration-exit) allow-discrete;
+}
+dialog:not([open]) {
+  opacity: 0;
+}
+.modal-box {
+  position: relative;
+  box-sizing: border-box;
+  width: calc(100% - 2rem);
+  max-width: 42rem;
+  max-height: calc(100% - 2rem);
+  margin: 0;
+  padding: var(--so-space-5);
+  overflow: auto;
+  border: 0;
+  border-radius: var(--so-radius-lg);
+  background: var(--so-surface);
+  box-shadow: var(--so-shadow-pop);
+  transition: transform var(--so-duration-exit) var(--so-ease-exit);
+}
+.modal-box:focus {
+  outline: none;
+}
+dialog:not([open]) > .modal-box {
+  transform: translateY(0.5rem) scale(0.95);
+}
+dialog[open] {
+  transition-duration: var(--so-duration-enter);
+  transition-timing-function: var(--so-ease);
+}
+dialog[open] > .modal-box {
+  transition-duration: var(--so-duration-enter);
+  transition-timing-function: var(--so-ease-spring);
+}
+@starting-style {
+  dialog[open] {
+    opacity: 0;
+  }
+  dialog[open] > .modal-box {
+    transform: translateY(0.5rem) scale(0.95);
+  }
+}
+.modal-backdrop {
+  position: fixed;
   inset: 0;
   width: 100%;
   height: 100%;
   margin: 0;
-  opacity: 0;
-  cursor: pointer;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  cursor: default;
 }
-.chip:has(input:focus-visible) {
-  outline: 2px solid var(--pico-primary);
-  outline-offset: 2px;
+.modal-foot {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--so-space-2);
+  margin: var(--so-space-5) 0 0;
+}
+@media (max-width: 639.98px) {
+  .modal-box {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100% - 2.5rem);
+    border-radius: var(--so-radius-lg) var(--so-radius-lg) 0 0;
+    padding-bottom: calc(var(--so-space-5) + env(safe-area-inset-bottom));
+  }
+  dialog:has(> article.modal-box) {
+    padding: 0;
+  }
+  dialog > article.modal-box {
+    margin-top: auto;
+  }
 }
 
-/* 動きを減らす設定の端末では、全部止めて終わった姿を見せる */
+/* ---- 下のタブのすぐ上に浮かぶ操作の 1 行 (`.dock`。スマホの形だけ) ---- */
+:where(html[data-phone]) .dock {
+  bottom: calc(var(--so-tabbar, 0px) + var(--so-dock-gap));
+  border-radius: var(--so-radius-full);
+  background: var(--so-float);
+  box-shadow: var(--so-shadow-pop);
+  transition: transform var(--so-duration-move) var(--so-ease-spring);
+}
+
+/* 動きを減らす設定の端末では、移り変わりの時間を 0 にし、繰り返す動きを付けない */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --so-duration: 0s;
     --so-duration-enter: 0s;
+    --so-duration-move: 0s;
+    --so-duration-exit: 0s;
   }
   *,
   *::before,
