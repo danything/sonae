@@ -72,6 +72,14 @@
           >)
         </li>
         <li>
+          <a href="https://www.tsunami.gov/" rel="noopener"
+            >tsunami.gov (PTWC)</a
+          >
+          (<a href="https://www.weather.gov/disclaimer" rel="noopener"
+            >利用条件</a
+          >)
+        </li>
+        <li>
           <a
             href="https://maps.gsi.go.jp/development/ichiran.html"
             rel="noopener">地理院タイル一覧</a

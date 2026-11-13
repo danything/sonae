@@ -70,6 +70,8 @@ export const SOURCE_LABEL: Record<SourceId, string> = {
   emsc: "EMSC (欧州地中海地震センター)",
   geonet: "GeoNet (ニュージーランド)",
   cwa: "中央氣象署 (台湾)",
+  ptwc: "PTWC (米国 太平洋津波警報センター)",
+  "jma-bosai": "気象庁ホームページ (国際津波)",
 };
 
 /** M の書き方 (「M3.5」)。M が無ければ電文の文のまま、それも無ければ「—」 */
