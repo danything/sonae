@@ -2,6 +2,11 @@ import type { SonaeEvent } from "#lib/model.ts";
 
 /** Cloudflare のプロキシの 100 秒の無通信の切断より十分短く (docs/design.md の 2.3) */
 export const PING_MS = 30_000;
+/**
+ * 埋め直しで送る上限。超えるときは埋め直しを送らずに `resync` を送り、ブラウザに一覧を
+ * 取り直させる (長く切れていたとき。途中までの埋め直しでは、抜けたものに気づけない)。
+ */
+export const BACKLOG_LIMIT = 500;
 
 /** SSE の 1 件。data は JSON にして 1 行で送る (JSON の中に改行は入らない) */
 export function sseFrame(f: {
@@ -28,7 +33,11 @@ export const SSE_HEADERS = {
 };
 
 export interface SseOptions {
-  backlog(): SonaeEvent[];
+  /** 埋め直し。上限を超えたと分かるよう、`limit` より 1 件多く返してよい */
+  backlog(limit: number): SonaeEvent[];
+  /** いまの最後の番号 (`resync` の `id:` にして、張り直しをそこから始める) */
+  latestSeq(): number;
+  backlogLimit?: number;
   subscribe(fn: (e: SonaeEvent) => void): () => void;
   /** 定期に送る状況 (ping と一緒に) */
   status?(): string;
@@ -38,7 +47,7 @@ export interface SseOptions {
 
 /**
  * 埋め直し → 生の配信。埋め直しの間に来たものを取りこぼさないよう、先に購読してから
- * 埋め直しを送り、番号で重複を除く。
+ * 埋め直しを送り、番号で重複を除く。埋め直しが上限を超えるときは `event: resync` を送る。
  */
 export function sseStream(o: SseOptions): Response {
   const encoder = new TextEncoder();
@@ -82,7 +91,15 @@ export function sseStream(o: SseOptions): Response {
       try {
         // 張り直しの間隔の目安 (ミリ秒)。EventSource の既定 (3 秒ほど) より少し長めに
         send("retry: 5000\n\n");
-        for (const e of o.backlog()) deliver(e);
+        const limit = o.backlogLimit ?? BACKLOG_LIMIT;
+        const backlog = o.backlog(limit + 1);
+        if (backlog.length > limit) {
+          // 多すぎる。埋め直しは送らず、いまの最後から生の配信に移る。ブラウザは一覧を取り直す
+          last = o.latestSeq();
+          send(sseFrame({ id: last, event: "resync", data: { after: last } }));
+        } else {
+          for (const e of backlog) deliver(e);
+        }
         for (const e of queued) deliver(e);
       } catch (err) {
         console.warn(`[sse] 埋め直しに失敗しました: ${err}`);
