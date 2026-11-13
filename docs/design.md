@@ -2,7 +2,7 @@
 
 地震・津波の情報を家のサーバーで受け、ブラウザで見て、Web Push で知らせるアプリの設計書。
 ここに書いたのは作りの決めごとで、作りながら直す。決めていないことは最後の「未決の点」にまとめた。
-画面の形は [ui.md](ui.md)、地図の層と出典は [map.md](map.md)、Web Push の運用は [push.md](push.md)、ログインの設定は [entra.md](entra.md) に書き、ここでは繰り返さない。
+画面の形は [ui.md](ui.md)、地図の層と出典は [map.md](map.md)、Web Push の運用は [push.md](push.md)、ログインの設定は [entra.md](entra.md)、台湾の中央氣象署の授権碼は [cwa.md](cwa.md) に書き、ここでは繰り返さない。
 
 - 名前は「備え」から。
 - 機能は [Zero Quake](https://github.com/0Quake/Zero-Quake) を参考にしたが、**コードは読まない・写さない** (クリーンルーム)。仕様は各情報源の公式の文書から取る。
@@ -48,9 +48,9 @@
 | EMSC Seismic Portal の WebSocket         | 海外の地震 (USGS より速い)                        | CC BY 4.0。サービスの丸ごと・大部分の再配布は書面の許可が要る (広く公開するときは問い合わせる)                         | 入れた (家族の間だけ。公開する前に問い合わせる) |
 | 気象庁 bosai の国際津波 (pacifictsunami) | 北西太平洋の M6.5 以上の国際津波関連情報 (WEPA40) | 気象庁ホームページの規約 (利用は可)。公式の API ではなく、予告なく変わる。壊れても他に響かない独立したアダプターにする | 入れた                                          |
 | Wolfx の jma_eqlist                      | P2P地震情報の予備 (気象庁の地震情報)              | Wolfx を使う機能は全員に無料・遅延なし、OriginalText は公開で再配布しない、出典は「Wolfx Project」を固定の 1 か所      | これから                                        |
-| GeoNet (ニュージーランド)                | 海外の地震                                        | CC BY 3.0 NZ。謝辞の文を出す                                                                                           | これから                                        |
-| 台湾 CWA (中央氣象署) の E-A0015-001     | 台湾付近の地震 (与那国・沖縄に近い)               | 政府資料開放授權條款 1 版 (CC BY 4.0 と両立)。出典の表示が要る。授権碼 (会員登録) が要るので、鍵が無ければ切って動く   | これから                                        |
-| 気象庁「各月の地震活動のまとめ」         | リンクだけ (出典と注意の窓)                       | 中身は取り込まない                                                                                                     | これから                                        |
+| GeoNet (ニュージーランド)                | 海外の地震                                        | CC BY 3.0 NZ。謝辞の文を出す                                                                                           | 入れた                                          |
+| 台湾 CWA (中央氣象署) の E-A0015-001     | 台湾付近の地震 (与那国・沖縄に近い)               | 政府資料開放授權條款 1 版 (CC BY 4.0 と両立)。出典の表示が要る。授権碼 (会員登録) が要るので、鍵が無ければ切って動く   | 入れた (授権碼を入れるまで切ってある)           |
+| 気象庁「各月の地震活動のまとめ」         | リンクだけ (出典と注意の窓)                       | 中身は取り込まない                                                                                                     | 入れた                                          |
 
 **見送る・分からない**
 
@@ -122,6 +122,8 @@ interface Source {
 | PTWC の Atom               | `https://www.tsunami.gov/events/xml/PHEBAtom.xml` を 60 秒ごとに取る                                                              | 太平洋の津波の情報 (いちばん新しい電報 1 つ)                                    | NWS が再試行を 1 分あけるよう求めているので 60 秒より短くしない。`If-Modified-Since` を付ける。鍵は電報の id。電報の本文 (英文) は取りに行かない                                                                                    |
 | EMSC Seismic Portal        | WebSocket `wss://www.seismicportal.eu/standing_order/websocket`                                                                   | 世界の地震 (M4.5 以上だけを受ける)                                              | 張り直しは 5 秒から倍々、上限 2 分 (半分までの揺らぎ)。10 分何も来なければ張り直す。鍵は地震の unid と更新の時刻。USGS と同じ地震は 2.2 の「海外の地震」の近さでまとめる                                                            |
 | 気象庁 bosai の国際津波    | 一覧 `https://www.jma.go.jp/bosai/pacifictsunami/data/list.json` を 60 秒ごと、新しい電報の本文 `data/wepa40/<fname>` を 1 回だけ | 国際津波関連情報 (WEPA40、英文)                                                 | `Cache-Control: max-age=60` なので 60 秒より短くしない。ETag を付ける。一度に取る本文は 5 つまで。取れなかった本文は 30 分取り直さない。鍵はファイル名                                                                              |
+| GeoNet                     | `https://api.geonet.org.nz/quake?MMI=4` を 2 分ごとに取る                                                                         | ニュージーランドで改正メルカリ震度 4 以上が見込まれた地震                       | `Accept: application/vnd.geo+json;version=2` を付ける。取り消された地震 (`quality` が `deleted`) は採らない。鍵は publicID と時刻・M・位置                                                                                          |
+| 中央氣象署 (台湾)          | `https://opendata.cwa.gov.tw/api/v1/rest/datastore/E-A0015-001` を 2 分ごとに取る                                                 | 台湾付近の顕著な有感地震                                                        | 授権碼 (`CWA_API_KEY`) が無ければ作らない ([cwa.md](cwa.md))。時刻は台湾の時刻 (UTC+8)。鍵は地震の番号と時刻・M・位置                                                                                                               |
 
 - **緊急地震速報は気象庁の公開フィードに載らない** (公開電文の一覧に「緊急地震速報等、公開されない電文もあります」とある。<https://xml.kishou.go.jp/xmllist.pdf>)。そのため予報と警報を Wolfx から、警報を P2P からも受け、2 つで欠けを補う。どちらも非公式で無保証なので、画面にはそう書く。
 - **張り直し:** 指数のバックオフに揺らぎを足す (1 秒から倍々、上限 30 秒、full jitter)。60 秒つながっていたら間隔を戻す。Wolfx は 90 秒何も来なければ (heartbeat も含めて) 死んだとみなして張り直す。P2P は heartbeat を送ってこず、静かなときは何分も何も来ない (2026-11-13 に実際につないで確かめた) ので、無通信では切らず、切れたことは close で知る。つながるまでは、どちらも 30 秒で諦める。
@@ -467,12 +469,12 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 
 ashi・xool と同じく、リポジトリの `deploy/` を Argo CD が同期する (gitops の ApplicationSet が `deploy/argocd.yaml` を探す)。
 
-- `deploy/`: `argocd.yaml`・`deployment.yaml` (レプリカ 1・Recreate・uid 1000・`/health` のプローブ (起きていることだけを見る。情報源の受信の状態は見ない)・`TZ=Asia/Tokyo`)・`service.yaml`・`httproute.yaml` (Cilium Gateway の `doany`、ホスト名 `s.doany.io`)・`pvc.yaml` (`local-path` 1Gi、`dataSourceRef` で VolSync から戻す)・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`networkpolicy.yaml` (外向きは DNS と公開のインターネットだけ)・`secrets.sops.yaml` (`OIDC_CLIENT_SECRET` (Main の共用のもの)・VolSync の restic。VAPID の秘密鍵 `vapid-private-jwk` は任意で、入れ方は docs/push.md)。R2 にまだバックアップが無い最初の 1 回は、populator が空の PVC を作る (gitops の recovery/README.md の 6)。`.sops.yaml` はほかのリポジトリと同じ鍵。
+- `deploy/`: `argocd.yaml`・`deployment.yaml` (レプリカ 1・Recreate・uid 1000・`/health` のプローブ (起きていることだけを見る。情報源の受信の状態は見ない)・`TZ=Asia/Tokyo`)・`service.yaml`・`httproute.yaml` (Cilium Gateway の `doany`、ホスト名 `s.doany.io`)・`pvc.yaml` (`local-path` 1Gi、`dataSourceRef` で VolSync から戻す)・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`networkpolicy.yaml` (外向きは DNS と公開のインターネットだけ)・`secrets.sops.yaml` (`OIDC_CLIENT_SECRET` (Main の共用のもの)・VolSync の restic。VAPID の秘密鍵 `vapid-private-jwk` と中央氣象署の授権碼 `cwa-api-key` は任意で、入れ方は docs/push.md と docs/cwa.md)。R2 にまだバックアップが無い最初の 1 回は、populator が空の PVC を作る (gitops の recovery/README.md の 6)。`.sops.yaml` はほかのリポジトリと同じ鍵。
 - 環境変数 (`deploy/deployment.yaml`): `PUBLIC_URL` と `ORIGIN` (adapter-bun) はどちらも `https://s.doany.io`。`CONNECTION_IDLE_TIMEOUT=255` (既定の 10 秒だと 30 秒ごとの `: ping` を待つ間に SSE が切れる)。`SHUTDOWN_TIMEOUT=5` (SSE は終わらないので長く待たない)。OIDC は docs/entra.md の表のとおり。
 - 外向きの NetworkPolicy は ashi と同じ形 (kube-dns と、プライベートでないアドレス全部)。クラスタに既定で閉じるポリシーは無いので、これが無くても外へは出られる。家の LAN とクラスタの中を閉じるために置く。
 - イメージ: main にマージすると `docker-publish.yml` が `ghcr.io/danything/sonae:<sha>` を作り、`deploy/deployment.yaml` のタグを差し替える PR を作って自分でマージする (`deploy/` ができるまでは何もしない)。
 - 実行のイメージは `oven/bun:<ver>-distroless` (シェル無し・uid 1000)。
-- 外への接続は気象庁・P2P・Wolfx・USGS (earthquake.usgs.gov)・PTWC (www.tsunami.gov)・EMSC (www.seismicportal.eu の WebSocket)・気象庁ホームページ (www.jma.go.jp の bosai の国際津波)・Entra ID・Web Push の配信サービス (FCM・Mozilla・Apple・WNS) だけ。気象庁のフィードは 1 日 1440 回の条件付きの取得で、ほとんどが 304 なので、帯域の上限 (10GB/日) には遠い。
+- 外への接続は気象庁・P2P・Wolfx・USGS (earthquake.usgs.gov)・PTWC (www.tsunami.gov)・EMSC (www.seismicportal.eu の WebSocket)・気象庁ホームページ (www.jma.go.jp の bosai の国際津波)・GeoNet (api.geonet.org.nz)・中央氣象署 (opendata.cwa.gov.tw、授権碼があるときだけ)・Entra ID・Web Push の配信サービス (FCM・Mozilla・Apple・WNS) だけ。気象庁のフィードは 1 日 1440 回の条件付きの取得で、ほとんどが 304 なので、帯域の上限 (10GB/日) には遠い。
 
 ## 9. 未決の点
 
