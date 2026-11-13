@@ -1,63 +1,34 @@
-# Entra ID の設定 (持ち主の操作)
+# Entra ID の設定
 
-sonae のログインは doany.io の Entra ID の共有のアプリ登録 `Main` を使う (ほかのアプリと同じ)。
-アプリの側は環境変数を読むだけで、Entra の側の登録は持ち主が Entra 管理センターか `az` で行う。
-ここに書いたことが済むまで、sonae は画面を開かない (`/health` だけ答える)。
+sonae のログインは doany.io の Entra ID の**共用のアプリ登録 `Main`** (アプリケーション ID `b0fa498f-7e6a-4fe1-a1c6-16fbbb6f397e`) を使い回す。新しくアプリは登録しない。
 
-## 1. リダイレクト URI を足す
+- リダイレクト URI `https://s.doany.io/auth/callback` は、gitops の `pulumi/entra.ts` で `Main` に足してある (ashi と同じパス)。
+- 通すロールは `OIDC_ROLE` で決め、既定は `admin` (`Main` のアプリロールはいま `admin` だけ)。
 
-`Main` → 認証 → Web のリダイレクト URI に次を足す。
+## sonae に渡す環境変数
 
-- `https://s.doany.io/login/callback` (本番)
-- `https://sonae.localhost/login/callback` (手元で genkan 越しに試すとき。要らなければ足さない)
+| 変数                 | 値                                                                             | 秘密か |
+| -------------------- | ------------------------------------------------------------------------------ | ------ |
+| `OIDC_ISSUER`        | `https://login.microsoftonline.com/<テナント ID>/v2.0`                         | いいえ |
+| `OIDC_CLIENT_ID`     | `b0fa498f-7e6a-4fe1-a1c6-16fbbb6f397e`                                         | いいえ |
+| `OIDC_CLIENT_SECRET` | `Main` の共用のクライアントシークレット                                        | はい   |
+| `OIDC_ROLE`          | 通すロール。既定 `admin`                                                       | いいえ |
+| `OIDC_ROLE_CLAIM`    | ロールを読む claim。既定は空 (`roles` と `groups` の両方)                      | いいえ |
+| `OIDC_SCOPE`         | 既定 `openid profile`                                                          | いいえ |
+| `PUBLIC_URL`         | `https://s.doany.io`。リダイレクト URI はここから組む (要求の Host を信じない) | いいえ |
 
-`az` で足すときは、**`az ad app update --web-redirect-uris` が一覧を丸ごと置き換える**ので、今の一覧を読んでから全部を渡す。
+クラスタに載せるときは、共用のシークレットを `deploy/secrets.sops.yaml` に入れる (ほかのアプリと同じ値。ローテーションしたら全部を直す)。
 
-```sh
-az ad app show --id <Main のクライアント ID> --query web.redirectUris -o tsv
-az ad app update --id <Main のクライアント ID> --web-redirect-uris <今の一覧…> https://s.doany.io/login/callback
-```
+## 家族と共有するとき (あとで)
 
-## 2. アプリ ロール `family` を作る
+1. `Main` に family 用のアプリロールを足す (gitops の `pulumi/entra.ts`)。
+2. 家族を B2B のゲストとして招待し、エンタープライズ アプリケーション → `Main` → ユーザーとグループで、そのロールを割り当てる。テナントに P1 が無いので、グループではなく人ごとに割り当てる。
+3. sonae の `OIDC_ROLE` をそのロールの値にする。持ち主にも同じロールを割り当てる (sonae が通すロールは 1 つ)。
 
-`Main` → アプリ ロール → アプリ ロールの作成。
-
-| 項目               | 値                                                       |
-| ------------------ | -------------------------------------------------------- |
-| 表示名             | `family` (分かれば何でもよい)                            |
-| 許可されたメンバー | ユーザー/グループ                                        |
-| 値                 | `family` (sonae の `OIDC_ROLE` の既定。変えたら合わせる) |
-| 説明               | sonae を使える人                                         |
-| 有効にする         | オン                                                     |
-
-`Main` には既に `admin` があるが、sonae は `admin` だけでは通さない (家族に `admin` を渡さずに済むように、ロールを分けている)。
-別の名前にしたいときは、ロールの値と sonae の `OIDC_ROLE` を同じにする。
-
-## 3. 自分にロールを割り当てる
-
-エンタープライズ アプリケーション → `Main` → ユーザーとグループ → 割り当ての追加 → 自分 → ロール `family`。
-
-- **いまは持ち主 1 人だけ。** 家族は、あとで B2B のゲストとして招待し、同じロールを割り当てる (アプリの側は変えなくてよい)。
-- テナントに P1 が無いので、グループには割り当てられない。人ごとに割り当てる。
-- ロールは ID トークンの `roles` に載る (scope は `openid profile` のままでよい)。ロールが無い人は「ロール family を持っていません」で 403 になる。
-
-## 4. sonae に渡す環境変数
-
-| 変数                 | 値                                                                                      | 秘密か |
-| -------------------- | --------------------------------------------------------------------------------------- | ------ |
-| `OIDC_ISSUER`        | `https://login.microsoftonline.com/<テナント ID>/v2.0`                                  | いいえ |
-| `OIDC_CLIENT_ID`     | `Main` のクライアント ID (ashi の `deploy/deployment.yaml` の `ENTRA_CLIENT_ID` と同じ) | いいえ |
-| `OIDC_CLIENT_SECRET` | `Main` のクライアントシークレット (gitops の auth の `oidc-client-secret` と同じ値)     | はい   |
-| `OIDC_ROLE`          | 通すロール。既定 `family`                                                               | いいえ |
-| `OIDC_ROLE_CLAIM`    | ロールを読む claim。既定は空 (`roles` と `groups` の両方)                               | いいえ |
-| `OIDC_SCOPE`         | 既定 `openid profile`                                                                   | いいえ |
-| `PUBLIC_URL`         | `https://s.doany.io`。リダイレクト URI はここから組む (要求の Host を信じない)          | いいえ |
-
-秘密 (`OIDC_CLIENT_SECRET`) は、クラスタに載せるときに `deploy/secrets.sops.yaml` に入れる。
-シークレットをローテーションしたら、ほかのアプリと同じく全部を直す。
+コードの変更は要らない。
 
 ## 確かめ方
 
-1. sonae を開くと `/login` から Microsoft のサインインへ送られる。
-2. サインインすると `https://s.doany.io/login/callback` に戻り、トップが出る。
-3. 戻ったところで「AADSTS50011 (リダイレクト URI が合わない)」が出たら 1 を、「ロール family を持っていません」が出たら 2・3 を見直す。
+1. sonae を開くと `/auth/login` から Microsoft のサインインへ送られる。
+2. サインインすると `https://s.doany.io/auth/callback` に戻り、トップが出る。
+3. 戻ったところで「AADSTS50011 (リダイレクト URI が合わない)」が出たら gitops の `pulumi/entra.ts` を、「ロール admin を持っていません」が出たら割り当てを見直す。
