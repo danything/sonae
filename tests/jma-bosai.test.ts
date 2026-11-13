@@ -51,12 +51,16 @@ test("一覧: 新しい順。形の違う項目は飛ばし、配列でなけれ
 test("新しい電報の本文を 1 回だけ取り、お知らせにする", async () => {
   const { ctx, got } = context();
   const urls: string[] = [];
+  const listHeaders: Record<string, string>[] = [];
   const waits: number[] = [];
   const controller = new AbortController();
   const source = bosaiTsunamiSource(ctx, {
-    fetch: (async (url: string) => {
+    fetch: (async (url: string, init: RequestInit) => {
       urls.push(url);
-      if (url === BOSAI_TSUNAMI_LIST) return new Response(LIST);
+      if (url === BOSAI_TSUNAMI_LIST) {
+        listHeaders.push(init.headers as Record<string, string>);
+        return new Response(LIST, { headers: { etag: '"e1"' } });
+      }
       if (url === bosaiTsunamiText(FNAME)) return new Response(TEXT);
       return new Response("not found", { status: 404 });
     }) as typeof fetch,
@@ -87,6 +91,8 @@ test("新しい電報の本文を 1 回だけ取り、お知らせにする", as
   });
   expect(item.advisory.text).toContain("ISSUED BY NWPTAC(JMA)");
   expect(waits).toEqual([60_000, 60_000]);
+  // 取り残しがあるので、2 回目も一覧に ETag を付けない (304 にせず読み直す)
+  expect(listHeaders[1]?.["if-none-match"]).toBeUndefined();
   expect(source.status().state).toBe("stopped");
 });
 
