@@ -68,6 +68,17 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX advisories_reported ON advisories (reported_at);
   `,
+  `
+  -- ログインの控え (2.6)。subject は IdP の sub、時刻はミリ秒
+  CREATE TABLE sessions (
+    id TEXT PRIMARY KEY,
+    subject TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  CREATE INDEX sessions_expires ON sessions (expires_at);
+  `,
 ];
 
 export function openDb(path: string): Database {

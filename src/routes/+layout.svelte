@@ -101,6 +101,12 @@
                 : `受信に問題: ${down.join("・")}`}
             </a>
           {/if}
+          {#if data.user && data.user.subject !== "dev"}
+            <form method="POST" action="/auth/logout" class="logout">
+              <span class="tiny muted">{data.user.name}</span>
+              <button type="submit" class="link tiny">ログアウト</button>
+            </form>
+          {/if}
           <button
             type="button"
             class="theme"
@@ -212,6 +218,20 @@
   }
   .end .tag {
     text-decoration: none;
+  }
+  .logout {
+    display: flex;
+    align-items: center;
+    gap: var(--so-space-2);
+    margin: 0;
+  }
+  .link {
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--so-primary-text);
+    text-decoration: underline;
   }
   .theme {
     display: inline-grid;

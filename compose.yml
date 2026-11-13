@@ -15,6 +15,9 @@ services:
       - PROTOCOL_HEADER=x-forwarded-proto
       - HOST_HEADER=x-forwarded-host
       - SONAE_DATA=/usr/src/app/data
+      # 手元ではログインを飛ばす (NODE_ENV=production では効かない)。OIDC を試すときは外して、
+      # OIDC_ISSUER・OIDC_CLIENT_ID・OIDC_CLIENT_SECRET を compose.override.yml に書く (docs/entra.md)
+      - AUTH_DISABLED=1
     labels:
       caddy: sonae.localhost
       caddy.reverse_proxy: "{{upstreams 5173}}"
