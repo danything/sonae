@@ -30,10 +30,6 @@ const num = (v: unknown) =>
 const str = (v: unknown) =>
   typeof v === "string" && v.trim() !== "" ? v.trim() : undefined;
 
-/** 地域の名前 (「NEW IRELAND REGION, P.N.G.」) を、頭だけ大きい字にする */
-const titleCase = (s: string) =>
-  s.toLowerCase().replace(/(^|[\s,(/-])([a-z])/g, (_m, a, b: string) => a + b.toUpperCase());
-
 /**
  * 1 通を読む。M が下限より小さいもの・地震でないもの・読めないものは null。
  * JSON でなければ例外 (その 1 通を捨てる)
@@ -68,7 +64,8 @@ export function parseEmsc(text: string): Incoming | null {
     depthKm: depth === undefined ? undefined : Math.abs(depth),
     magnitude: mag,
     magType: str(p.magtype),
-    place: titleCase(str(p.flynn_region) ?? ""),
+    // 地域の名前は Flinn-Engdahl の地域名 (大文字。「NEW IRELAND REGION, P.N.G.」) のまま
+    place: str(p.flynn_region) ?? "",
     updatedAt:
       updated && Number.isFinite(Date.parse(updated))
         ? new Date(updated).toISOString()
