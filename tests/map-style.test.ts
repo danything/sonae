@@ -9,6 +9,7 @@ import {
   intensityFill,
   intensityLabels,
   LAYERS,
+  longPeriodLine,
   mapVisibility,
   matchExpr,
   readLayers,
@@ -109,4 +110,24 @@ test("震源: 深さで色、新しいものほど上に描く", () => {
   expect(f.features.map((x) => x.properties.depth)).toEqual([10, -1, 400]);
   expect(f.features.map((x) => x.properties.order)).toEqual([50, 49, 48]);
   expect(DEPTH_COLORS.at(-1)?.upto).toBe(Infinity);
+});
+
+test("長周期地震動の枠: 階級 1 以上の地域だけを、階級の色で囲む", () => {
+  expect(
+    longPeriodLine([
+      { code: "220", name: "宮城県北部", lg: "3" },
+      { code: "200", name: "青森県津軽北部", lg: "1" },
+      { code: "300", name: "どこか", lg: "0" },
+    ]),
+  ).toEqual([
+    "match",
+    ["get", "code"],
+    "220",
+    "rgb(255 40 0)",
+    "200",
+    "rgb(250 245 0)",
+    "rgba(0,0,0,0)",
+  ]);
+  expect(longPeriodLine([])).toBe("rgba(0,0,0,0)");
+  expect(defaultLayers().longperiod).toBe(false);
 });

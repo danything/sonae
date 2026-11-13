@@ -91,6 +91,17 @@ export const INTENSITY_COLORS: Record<string, { bg: string; fg: string }> = {
   "1": { bg: "rgb(242 242 255)", fg: "#000" },
 };
 
+/**
+ * 長周期地震動階級の色。気象庁の配色の指針に長周期地震動階級の表は無いので、表 2-1 (数値が高くなるほど
+ * 危険度が増す情報) の基本配色の上から 4 つを、階級 4 から順に当てた (自分で決めた割り当て)
+ */
+export const LG_COLORS: Record<string, { bg: string; fg: string }> = {
+  "4": { bg: "rgb(180 0 104)", fg: "#fff" },
+  "3": { bg: "rgb(255 40 0)", fg: "#fff" },
+  "2": { bg: "rgb(255 153 0)", fg: "#000" },
+  "1": { bg: "rgb(250 245 0)", fg: "#000" },
+};
+
 /** 気象庁の「津波の色」(同じ指針の表 1-2)。津波予報は指針に無いので自分で決めた青系 */
 export const TSUNAMI_COLORS: Record<string, { bg: string; fg: string }> = {
   major: { bg: "rgb(200 0 255)", fg: "#fff" },
