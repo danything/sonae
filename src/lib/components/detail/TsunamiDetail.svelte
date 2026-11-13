@@ -7,7 +7,7 @@
   import Grade from "../Grade.svelte";
   import TsunamiSummary from "../TsunamiSummary.svelte";
 
-  /** 津波の詳しい内容 (前の `/tsunami/[id]` の中身)。予報区ごとの表と、沿岸・沖合の観測 */
+  /** 津波の詳しい内容。予報区ごとの表と、沿岸・沖合の観測 */
   let { t, now }: { t: Tsunami; now: number } = $props();
   const areas = $derived(
     [...t.areas].sort(

@@ -9,7 +9,7 @@
 #
 # 出力 (static/areas/):
 #   - quake-areas.geojson   … 細分区域の面 (code・name)。震度の色と、緊急地震速報の警報の地域を塗る
-#   - quake-points.json     … 細分区域の中の 1 点 (code → [経度, 緯度])。震度の札を置く
+#   - quake-points.json     … 細分区域の中の 1 点 (code → [経度, 緯度])。震度のラベルを置く
 #   - tsunami-areas.geojson … 津波予報区の線 (code・name)。警報・注意報の色を塗る
 #
 # 簡略化の度合いは、画面で地域の形が分かり、ファイルが数百 KB に収まる所 (docs/design.md の未決の点 7)。

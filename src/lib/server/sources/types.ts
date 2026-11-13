@@ -9,7 +9,7 @@ import type {
   TsunamiObservation,
 } from "#lib/model.ts";
 
-/** 1 つの情報源の、1 つの報。まとめ方 (版の判定) は store.ts がする */
+/** 1 つの情報源の、1 つの報。まとめ方 (新旧の判定) は store.ts がする */
 export type EewReport = Omit<Eew, "sources" | "updatedAt"> & {
   source: "wolfx" | "p2p";
 };

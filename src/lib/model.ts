@@ -60,7 +60,7 @@ export interface Hypocenter {
 /**
  * 緊急地震速報。鍵は地震識別番号。報数が大きいものだけを採り、取消を受けたら終わり。
  *
- * **予想震度は持たない** (docs/design.md の 5 章)。画面にも知らせにも出さないので、
+ * **予想震度は持たない** (docs/design.md の 5 章)。画面にも通知にも出さないので、
  * SSE でブラウザに渡すこの形にも入れない (P2P の原文には残る)。
  */
 export interface Eew {
@@ -167,6 +167,12 @@ export const TSUNAMI_ORDER: TsunamiGrade[] = [
   "forecast",
   "none",
 ];
+
+/** 津波で出ているいちばん強い区分 (解除・なしだけなら "none") */
+export const tsunamiTop = (t: Pick<Tsunami, "areas">): TsunamiGrade =>
+  TSUNAMI_ORDER.find(
+    (g) => g !== "none" && t.areas.some((a) => a.grade === g),
+  ) ?? "none";
 
 export interface TsunamiArea {
   code?: string;

@@ -1,6 +1,6 @@
 /**
  * 受けたものを DB に入れ、変わった姿を events に足す。情報源の中の重複は raw_messages の鍵で、
- * 情報源をまたいだ重複は merge.ts の版の判定で除く。
+ * 情報源をまたいだ重複は merge.ts の新旧の判定で除く。
  */
 
 import type { Database } from "bun:sqlite";

@@ -4,7 +4,7 @@ import { app } from "#lib/server/receiver.ts";
 
 import type { RequestHandler } from "./$types";
 
-/** 試しの知らせを、自分のブラウザの購読に 1 つ送る。`{ endpoint }` */
+/** 試しの通知を、自分のブラウザの購読に 1 つ送る。`{ endpoint }` */
 export const POST: RequestHandler = async ({ locals, request }) => {
   if (!locals.user) error(401, "login required");
   const p = app().pusher;
@@ -20,8 +20,8 @@ export const POST: RequestHandler = async ({ locals, request }) => {
   const result = await p.send(
     sub,
     {
-      title: "sonae の試しの知らせ",
-      body: "このブラウザに知らせが届きます。",
+      title: "sonae の試しの通知",
+      body: "このブラウザに通知が届きます。",
       tag: "test",
       url: "/",
       renotify: true,
