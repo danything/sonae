@@ -10,7 +10,9 @@
   import List from "~icons/lucide/list";
   import MapIcon from "~icons/lucide/map";
   import TriangleAlert from "~icons/lucide/triangle-alert";
+  import VolumeX from "~icons/lucide/volume-x";
 
+  import { alerter } from "#lib/alerter.svelte.ts";
   import AboutDialog from "#lib/components/AboutDialog.svelte";
   import Calendar from "#lib/components/Calendar.svelte";
   import DetailBar from "#lib/components/detail/DetailBar.svelte";
@@ -425,6 +427,20 @@
   </a>
 {/snippet}
 
+{#snippet soundButton(cls: string)}
+  <!-- 音か読み上げがオンなのに、ブラウザが音を止めている (最初の操作の前)。押すと鳴らせるようになる -->
+  <button
+    type="button"
+    class="ghost {cls} sound-blocked"
+    onclick={() => alerter.unlock()}
+    title="ブラウザが音を止めています。押すと、受けたときに音と読み上げで知らせます"
+    data-testid="sound-blocked"
+  >
+    <Icon icon={VolumeX} size={1} />
+    音を出す
+  </button>
+{/snippet}
+
 {#snippet themeItems()}
   <p class="menu-head">テーマ</p>
   {#each THEMES as t (t.mode)}
@@ -500,6 +516,9 @@
       <SearchField bind:value={query} />
     </div>
     <nav class="actions" aria-label="メニュー">
+      {#if alerter.blocked}
+        {@render soundButton("small")}
+      {/if}
       {#if trouble}
         <span class="trouble" role="status">
           <Icon icon={TriangleAlert} size={1} />
@@ -713,6 +732,9 @@
     {:else}
       <span class="dock-quake muted small">まだ地震の情報はありません</span>
     {/if}
+    {#if alerter.blocked}
+      {@render soundButton("small dock-sound")}
+    {/if}
     <Menu bind:open={dockMenu} side="top" align="end" class="dock-menu">
       {#snippet trigger(props)}
         <button
@@ -858,6 +880,11 @@
     display: flex;
     align-items: center;
     gap: var(--so-space-1);
+  }
+  .sound-blocked {
+    gap: var(--so-space-1);
+    color: var(--so-warn-text);
+    white-space: nowrap;
   }
   .trouble {
     display: inline-flex;

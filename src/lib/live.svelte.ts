@@ -79,54 +79,60 @@ export class Live {
     };
   }
 
-  apply(e: SonaeEvent): void {
-    if (e.seq <= this.lastSeq) return;
+  /** 新しいイベントなら入れて true (埋め直しで二重に来たものは false) */
+  apply(e: SonaeEvent): boolean {
+    if (e.seq <= this.lastSeq) return false;
     this.lastSeq = e.seq;
     switch (e.type) {
       case "eew":
-        if (e.data.status !== "normal") return;
+        if (e.data.status !== "normal") return true;
         this.eews = upsert(this.eews, e.data, (v) => v.issuedAt, 20);
-        return;
+        return true;
       case "quake":
-        if (e.data.status !== "normal") return;
+        if (e.data.status !== "normal") return true;
         this.quakes = upsert(
           this.quakes,
           e.data,
           (v) => v.originTime ?? v.updatedAt,
           100,
         );
-        return;
+        return true;
       case "tsunami":
-        if (e.data.status !== "normal") return;
+        if (e.data.status !== "normal") return true;
         this.tsunamis = upsert(this.tsunamis, e.data, (v) => v.issuedAt, 20);
-        return;
+        return true;
       case "advisory":
-        if (e.data.status !== "normal") return;
+        if (e.data.status !== "normal") return true;
         this.advisories = upsert(
           this.advisories,
           e.data,
           (v) => v.reportedAt,
           20,
         );
-        return;
+        return true;
     }
   }
 
   /**
    * `onResync`: 長く切れていて、埋め直しが上限を超えたときに呼ぶ (サーバーが `event: resync` を送る)。
    * 一覧を取り直す (load を走らせ直し、seed で入れ替える)。
+   * `onEvent`: 新しく受けたイベントごとに呼ぶ (開いているときの音と読み上げ。`alerter.svelte.ts`)。
    */
-  connect(onResync: () => void = () => {}): () => void {
+  connect(
+    onResync: () => void = () => {},
+    onEvent: (e: SonaeEvent) => void = () => {},
+  ): () => void {
     const es = new EventSource(`/api/stream?after=${this.lastSeq}`);
     this.source = es;
     const on = (type: SonaeEvent["type"]) =>
       es.addEventListener(type, (m) => {
         const seq = Number((m as MessageEvent).lastEventId);
-        this.apply({
+        const e = {
           seq,
           type,
           data: JSON.parse((m as MessageEvent).data),
-        } as SonaeEvent);
+        } as SonaeEvent;
+        if (this.apply(e)) onEvent(e);
       });
     on("eew");
     on("quake");
