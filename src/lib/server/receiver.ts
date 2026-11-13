@@ -11,6 +11,7 @@ import { Broker } from "./broker.ts";
 import { db } from "./db.ts";
 import { Pusher, vapidFromEnv } from "./push.ts";
 import { emscSource } from "./sources/emsc.ts";
+import { bosaiTsunamiSource } from "./sources/jma-bosai.ts";
 import { jmaSource } from "./sources/jma.ts";
 import { p2pSource } from "./sources/p2p.ts";
 import { ptwcSource } from "./sources/ptwc.ts";
@@ -73,6 +74,7 @@ export function startReceiving(): void {
     usgsSource(ctx),
     ptwcSource(ctx),
     emscSource(ctx),
+    bosaiTsunamiSource(ctx),
   ];
   for (const s of a.sources) {
     s.run(controller.signal).catch((err: unknown) =>
@@ -114,6 +116,6 @@ export function startReceiving(): void {
   // 受信の輪を止めないと、いつまでも終わらない (k8s の入れ替えが遅れる)
   (process as EventEmitter).once("sveltekit:shutdown", () => a.stop?.());
   console.log(
-    "[receiver] 気象庁・P2P地震情報・Wolfx・USGS・PTWC・EMSC の受信を始めました",
+    "[receiver] 気象庁・P2P地震情報・Wolfx・USGS・PTWC・EMSC・気象庁 bosai (国際津波) の受信を始めました",
   );
 }

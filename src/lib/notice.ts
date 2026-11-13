@@ -14,7 +14,7 @@ export const CREDITS = [
   "緊急地震速報: Wolfx Project・P2P地震情報",
   "地震情報・津波予報の速報: P2P地震情報",
   "地図: 国土地理院 (シームレス空中写真・淡色地図・都市圏活断層図)・気象庁 予報区等 GIS データを加工",
-  "火山の位置: 気象庁ホームページ (活火山の一覧) を加工",
+  "火山の位置・国際津波関連情報: 気象庁ホームページ (活火山の一覧・北西太平洋津波情報) を加工",
   "海外の地震: Credit: U.S. Geological Survey・Credit: EMSC-CSEM SeismicPortal, https://www.seismicportal.eu (CC BY 4.0、M4.5 以上を選んで表示)",
   "太平洋の津波の参考情報: NOAA/NWS Pacific Tsunami Warning Center (PTWC)。米国の政府の情報で、気象庁の発表ではありません",
 ] as const;
