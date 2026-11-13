@@ -2,8 +2,6 @@ name: Check
 
 on:
   pull_request:
-    # 画像タグを差し替える PR(bump-sonae-image)は deploy/ しか変えない。見るもの(コード)が無いので起動しない
-    paths-ignore: ["deploy/**"]
   push:
     branches: [main]
 
