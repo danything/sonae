@@ -25,14 +25,31 @@ const ENTITIES: Record<string, string> = {
   apos: "'",
   nbsp: " ",
 };
-/** タグを外し、実体参照を戻し、空白を詰める */
+/** 数値の文字参照 (`&#65;`・`&#x41;`) を字に。読めない値はそのまま */
+function codePoint(ref: string): string | undefined {
+  const n = /^#x/i.test(ref)
+    ? Number.parseInt(ref.slice(2), 16)
+    : Number.parseInt(ref.slice(1), 10);
+  return Number.isInteger(n) && n > 0 && n <= 0x10ffff
+    ? String.fromCodePoint(n)
+    : undefined;
+}
+
+/**
+ * タグを外し、実体参照を戻し、空白を詰める。画面には字として出す (HTML としては出さない) ので、
+ * タグは外せるまで繰り返し外し、残った山括弧も消す
+ */
 function plain(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&(#\d+|[a-z]+);/gi, (m, e: string) =>
+  let s = html.replace(/<br\s*\/?>/gi, "\n");
+  for (let prev = ""; prev !== s;) {
+    prev = s;
+    s = s.replace(/<[^<>]*>/g, "");
+  }
+  return s
+    .replace(/[<>]/g, "")
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e: string) =>
       e.startsWith("#")
-        ? String.fromCharCode(Number(e.slice(1)))
+        ? (codePoint(e) ?? m)
         : (ENTITIES[e.toLowerCase()] ?? m),
     )
     .replace(/[ \t]+/g, " ")
@@ -55,7 +72,8 @@ function fields(summary: string): Record<string, string> {
 export function parsePtwc(xml: string): Incoming[] {
   if (!/<feed[\s>]/.test(xml)) throw new Error("Atom のフィードではありません");
   const bulletin = plain(tag(xml, "title") ?? "");
-  const entries = xml.match(/<entry>[\s\S]*?<\/entry>/g) ?? [];
+  // フィードにはいちばん新しい電報 1 つだけが載る。仮に幾つも載っても、先頭 (新しいもの) だけを採る
+  const entries = (xml.match(/<entry>[\s\S]*?<\/entry>/g) ?? []).slice(0, 1);
   return entries.flatMap((entry): Incoming[] => {
     const id = plain(tag(entry, "id") ?? "");
     const updated = plain(tag(entry, "updated") ?? "");

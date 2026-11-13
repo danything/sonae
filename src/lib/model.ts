@@ -338,7 +338,10 @@ export interface EarthquakeCount {
   felt?: number;
 }
 
-/** 一覧の上に通知の形で出すお知らせ (南海トラフ等と地震・津波に関するお知らせ。地震回数・活動状況・国際津波の情報は、お知らせの一覧にだけ出す) */
+/**
+ * 一覧の上に通知の形で出すお知らせ (南海トラフ地震臨時情報などと、地震・津波に関するお知らせ)。
+ * 決めた種類だけを出す (種類を足したときの既定は「出さない」)。地震回数・活動状況・国際津波の情報は、お知らせの一覧にだけ出す
+ */
 export const isPinnedAdvisory = (a: Pick<Advisory, "code">) =>
   a.code.startsWith("VYSE") || a.code === "VZSE40";
 
