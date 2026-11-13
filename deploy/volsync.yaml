@@ -1,0 +1,39 @@
+# このアプリの PVC を VolSync で R2 に取る(リポジトリは PVC ごとに `<bucket>/volsync/sonae/<pvc>`)。
+# その Secret(volsync-<pvc>)は secrets.sops.yaml。取り方・時刻は danything/gitops の deploy/volsync/application.yaml。アプリと一緒に置くので、
+# アプリを消せばこれも消える(R2 のリポジトリは残る。要らなければ gitops の deploy/backup/README.md「やめる」)。
+# PVC を足したら、ReplicationSource と secrets.sops.yaml の volsync-<pvc> を 1 組足す。
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationSource
+metadata:
+  name: sonae-data
+  namespace: sonae
+spec:
+  sourcePVC: sonae-data
+  trigger:
+    schedule: "0 19 * * *"
+  restic:
+    repository: volsync-sonae-data
+    copyMethod: Snapshot
+    retain: { daily: 7, weekly: 4, monthly: 6 }
+    moverSecurityContext: { runAsUser: 0, runAsGroup: 0 }
+---
+# 戻す側(populator)。PVC sonae-data の dataSourceRef がこれを指すので、PVC を新しく作ると R2 の最新から中身を埋めてから渡す
+# (入れ直したクラスタ・PVC を消して作り直したとき)。今ある PVC には効かない。作られたときに 1 回だけ戻す
+apiVersion: volsync.backube/v1alpha1
+kind: ReplicationDestination
+metadata:
+  name: sonae-data-dst
+  namespace: sonae
+spec:
+  trigger:
+    manual: restore-once
+  restic:
+    repository: volsync-sonae-data
+    copyMethod: Snapshot
+    capacity: 1Gi
+    accessModes: [ReadWriteOnce]
+    storageClassName: local-path
+    moverSecurityContext: { runAsUser: 0, runAsGroup: 0 }
+    # 戻した中身はスナップショットに残るので、作業用の PVC は消す
+    cleanupTempPVC: true
+    cleanupCachePVC: true

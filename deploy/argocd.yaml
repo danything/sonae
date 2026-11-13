@@ -1,0 +1,13 @@
+# このリポジトリの Argo CD の設定。danything/gitops の ApplicationSet (bootstrap/argocd-repos.yaml の repos) が
+# org の中からこのファイルを探し、ここのキーで Application を作る。どう出すかはここで決める。
+name: sonae
+namespace: sonae
+
+# マニフェストを置くディレクトリ (リポジトリの根から)
+sourcePath: deploy
+recurse: false
+
+# autoSync: false にすると UI から手で同期する
+autoSync: true
+prune: true
+selfHeal: true
