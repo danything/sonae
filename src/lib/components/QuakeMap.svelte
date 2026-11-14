@@ -24,8 +24,10 @@
     mapVisibility,
     tsunamiPaint,
     volcanoMarks,
+    warningFill,
   } from "#lib/map/style.ts";
   import {
+    cityLevels,
     type Eew,
     type ForeignQuake,
     intensityLabel,
@@ -33,6 +35,7 @@
     type Quake,
     type Tsunami,
     type Volcano,
+    type WeatherWarning,
   } from "#lib/model.ts";
 
   /**
@@ -50,8 +53,11 @@
     volcano = null,
     foreign = [],
     foreignQuake = null,
+    warnings = [],
     shown = true,
   }: {
+    /** いまの気象警報・注意報 (市町村等を段の色で塗る) */
+    warnings?: WeatherWarning[];
     quake: Quake | undefined;
     /** 地図に出している地震の長周期地震動 (無ければ枠を描かない) */
     longPeriod?: LongPeriod | null;
@@ -138,6 +144,7 @@
     return () => {
       disposed = true;
       paintedSig = "";
+      warningSig = "";
       markedSig = "";
       volcanoSig = "";
       for (const m of [...markers, ...volcanoMarkers]) m.remove();
@@ -164,6 +171,20 @@
     es.map((e) => [e.eventId, e.serial, e.cancelled, e.warnAreas.length]);
   let paintedSig = "";
   let markedSig = "";
+
+  // 気象警報・注意報の色 (報が替わったときだけ塗り直す)
+  let warningSig = "";
+  $effect(() => {
+    if (!map) return;
+    const next = sig(warnings.map((w) => [w.id, w.reportedAt]));
+    if (next === warningSig) return;
+    warningSig = next;
+    map.setPaintProperty(
+      "warning-fill",
+      "fill-color",
+      warningFill(cityLevels(warnings)) as never,
+    );
+  });
 
   // 震度の色・津波の線・緊急地震速報の地域・震源の点
   $effect(() => {

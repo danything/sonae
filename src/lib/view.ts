@@ -2,8 +2,9 @@
  * 1 つの画面の「いま何を見ているか」。どれも URL の query に持つので、リンクを送ればそのまま開ける
  * (docs/ui.md の「URL」)。
  *
- * - `k` … 一覧の種類 (`quake` 地震・`tsunami` 津波・`eew` 緊急地震速報・`volcano` 火山・`info` お知らせ・`foreign` 海外の地震)。無ければ地震
- * - `q` / `t` / `e` / `v` / `i` / `f` … 選んだ地震 (id)・津波 (id)・緊急地震速報 (地震の識別番号)・火山の報 (id)・お知らせ (id)・海外の地震 (id)。1 つだけ
+ * - `k` … 一覧の種類 (`quake` 地震・`tsunami` 津波・`eew` 緊急地震速報・`volcano` 火山・`weather` 気象・`info` お知らせ・`foreign` 海外の地震)。無ければ地震
+ * - `q` / `t` / `e` / `v` / `w` / `i` / `f` … 選んだ地震 (id)・津波 (id)・緊急地震速報 (地震の識別番号)・火山の報 (id)・
+ *   気象 (府県予報区の警報・注意報は `office-<府県予報区のコード>`、気象の報は id)・お知らせ (id)・海外の地震 (id)。1 つだけ
  * - `training=1` … 緊急地震速報の訓練・試験も出す
  * - `about=1` … 「出典と注意」を開く
  */
@@ -12,6 +13,7 @@ export const KINDS = [
   "tsunami",
   "eew",
   "volcano",
+  "weather",
   "foreign",
   "info",
 ] as const;
@@ -22,9 +24,13 @@ export const KIND_LABEL: Record<Kind, string> = {
   tsunami: "津波",
   eew: "緊急地震速報",
   volcano: "火山",
+  weather: "気象",
   info: "お知らせ",
   foreign: "海外",
 };
+
+/** 気象の選んだものの id のうち、府県予報区の警報・注意報を指す前置き */
+export const OFFICE_PREFIX = "office-";
 
 export interface View {
   kind: Kind;
@@ -39,6 +45,7 @@ const SELECT_KEYS = {
   tsunami: "t",
   eew: "e",
   volcano: "v",
+  weather: "w",
   info: "i",
   foreign: "f",
 } as const satisfies Record<Kind, string>;

@@ -17,6 +17,12 @@ export const load: LayoutServerLoad = ({ locals }) => {
       volcanoes: store.volcanoes(50),
       volcanoLevels: store.volcanoLevels(),
       longPeriods: store.longPeriods(50),
+      // 解除された市町村等 (released) は通知にだけ使うので、画面には渡さない (大きさを抑える)
+      warnings: store
+        .warnings()
+        .filter((w) => w.areas.length > 0)
+        .map((w) => ({ ...w, released: [] })),
+      weatherInfos: store.weatherInfos(100),
       statuses: statuses(),
     },
   };

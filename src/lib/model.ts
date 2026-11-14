@@ -652,6 +652,84 @@ export const warningTop = (w: Pick<WeatherWarning, "areas">): WarningLevel =>
     return l > m ? l : m;
   }, 0);
 
+/** 1 つの府県予報区に、いま出ている警報・注意報を種類ごとにまとめたもの (一覧の 1 行と詳しい内容) */
+export interface OfficeWarnings {
+  office: { code: string; name: string };
+  /** いちばん新しい報の時刻 */
+  reportedAt: string;
+  top: WarningLevel;
+  /** 種類ごとの対象の市町村等。段の高い順、同じ段は種類のコードの順 */
+  kinds: {
+    code: string;
+    name: string;
+    level: WarningLevel;
+    areas: { code: string; name: string }[];
+  }[];
+  /** 種別 (現象) ごとの見出し (電文の Headline/Text) */
+  headlines: { code: WarningCode; text: string; reportedAt: string }[];
+}
+
+/** 府県予報区ごとにまとめる。出ているものがある府県予報区だけを、段の高い順・新しい順に並べる */
+export function warningsByOffice(ws: WeatherWarning[]): OfficeWarnings[] {
+  const offices = new Map<string, OfficeWarnings>();
+  for (const w of ws) {
+    if (w.status !== "normal") continue;
+    const o = offices.get(w.office.code) ?? {
+      office: w.office,
+      reportedAt: w.reportedAt,
+      top: 0,
+      kinds: [],
+      headlines: [],
+    };
+    if (Date.parse(w.reportedAt) > Date.parse(o.reportedAt))
+      o.reportedAt = w.reportedAt;
+    if (w.areas.length > 0 && w.headline)
+      o.headlines.push({
+        code: w.code,
+        text: w.headline,
+        reportedAt: w.reportedAt,
+      });
+    for (const a of w.areas)
+      for (const k of a.kinds) {
+        let kind = o.kinds.find((x) => x.code === k.code && x.name === k.name);
+        if (!kind) {
+          kind = { code: k.code, name: k.name, level: k.level, areas: [] };
+          o.kinds.push(kind);
+        }
+        if (!kind.areas.some((x) => x.code === a.code))
+          kind.areas.push({ code: a.code, name: a.name });
+        if (k.level > o.top) o.top = k.level;
+      }
+    offices.set(w.office.code, o);
+  }
+  const out = [...offices.values()].filter((o) => o.kinds.length > 0);
+  for (const o of out) {
+    o.kinds.sort((a, b) => b.level - a.level || a.code.localeCompare(b.code));
+    o.headlines.sort((a, b) => a.code.localeCompare(b.code));
+  }
+  return out.sort(
+    (a, b) =>
+      b.top - a.top || Date.parse(b.reportedAt) - Date.parse(a.reportedAt),
+  );
+}
+
+/** 市町村等ごとのいちばん高い段 (地図を塗る) */
+export function cityLevels(ws: WeatherWarning[]): Map<string, WarningLevel> {
+  const out = new Map<string, WarningLevel>();
+  for (const w of ws) {
+    if (w.status !== "normal") continue;
+    for (const a of w.areas) {
+      const l = areaLevel(a);
+      if (l > (out.get(a.code) ?? 0)) out.set(a.code, l);
+    }
+  }
+  return out;
+}
+
+/** 竜巻注意情報の有効期限が過ぎたか (期限の無いものは過ぎない) */
+export const isExpired = (i: Pick<WeatherInfo, "validUntil">, now: number) =>
+  i.validUntil !== undefined && Date.parse(i.validUntil) < now;
+
 /**
  * 気象の、報ごとに出す情報の種類。記録的短時間大雨情報 (VPOA50)・府県気象防災速報 (VPBS50)・
  * 竜巻注意情報 (VPHW50)・指定河川洪水予報 (VXKO50〜89)・熱中症警戒アラート (VPFT50)・

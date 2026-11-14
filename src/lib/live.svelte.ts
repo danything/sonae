@@ -13,6 +13,8 @@ import type {
   SourceStatus,
   Tsunami,
   Volcano,
+  WeatherInfo,
+  WeatherWarning,
 } from "./model.ts";
 import { latestPerVolcano } from "./model.ts";
 
@@ -27,6 +29,10 @@ export interface Snapshot {
   /** 火山ごとのいまの噴火警報・予報 (地図の火山の印) */
   volcanoLevels: Volcano[];
   longPeriods: LongPeriod[];
+  /** いまの気象警報・注意報 (府県予報区と種別ごと。出ているものがあるものだけ) */
+  warnings: WeatherWarning[];
+  /** 気象の報 (新しい順) */
+  weatherInfos: WeatherInfo[];
   statuses: SourceStatus[];
 }
 
@@ -58,6 +64,8 @@ export class Live {
   volcanoes = $state<Volcano[]>([]);
   volcanoLevels = $state<Volcano[]>([]);
   longPeriods = $state<LongPeriod[]>([]);
+  warnings = $state<WeatherWarning[]>([]);
+  weatherInfos = $state<WeatherInfo[]>([]);
   statuses = $state<SourceStatus[]>([]);
   connected = $state(false);
   /** ブラウザで load の中身を入れた (サーバーの描画では false のまま、load の data を使う) */
@@ -79,6 +87,8 @@ export class Live {
     this.volcanoes = s.volcanoes;
     this.volcanoLevels = s.volcanoLevels;
     this.longPeriods = s.longPeriods;
+    this.warnings = s.warnings;
+    this.weatherInfos = s.weatherInfos;
     this.statuses = s.statuses;
     this.seeded = true;
   }
@@ -96,6 +106,8 @@ export class Live {
       volcanoes: this.volcanoes,
       volcanoLevels: this.volcanoLevels,
       longPeriods: this.longPeriods,
+      warnings: this.warnings,
+      weatherInfos: this.weatherInfos,
       statuses: this.statuses,
     };
   }
@@ -148,9 +160,22 @@ export class Live {
           100,
         );
         return true;
-      case "warning":
+      case "warning": {
+        if (e.data.status !== "normal") return true;
+        // 府県予報区と種別ごとに置き換え、出ているものが無くなったら外す (解除の市町村等は画面に要らない)
+        const w = { ...e.data, released: [] };
+        const rest = this.warnings.filter((x) => x.id !== w.id);
+        this.warnings = w.areas.length > 0 ? [w, ...rest] : rest;
+        return true;
+      }
       case "weather":
-        // 気象は画面に出す PR で受ける
+        if (e.data.status !== "normal") return true;
+        this.weatherInfos = upsert(
+          this.weatherInfos,
+          e.data,
+          (v) => v.reportedAt,
+          100,
+        );
         return true;
       case "volcano":
         if (e.data.status !== "normal") return true;
@@ -201,6 +226,8 @@ export class Live {
     on("volcano");
     on("foreign");
     on("longperiod");
+    on("warning");
+    on("weather");
     es.addEventListener("status", (m) => {
       this.statuses = JSON.parse((m as MessageEvent).data) as SourceStatus[];
     });
