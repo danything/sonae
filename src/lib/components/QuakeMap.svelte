@@ -1,13 +1,15 @@
 <script lang="ts">
   import "maplibre-gl/dist/maplibre-gl.css";
-  import type { Map as MapLibreMap, Marker } from "maplibre-gl";
+  import type { LngLat, Map as MapLibreMap, Marker, Popup } from "maplibre-gl";
   // MapLibre の描き手の worker。既定では本体の隣の maplibre-gl-worker.mjs を探すが、束ねると
   // 見つからないので、Vite に別に束ねさせて URL を渡す
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+  import { untrack } from "svelte";
   import Locate from "~icons/lucide/locate";
   import LocateFixed from "~icons/lucide/locate-fixed";
 
   import Icon from "#lib/components/Icon.svelte";
+  import Menu from "#lib/components/Menu.svelte";
   import {
     INTENSITY_COLORS,
     VOLCANO_COLORS,
@@ -17,12 +19,23 @@
     baseStyle,
     eewFill,
     foreignFeatures,
+    type HazardId,
+    HAZARDS,
+    hazardVisibility,
     hypocenterFeatures,
     intensityFill,
     intensityLabels,
     JAPAN_BOUNDS,
     longPeriodLine,
     meFeatures,
+    mergeShelters,
+    readHazard,
+    SHELTER_DISASTERS,
+    SHELTER_LAYERS,
+    SHELTER_MIN_ZOOM,
+    SHELTER_TILE_ZOOM,
+    TEXT_FONT_CSS,
+    tilesIn,
     tsunamiPaint,
     volcanoMarks,
     warningFill,
@@ -38,6 +51,7 @@
     type Volcano,
     type WeatherWarning,
   } from "#lib/model.ts";
+  import { readPref, writePref } from "#lib/prefs.ts";
 
   /**
    * 地図 (docs/map.md)。下地は国土地理院のシームレス空中写真。その上に層をいつも全部重ねる (オン・オフは無い)。
@@ -75,6 +89,9 @@
     shown?: boolean;
   } = $props();
 
+  /** pmtiles の読み方は MapLibre に 1 度だけ足す (地図を作り直しても足し直さない) */
+  let pmtilesAdded = false;
+  let PopupClass: typeof Popup | undefined;
   let container = $state<HTMLDivElement>();
   let map = $state<MapLibreMap | undefined>();
   /** 地図を出せない理由 (出せるときは空) */
@@ -98,19 +115,36 @@
     let disposed = false;
     let created: MapLibreMap | undefined;
     void (async () => {
-      const [{ Map: MapClass, Marker: M, setWorkerUrl }, pts, areas, vpts] =
-        await Promise.all([
-          import("maplibre-gl"),
-          fetch("/areas/quake-points.json").then((r) => r.json()),
-          fetch("/areas/quake-areas.geojson").then((r) => r.json()),
-          // 火山の位置の表は無くても地図は出す (印は電文の位置だけで置く)
-          fetch("/areas/volcano-points.json")
-            .then((r) => (r.ok ? r.json() : {}))
-            .catch(() => ({})),
-        ]);
+      const [
+        { Map: MapClass, Marker: M, Popup: P, setWorkerUrl, addProtocol },
+        { Protocol },
+        pts,
+        areas,
+        vpts,
+        anno,
+      ] = await Promise.all([
+        import("maplibre-gl"),
+        import("pmtiles"),
+        fetch("/areas/quake-points.json").then((r) => r.json()),
+        fetch("/areas/quake-areas.geojson").then((r) => r.json()),
+        // 火山の位置の表は無くても地図は出す (印は電文の位置だけで置く)
+        fetch("/areas/volcano-points.json")
+          .then((r) => (r.ok ? r.json() : {}))
+          .catch(() => ({})),
+        // 地理院の注記 (地名・施設の記号) の層。無くても地図は出す
+        fetch("/map/gsi/anno.json")
+          .then((r) => (r.ok ? r.json() : []))
+          .catch(() => []),
+      ]);
       if (disposed || !container) return;
       setWorkerUrl(workerUrl);
+      // 地理院地図Vector は PMTiles の 1 ファイル。範囲を指定して要るタイルだけを読む
+      if (!pmtilesAdded) {
+        pmtilesAdded = true;
+        addProtocol("pmtiles", new Protocol().tile);
+      }
       MarkerClass = M;
+      PopupClass = P;
       volcanoPoints = vpts as Record<string, [number, number, string?]>;
       points = pts as Record<string, [number, number]>;
       for (const f of (
@@ -119,7 +153,10 @@
         codeByName.set(f.properties.name, f.properties.code);
       created = new MapClass({
         container,
-        style: baseStyle() as never,
+        style: baseStyle(
+          location.origin,
+          untrack(() => hazard),
+        ) as never,
         bounds: JAPAN_BOUNDS,
         attributionControl: { compact: true },
         // 回すと読みにくいだけなので、北を上に固定する
@@ -129,7 +166,25 @@
       });
       created.touchZoomRotate.disableRotation();
       created.on("load", () => {
-        if (!disposed) map = created;
+        if (disposed || !created) return;
+        created.addImage("shelter", shelterIcon(), { pixelRatio: 2 });
+        for (const l of anno as { id: string }[])
+          if (!created.getLayer(l.id)) created.addLayer(l as never, "shelters");
+        created.on("moveend", () => void loadShelters());
+        created.on("click", "shelters", (e) => {
+          const f = e.features?.[0];
+          if (f) openShelter(f.properties as Record<string, unknown>, e.lngLat);
+        });
+        created.on("mouseenter", "shelters", () => {
+          if (created) created.getCanvas().style.cursor = "pointer";
+        });
+        created.on("mouseleave", "shelters", () => {
+          if (created) created.getCanvas().style.cursor = "";
+        });
+        map = created;
+        // 手元 (vite dev) で画面を撮るときに、地図を動かせるようにする (本番の束には入らない)
+        if (import.meta.env.DEV)
+          (window as unknown as { sonaeMap?: MapLibreMap }).sonaeMap = created;
         // 出典は (i) に畳んでおく (開くと地図の下を覆う)。同じ出典は画面の下の注意文の下にもいつも出している
         container
           ?.querySelector(".maplibregl-ctrl-attrib")
@@ -395,6 +450,127 @@
     }
   });
 
+  // ---- ハザードマップ (なし・洪水・土砂災害・津波から 1 つ。色がぶつかるので重ねない。端末に覚える) ----
+  let hazard = $state<HazardId>("none");
+  let hazardMenu = $state(false);
+  $effect.pre(() => {
+    hazard = readHazard(readPref("map.hazard"));
+  });
+  const chosenHazard = $derived(HAZARDS.find((h) => h.id === hazard));
+  function pickHazard(id: HazardId): void {
+    hazard = id;
+    hazardMenu = false;
+    writePref("map.hazard", id);
+  }
+  $effect(() => {
+    if (!map) return;
+    for (const [layer, on] of Object.entries(hazardVisibility(hazard)))
+      map.setLayoutProperty(layer, "visibility", on ? "visible" : "none");
+  });
+
+  // ---- 指定緊急避難場所・指定避難所 (寄せたときだけ、見ている範囲のタイルを読む) ----
+  /** 読んだタイル (層とタイルの組) の中身。同じタイルは読み直さない */
+  const shelterCache = new Map<string, Promise<unknown[]>>();
+  let shelterSig = "";
+
+  async function loadShelters(): Promise<void> {
+    const m = map;
+    if (!m || m.getZoom() < SHELTER_MIN_ZOOM - 0.01) return;
+    const b = m.getBounds();
+    const tiles = tilesIn(
+      [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()],
+      SHELTER_TILE_ZOOM,
+    );
+    const next = sig(tiles);
+    if (next === shelterSig) return;
+    shelterSig = next;
+    const parts = await Promise.all(
+      tiles.flatMap(([x, y]) =>
+        SHELTER_LAYERS.map(async (layer) => {
+          const url = `https://cyberjapandata.gsi.go.jp/xyz/${layer}/${SHELTER_TILE_ZOOM}/${x}/${y}.geojson`;
+          let p = shelterCache.get(url);
+          if (!p) {
+            // タイルの無い所 (海など) は 404。そこは空
+            p = fetch(url)
+              .then((r) => (r.ok ? r.json() : { features: [] }))
+              .then((j: { features?: unknown[] }) => j.features ?? [])
+              .catch(() => {
+                shelterCache.delete(url);
+                return [];
+              });
+            shelterCache.set(url, p);
+          }
+          return { layer, features: (await p) as never[] };
+        }),
+      ),
+    );
+    if (shelterSig !== next) return;
+    const src = map?.getSource("shelters");
+    if (src && "setData" in src)
+      (src as { setData(d: unknown): void }).setData({
+        type: "FeatureCollection",
+        features: mergeShelters(parts),
+      });
+  }
+
+  /** 避難場所の印 (緑の角丸の四角に白い「避」)。端末の字体で 1 度だけ描く */
+  function shelterIcon(): ImageData {
+    const s = 40;
+    const c = document.createElement("canvas");
+    c.width = s;
+    c.height = s;
+    const g = c.getContext("2d");
+    if (!g) return new ImageData(s, s);
+    g.fillStyle = "#ffffff";
+    g.beginPath();
+    g.roundRect(0, 0, s, s, 9);
+    g.fill();
+    g.fillStyle = "#00873c";
+    g.beginPath();
+    g.roundRect(3, 3, s - 6, s - 6, 7);
+    g.fill();
+    g.fillStyle = "#ffffff";
+    g.font = `bold 24px ${TEXT_FONT_CSS}`;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText("避", s / 2, s / 2 + 1);
+    return g.getImageData(0, 0, s, s);
+  }
+
+  /** 押した避難場所の名前・住所と、どの災害に対応するか。文は DOM で組み、HTML として読まない */
+  let shelterPopup: Popup | undefined;
+  function openShelter(p: Record<string, unknown>, at: LngLat): void {
+    if (!map || !PopupClass) return;
+    // MapLibre は GeoJSON の配列を文字列にして渡してくる
+    const disasters = (
+      typeof p.disasters === "string"
+        ? (JSON.parse(p.disasters) as number[])
+        : ((p.disasters as number[]) ?? [])
+    ).map((i) => SHELTER_DISASTERS[i - 1]);
+    const box = document.createElement("div");
+    box.className = "shelter-pop";
+    const line = (text: string, cls = "") => {
+      const el = document.createElement("p");
+      el.textContent = text;
+      if (cls) el.className = cls;
+      box.append(el);
+    };
+    line(String(p.name ?? ""), "bold");
+    if (p.address) line(String(p.address), "small muted");
+    if (disasters.length > 0)
+      line(`指定緊急避難場所: ${disasters.join("、")}`, "small");
+    if (p.shelter === true || p.shelter === "true") line("指定避難所", "small");
+    line(
+      "国土地理院のデータで、最新でないことがあります。避難先は市町村の情報で確かめてください。",
+      "tiny muted",
+    );
+    shelterPopup?.remove();
+    shelterPopup = new PopupClass({ maxWidth: "18rem", closeButton: false })
+      .setLngLat(at)
+      .setDOMContent(box)
+      .addTo(map);
+  }
+
   /**
    * 震央の × 。MapLibre は印の要素そのものの transform で場所を決めるので、動かすのは中の要素
    */
@@ -458,7 +634,51 @@
       role="region"
       aria-label="地図"
     ></div>
-    <!-- 地図の上に置く操作は、現在地のボタンだけ (docs/design.md の 6.2) -->
+    <!-- 地図の上に置く操作は、ハザードマップの選択と現在地のボタンだけ (docs/design.md の 6.2) -->
+    <div class="hazard">
+      <Menu bind:open={hazardMenu} align="start" class="hazard-menu">
+        {#snippet trigger(props)}
+          <button
+            {...props}
+            type="button"
+            class="map-pill"
+            data-on={hazard !== "none" ? "" : undefined}
+            disabled={!map}
+            data-testid="hazard"
+          >
+            ハザードマップ: {chosenHazard?.label ?? "なし"}
+          </button>
+        {/snippet}
+        <p class="menu-head">ハザードマップ</p>
+        {#each [{ id: "none" as const, label: "なし" }, ...HAZARDS] as h (h.id)}
+          <button
+            type="button"
+            role="menuitemradio"
+            class="menu-item"
+            aria-checked={hazard === h.id}
+            onclick={() => pickHazard(h.id)}
+            data-testid="hazard-{h.id}">{h.label}</button
+          >
+        {/each}
+      </Menu>
+      {#if chosenHazard}
+        <!-- 公式の凡例 (ハザードマップポータルサイトの画像) -->
+        <figure class="legend" data-testid="hazard-legend">
+          <figcaption class="small bold">{chosenHazard.title}</figcaption>
+          {#each chosenHazard.legends as l (l.src)}
+            {#if l.name}<p class="tiny">{l.name}</p>{/if}
+            <img src={l.src} alt={l.alt} loading="lazy" />
+          {/each}
+          <p class="tiny muted">
+            出典: <a
+              href="https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html"
+              target="_blank"
+              rel="noopener">ハザードマップポータルサイト</a
+            >。想定の無い川や地域は塗られていません。色が無くても安全とは限りません。
+          </p>
+        </figure>
+      {/if}
+    </div>
     <div class="locate">
       <button
         type="button"
@@ -542,6 +762,85 @@
   /* 探している間はアイコンを薄くする (時間で動き続けるものは足さない。docs/design.md の 6.3) */
   .locate-button[data-locating="waiting"] :global(svg) {
     opacity: 0.45;
+  }
+  /* ハザードマップの選択 (左上) と、選んだものの公式の凡例 */
+  .hazard {
+    position: absolute;
+    top: calc(var(--map-top, 0px) + var(--so-space-3));
+    left: var(--so-space-3);
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--so-space-2);
+    max-width: min(17rem, calc(100% - 5rem));
+    pointer-events: none;
+  }
+  /* メニューは最前面に出るが、DOM ではこの箱の子なので、押せるように戻す */
+  .hazard :global(.menu) {
+    pointer-events: auto;
+  }
+  .map-pill {
+    min-height: 2.75rem;
+    margin: 0;
+    padding: 0 var(--so-space-4);
+    border: 0;
+    border-radius: var(--so-radius-full);
+    background: var(--so-float);
+    box-shadow: var(--so-shadow-pop);
+    color: var(--so-fg);
+    font-size: var(--so-text-sm);
+    font-weight: var(--so-weight-bold);
+    white-space: nowrap;
+    pointer-events: auto;
+  }
+  .legend {
+    display: flex;
+    flex-direction: column;
+    gap: var(--so-space-1);
+    margin: 0;
+    padding: var(--so-space-2) var(--so-space-3);
+    border-radius: var(--so-item-radius);
+    background: var(--so-pop);
+    box-shadow: var(--so-shadow-pop);
+    color: var(--so-fg);
+    pointer-events: auto;
+    /* 土砂災害は凡例が 3 枚あるので、地図の高さを超えたら中で巻く */
+    max-height: calc(var(--map-h, 100dvh) * 0.55);
+    overflow-y: auto;
+  }
+  .legend figcaption,
+  .legend p {
+    margin: 0;
+  }
+  /* 公式の凡例は白い地の画像なので、暗いテーマでも白い台に載せる */
+  .legend img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    padding: var(--so-space-1);
+    border-radius: var(--so-radius-sm);
+    background: #fff;
+  }
+  /* 避難場所の吹き出し (MapLibre が DOM に置くので :global)。メニューと同じ面 */
+  .map :global(.maplibregl-popup-content) {
+    padding: var(--so-space-2) var(--so-space-3);
+    border-radius: var(--so-item-radius);
+    background: var(--so-pop);
+    box-shadow: var(--so-shadow-pop);
+    color: var(--so-fg);
+  }
+  .map :global(.maplibregl-popup-tip) {
+    display: none;
+  }
+  .map :global(.shelter-pop p) {
+    margin: 0 0 var(--so-space-1);
+  }
+  @media (max-width: 639.98px) {
+    /* 狭い画面では凡例を細くする (地図を隠しすぎない) */
+    .legend {
+      max-width: 12rem;
+    }
   }
   .locate-note {
     margin: 0;
