@@ -1,8 +1,8 @@
 /**
  * 1 つの画面の「いま何を見ているか」。どれも URL の query に持つので、リンクを送ればそのまま開ける
- * (docs/ui.md の「URL」)。
+ * (docs/ui.md の「URL」)。一覧は全部の種類を 1 本に並べ、どの種類を出すかは端末に覚える (`readHidden`)。
+ * 前の一覧の種類 `k` は読まず、リンクを作るときに外す。
  *
- * - `k` … 一覧の種類 (`quake` 地震・`tsunami` 津波・`eew` 緊急地震速報・`volcano` 火山・`weather` 気象・`info` お知らせ・`foreign` 海外の地震)。無ければ地震
  * - `q` / `t` / `e` / `v` / `w` / `i` / `f` … 選んだ地震 (id)・津波 (id)・緊急地震速報 (地震の識別番号)・火山の報 (id)・
  *   気象 (府県予報区の警報・注意報は `office-<府県予報区のコード>`、気象の報は id)・お知らせ (id)・海外の地震 (id)。1 つだけ
  * - `training=1` … 緊急地震速報の訓練・試験も出す
@@ -33,7 +33,6 @@ export const KIND_LABEL: Record<Kind, string> = {
 export const OFFICE_PREFIX = "office-";
 
 export interface View {
-  kind: Kind;
   /** 選んだもの (無ければ null) */
   selected: { kind: Kind; id: string } | null;
   training: boolean;
@@ -69,12 +68,7 @@ export function readView(params: Params): View {
       break;
     }
   }
-  const k = params.get("k");
-  const kind: Kind = KINDS.includes(k as Kind)
-    ? (k as Kind)
-    : (selected?.kind ?? "quake");
   return {
-    kind,
     selected,
     training: params.get("training") === "1",
     about: params.has("about"),
@@ -82,28 +76,42 @@ export function readView(params: Params): View {
 }
 
 /**
- * いまの query に `patch` を当てたリンク。`null` の鍵は外す。選ぶもの (`q`・`t`・`e`・`v`・`i`・`f`) は 1 つだけなので、
- * どれかを入れたらほかは外す。既定の値 (`k=quake`) は書かない
+ * いまの query に `patch` を当てたリンク。`null` の鍵は外す。選ぶもの (`q`・`t`・`e`・`v`・`w`・`i`・`f`) は 1 つだけなので、
+ * どれかを入れたらほかは外す。前の一覧の種類 (`k`) は使わないので外す
  */
 export function viewHref(
   params: Params,
-  patch: Partial<Record<"k" | SelectKey | "training" | "about", string | null>>,
+  patch: Partial<Record<SelectKey | "training" | "about", string | null>>,
 ): string {
   const next = new URLSearchParams(params.toString());
+  next.delete("k");
   if (SELECT_PARAMS.some((key) => patch[key] !== undefined))
     for (const key of SELECT_PARAMS) next.delete(key);
   for (const [key, value] of Object.entries(patch)) {
     if (value === null || value === undefined) next.delete(key);
     else next.set(key, value);
   }
-  if (next.get("k") === "quake") next.delete("k");
   const query = next.toString();
   return query === "" ? "/" : `/?${query}`;
 }
 
-/** 選ぶリンク (一覧の種類もそれに合わせる) */
+/** 選ぶリンク */
 export const selectHref = (params: Params, kind: Kind, id: string) =>
-  viewHref(params, { k: kind, [SELECT_KEYS[kind]]: id });
+  viewHref(params, { [SELECT_KEYS[kind]]: id });
+
+/**
+ * 一覧で隠している種類 (端末に覚えた JSON の配列)。既定は全部出す。知らない種類と壊れた値は捨てる。
+ * 出すほうではなく隠すほうを覚えるので、後から足した種類は初めから出る
+ */
+export function readHidden(raw: string | null): Kind[] {
+  if (!raw) return [];
+  try {
+    const v: unknown = JSON.parse(raw);
+    return Array.isArray(v) ? KINDS.filter((k) => v.includes(k)) : [];
+  } catch {
+    return [];
+  }
+}
 
 /**
  * 前の画面の URL を、1 つの画面の URL に読み替える。読み替えるものが無ければ null。
@@ -133,10 +141,9 @@ export function legacyRedirect(url: URL): string | null {
       return q ? selectHref(empty, "quake", q) : "/";
     }
     case "/tsunami":
-      return viewHref(empty, { k: "tsunami" });
+      return "/";
     case "/eew":
       return viewHref(empty, {
-        k: "eew",
         training: params.get("training") === "1" ? "1" : null,
       });
     case "/about":
