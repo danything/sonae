@@ -18,9 +18,25 @@ services:
       # 手元ではログインを飛ばす (NODE_ENV=production では効かない)。OIDC を試すときは外して、
       # OIDC_ISSUER・OIDC_CLIENT_ID・OIDC_CLIENT_SECRET を compose.override.yml に書く (docs/entra.md)
       - AUTH_DISABLED=1
+      # 読み上げの声 (docs/design.md の 2.4)。下の voicevox を一緒に起こす
+      - VOICEVOX_URL=http://voicevox:50021
+    depends_on:
+      - voicevox
     labels:
       caddy: sonae.localhost
       caddy.reverse_proxy: "{{upstreams 5173}}"
+
+  # 読み上げの声を作る VOICEVOX のエンジン (公式のイメージ。バージョンだけのタグは CPU 用)。
+  # sonae とは別のコンテナにする (ライセンス・イメージの大きさ・CPU とメモリを分けるため。docs/design.md の 2.4)。
+  # 外には公開せず、sonae だけが同じネットワークの中からつなぐ
+  voicevox:
+    image: voicevox/voicevox_engine:0.26.1
+    environment:
+      - VV_CPU_NUM_THREADS=2
+    cpus: 2
+    mem_limit: 3g
+    networks:
+      - default
 
 networks:
   genkan:

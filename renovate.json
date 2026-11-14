@@ -1,4 +1,14 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>5ym/repo-config"]
+  "extends": ["github>5ym/repo-config"],
+  "kubernetes": {
+    "managerFilePatterns": ["/^deploy/voicevox\\.yaml$/"]
+  },
+  "packageRules": [
+    {
+      "description": "VOICEVOX のエンジンのイメージは deploy/voicevox.yaml (上の kubernetes) と compose.yml の 2 か所にあり、同じバージョンにそろえる。sonae のイメージ (deploy/deployment.yaml) は公開のワークフローが差し替えるので Renovate は見ない",
+      "matchPackageNames": ["voicevox/voicevox_engine"],
+      "groupName": "VOICEVOX engine"
+    }
+  ]
 }

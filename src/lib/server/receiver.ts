@@ -21,6 +21,7 @@ import type { Incoming, Source, SourceContext } from "./sources/types.ts";
 import { usgsSource } from "./sources/usgs.ts";
 import { wolfxSource } from "./sources/wolfx.ts";
 import { Store } from "./store.ts";
+import { type Voicevox, voicevoxFromEnv } from "./voicevox.ts";
 
 interface App {
   store: Store;
@@ -28,6 +29,9 @@ interface App {
   sources: Source[];
   /** Web Push の送り手。VAPID の鍵が無ければ無い (機能を切る) */
   pusher?: Pusher;
+  /** 読み上げの音を作る VOICEVOX。`VOICEVOX_URL` が無ければ無い (画面は端末の読み上げで読む) */
+  voice?: Voicevox;
+  stopVoice?: () => void;
   stop?: () => void;
 }
 
@@ -45,9 +49,27 @@ export function app(): App {
       broker: new Broker(),
       sources: [],
       pusher: vapid ? new Pusher(d, vapid) : undefined,
+      voice: voicevoxFromEnv(),
     };
   }
   return g.__sonae;
+}
+
+/** VOICEVOX につなぎ始める (受信を止めていても、試しに聞けるように)。hooks の init から 1 回だけ */
+export function startVoice(): void {
+  const a = app();
+  if (!a.voice) {
+    console.log(
+      "[voicevox] VOICEVOX_URL が無いので、読み上げは端末の読み上げ (speechSynthesis) で読みます",
+    );
+    return;
+  }
+  if (a.stopVoice) return;
+  a.stopVoice = a.voice.start();
+  (process as EventEmitter).once("sveltekit:shutdown", () => {
+    a.stopVoice?.();
+    a.stopVoice = undefined;
+  });
 }
 
 export function statuses(): SourceStatus[] {
@@ -103,6 +125,11 @@ export function startReceiving(): void {
           );
       })
     : undefined;
+  // 読み上げの音を前もって作る (VOICEVOX が無ければ何もしない)
+  const voice = a.voice;
+  const unvoice = voice
+    ? a.broker.subscribe((e) => voice.handle(e))
+    : undefined;
   console.log(
     pusher
       ? "[push] Web Push を送ります"
@@ -121,6 +148,7 @@ export function startReceiving(): void {
     controller.abort();
     clearInterval(prune);
     unpush?.();
+    unvoice?.();
     a.stop = undefined;
   };
   // adapter-bun は SIGTERM で HTTP を止めたあと、この合図を出して、イベントループが空くのを待つ。

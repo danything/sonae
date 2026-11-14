@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  alertFor,
-  parseAlertPrefs,
-  parseAlertSettings,
-  spokenText,
-} from "#lib/alert.ts";
+import { alertFor, parseAlertPrefs, parseAlertSettings } from "#lib/alert.ts";
 import { chimeWav } from "#lib/chime.ts";
 import type { Sent } from "#lib/notify.ts";
 import { DEFAULT_PREFS } from "#lib/push.ts";
@@ -18,6 +13,16 @@ describe("開いているときの音と読み上げの設定", () => {
     expect(parseAlertSettings(null)).toEqual({ sound: false, speech: false });
     expect(parseAlertSettings("{")).toEqual({ sound: false, speech: false });
     expect(parseAlertSettings('{"sound":"yes","speech":true}')).toEqual({
+      sound: false,
+      speech: true,
+    });
+    // 声は 0 以上の整数だけ覚える
+    expect(parseAlertSettings('{"speech":true,"voice":52}')).toEqual({
+      sound: false,
+      speech: true,
+      voice: 52,
+    });
+    expect(parseAlertSettings('{"speech":true,"voice":"52"}')).toEqual({
       sound: false,
       speech: true,
     });
@@ -111,12 +116,6 @@ describe("開いているときに鳴らすか", () => {
       }
       expect(rang).toBe(pushed);
     }
-  });
-
-  test("読み上げは見出しだけで、括弧は読ませない", () => {
-    expect(spokenText("緊急地震速報 (警報) 強い揺れに警戒")).toBe(
-      "緊急地震速報 警報 強い揺れに警戒",
-    );
   });
 });
 

@@ -16,6 +16,7 @@
     normalizePrefs,
     type PushPrefs,
   } from "#lib/push.ts";
+  import { voiceLabel } from "#lib/voices.ts";
 
   interface Registered {
     endpoint: string;
@@ -300,7 +301,7 @@
     <h2 class="section-head">開いているとき</h2>
     <p class="small muted">
       sonae
-      を開いている間に条件に合う情報を受けたら、短い音と見出しの読み上げで知らせます。ブラウザは、画面を一度押すまで音を出させません。
+      を開いている間に条件に合う情報を受けたら、短い音と読み上げで知らせます。ブラウザは、画面を一度押すまで音を出させません。
     </p>
     <label>
       <input
@@ -317,14 +318,39 @@
         type="checkbox"
         role="switch"
         checked={alerter.settings.speech}
-        disabled={!alerter.speechSupported}
+        disabled={!alerter.canSpeak}
         onchange={(e) => setSpeech(e.currentTarget.checked)}
         data-testid="alert-speech"
       />
-      見出しを読み上げる{alerter.speechSupported
+      読み上げる{alerter.canSpeak
         ? ""
         : " (このブラウザは読み上げに対応していません)"}
     </label>
+    {#if alerter.settings.speech && alerter.voicevox && alerter.speech}
+      <label>
+        声
+        <select
+          value={alerter.voiceId}
+          onchange={(e) =>
+            alerter.setSettings({
+              ...alerter.settings,
+              voice: Number(e.currentTarget.value),
+            })}
+          data-testid="alert-voice"
+        >
+          {#each alerter.speech.voices as v (v.id)}
+            <option value={v.id}>{voiceLabel(v)}</option>
+          {/each}
+        </select>
+      </label>
+      <div class="cluster">
+        <button
+          type="button"
+          class="secondary"
+          onclick={() => alerter.previewVoice()}>試しに聞く</button
+        >
+      </div>
+    {/if}
     {#if alerter.settings.sound || alerter.settings.speech}
       <div class="cluster">
         <button
