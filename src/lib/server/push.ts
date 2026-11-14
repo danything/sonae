@@ -18,6 +18,7 @@ import { normalizePrefs, type PushPayload, type PushPrefs } from "#lib/push.ts";
 import {
   digestOf,
   type Notice,
+  noticeFor,
   noticeOf,
   payloadOf,
   plan,
@@ -266,13 +267,17 @@ export class Pusher {
     if (!n) return Promise.resolve([]);
     const jobs: {
       sub: StoredSubscription;
+      notice: Notice;
       renotify: boolean;
       prev: Sent | undefined;
     }[] = [];
     this.db.transaction(() => {
       for (const sub of this.list()) {
-        const prev = this.sent(sub.endpoint, n.tag);
-        const p = plan(n, sub.prefs, prev);
+        // 気象は住んでいる地域で中身が変わるので、購読ごとに作る
+        const m = noticeFor(n, sub.prefs);
+        if (!m) continue;
+        const prev = this.sent(sub.endpoint, m.tag);
+        const p = plan(m, sub.prefs, prev);
         if (!p.send) continue;
         this.db
           .query(
@@ -280,12 +285,12 @@ export class Pusher {
              ON CONFLICT (endpoint, tag) DO UPDATE SET level = max(level, excluded.level),
                digest = excluded.digest, sent_at = excluded.sent_at`,
           )
-          .run(sub.endpoint, n.tag, n.level, digestOf(n), this.now());
-        jobs.push({ sub, renotify: p.renotify, prev });
+          .run(sub.endpoint, m.tag, m.level, digestOf(m), this.now());
+        jobs.push({ sub, notice: m, renotify: p.renotify, prev });
       }
     })();
     return Promise.all(
-      jobs.map((j) => this.deliver(j.sub, n, j.renotify, j.prev)),
+      jobs.map((j) => this.deliver(j.sub, j.notice, j.renotify, j.prev)),
     );
   }
 

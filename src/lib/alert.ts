@@ -8,6 +8,7 @@ import {
   contentOf,
   decide,
   type Notice,
+  noticeFor,
   noticeOf,
   type Sent,
 } from "./notify.ts";
@@ -58,7 +59,9 @@ export function alertFor(
   prefs: PushPrefs,
   sent: Map<string, Sent>,
 ): Notice | null {
-  const n = noticeOf(e, now);
+  const base = noticeOf(e, now);
+  // 気象は住んでいる地域で中身が変わる (Web Push と同じく、条件ごとに作る)
+  const n = base ? noticeFor(base, prefs) : null;
   if (!n) return null;
   const prev = sent.get(n.tag);
   const digest = contentOf(n);

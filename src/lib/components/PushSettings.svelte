@@ -9,6 +9,7 @@
   import "@anyblades/blades/components/modal";
 
   import { alerter } from "#lib/alerter.svelte.ts";
+  import { byPrefecture, type Cities, cityAt, homeOf } from "#lib/home.ts";
   import { INTENSITIES, intensityLabel } from "#lib/model.ts";
   import {
     base64UrlToBytes,
@@ -35,7 +36,16 @@
   let supported = $state(true);
   let endpoint = $state<string>();
   let prefs = $state<PushPrefs>({ ...DEFAULT_PREFS });
-  let areas = $state<{ code: string; name: string }[]>([]);
+  /** 住んでいる地域の候補 (市町村等の表) と、地震情報／細分区域の名前 */
+  let cities = $state<Cities>({});
+  let quakeNames = new Map<string, string>();
+  const prefGroups = $derived(byPrefecture(cities));
+  /** 選んでいる都道府県 (市町村等のコードの上 2 桁) */
+  let pref = $state("");
+  const prefCities = $derived(
+    prefGroups.find((g) => g.cities[0]?.code.startsWith(pref))?.cities ?? [],
+  );
+  let locating = $state(false);
   let busy = $state(false);
   let message = $state("");
 
@@ -57,7 +67,8 @@
   async function load(): Promise<void> {
     message = "";
     prefs = normalizePrefs(alerter.prefs);
-    if (areas.length === 0) void loadAreas();
+    pref = prefs.home?.code.slice(0, 2) ?? "";
+    if (Object.keys(cities).length === 0) void loadCities();
     supported =
       "serviceWorker" in navigator &&
       "PushManager" in window &&
@@ -72,7 +83,10 @@
     const sub = await (await registration()).pushManager.getSubscription();
     endpoint = sub?.endpoint;
     const mine = info.subscriptions.find((s) => s.endpoint === endpoint);
-    if (mine) prefs = normalizePrefs(mine.prefs);
+    if (mine) {
+      prefs = normalizePrefs(mine.prefs);
+      pref = prefs.home?.code.slice(0, 2) ?? "";
+    }
   }
 
   /** 条件を端末に覚え、Web Push に登録してあればサーバーにも送る */
@@ -95,22 +109,75 @@
     if (on) alerter.preview();
   }
 
-  /** 現在地の候補 (地震情報の細分区域)。地図と同じファイルから名前だけ取る */
-  async function loadAreas(): Promise<void> {
+  /** 住んでいる地域の候補 (市町村等の表) と、地震情報／細分区域の名前 (地図と同じファイル) */
+  async function loadCities(): Promise<void> {
     try {
-      const res = await fetch("/areas/quake-areas.geojson");
-      const fc = (await res.json()) as {
-        features: { properties: { code: string; name: string } }[];
-      };
-      const byCode = new Map(
-        fc.features.map((f) => [f.properties.code, f.properties.name]),
+      const [table, quake] = await Promise.all([
+        fetch("/areas/cities.json").then((r) => r.json() as Promise<Cities>),
+        fetch("/areas/quake-areas.geojson").then(
+          (r) =>
+            r.json() as Promise<{
+              features: { properties: { code: string; name: string } }[];
+            }>,
+        ),
+      ]);
+      quakeNames = new Map(
+        quake.features.map((f) => [f.properties.code, f.properties.name]),
       );
-      areas = [...byCode]
-        .map(([code, name]) => ({ code, name }))
-        .sort((a, b) => Number(a.code) - Number(b.code));
+      cities = table;
     } catch {
       // 候補が出ないだけ
     }
+  }
+
+  function setHome(code: string): void {
+    prefs.home = code ? homeOf(code, cities, quakeNames) : null;
+  }
+
+  /**
+   * 端末の位置を 1 回だけ取り、入る市町村等を選ぶ。位置は端末の中で使うだけで、送るのは市町村等のコードだけ
+   */
+  function locate(): void {
+    if (!("geolocation" in navigator)) {
+      message = "このブラウザは位置を取れません。一覧から選んでください。";
+      return;
+    }
+    locating = true;
+    message = "";
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        try {
+          const fc = (await (
+            await fetch("/areas/warning-areas.geojson")
+          ).json()) as { features: Parameters<typeof cityAt>[2] };
+          const code = cityAt(
+            pos.coords.latitude,
+            pos.coords.longitude,
+            fc.features,
+          );
+          if (code && cities[code]) {
+            pref = code.slice(0, 2);
+            setHome(code);
+            message = `${cities[code]?.[1]} を選びました。「条件を保存」で覚えます。`;
+          } else {
+            message =
+              "いまの位置が入る市町村が見つかりませんでした。一覧から選んでください。";
+          }
+        } catch (err) {
+          message = `市町村を探せませんでした: ${err}`;
+        } finally {
+          locating = false;
+        }
+      },
+      (err) => {
+        locating = false;
+        message =
+          err.code === err.PERMISSION_DENIED
+            ? "位置の利用が許可されていません。一覧から選んでください。"
+            : "位置を取れませんでした。一覧から選んでください。";
+      },
+      { maximumAge: 10 * 60_000, timeout: 20_000 },
+    );
   }
 
   // 開いたら、そのたびに購読と条件を読み直す
@@ -215,11 +282,6 @@
       busy = false;
     }
   }
-
-  function setArea(code: string): void {
-    const a = areas.find((x) => x.code === code);
-    prefs.area = a ? { code: a.code, name: a.name } : null;
-  }
 </script>
 
 <dialog
@@ -251,22 +313,91 @@
         <option value="off">知らせない</option>
       </select>
     </label>
+    <fieldset class="home" data-testid="home">
+      <legend>住んでいる地域 (通知に使う)</legend>
+      <p class="small muted">
+        タブを閉じていても通知を送るため、サーバーに市町村だけを覚えさせます。地震と気象の両方に使います。
+      </p>
+      <div class="home-pick">
+        <label>
+          都道府県
+          <select
+            bind:value={
+              () => pref,
+              (v) => {
+                pref = v;
+                setHome("");
+              }
+            }
+          >
+            <option value="">選ばない</option>
+            {#each prefGroups as g (g.cities[0]?.code)}
+              <option value={g.cities[0]?.code.slice(0, 2)}>{g.pref}</option>
+            {/each}
+          </select>
+        </label>
+        <label>
+          市町村
+          <select
+            bind:value={() => prefs.home?.code ?? "", setHome}
+            disabled={pref === ""}
+            data-testid="home-city"
+          >
+            <option value="">選ばない</option>
+            {#each prefCities as c (c.code)}
+              <option value={c.code}>{c.name}</option>
+            {/each}
+          </select>
+        </label>
+      </div>
+      <div class="cluster">
+        <button
+          type="button"
+          class="secondary"
+          onclick={locate}
+          disabled={locating || Object.keys(cities).length === 0}
+          data-testid="home-locate"
+          >{locating ? "位置を取っています…" : "現在地から選ぶ"}</button
+        >
+      </div>
+      {#if prefs.home}
+        <p class="small muted">
+          {prefs.home.name}{prefs.home.quake
+            ? `・地震は「${prefs.home.quake.name}」の震度で見ます`
+            : ""}
+        </p>
+      {/if}
+    </fieldset>
     <label>
-      現在地 (地震情報の地域)
-      <select bind:value={() => prefs.area?.code ?? "", setArea}>
-        <option value="">選ばない</option>
-        {#each areas as a (a.code)}
-          <option value={a.code}>{a.name}</option>
-        {/each}
-      </select>
-    </label>
-    <label>
-      現在地の震度
-      <select bind:value={prefs.areaMinInt} disabled={!prefs.area}>
+      住んでいる地域の震度
+      <select bind:value={prefs.areaMinInt} disabled={!prefs.home?.quake}>
         {#each INTENSITIES as i (i)}
           <option value={i}>震度{intensityLabel(i)}以上</option>
         {/each}
       </select>
+    </label>
+    <label>
+      住んでいる地域の気象
+      <select
+        bind:value={prefs.weather}
+        disabled={!prefs.home}
+        data-testid="prefs-weather"
+      >
+        <option value="warning">警報以上</option>
+        <option value="all">注意報も</option>
+        <option value="off">知らせない</option>
+      </select>
+    </label>
+    <p class="small muted">
+      警報以上には、危険警報・特別警報と、記録的短時間大雨情報・竜巻注意情報も入ります。
+    </p>
+    <label>
+      <input
+        type="checkbox"
+        role="switch"
+        bind:checked={prefs.weatherSpecial}
+      />
+      気象の特別警報は、どの地域に出ても知らせる
     </label>
     <label>
       津波
@@ -430,6 +561,20 @@
 </dialog>
 
 <style>
+  .home {
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+  .home legend {
+    padding: 0;
+    font-weight: var(--so-weight-bold);
+  }
+  .home-pick {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--so-space-2);
+  }
   .section-head {
     margin: var(--so-space-3) 0 0;
     font-size: var(--so-text-base);

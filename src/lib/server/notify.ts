@@ -15,6 +15,7 @@ import type { PushPayload, PushPrefs } from "#lib/push.ts";
 export {
   matches,
   type Notice,
+  noticeFor,
   noticeOf,
   type Plan,
   type Sent,
