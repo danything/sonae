@@ -34,7 +34,13 @@ function fakeEngine(opts: { down?: boolean } = {}) {
           {
             name: "雀松朱司",
             speaker_uuid: "0acebdee-a4a5-4e12-a695-e19609728e30",
-            styles: [{ name: "ノーマル", id: 52, type: "talk" }],
+            styles: [
+              { name: "ノーマル", id: 52, type: "talk" },
+              // 声の数の上限を試すための架空のスタイル
+              { name: "試し1", id: 901, type: "talk" },
+              { name: "試し2", id: 902, type: "talk" },
+              { name: "試し3", id: 903, type: "talk" },
+            ],
           },
           {
             // 規約で外したキャラクター
@@ -107,7 +113,7 @@ describe("VOICEVOX", () => {
       now: () => NOW,
     });
     expect(await v.check()).toBe(true);
-    expect(v.info().voices.map((x) => x.id)).toEqual([21, 52]);
+    expect(v.info().voices.map((x) => x.id)).toEqual([21, 52, 901, 902, 903]);
     expect([...e.dict.values()].some((w) => w.surface === "渡島")).toBe(true);
     await settle(v);
     expect(v.isCached(DEFAULT_SPEAKER, OPENINGS.eewWarning)).toBe(true);
@@ -220,5 +226,24 @@ describe("VOICEVOX", () => {
     expect(v.isCached(21, "震源は震源0です。")).toBe(false);
     expect(v.isCached(21, "震源は震源19です。")).toBe(true);
     expect(v.isCached(21, OPENINGS.eewWarning)).toBe(true);
+  });
+
+  test("使われている声は既定の声のほか 3 つまで。4 つ目は既定の声で読む", async () => {
+    const e = fakeEngine();
+    const v = new Voicevox({
+      url: "http://vv:50021",
+      fetch: e.f,
+      now: () => NOW,
+    });
+    await v.check();
+    for (const id of [52, 901, 902])
+      expect(
+        (await serveSpeech(v, { text: SAMPLE, voice: id })).headers.get(
+          "x-voice",
+        ),
+      ).toBe(String(id));
+    const r = await serveSpeech(v, { text: SAMPLE, voice: 903 });
+    expect(r.headers.get("x-voice")).toBe("21");
+    expect(v.voicesInUse()).toEqual([21, 52, 901, 902]);
   });
 });

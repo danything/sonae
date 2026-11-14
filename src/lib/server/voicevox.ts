@@ -70,6 +70,8 @@ export class Voicevox {
   voices: Voice[] = [];
 
   private readonly cache = new Map<string, Uint8Array<ArrayBuffer>>();
+  /** 辞書を直すたびに 1 つ進める。前の世代で合成を始めた音は持たない */
+  private generation = 0;
   private bytes = 0;
   private readonly pending = new Map<
     string,
@@ -125,11 +127,24 @@ export class Voicevox {
     return [this.defaultSpeaker, ...others];
   }
 
+  /** この声で読める (既定の声か、使われている声に入っている) */
+  isActive(speaker: number): boolean {
+    return this.voicesInUse().includes(speaker);
+  }
+
   /**
-   * 端末が声を選んだ (または、選んだ声で音を取りに来た)。覚えて、決まった文を下ごしらえする
+   * 端末が声を選んだ (または、選んだ声で音を取りに来た)。覚えて、決まった文を下ごしらえする。
+   * 使われている声が既定の声のほかに `VOICES_MAX` あるときは、新しい声を足さない
+   * (エンジンは読んだモデルを手放さないので、声の数でメモリが増え続けないように)
    */
   use(speaker: number): void {
     if (!this.isVoice(speaker)) return;
+    if (
+      speaker !== this.defaultSpeaker &&
+      !this.isActive(speaker) &&
+      this.voicesInUse().length > VOICES_MAX
+    )
+      return;
     const first = !this.inUse.has(speaker);
     const prev = this.inUse.get(speaker) ?? 0;
     this.inUse.set(speaker, this.now());
@@ -193,11 +208,14 @@ export class Voicevox {
     const p = new Promise<Uint8Array<ArrayBuffer>>((resolve, reject) => {
       const job: Job = {
         key,
-        run: () =>
-          this.synthesize(speaker, text).then((wav) => {
-            this.store(key, wav);
+        run: () => {
+          // 合成の途中で辞書が変わったら、その音は持たない (古い読みのことがある)
+          const generation = this.generation;
+          return this.synthesize(speaker, text).then((wav) => {
+            if (generation === this.generation) this.store(key, wav);
             resolve(wav);
-          }, reject),
+          }, reject);
+        },
       };
       (urgent ? this.urgent : this.background).push(job);
     }).finally(() => this.pending.delete(key));
@@ -358,6 +376,7 @@ export class Voicevox {
   }
 
   private clear(): void {
+    this.generation++;
     this.cache.clear();
     this.bytes = 0;
   }
@@ -425,6 +444,7 @@ export interface SpeechRequest {
  * - 合成してよい文 (決まった文と、受けた事象の原稿) でなければ 404。
  * - 選んだ声の決まった文がまだ無い (初めて使う声) ときは、すぐ鳴らせる既定の声の音を返し、
  *   選んだ声は後ろで合成しておく (緊急地震速報の冒頭を待たせない)。どの声かは `x-voice` で返す。
+ * - 使われている声がもう上限まであって、選んだ声を足せないときは、既定の声で読む。
  * - それ以外は、選んだ声で合成を待つ (受けたときに合成を始めているので、たいていは済んでいる)。
  */
 export async function serveSpeech(
@@ -436,11 +456,12 @@ export async function serveSpeech(
     return new Response("この文は読み上げられません", { status: 404 });
   if (!v.available)
     return new Response("VOICEVOX につながりません", { status: 503 });
-  const chosen =
+  let chosen =
     req.voice !== undefined && v.isVoice(req.voice)
       ? req.voice
       : v.defaultSpeaker;
   v.use(chosen);
+  if (!v.isActive(chosen)) chosen = v.defaultSpeaker;
   const speaker =
     isFixed(text) &&
     text !== SAMPLE &&
