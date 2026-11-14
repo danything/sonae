@@ -1440,6 +1440,7 @@
   }
   :global(:where(html[data-phone])) .map-pane {
     --map-radius: 0;
+    --map-top: env(safe-area-inset-top);
     --map-bottom: calc(
       var(--so-tabbar) + var(--so-dock-gap) + var(--dock-h) + var(--so-space-1)
     );

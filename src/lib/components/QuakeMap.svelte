@@ -4,7 +4,10 @@
   // MapLibre の描き手の worker。既定では本体の隣の maplibre-gl-worker.mjs を探すが、束ねると
   // 見つからないので、Vite に別に束ねさせて URL を渡す
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+  import Locate from "~icons/lucide/locate";
+  import LocateFixed from "~icons/lucide/locate-fixed";
 
+  import Icon from "#lib/components/Icon.svelte";
   import {
     INTENSITY_COLORS,
     VOLCANO_COLORS,
@@ -19,6 +22,7 @@
     intensityLabels,
     JAPAN_BOUNDS,
     longPeriodLine,
+    meFeatures,
     tsunamiPaint,
     volcanoMarks,
     warningFill,
@@ -314,6 +318,83 @@
     }
   });
 
+  // ---- 現在地 (押している間だけ watchPosition で追う。位置は端末の中で描くだけで、サーバーには送らない) ----
+  type Locating = "off" | "waiting" | "on";
+  let locating = $state<Locating>("off");
+  /** 位置を取れないわけ (無ければ空)。ボタンの下に出す */
+  let locateNote = $state("");
+  let me = $state<{ lon: number; lat: number; accuracy: number }>();
+  let watchId: number | undefined;
+  /** 今回オンにしてから、もう寄せたか (寄せるのは最初の 1 回だけ) */
+  let panned = false;
+
+  function stopLocating(): void {
+    if (watchId !== undefined) navigator.geolocation.clearWatch(watchId);
+    watchId = undefined;
+    locating = "off";
+    me = undefined;
+  }
+
+  function toggleLocate(): void {
+    locateNote = "";
+    if (locating !== "off") {
+      stopLocating();
+      return;
+    }
+    if (!("geolocation" in navigator)) {
+      locateNote = "このブラウザは位置を取れません";
+      return;
+    }
+    locating = "waiting";
+    panned = false;
+    watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        locating = "on";
+        me = {
+          lon: pos.coords.longitude,
+          lat: pos.coords.latitude,
+          accuracy: pos.coords.accuracy,
+        };
+      },
+      (err) => {
+        // 許可されなかったときは追うのをやめる。一時的に取れないだけなら追い続ける
+        if (err.code === err.PERMISSION_DENIED) {
+          stopLocating();
+          locateNote =
+            "位置の利用が許可されていません。ブラウザのサイトの設定で許可すると使えます";
+        } else if (locating === "waiting") {
+          locateNote =
+            "位置を取れませんでした。しばらくすると、取れたら出します";
+        }
+      },
+      { enableHighAccuracy: true, maximumAge: 30_000, timeout: 30_000 },
+    );
+  }
+
+  $effect(() => () => {
+    if (watchId !== undefined) navigator.geolocation.clearWatch(watchId);
+  });
+
+  // 現在地を描き、オンにして最初に取れたときだけそこへ寄せる
+  $effect(() => {
+    if (!map) return;
+    const src = map.getSource("me");
+    if (src && "setData" in src)
+      (src as { setData(d: unknown): void }).setData(
+        me
+          ? meFeatures(me.lon, me.lat, me.accuracy)
+          : { type: "FeatureCollection", features: [] },
+      );
+    if (me && !panned) {
+      panned = true;
+      locateNote = "";
+      map.jumpTo({
+        center: [me.lon, me.lat],
+        zoom: Math.max(map.getZoom(), 13),
+      });
+    }
+  });
+
   /**
    * 震央の × 。MapLibre は印の要素そのものの transform で場所を決めるので、動かすのは中の要素
    */
@@ -370,10 +451,107 @@
 {#if failed}
   <div class="map-failed empty-state"><p class="muted">{failed}</p></div>
 {:else}
-  <div class="map" bind:this={container} role="region" aria-label="地図"></div>
+  <div class="map-box">
+    <div
+      class="map"
+      bind:this={container}
+      role="region"
+      aria-label="地図"
+    ></div>
+    <!-- 地図の上に置く操作は、現在地のボタンだけ (docs/design.md の 6.2) -->
+    <div class="locate">
+      <button
+        type="button"
+        class="locate-button"
+        aria-pressed={locating !== "off"}
+        aria-label={locating === "off"
+          ? "現在地を表示"
+          : locating === "waiting"
+            ? "現在地を探しています (押すとやめる)"
+            : "現在地の表示をやめる"}
+        title={locating === "off" ? "現在地を表示" : "現在地の表示をやめる"}
+        onclick={toggleLocate}
+        disabled={!map}
+        data-locating={locating}
+        data-testid="locate"
+      >
+        <Icon icon={locating === "on" ? LocateFixed : Locate} />
+      </button>
+      {#if locateNote}
+        <p class="locate-note small" role="status">{locateNote}</p>
+      {/if}
+    </div>
+  </div>
 {/if}
 
 <style>
+  .map-box {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
+  /*
+   * 現在地のボタン。地図 (動く中身) の上に重なるので操作の層 (面と影) に乗せる。
+   * オンは並びの外の切り替えなので、主の色のアイコンと短い下線 (denpa の 6 章「ボタン」)
+   */
+  .locate {
+    position: absolute;
+    top: calc(var(--map-top, 0px) + var(--so-space-3));
+    right: var(--so-space-3);
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--so-space-2);
+    max-width: min(18rem, calc(100% - 2 * var(--so-space-3)));
+    pointer-events: none;
+  }
+  .locate-button {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--so-radius-full);
+    background: var(--so-float);
+    box-shadow: var(--so-shadow-pop);
+    color: var(--so-fg);
+    pointer-events: auto;
+    transition: scale var(--so-duration) var(--so-ease);
+  }
+  .locate-button:active {
+    scale: 0.97;
+  }
+  .locate-button[aria-pressed="true"] {
+    color: var(--so-primary-text);
+  }
+  .locate-button[aria-pressed="true"]::after {
+    content: "";
+    position: absolute;
+    bottom: 0.45rem;
+    left: 50%;
+    width: 0.75rem;
+    height: var(--so-mark);
+    border-radius: var(--so-mark);
+    background: var(--pico-primary);
+    translate: -50% 0;
+  }
+  /* 探している間はアイコンを薄くする (時間で動き続けるものは足さない。docs/design.md の 6.3) */
+  .locate-button[data-locating="waiting"] :global(svg) {
+    opacity: 0.45;
+  }
+  .locate-note {
+    margin: 0;
+    padding: var(--so-space-2) var(--so-space-3);
+    border-radius: var(--so-item-radius);
+    background: var(--so-pop);
+    box-shadow: var(--so-shadow-pop);
+    color: var(--so-fg);
+    pointer-events: auto;
+  }
   .map {
     width: 100%;
     height: 100%;

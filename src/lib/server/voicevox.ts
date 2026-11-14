@@ -16,7 +16,13 @@ import { join } from "node:path";
 
 import type { SonaeEvent } from "#lib/model.ts";
 import { noticeOf } from "#lib/notify.ts";
-import { FIXED_TEXTS, isFixed, readoutOf, SAMPLE } from "#lib/readout.ts";
+import {
+  FIXED_TEXTS,
+  isFixed,
+  readoutCandidates,
+  readoutOf,
+  SAMPLE,
+} from "#lib/readout.ts";
 import {
   ALLOWED_SPEAKERS,
   DEFAULT_SPEAKER,
@@ -164,7 +170,8 @@ export class Voicevox {
     const n = noticeOf(e, this.now());
     if (!n) return;
     const parts = readoutOf(n);
-    for (const p of parts) this.allow(p);
+    // 気象警報・注意報は住んでいる地域で文が変わるので、市町村等ごとの文も通す (合成は取りに来たときだけ)
+    for (const p of readoutCandidates(n)) this.allow(p);
     if (!this.available) return;
     for (const speaker of this.voicesInUse())
       for (const p of parts)
