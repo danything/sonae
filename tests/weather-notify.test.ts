@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import { alertFor } from "#lib/alert.ts";
 import { byPrefecture, type Cities, cityAt, homeOf } from "#lib/home.ts";
-import type { SonaeEvent, WeatherInfo, WeatherWarning } from "#lib/model.ts";
+import {
+  areaLevel,
+  type SonaeEvent,
+  type WeatherInfo,
+  type WeatherWarning,
+} from "#lib/model.ts";
 import { matches, noticeFor, noticeOf } from "#lib/notify.ts";
 import { DEFAULT_PREFS, type Home, type PushPrefs } from "#lib/push.ts";
 import {
@@ -327,6 +332,17 @@ describe("気象の読み上げ", () => {
     expect(parts[2]).toStartWith("対象の市町村は、松江市");
     const all = readoutCandidates(noticeOf(ev(special), SHIMANE_AT)!);
     for (const p of parts) expect(all).toContain(p);
+    // 特別警報の出ていない市町村に住んでいても、特別警報と自分の地域の文がどれも通る
+    const other = special.areas.find((a) => areaLevel(a) < 5);
+    if (other) {
+      const mixed = notice(
+        special,
+        prefs({ home: home({ code: other.code }) }),
+      );
+      if (!mixed) throw new Error("通知が無い");
+      expect(mixed.special).toBe(true);
+      for (const p of readoutOf(mixed)) expect(all).toContain(p);
+    }
     // 地域を選んでいなくても、特別警報は読む
     const anywhere = notice(special, prefs());
     expect(anywhere && readoutOf(anywhere)[0]).toBe(OPENINGS.weatherSpecial);
