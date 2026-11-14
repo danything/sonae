@@ -60,6 +60,7 @@
     isExpired,
     isPinnedAdvisory,
     isTsunamiActive,
+    isTsunamiWarning,
     isUrgentAdvisory,
     type OfficeWarnings,
     type Quake,
@@ -91,6 +92,7 @@
     KIND_LABEL,
     KINDS,
     matches,
+    newestFirst,
     OFFICE_PREFIX,
     readHidden,
     readView,
@@ -248,9 +250,10 @@
     add("weather", weathers, (x) => x.reportedAt, weatherRow);
     add("foreign", foreigns, (x) => x.originTime, foreignRow);
     add("info", infos, (a) => a.reportedAt, infoRow);
-    const time = (s: string) => Date.parse(s) || 0;
-    items.sort((a, b) => time(b.at) - time(a.at));
-    return groupByDay(items, (x) => x.at).map((g) => ({
+    return groupByDay(
+      newestFirst(items, (x) => x.at),
+      (x) => x.at,
+    ).map((g) => ({
       day: g.day,
       rows: g.items.map((x) => x.row()),
     }));
@@ -481,8 +484,6 @@
    * (身を守る動きにつなげるもの)、ほかの津波・噴火・お知らせはその種類を出しているときだけ
    */
   const pinnedEews = $derived(banners.filter((e) => !e.cancelled));
-  const isTsunamiWarning = (t: Tsunami) =>
-    tsunamiTop(t) === "major" || tsunamiTop(t) === "warning";
   const pinnedTsunamis = $derived(activeTsunamis.filter(isTsunamiWarning));
   const otherTsunamis = $derived(
     shownKind("tsunami")

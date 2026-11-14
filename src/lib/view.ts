@@ -193,6 +193,24 @@ export function groupByDay<T>(
   return groups;
 }
 
+/**
+ * 種類をまたいで新しい順に並べる (1 本の一覧)。時刻の同じもの・読めない時刻のものは元の並びのまま
+ * (読めない時刻はいちばん後ろ)
+ */
+export function newestFirst<T>(
+  items: T[],
+  time: (item: T) => string | undefined,
+): T[] {
+  const ms = (x: T) => {
+    const t = Date.parse(time(x) ?? "");
+    return Number.isFinite(t) ? t : -Infinity;
+  };
+  return items
+    .map((item, i) => ({ item, i, t: ms(item) }))
+    .sort((a, b) => b.t - a.t || a.i - b.i)
+    .map((x) => x.item);
+}
+
 /** 探す言葉に当たるか。空白で区切った言葉がどれも、どれかの字に入っていれば当たり */
 export function matches(
   query: string,

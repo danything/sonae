@@ -1,12 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
 import { monthGrid, monthLabel, stepMonth } from "#lib/calendar.ts";
+import { isTsunamiWarning, type TsunamiGrade } from "#lib/model.ts";
 import {
   dayKey,
   dayLabel,
   groupByDay,
   legacyRedirect,
   matches,
+  newestFirst,
   readHidden,
   readView,
   selectHref,
@@ -117,6 +119,33 @@ describe("日ごとに束ねる", () => {
       { day: "2026-11-13", items: items.slice(2) },
     ]);
   });
+});
+
+test("1 本の一覧: 種類をまたいで新しい順。同じ時刻は元の順、読めない時刻は後ろ", () => {
+  const items = [
+    { k: "quake", at: "2026-11-14T01:00:00Z" },
+    { k: "weather", at: "2026-11-14T03:00:00Z" },
+    { k: "info", at: undefined },
+    { k: "eew", at: "2026-11-14T01:00:00Z" },
+    { k: "volcano", at: "2026-11-14T02:00:00+09:00" },
+  ];
+  expect(newestFirst(items, (x) => x.at).map((x) => x.k)).toEqual([
+    "weather",
+    "quake",
+    "eew",
+    "volcano",
+    "info",
+  ]);
+});
+
+test("一覧の先頭に出す津波は、大津波警報と津波警報だけ", () => {
+  const t = (...grades: TsunamiGrade[]) => ({
+    areas: grades.map((grade) => ({ name: "x", grade, kindName: "" })),
+  });
+  expect(isTsunamiWarning(t("watch", "major"))).toBe(true);
+  expect(isTsunamiWarning(t("warning"))).toBe(true);
+  expect(isTsunamiWarning(t("watch", "forecast"))).toBe(false);
+  expect(isTsunamiWarning(t())).toBe(false);
 });
 
 test("絞り込みは、空白で区切った言葉がどれも入っていれば当たり", () => {
