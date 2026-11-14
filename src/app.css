@@ -789,7 +789,7 @@ button[data-on] {
   height: var(--so-space-2);
 }
 
-/* ---- オン/オフの印 (メニューとサイドバーの切り替え。押せるのは項目ぜんぶで、これは印だけ) ---- */
+/* ---- オン/オフの印 (メニューの切り替え。押せるのは項目ぜんぶで、これは印だけ) ---- */
 .s-switch {
   position: relative;
   flex-shrink: 0;
@@ -818,14 +818,7 @@ button[data-on] {
   transform: translateX(1rem);
 }
 
-/* ---- サイドバー (`.side-panel`・`.side-label`・`.side-list`・`.side-item`・`.side-foot`)。地のまま、線を引かない ---- */
-.side-panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--so-space-3);
-}
+/* ---- 縦の並び (`.side-label`・`.side-list`・`.side-item`)。カレンダーの見出しと、メニューの中の状態に使う。地のまま、線を引かない ---- */
 .side-label {
   display: flex;
   align-items: center;
@@ -836,9 +829,6 @@ button[data-on] {
   font-size: var(--so-text-sm);
   font-weight: var(--so-weight-bold);
   line-height: 1.5;
-}
-.side-panel > .side-label:first-child {
-  margin-top: 0;
 }
 .side-list {
   display: flex;
@@ -943,11 +933,6 @@ button[data-on] {
 .menu .side-item {
   min-height: 2.5rem;
 }
-.side-foot {
-  margin-top: auto;
-  padding-top: var(--so-space-4);
-}
-
 /* ---- ダイアログ (`<dialog>` の中の `article.modal-box`)。閉じるのは左下の「閉じる」 ---- */
 dialog {
   -webkit-backdrop-filter: none;

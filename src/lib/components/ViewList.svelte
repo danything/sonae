@@ -3,7 +3,7 @@
 
   /**
    * **表示の切り替え** (地図に重ねる層と、緊急地震速報の訓練・試験)。オン/オフは右のスイッチ (`.s-switch`)。
-   * サイドバーの並び (`list`) と、dock の「⋯」の中 (`menu`) で同じ中身。形と読み上げの役割だけが変わる (denpa の `ViewList`)。
+   * 広い形のヘッダーの「状態と表示」と、スマホの形の dock の「⋯」のメニューに同じ中身を出す (denpa の `ViewList`)。
    * 層の説明 (震源の色の意味など) は、指の端末でも読めるよう `title` ではなく名前の下に控えた字で出す
    */
   let {
@@ -11,19 +11,15 @@
     toggle,
     training,
     trainingHref,
-    variant = "list",
   }: {
     layers: LayerState;
     toggle: (id: LayerId) => void;
     training: boolean;
     /** 訓練・試験の出し入れは URL で切り替えるのでリンク */
     trainingHref: string;
-    variant?: "list" | "menu";
   } = $props();
-  const item = $derived(
-    variant === "menu" ? "menu-item view-item" : "side-item view-item",
-  );
-  const role = $derived(variant === "menu" ? "menuitemcheckbox" : "switch");
+  const item = "menu-item view-item";
+  const role = "menuitemcheckbox";
 </script>
 
 {#snippet toggleBody(label: string, on: boolean, note?: string)}

@@ -660,7 +660,6 @@
     toggle={toggleLayer}
     training={data.training}
     {trainingHref}
-    variant="menu"
   />
 {/snippet}
 
