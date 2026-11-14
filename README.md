@@ -9,12 +9,16 @@
 - [Zero Quake](https://github.com/0Quake/Zero-Quake) の機能を参考にした。コードは読んでも写してもいない (一から書いている)。
 - 地震・津波・火山 (噴火速報・噴火警報) の情報を気象庁 (防災情報 XML)・P2P地震情報・Wolfx Project から、海外の地震を USGS・EMSC・GeoNet・中央氣象署 (台湾、授権碼があるとき) から、太平洋の津波の参考情報を PTWC (米国) と気象庁ホームページ (国際津波関連情報) から受け、画面には必ず出典と「公式の情報を優先してください」という注意文を出す。気象庁の情報は加工して出しているので、その旨も書く。
 
+開いている画面では、条件に合う情報を短い音と読み上げで知らせる。読み上げの声は、sonae と一緒に動かす [VOICEVOX](https://voicevox.hiroshiba.jp/) のエンジンで作る (既定の声は「VOICEVOX:剣崎雌雄」。端末ごとに選べる)。
+VOICEVOX は公式のイメージを別のコンテナで動かし (理由は [docs/design.md の 2.4](docs/design.md))、`docker compose up` でも `deploy/` でも sonae と一緒に起きる。
+VOICEVOX が止まっているときは、ブラウザの読み上げで同じ文を読む。
+
 ## 開発
 
 依存はホストに入れず、コンテナの中で動かす。
 
 ```sh
-docker compose up            # https://sonae.localhost (genkan 経由)
+docker compose up            # https://sonae.localhost (genkan 経由)。VOICEVOX のエンジンも一緒に起きる
 docker compose run --rm sonae bun run lint    # oxlint・整形の確かめ (bun fmt --check)
 docker compose run --rm sonae bun run check   # 型 (svelte-check --tsgo)
 docker compose run --rm sonae bun test tests

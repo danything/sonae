@@ -1,6 +1,7 @@
 <script lang="ts">
   import "@anyblades/blades/components/modal";
 
+  import { alerter } from "#lib/alerter.svelte.ts";
   import { CREDITS, EEW_NOTICE, NOTICE } from "#lib/notice.ts";
 
   /**
@@ -58,6 +59,11 @@
         {#each CREDITS as c (c)}
           <li>{c}</li>
         {/each}
+        {#if alerter.credits.length > 0}
+          <li data-testid="voice-credit">
+            読み上げの声: {alerter.credits.join("・")}
+          </li>
+        {/if}
       </ul>
       <ul class="small">
         <li>

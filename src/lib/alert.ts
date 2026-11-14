@@ -16,8 +16,10 @@ import { DEFAULT_PREFS, normalizePrefs, type PushPrefs } from "./push.ts";
 export interface AlertSettings {
   /** 短い音を鳴らす */
   sound: boolean;
-  /** 見出しを読み上げる */
+  /** 読み上げる */
   speech: boolean;
+  /** 読み上げの声 (VOICEVOX のスタイルの id)。無ければサーバーの既定の声 */
+  voice?: number;
 }
 
 export const ALERT_OFF: AlertSettings = { sound: false, speech: false };
@@ -26,7 +28,12 @@ export const ALERT_OFF: AlertSettings = { sound: false, speech: false };
 export function parseAlertSettings(raw: string | null): AlertSettings {
   try {
     const o = JSON.parse(raw ?? "") as Partial<AlertSettings> | null;
-    return { sound: o?.sound === true, speech: o?.speech === true };
+    const s: AlertSettings = {
+      sound: o?.sound === true,
+      speech: o?.speech === true,
+    };
+    if (Number.isInteger(o?.voice) && (o?.voice ?? -1) >= 0) s.voice = o?.voice;
+    return s;
   } catch {
     return { ...ALERT_OFF };
   }
@@ -60,10 +67,3 @@ export function alertFor(
   sent.set(n.tag, { level: Math.max(prev?.level ?? 0, n.level), digest });
   return p.renotify ? n : null;
 }
-
-/** 読み上げる字。括弧は読ませず、間を置くだけにする */
-export const spokenText = (title: string) =>
-  title
-    .replace(/[()（）]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();

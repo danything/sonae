@@ -1,0 +1,97 @@
+# 読み上げの声を作る VOICEVOX のエンジン (docs/design.md の 2.4)。sonae の一部として一緒に出す。
+# sonae のイメージには入れず、公式のイメージを別の Pod で動かす (ライセンス・イメージの大きさ・CPU とメモリを分けるため)。
+# 止まっても sonae は動き、画面は端末の読み上げ (speechSynthesis) で読む。
+#
+# - イメージはバージョンだけのタグ (CPU 用。cpu-<バージョン> と同じダイジェスト)。Renovate が上げる (renovate.json)
+# - 外へは出ない (エンジンは外につながらない)。受けるのは sonae の Pod からだけ (下の NetworkPolicy)
+# - ユーザー辞書と合成した音は持たない (sonae がつながるたびに辞書を入れ、音は sonae のメモリに持つ)。PVC は要らない
+# - メモリはモデルを読んだ声の数で増える (手元で 3 人を読んで 1.9 GiB)。sonae が前もって合成する声は既定の声のほか 3 つまで
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voicevox
+  namespace: sonae
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: voicevox
+  template:
+    metadata:
+      labels:
+        app: voicevox
+    spec:
+      # 起動の後は外に何も書かない。エンジンはサービスのアカウントのトークンを使わない
+      automountServiceAccountToken: false
+      containers:
+        - name: voicevox
+          image: voicevox/voicevox_engine:0.26.1
+          ports:
+            - containerPort: 50021
+          env:
+            # ONNX Runtime のスレッドの数。limits の CPU に合わせる (既定はノードのコアの数で、制限の下で詰まる)
+            - name: VV_CPU_NUM_THREADS
+              value: "4"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              cpu: "4"
+              memory: 3Gi
+          startupProbe:
+            httpGet:
+              path: /version
+              port: 50021
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /version
+              port: 50021
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /version
+              port: 50021
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 4
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voicevox
+  namespace: sonae
+spec:
+  selector:
+    app: voicevox
+  ports:
+    - name: http
+      port: 50021
+      targetPort: 50021
+---
+# エンジンに入れるのは sonae の Pod からだけ。エンジンから外へは何も出さない (DNS も使わない)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: voicevox
+  namespace: sonae
+spec:
+  podSelector:
+    matchLabels:
+      app: voicevox
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: sonae
+      ports:
+        - protocol: TCP
+          port: 50021
+  egress: []

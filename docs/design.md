@@ -285,13 +285,54 @@ devDependencies に入れ、Vite がサーバーに束ねる。テスト (`tests
   wslc run --rm -v "$PWD:/w" -w /w debian:trixie-slim sh tools/icons/build.sh
   ```
 
-- **開いているとき:** SSE で受けたら、短い音 (`<audio>`) と見出しの読み上げ (`speechSynthesis`) で知らせる (`src/lib/alerter.svelte.ts`)。
+- **開いているとき:** SSE で受けたら、短い音 (`<audio>`) と読み上げで知らせる (`src/lib/alerter.svelte.ts`)。読み上げの声は VOICEVOX で作る (下の「読み上げ」)。
   - **鳴らす判定は Web Push と同じ関数** (`src/lib/notify.ts` の `noticeOf`・`decide`)。サーバーの `plan` も、画面の `alertFor` (`src/lib/alert.ts`) も `decide` を呼び、違うのは控えの置き場 (サーバーは購読ごとの `push_log`、画面はメモリ) と中身の値 (サーバーは SHA-256、画面は元の字) だけ。同じ所で鳴ることを `tests/alert.test.ts` で確かめている。訓練・試験・遠地地震・古すぎるものは鳴らさず、続報は重さが上がったときだけ鳴らし直す。
   - **条件は「通知」のダイアログの条件 1 つ** (Web Push と同じ `PushPrefs`)。端末の localStorage (`sonae.alert.prefs`) に持ち、Web Push に登録してあればサーバーにも送る。新しいルートは作らない。
-  - **音と読み上げは端末ごとにオン/オフでき、既定はどちらもオフ** (`sonae.alert`)。オンにしたときと「試しに鳴らす」で一度鳴らす。読み上げは通知の見出し (`title`) だけで、括弧は読ませない。音の後に 0.75 秒おいて読む。
+  - **音と読み上げは端末ごとにオン/オフでき、既定はどちらもオフ** (`sonae.alert`)。オンにしたときと「試しに鳴らす」で一度鳴らす。音の後に 0.75 秒おいて読む。
   - **音源は自作** (`src/lib/chime.ts`)。880 Hz から 660 Hz へ下がる 2 つの音を、その場で WAV (16 ビット・モノラル・22.05 kHz、0.7 秒) に組む。ファイルも外の音源も持たない。
   - **自動再生の制限:** ブラウザは、人がページを一度操作するまで音を出させない。最初の操作 (`pointerup`・`keydown`・`touchend`) の中で `<audio>` と読み上げを無音で一度動かし、後から鳴らせるようにする (iPhone・iPad の Safari は、操作の中で一度動かしたものでないと鳴らせない)。音か読み上げがオンなのに鳴らせない間 (`navigator.userActivation` がまだ立っていない、または再生を断られた) は、広い形はヘッダーのナビ、スマホの形は dock に「音を出す」を出す。押すと鳴らせるようになる。
   - タブを幾つも開いていても、同じ通知は 1 つのタブだけが鳴らす (Web Locks で 5 秒持つ。鳴らせないタブはロックを取らない)。Web Push にも登録してあると、開いている間も Web Push の通知は届く (Service Worker は通知を出さないと iOS が購読を止めるため、画面を開いているかで止めない)。
+
+#### 読み上げ (VOICEVOX)
+
+**読み上げの声は、sonae と一緒に動かす VOICEVOX のエンジンで作る。** `docker compose up` でも `deploy/` でも、sonae と VOICEVOX のコンテナが一緒に起き、sonae は `VOICEVOX_URL` (`http://voicevox:50021`) でつなぐ。
+VOICEVOX が止まっている・つながらないときは、画面が端末の読み上げ (`speechSynthesis`) で同じ原稿を読む。
+
+- **エンジンの選び方 (2026-11-14):** 日本語の自然さ、CPU だけでの速さ、地名の読みを直すユーザー辞書の API、公式の CPU 用の Docker イメージ、クレジットを出せば無料で使えること、の 5 つで比べ、VOICEVOX にした。
+  Kokoro・MeloTTS・Piper・GPT-SoVITS・Fish Speech・CosyVoice・Chatterbox・F5 は、日本語が弱い・GPU が要る・読み始めるまでが長すぎる・ライセンスが合わない、のどれかで外した。
+- **sonae のイメージに入れず、別のコンテナにする理由** (公式の文書で確かめた):
+  - ライセンス: VOICEVOX ENGINE は LGPL-3.0 (と別の許諾の二重)、VOICEVOX CORE は MIT だが、エンジンが読む VOICEVOX の ONNX Runtime と音声モデル (VVM) は独自の利用規約で、逆コンパイル・リバースエンジニアリングを禁じている ([VOICEVOX ONNX Runtime 利用規約](https://github.com/VOICEVOX/voicevox_resource/blob/main/onnxruntime/README.md)・[音声モデル利用規約](https://github.com/VOICEVOX/voicevox_vvm/blob/main/TERMS.txt))。AGPL-3.0 の sonae と 1 つのイメージにまとめて配ると、自由なソフトウェアの条件の無いものを sonae として一緒に配ることになる。公式のイメージを別に動かし HTTP で話せば、sonae のイメージは AGPL のままで、VOICEVOX の部分は VOICEVOX の配布物をそのまま使う形になる。
+  - 大きさ: 公式の CPU のイメージは 2.4 GB (0.26.1、手元の `wslc image list`)。sonae のイメージ (distroless、約 120 MB) が 20 倍になり、sonae を直すたびの公開と入れ替えが重くなる。エンジンの更新は sonae と別の周期 (Renovate) でする。
+  - 分離: 合成は CPU を数秒使い切り、モデルを読んだ声ごとにメモリを使う (手元で 3 人を読んで 1.9 GiB)。別のコンテナなら CPU とメモリの上限を別に掛けられ、エンジンが落ちたりメモリの上限で止められたりしても、受信・SSE・Web Push は止まらない。
+- **流れ:** サーバーは事象を受けたら (Broker の配信と同時に)、読み上げの原稿 (`src/lib/readout.ts` の `readoutOf`) を作り、変わる文を使われている声ごとに合成してメモリに持つ (`src/lib/server/voicevox.ts`)。
+  画面も同じ原稿を自分で作り、文ごとに `POST /api/speech` (`{ text, voice }`、ログインが要る) で WAV を取って順に鳴らす。取れない文は端末の読み上げで読む。
+  - 合成できるのは、決まった文と受けた事象の原稿の文だけ (ほかの文は 404。エンジンに勝手な文を読ませない)。
+  - 音は (声, 文) の組でメモリに 64 MB まで持ち、古いものから捨てる。決まった文は捨てない。合成は 1 つずつ順に頼み、事象の文を下ごしらえより先にする。
+  - つながりは 1 分ごとに確かめ、つながり直したら声の一覧と辞書を読み直して、決まった文を合成し直す。
+- **すぐに読み始める:** 冒頭の決まった文 (`OPENINGS`。「緊急地震速報です。強い揺れに警戒してください。」など 11 文) と試しの文は、起動したときに既定の声で合成しておく。変わる文 (地域・震源) は、決まった文を読んでいる間に合成する。
+  - 手元の測定 (2026-11-14、Ryzen 5 5600X、エンジンに 2 CPU・スレッド 2): 4 秒ほどの文の合成に 1.5〜2 秒、12 秒ほどの文に 4〜6 秒 (実時間の 0.4〜0.5 倍)。
+    緊急地震速報 (警報) は受けてすぐ冒頭を鳴らせ (取りに来てから 1 ms。持っている音を返すだけ)、2 度目の冒頭を読み終える 8.2 秒より前に、地域の文 (11 秒) が 4.6 秒で、震源の文が 5.3 秒で揃った。起動して既定の声の冒頭 11 文がそろうまで 13 秒。
+  - 家のクラスタの Z440 では測っていない (CPU が遅ければ合成も遅くなる)。そのため Deployment は CPU の上限を 4、スレッドを 4 にしてある。
+- **声を選ぶ:** 「通知」のダイアログの「読み上げる」の下に、声の選択肢 1 つと「試しに聞く」を置く。選んだ声は端末ごとに `sonae.alert` の `voice` (VOICEVOX のスタイルの id) に持つ。選ばなければ既定の声。選択肢は動いているエンジンの `/speakers` から作り、名前とスタイルを並べる (コードには書かない)。
+  - 選べるキャラクターは、利用規約を読んで「クレジットを出すだけで、会社が公開するアプリの中で使える」と確かめたものだけ (`src/lib/voices.ts` の `ALLOWED_SPEAKERS`、2026-11-14 にエンジン 0.26.1 の 44 人を読んだ)。エンジンが新しく足したキャラクターは、規約を読んで足すまで出さない。
+  - 外したもの: 企業が関わる利用・商用利用に事前の確認や申請が要るもの (青山龍星・もち子さん・後鬼・No.7・ユーレイちゃん・猫使アル・猫使ビィ・夜語トバリ・暁記ミタマ・里石ユカ・ぞん子)、法人の利用を許していないもの (Voidoll)、詳しい規約の本文が見つからないもの (琴詠ニア)。sonae は会社 (danything) が公開し、使う人が会社のこともあるので、個人の利用だけを許す規約では足りない。
+  - 規約は予告なく変わる。エンジンを上げるときに、足されたキャラクターと規約の変わったものを読み直す。
+  - 選んだ声は、画面を開いたときと選び直したときに `GET /api/speech?voice=<id>` でサーバーに伝わり、サーバーはその声の決まった文を後ろで合成し、使われている声として `voices.json` (`SONAE_DATA`) に覚える (30 日使われなければ外す。前もって合成するのは既定の声のほか 3 つまで)。
+  - **初めて選ばれた声の冒頭がまだ無いとき**は、既定の声の冒頭を返す (どの声かは `x-voice` で返す)。緊急地震速報の冒頭を合成で待たせないため。初めての声で冒頭の 1 文を合成すると 1.5 秒かかり、1 秒の目標に届かない。変わる文は選んだ声で読む (手元の測定で、地域の文は 6.8 秒で揃い、読み始める 8.2 秒に間に合った)。「試しに聞く」の文だけは、選んだ声を待つ。
+- **既定の声は剣崎雌雄 (ノーマル、スタイルの id 21)。** 公式の紹介は「安心感のある落ち着いた声」で、警報を落ち着いて伝えるのに合う。利用規約は「VOICEVOX:剣崎雌雄」と書けば商用・非商用で使え、申請や報告は要らない ([規約](https://frontier.creatia.cc/fanclubs/413/posts/4507))。サーバーの既定は環境変数 `VOICEVOX_SPEAKER` (スタイルの id) で替えられる。替えるときは、そのキャラクターの規約を読む。
+- **クレジット:** VOICEVOX で読み上げている端末では、「出典と注意」の窓の出典に、その端末で鳴る声を「VOICEVOX:<名前>」で出す (選んだ声と、冒頭を代わりに読むことがある既定の声)。読み上げがオフか、VOICEVOX につながっていないときは出さない。
+- **原稿 (`src/lib/readout.ts`):** 冒頭の決まった文のあと、変わる所を 1 文ずつ。気象庁の文 (見出し・津波の付加文・噴火速報の見出し) は言い換えずに読む。取消・解除は読まない (鳴らさないので)。
+  - 緊急地震速報 (警報): 冒頭の文を 2 度読み (テレビ・ラジオの伝え方と同じ)、「強い揺れに警戒が必要な地域は、〜です。」「震源は〜です。」。**予想震度と到達予想時刻は読まない** (5 章)。
+  - 緊急地震速報 (予報): 「緊急地震速報、予報です。」「震源は〜、規模はマグニチュード〜と推定されています。」。仮定震源なら「震源と規模は仮のものです。」。
+  - 震度速報: 「震度速報です。」「〜ごろ、最大震度〜を観測する地震がありました。」と、震度の高いほうから 2 つの段の地域。
+  - 震源・震度に関する情報: 「地震情報です。」・時刻と震源・深さと M・最大震度・2 つの段の地域・津波の付加文 (「この地震による津波の心配はありません。」など、気象庁の文のまま)。
+  - 津波: 区分ごとの冒頭 (「大津波警報が発表されました。」など)、**大津波警報と津波警報の地域を先に全部読み**、気象庁の見出し、津波注意報の地域 (10 を超えたら「など、N の地域」)。
+  - 南海トラフ地震臨時情報・関連解説情報・後発地震注意情報: 冒頭の文・情報の名前と種類・気象庁の見出し。噴火速報: 「噴火速報です。」と気象庁の見出し。噴火警報: 「火山の情報です。」・情報の名前・見出し。
+  - これから足す種類 (気象の警報など) は、`readoutOf` の `switch` に種類の分を足す。足すまでは、通知の見出しと本文を読む。
+  - 地域は 10 まで並べ、超えたら「など、N の地域」と言う (津波の警報の地域は縮めない)。読み上げるだけの文なので、半角の数字と日本語の間に空白を入れない。
+- **地名の読み:** VOICEVOX が読み違える地名は、ユーザー辞書 (`src/lib/server/readings.ts`) で直す。エンジンは辞書をコンテナの中に持つので、sonae がつながるたびに足りない語を足す (優先度 10)。
+  気象庁のコード表の震央地名 (343)・細分区域 (194)・津波予報区 (70)・活火山 (111) を `accent_phrases` に通して出たカナを見て、読み違えた 43 語を足した (渡島 → トトオ、後志 → シリベ、平野部 → ヒラノブ、沖縄県宮古島 → ミヤフルトオ、新潟県中越 → ナカコシ など)。足した後に、すべてがここの読みになることを確かめた。日向灘・釧路沖は辞書なしで正しく読む。
+  アクセントは聞いて確かめていない (読みのカナだけを確かめた)。北方領土と海の火山のいくつか (茂世路岳・小田萌山・指臼岳・海形海山・若尊) の読みは、気象庁の読みと突き合わせていない。
 
 ### 2.5 保存: SQLite
 
@@ -528,8 +569,8 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 
 ashi・xool と同じく、リポジトリの `deploy/` を Argo CD が同期する (gitops の ApplicationSet が `deploy/argocd.yaml` を探す)。
 
-- `deploy/`: `argocd.yaml`・`deployment.yaml` (レプリカ 1・Recreate・uid 1000・`/health` のプローブ (起きていることだけを見る。情報源の受信の状態は見ない)・`TZ=Asia/Tokyo`)・`service.yaml`・`httproute.yaml` (Cilium Gateway の `doany`、ホスト名 `s.doany.io`)・`pvc.yaml` (`local-path` 1Gi、`dataSourceRef` で VolSync から戻す)・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`networkpolicy.yaml` (外向きは DNS と公開のインターネットだけ)・`secrets.sops.yaml` (`OIDC_CLIENT_SECRET` (Main の共用のもの)・VolSync の restic。VAPID の秘密鍵 `vapid-private-jwk` と中央氣象署の授権碼 `cwa-api-key` は任意で、入れ方は docs/push.md と docs/cwa.md)。R2 にまだバックアップが無い最初の 1 回は、populator が空の PVC を作る (gitops の recovery/README.md の 6)。`.sops.yaml` はほかのリポジトリと同じ鍵。
-- 環境変数 (`deploy/deployment.yaml`): `PUBLIC_URL` と `ORIGIN` (adapter-bun) はどちらも `https://s.doany.io`。`CONNECTION_IDLE_TIMEOUT=255` (既定の 10 秒だと 30 秒ごとの `: ping` を待つ間に SSE が切れる)。`SHUTDOWN_TIMEOUT=5` (SSE は終わらないので長く待たない)。OIDC は docs/entra.md の表のとおり。
+- `deploy/`: `argocd.yaml`・`deployment.yaml` (レプリカ 1・Recreate・uid 1000・`/health` のプローブ (起きていることだけを見る。情報源の受信の状態は見ない)・`TZ=Asia/Tokyo`)・`service.yaml`・`httproute.yaml` (Cilium Gateway の `doany`、ホスト名 `s.doany.io`)・`pvc.yaml` (`local-path` 1Gi、`dataSourceRef` で VolSync から戻す)・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`networkpolicy.yaml` (外向きは DNS と公開のインターネットと、同じ名前空間の VOICEVOX だけ)・`voicevox.yaml` (読み上げの VOICEVOX のエンジン。公式のイメージ `voicevox/voicevox_engine:<バージョン>` (CPU 用) の Deployment・Service と、sonae の Pod からしか受けず外へ出ない NetworkPolicy。CPU の上限 4・メモリの上限 3Gi。PVC は持たない。イメージは Renovate が上げる)・`secrets.sops.yaml` (`OIDC_CLIENT_SECRET` (Main の共用のもの)・VolSync の restic。VAPID の秘密鍵 `vapid-private-jwk` と中央氣象署の授権碼 `cwa-api-key` は任意で、入れ方は docs/push.md と docs/cwa.md)。R2 にまだバックアップが無い最初の 1 回は、populator が空の PVC を作る (gitops の recovery/README.md の 6)。`.sops.yaml` はほかのリポジトリと同じ鍵。
+- 環境変数 (`deploy/deployment.yaml`): `PUBLIC_URL` と `ORIGIN` (adapter-bun) はどちらも `https://s.doany.io`。`CONNECTION_IDLE_TIMEOUT=255` (既定の 10 秒だと 30 秒ごとの `: ping` を待つ間に SSE が切れる)。`SHUTDOWN_TIMEOUT=5` (SSE は終わらないので長く待たない)。OIDC は docs/entra.md の表のとおり。`VOICEVOX_URL=http://voicevox:50021` (2.4 の「読み上げ」)。
 - 外向きの NetworkPolicy は ashi と同じ形 (kube-dns と、プライベートでないアドレス全部)。クラスタに既定で閉じるポリシーは無いので、これが無くても外へは出られる。家の LAN とクラスタの中を閉じるために置く。
 - イメージ: main にマージすると `docker-publish.yml` が `ghcr.io/danything/sonae:<sha>` を作り、`deploy/deployment.yaml` のタグを差し替える PR を作って自分でマージする (`deploy/` ができるまでは何もしない)。
 - 実行のイメージは `oven/bun:<ver>-distroless` (シェル無し・uid 1000)。

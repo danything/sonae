@@ -100,6 +100,10 @@ spec:
                   name: sonae-secrets
                   key: cwa-api-key
                   optional: true
+            # 読み上げの声を作る VOICEVOX (deploy/voicevox.yaml)。止まっていると、画面は端末の読み上げで読む。
+            # 既定の声を替えるときは VOICEVOX_SPEAKER (スタイルの id。docs/design.md の 2.4)
+            - name: VOICEVOX_URL
+              value: http://voicevox:50021
           volumeMounts:
             - name: sonae-data
               mountPath: /data

@@ -2,7 +2,7 @@ import { redirect } from "@sveltejs/kit";
 import type { Handle, ServerInit } from "@sveltejs/kit/hooks";
 
 import { enabled } from "#lib/server/oidc.ts";
-import { startReceiving } from "#lib/server/receiver.ts";
+import { startReceiving, startVoice } from "#lib/server/receiver.ts";
 import { COOKIE, find, SESSION_TTL } from "#lib/server/session.ts";
 import { legacyRedirect } from "#lib/view.ts";
 
@@ -27,6 +27,7 @@ export const init: ServerInit = () => {
       "PUBLIC_URL が空です。ログインの戻り先を要求の Host から組みます (本番では https://s.doany.io を入れてください)",
     );
   }
+  startVoice();
   if (process.env.SONAE_RECEIVE === "off") {
     console.warn("SONAE_RECEIVE=off なので、情報源につながりません");
     return;
