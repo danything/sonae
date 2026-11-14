@@ -484,6 +484,7 @@
     const next = sig(tiles);
     if (next === shelterSig) return;
     shelterSig = next;
+    let missed = false;
     const parts = await Promise.all(
       tiles.flatMap(([x, y]) =>
         SHELTER_LAYERS.map(async (layer) => {
@@ -496,6 +497,7 @@
               .then((j: { features?: unknown[] }) => j.features ?? [])
               .catch(() => {
                 shelterCache.delete(url);
+                missed = true;
                 return [];
               });
             shelterCache.set(url, p);
@@ -505,6 +507,8 @@
       ),
     );
     if (shelterSig !== next) return;
+    // 読めなかったタイルがあれば、同じ範囲のまま次に動かしたときも読み直す (通信が不安定なときに出ないままにしない)
+    if (missed) shelterSig = "";
     const src = map?.getSource("shelters");
     if (src && "setData" in src)
       (src as { setData(d: unknown): void }).setData({
