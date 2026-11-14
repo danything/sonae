@@ -19,6 +19,8 @@ import type {
   Status,
   Tsunami,
   Volcano,
+  WeatherInfo,
+  WeatherWarning,
 } from "#lib/model.ts";
 import {
   foreignFromReports,
@@ -203,9 +205,129 @@ export class Store {
           );
         return [this.event("longperiod", next.id, next)];
       }
+      case "warning":
+        return this.applyWarning(item.warning, now);
+      case "weather":
+        return this.applyWeatherInfo(item.info, now);
       case "other":
         return [];
     }
+  }
+
+  /**
+   * 気象警報・注意報。府県予報区と種別ごとの状態を、新しい報で置き換える。前の報より古い報
+   * (長期フィードで後から読んだもの) は捨てる。同じ時刻の報は訂正なら置き換える
+   */
+  private applyWarning(
+    w: Omit<WeatherWarning, "updatedAt">,
+    now: string,
+  ): SonaeEvent[] {
+    const prev = this.warning(w.id);
+    if (prev) {
+      const d = ms(w.reportedAt) - ms(prev.reportedAt);
+      if (d < 0 || (d === 0 && w.infoType !== "訂正")) return [];
+    }
+    const next: WeatherWarning = { ...w, updatedAt: now };
+    this.db
+      .query(
+        `INSERT INTO weather_warnings (id, code, office, status, reported_at, data)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET reported_at = excluded.reported_at, data = excluded.data`,
+      )
+      .run(
+        next.id,
+        next.code,
+        next.office.code,
+        next.status,
+        next.reportedAt,
+        JSON.stringify(next),
+      );
+    return [this.event("warning", next.id, next)];
+  }
+
+  /**
+   * 気象の、報ごとの情報。火山と同じく報ごとに 1 行。取消は同じ一連の情報のいちばん新しい報に印を付け、
+   * 訂正はその報を置き換える
+   */
+  private applyWeatherInfo(
+    w: Omit<WeatherInfo, "updatedAt" | "cancelled">,
+    now: string,
+  ): SonaeEvent[] {
+    let next: WeatherInfo = {
+      ...w,
+      cancelled: w.infoType === "取消",
+      updatedAt: now,
+    };
+    if (w.infoType !== "発表") {
+      const row = this.db
+        .query<{ data: string }, [string]>(
+          `SELECT data FROM weather_infos WHERE series = ?
+           ORDER BY datetime(reported_at) DESC LIMIT 1`,
+        )
+        .get(w.series);
+      const prev = row ? (JSON.parse(row.data) as WeatherInfo) : undefined;
+      if (prev && w.infoType === "取消") {
+        if (prev.cancelled) return [];
+        next = { ...prev, cancelled: true, updatedAt: now };
+      } else if (prev) {
+        next = { ...next, id: prev.id };
+      }
+    }
+    this.db
+      .query(
+        `INSERT INTO weather_infos (id, series, kind, status, reported_at, data)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET reported_at = excluded.reported_at, data = excluded.data`,
+      )
+      .run(
+        next.id,
+        next.series,
+        next.kind,
+        next.status,
+        next.reportedAt,
+        JSON.stringify(next),
+      );
+    return [this.event("weather", next.id, next)];
+  }
+
+  weatherInfo(id: string): WeatherInfo | undefined {
+    const row = this.db
+      .query<{ data: string }, [string]>(
+        "SELECT data FROM weather_infos WHERE id = ?",
+      )
+      .get(id);
+    return row ? (JSON.parse(row.data) as WeatherInfo) : undefined;
+  }
+
+  /** 新しい順の気象の報 */
+  weatherInfos(limit = 100, includeTraining = false): WeatherInfo[] {
+    return this.db
+      .query<{ data: string }, [number]>(
+        `SELECT data FROM weather_infos ${includeTraining ? "" : "WHERE status = 'normal'"}
+         ORDER BY datetime(reported_at) DESC LIMIT ?`,
+      )
+      .all(limit)
+      .map((r) => JSON.parse(r.data) as WeatherInfo);
+  }
+
+  warning(id: string): WeatherWarning | undefined {
+    const row = this.db
+      .query<{ data: string }, [string]>(
+        "SELECT data FROM weather_warnings WHERE id = ?",
+      )
+      .get(id);
+    return row ? (JSON.parse(row.data) as WeatherWarning) : undefined;
+  }
+
+  /** いまの気象警報・注意報 (府県予報区と種別ごと)。訓練・試験は除く */
+  warnings(): WeatherWarning[] {
+    return this.db
+      .query<{ data: string }, []>(
+        `SELECT data FROM weather_warnings WHERE status = 'normal'
+         ORDER BY datetime(reported_at) DESC`,
+      )
+      .all()
+      .map((r) => JSON.parse(r.data) as WeatherWarning);
   }
 
   /**
@@ -558,6 +680,13 @@ export class Store {
   /** 古い原文を捨てる。重複の除去の鍵は残す (取り直さないように) */
   prune(days = RAW_RETENTION_DAYS): number {
     const before = new Date(ms(this.now()) - days * DAY).toISOString();
+    // 気象の警報・注意報は府県予報区ごとの状態を報ごとに丸ごと積むので、イベントも同じ期間で捨てる
+    // (いまの状態は weather_warnings にある。SSE の埋め直しは新しいものしか使わない)
+    this.db
+      .query(
+        "DELETE FROM events WHERE type IN ('warning', 'weather') AND at < ?",
+      )
+      .run(before);
     return this.db
       .query(
         "UPDATE raw_messages SET body = NULL WHERE body IS NOT NULL AND received_at < ?",

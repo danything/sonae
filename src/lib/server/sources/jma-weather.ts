@@ -1,0 +1,310 @@
+/**
+ * 気象庁防災情報 XML の気象の電文 (随時のフィード extra.xml) を、正規化したモデルに読む
+ * (docs/design.md の 2.8)。読み方の部品は jma-xml.ts と同じ。
+ *
+ * 仕様: 技術資料 (https://xml.kishou.go.jp/tec_material.html) の解説資料 (`jmaxml_20261104_Manual(pdf).zip`)。
+ * 気象警報・注意報 (Ｒ０６) と別表類、記録的短時間大雨情報、気象解説情報形式 (府県気象防災速報)、
+ * 竜巻注意情報、指定河川洪水予報、一般報 (熱中症警戒アラート)、台風解析・予報情報電文 (新形式)。
+ */
+
+import { XML } from "bun";
+
+import {
+  floodLevel,
+  type TyphoonNow,
+  WARNING_CODES,
+  type WarningArea,
+  type WarningCode,
+  type WarningKind,
+  warningLevel,
+  type WeatherInfo,
+  type WeatherInfoKind,
+} from "#lib/model.ts";
+
+import {
+  at,
+  attr,
+  child,
+  children,
+  infoTypeOf,
+  STATUS,
+  text,
+  textAt,
+  type V,
+} from "./jma-xml.ts";
+import type { Normalized } from "./types.ts";
+
+const isWarningCode = (c: string): c is WarningCode =>
+  (WARNING_CODES as readonly string[]).includes(c);
+
+/**
+ * 報ごとの情報の種別。土砂災害警戒情報 (VXWW50) は「レベル４土砂災害危険警報」として VPWW56 に入り、
+ * VXWW50 は経過措置の電文 (令和 10 年度に廃止予定) なので取らない (二重になる)
+ */
+function infoKindOf(code: string): WeatherInfoKind | undefined {
+  if (code === "VPOA50") return "rain";
+  if (code === "VPBS50") return "bosai";
+  if (code === "VPHW50") return "tornado";
+  if (code === "VPFT50") return "heat";
+  if (/^VXKO(5\d|[6-8]\d)$/.test(code)) return "flood";
+  if (/^VPTW6[0-5]$/.test(code)) return "typhoon";
+  return undefined;
+}
+
+const range = (prefix: string, from: number, to: number) =>
+  Array.from({ length: to - from + 1 }, (_, i) => `${prefix}${from + i}`);
+
+/** 気象のフィードから取る種別 */
+export const WEATHER_CODES: ReadonlySet<string> = new Set<string>([
+  ...WARNING_CODES,
+  "VPOA50",
+  "VPBS50",
+  "VPHW50",
+  "VPFT50",
+  ...range("VXKO", 50, 89),
+  ...range("VPTW", 60, 65),
+]);
+
+/** その時点の状態をまるごと持つ種別 (府県予報区ごとに、いちばん新しい電文だけを取る) */
+export const WEATHER_SNAPSHOT_CODES: ReadonlySet<string> = new Set<string>(
+  WARNING_CODES,
+);
+
+/** Item の中の Kind (1 つの Item に幾つも並ぶことがある。その他の注意報など) */
+function readKinds(item: V): {
+  active: WarningKind[];
+  released: WarningKind[];
+} {
+  const active: WarningKind[] = [];
+  const released: WarningKind[] = [];
+  for (const kind of children(item, "Kind")) {
+    const code = textAt(kind, "Code");
+    const name = textAt(kind, "Name");
+    const status = textAt(kind, "Status") ?? "";
+    // 「発表警報・注意報はなし」は Name と Code が無い
+    if (!code || !name) continue;
+    const k: WarningKind = { code, name, level: warningLevel(code), status };
+    if (status === "解除") released.push(k);
+    else if (k.level > 0) active.push(k);
+  }
+  return { active, released };
+}
+
+function readWarning(body: V) {
+  const warnings = children(body, "Warning");
+  const ofType = (t: string) =>
+    warnings.find((w) => attr(w, "type") === `気象警報・注意報（${t}）`);
+  const offices = children(ofType("府県予報区等"), "Item").flatMap((item) => {
+    const code = textAt(item, "Area/Code");
+    const name = textAt(item, "Area/Name");
+    return code && name ? [{ code, name }] : [];
+  });
+  // 同じ市町村等が幾つかの Item に分かれて来ても、1 つにまとめる
+  const areas = new Map<string, WarningArea>();
+  const released = new Map<string, WarningArea>();
+  const add = (
+    m: Map<string, WarningArea>,
+    code: string,
+    name: string,
+    kinds: WarningKind[],
+  ) => {
+    if (kinds.length === 0) return;
+    const a = m.get(code) ?? { code, name, kinds: [] };
+    for (const k of kinds)
+      if (!a.kinds.some((x) => x.code === k.code)) a.kinds.push(k);
+    m.set(code, a);
+  };
+  for (const item of children(ofType("市町村等"), "Item")) {
+    const code = textAt(item, "Area/Code");
+    const name = textAt(item, "Area/Name");
+    if (!code || !name) continue;
+    const k = readKinds(item);
+    add(areas, code, name, k.active);
+    add(released, code, name, k.released);
+  }
+  return {
+    offices,
+    areas: [...areas.values()],
+    released: [...released.values()],
+  };
+}
+
+/**
+ * Headline/Information の地域 (Areas/Area の Code と Name)。「なし」の Kind の地域は入れない。
+ * 同じコードは 1 つにまとめる
+ */
+function headlineAreas(head: V): { code: string; name: string }[] {
+  const out = new Map<string, string>();
+  for (const info of children(child(head, "Headline"), "Information")) {
+    for (const item of children(info, "Item")) {
+      const cond = textAt(item, "Kind/Condition");
+      if (cond === "なし") continue;
+      for (const a of children(child(item, "Areas"), "Area")) {
+        const code = textAt(a, "Code");
+        const name = textAt(a, "Name");
+        if (code && name && !out.has(code)) out.set(code, name);
+      }
+    }
+  }
+  return [...out].map(([code, name]) => ({ code, name }));
+}
+
+const num = (v: string | undefined) => {
+  const n = v === undefined ? Number.NaN : Number(v);
+  return Number.isFinite(n) ? n : undefined;
+};
+
+/** 台風解析・予報情報の、いちばん初めの「実況」 */
+function readTyphoon(body: V): TyphoonNow | undefined {
+  const infos = children(
+    children(body, "MeteorologicalInfos").find(
+      (m) => attr(m, "type") === "台風情報",
+    ),
+    "MeteorologicalInfo",
+  );
+  const now =
+    infos.find((i) => attr(child(i, "DateTime"), "type") === "実況") ??
+    infos[0];
+  if (!now) return undefined;
+  const props = children(child(now, "Item"), "Kind").map((k) =>
+    child(k, "Property"),
+  );
+  const part = (name: string) =>
+    props.map((p) => child(p, name)).find((x) => x !== undefined);
+  const name = part("TyphoonNamePart");
+  const cls = part("ClassPart");
+  const center = part("CenterPart");
+  const wind = part("WindPart");
+  const coord = children(center, "jmx_eb:Coordinate").find(
+    (c) => attr(c, "type") === "中心位置（度）",
+  );
+  const m = /^([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)/.exec(text(coord) ?? "");
+  const speed = children(center, "jmx_eb:Speed").find(
+    (s) => attr(s, "unit") === "km/h",
+  );
+  const ms = (type: string) =>
+    num(
+      text(
+        children(wind, "jmx_eb:WindSpeed").find(
+          (w) => attr(w, "type") === type && attr(w, "unit") === "m/s",
+        ),
+      ),
+    );
+  return {
+    number: textAt(name, "Number"),
+    name: textAt(name, "Name"),
+    nameKana: textAt(name, "NameKana"),
+    remark: textAt(name, "Remark"),
+    className: textAt(cls, "jmx_eb:TyphoonClass"),
+    areaClass: textAt(cls, "jmx_eb:AreaClass"),
+    intensityClass: textAt(cls, "jmx_eb:IntensityClass"),
+    lat: m ? Number(m[1]) : undefined,
+    lon: m ? Number(m[2]) : undefined,
+    location: textAt(center, "Location"),
+    direction: textAt(center, "jmx_eb:Direction"),
+    speed: attr(speed, "description") ?? text(speed),
+    pressureHpa: num(textAt(center, "jmx_eb:Pressure")),
+    maxWindMs: ms("最大風速"),
+    maxGustMs: ms("最大瞬間風速"),
+  };
+}
+
+/**
+ * 電文 1 通を読む。code は種別 (フィードのリンクのファイル名から取ったもの)。
+ * 読めない形なら例外を投げる (呼ぶ側が原文を残して記録する)。
+ */
+export function parseWeatherXml(xml: string, code: string): Normalized[] {
+  const doc = XML.parse(xml);
+  const report = doc.Report;
+  if (report === undefined || typeof report === "string")
+    throw new Error("Report 要素がありません");
+  const control = child(report, "Control");
+  const head = child(report, "Head");
+  const body = child(report, "Body");
+  const status = STATUS[textAt(control, "Status") ?? ""] ?? "test";
+  const reportedAt = textAt(head, "ReportDateTime");
+  if (!reportedAt) throw new Error("ReportDateTime がありません");
+  const headline = textAt(head, "Headline/Text") ?? "";
+  const title = textAt(head, "Title") ?? textAt(control, "Title") ?? code;
+  const suffix = status === "normal" ? "" : `-${status}`;
+
+  if (isWarningCode(code)) {
+    const w = readWarning(body);
+    const office = w.offices[0];
+    if (!office) throw new Error("府県予報区がありません");
+    return [
+      {
+        type: "warning",
+        warning: {
+          id: `${code}-${office.code}${suffix}`,
+          code,
+          office,
+          status,
+          // R06 には取消が無い (発表と訂正だけ)。訂正も置き換え
+          infoType: textAt(head, "InfoType") === "訂正" ? "訂正" : "発表",
+          reportedAt,
+          title,
+          headline,
+          areas: w.areas,
+          released: w.released,
+        },
+      },
+    ];
+  }
+
+  const kind = infoKindOf(code);
+  if (kind) {
+    const eventId = textAt(head, "EventID");
+    const areas = headlineAreas(head);
+    // 一連の情報の鍵。記録的短時間大雨情報・府県気象防災速報の EventID は「第 1 号の日時_当該号の日時」
+    // なので前半だけ。竜巻注意情報は EventID が空なので、発表細分 (府県予報区) のコードで分ける
+    const series =
+      (kind === "rain" || kind === "bosai"
+        ? eventId?.split("_")[0]
+        : kind === "tornado"
+          ? areas[0]?.code
+          : eventId) || code;
+    const firstKind = at(head, "Headline/Information/Item/Kind");
+    const kindName =
+      kind === "bosai"
+        ? children(child(head, "Headline"), "Information")
+            .filter((i) => attr(i, "type") === "情報タグ")
+            .flatMap((i) => children(i, "Item"))
+            .map((i) => textAt(i, "Kind/Condition"))
+            .filter((c): c is string => !!c)
+            .join("・") || undefined
+        : textAt(firstKind, "Name");
+    // 府県気象防災速報の「記録雨」は記録的短時間大雨情報 (VPOA50) と同じ中身 (経過措置の間は両方が出る)。
+    // 二重に並べないよう、記録雨だけの速報は取らない
+    if (kind === "bosai" && (kindName === undefined || kindName === "記録雨"))
+      return [{ type: "other", code }];
+    const info: Omit<WeatherInfo, "updatedAt" | "cancelled"> = {
+      id: `${code}-${series}-${reportedAt.replace(/[^0-9]/g, "").slice(0, 14)}${suffix}`,
+      kind,
+      code,
+      series: `${kind}-${series}${suffix}`,
+      status,
+      infoType: infoTypeOf(textAt(head, "InfoType")),
+      reportedAt,
+      validUntil: textAt(head, "ValidDateTime"),
+      title,
+      headline,
+      text:
+        kind === "heat"
+          ? text(
+              children(child(body, "Comment"), "Text").find(
+                (t) => attr(t, "type") === "本文",
+              ),
+            )?.trim()
+          : undefined,
+      level:
+        kind === "flood" ? floodLevel(textAt(firstKind, "Code")) : undefined,
+      kindName,
+      areas,
+      typhoon: kind === "typhoon" ? readTyphoon(body) : undefined,
+    };
+    return [{ type: "weather", info }];
+  }
+
+  return [{ type: "other", code }];
+}
