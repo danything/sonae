@@ -3,7 +3,12 @@
  * DOM にも MapLibre にも触らない (試験できるように)。
  */
 
-import { INTENSITY_COLORS, LG_COLORS, TSUNAMI_COLORS } from "#lib/format.ts";
+import {
+  INTENSITY_COLORS,
+  LG_COLORS,
+  TSUNAMI_COLORS,
+  WARNING_COLORS,
+} from "#lib/format.ts";
 import type {
   AreaIntensity,
   AreaLongPeriod,
@@ -13,6 +18,7 @@ import type {
   Quake,
   Tsunami,
   Volcano,
+  WarningLevel,
 } from "#lib/model.ts";
 import { intensityRank, TSUNAMI_ORDER, volcanoTop } from "#lib/model.ts";
 
@@ -43,7 +49,8 @@ export type LayerId =
   | "faults"
   | "volcano"
   | "longperiod"
-  | "foreign";
+  | "foreign"
+  | "warning";
 
 export interface LayerInfo {
   id: LayerId;
@@ -70,6 +77,12 @@ export const LAYERS: LayerInfo[] = [
   },
   { id: "tsunami", label: "津波の警報・注意報", on: true },
   { id: "eew", label: "緊急地震速報", on: true },
+  {
+    id: "warning",
+    label: "気象警報・注意報",
+    on: true,
+    note: "市町村等を段の色で塗ります。特別警報 黒・危険警報 紫・警報 赤・注意報 黄 (気象庁の配色)",
+  },
   {
     id: "foreign",
     label: "海外の地震",
@@ -125,6 +138,7 @@ export function mapVisibility(s: LayerState): Record<string, boolean> {
     photo: !s.labels,
     pale: s.labels,
     faults: s.faults,
+    "warning-fill": s.warning,
     "quake-fill": s.intensity,
     "eew-fill": s.eew,
     "eew-line": s.eew,
@@ -178,6 +192,16 @@ export function longPeriodLine(areas: AreaLongPeriod[]): string | Expr {
     else byName.set(a.name, color);
   }
   return matchExpr(byCode, byName, TRANSPARENT);
+}
+
+/** 市町村等を、いま出ている気象警報・注意報のいちばん高い段の色で塗る式 */
+export function warningFill(levels: Map<string, WarningLevel>): string | Expr {
+  const byCode = new Map<string, string>();
+  for (const [code, level] of levels) {
+    const color = level > 0 ? WARNING_COLORS[level]?.bg : undefined;
+    if (color) byCode.set(code, color);
+  }
+  return matchExpr(byCode, new Map(), TRANSPARENT);
 }
 
 /** 緊急地震速報の警報の地域 (名前) を塗る式 */
@@ -409,6 +433,10 @@ export function baseStyle(
         type: "geojson",
         data: "/areas/tsunami-areas.geojson",
       },
+      "warning-areas": {
+        type: "geojson",
+        data: "/areas/warning-areas.geojson",
+      },
       foreign: {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -463,6 +491,13 @@ export function baseStyle(
         type: "raster",
         source: "faults",
         paint: { "raster-opacity": 0.9 },
+      },
+      // 気象警報・注意報は震度の下に塗る (地震のときは震度を見せる)
+      {
+        id: "warning-fill",
+        type: "fill",
+        source: "warning-areas",
+        paint: { "fill-color": TRANSPARENT, "fill-opacity": 0.6 },
       },
       {
         id: "quake-fill",

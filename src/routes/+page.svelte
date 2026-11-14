@@ -23,6 +23,8 @@
   import QuakeDetail from "#lib/components/detail/QuakeDetail.svelte";
   import TsunamiDetail from "#lib/components/detail/TsunamiDetail.svelte";
   import VolcanoDetail from "#lib/components/detail/VolcanoDetail.svelte";
+  import WarningDetail from "#lib/components/detail/WarningDetail.svelte";
+  import WeatherDetail from "#lib/components/detail/WeatherDetail.svelte";
   import EewBanner from "#lib/components/EewBanner.svelte";
   import Grade from "#lib/components/Grade.svelte";
   import Icon from "#lib/components/Icon.svelte";
@@ -36,17 +38,20 @@
   import TsunamiSummary from "#lib/components/TsunamiSummary.svelte";
   import ViewList from "#lib/components/ViewList.svelte";
   import VolcanoLevel from "#lib/components/VolcanoLevel.svelte";
+  import WarningLevel from "#lib/components/WarningLevel.svelte";
   import { activeEews } from "#lib/eew.ts";
   import {
     depthText,
     jst,
     jstClock,
     jstTime,
+    kindText,
     magnitudeText,
     placeName,
     quakeName,
     STATUS_LABEL,
     volcanoKindText,
+    weatherTitle,
   } from "#lib/format.ts";
   import { live } from "#lib/live.svelte.ts";
   import { type LayerId, type LayerState, readLayers } from "#lib/map/style.ts";
@@ -54,9 +59,11 @@
     type Advisory,
     type Eew,
     type ForeignQuake,
+    isExpired,
     isPinnedAdvisory,
     isTsunamiActive,
     isUrgentAdvisory,
+    type OfficeWarnings,
     type Quake,
     type Tsunami,
     tsunamiGradeLabel,
@@ -64,6 +71,10 @@
     type Volcano,
     VOLCANO_RESIDENTIAL,
     volcanoTop,
+    type WarningLevel as Level,
+    warningsByOffice,
+    WEATHER_INFO_LABEL,
+    type WeatherInfo,
   } from "#lib/model.ts";
   import { CREDITS, KMONI_URL, NOTICE } from "#lib/notice.ts";
   import { PHONE_FORM } from "#lib/phone-form.ts";
@@ -81,6 +92,7 @@
     KIND_LABEL,
     KINDS,
     matches,
+    OFFICE_PREFIX,
     readView,
     selectHref,
     UNSELECT,
@@ -154,11 +166,41 @@
       matches(query, a.title, a.headline, a.serialName, a.text),
     ),
   );
+  /** 府県予報区ごとの、いま出ている気象警報・注意報 */
+  const allOffices = $derived(warningsByOffice(snap.warnings));
+  const offices = $derived(
+    allOffices.filter((o) =>
+      matches(
+        query,
+        o.office.name,
+        ...o.kinds.map((k) => k.name),
+        ...o.kinds.flatMap((k) => k.areas.map((a) => a.name)),
+      ),
+    ),
+  );
+  /** 気象の報。台風は報が数時間ごとに出るので、台風ごとにいちばん新しい報だけを並べる */
+  const weathers = $derived.by(() => {
+    const seen = new Set<string>();
+    return snap.weatherInfos.filter((x) => {
+      if (x.kind === "typhoon") {
+        if (seen.has(x.series)) return false;
+        seen.add(x.series);
+      }
+      return matches(
+        query,
+        x.title,
+        x.headline,
+        x.kindName,
+        ...x.areas.map((a) => a.name),
+      );
+    });
+  });
   const counts = $derived<Record<Kind, number>>({
     quake: quakes.length,
     tsunami: tsunamis.length,
     eew: eews.length,
     volcano: volcanoes.length,
+    weather: offices.length + weathers.length,
     info: infos.length,
     foreign: foreigns.length,
   });
@@ -191,6 +233,11 @@
           day: g.day,
           rows: g.items.map((x) => foreignRow(x)),
         }));
+      case "weather":
+        return groupByDay(weathers, (x) => x.reportedAt).map((g) => ({
+          day: g.day,
+          rows: g.items.map((x) => weatherRow(x)),
+        }));
       case "info":
         return groupByDay(infos, (a) => a.reportedAt).map((g) => ({
           day: g.day,
@@ -213,6 +260,46 @@
         .filter(Boolean)
         .join("・"),
       states: [],
+    };
+  }
+  /** 府県予報区の警報・注意報の行。いちばん高い段のラベルと、出ている種類の名前 */
+  function officeRow(o: OfficeWarnings): RowData {
+    const id = `${OFFICE_PREFIX}${o.office.code}`;
+    return {
+      key: id,
+      href: selectHref(params, "weather", id),
+      current: v.selected?.kind === "weather" && v.selected.id === id,
+      time: jstTime(o.reportedAt),
+      title: o.office.name,
+      meta: o.kinds.map((k) => kindText(k.name)).join("・"),
+      warning: { level: o.top },
+      states: [],
+    };
+  }
+  function weatherRow(x: WeatherInfo): RowData {
+    const expired = isExpired(x, live.now);
+    return {
+      key: x.id,
+      href: selectHref(params, "weather", x.id),
+      current: v.selected?.kind === "weather" && v.selected.id === x.id,
+      time: jstTime(x.reportedAt),
+      title: weatherTitle(x),
+      meta: [
+        WEATHER_INFO_LABEL[x.kind],
+        x.typhoon?.remark ?? "",
+        x.kind === "bosai" ? x.kindName : "",
+        x.headline.replace(/\s+/g, " ").trim(),
+      ]
+        .filter(Boolean)
+        .join("・"),
+      warning:
+        x.level !== undefined && x.level > 0
+          ? { level: x.level, label: kindText(x.kindName ?? "") || undefined }
+          : undefined,
+      states: [
+        ...(x.cancelled ? [{ label: "取消", tone: "error" as const }] : []),
+        ...(expired ? [{ label: "有効期限切れ", tone: "" as const }] : []),
+      ],
     };
   }
   function infoRow(a: Advisory): RowData {
@@ -238,6 +325,8 @@
     grade?: Tsunami["areas"][number]["grade"];
     /** 火山の警戒の段のラベル */
     volcano?: { level: number | undefined; label: string };
+    /** 気象警報・注意報・洪水予報の段のラベル */
+    warning?: { level: Level; label?: string };
     states: { label: string; tone: "error" | "info" | "" }[];
   }
   function volcanoRow(x: Volcano): RowData {
@@ -374,6 +463,8 @@
     ),
     ...snap.volcanoLevels.filter((x) => volcanoTop(x) >= VOLCANO_RESIDENTIAL),
   ]);
+  /** 気象: いま特別警報 (レベル 5) が出ている府県予報区。どの一覧の上にも出す (いちばん重い気象の情報) */
+  const specialOffices = $derived(allOffices.filter((o) => o.top === 5));
 
   // ---- 選んだもの (SSE で続報が来たら差し替える) ----
   const selQuake = $derived(
@@ -408,6 +499,20 @@
   const selInfo = $derived(
     v.selected?.kind === "info"
       ? (snap.advisories.find((a) => a.id === v.selected?.id) ?? data.advisory)
+      : null,
+  );
+  /** 選んだ府県予報区の警報・注意報 (`w=office-<コード>`)。解除されて無くなったら null */
+  const selOffice = $derived(
+    v.selected?.kind === "weather" && v.selected.id.startsWith(OFFICE_PREFIX)
+      ? (allOffices.find(
+          (o) => `${OFFICE_PREFIX}${o.office.code}` === v.selected?.id,
+        ) ?? null)
+      : null,
+  );
+  const selWeather = $derived(
+    v.selected?.kind === "weather" && !v.selected.id.startsWith(OFFICE_PREFIX)
+      ? (snap.weatherInfos.find((x) => x.id === v.selected?.id) ??
+          data.weatherInfo)
       : null,
   );
   const backHref = $derived(viewHref(params, { ...UNSELECT }));
@@ -471,11 +576,13 @@
           ? dayKey(selEew.issuedAt)
           : selVolcano
             ? dayKey(selVolcano.reportedAt)
-            : selInfo
-              ? dayKey(selInfo.reportedAt)
-              : selForeign
-                ? dayKey(selForeign.originTime)
-                : picked,
+            : selWeather
+              ? dayKey(selWeather.reportedAt)
+              : selInfo
+                ? dayKey(selInfo.reportedAt)
+                : selForeign
+                  ? dayKey(selForeign.originTime)
+                  : picked,
   );
   let calMenu = $state(false);
   async function pickDay(day: string) {
@@ -559,11 +666,15 @@
           ? `緊急地震速報 ${jst(selEew.issuedAt)} - sonae`
           : selVolcano
             ? `${selVolcano.title} ${jst(selVolcano.reportedAt)} - sonae`
-            : selInfo
-              ? `${selInfo.title} ${jst(selInfo.reportedAt)} - sonae`
-              : selForeign
-                ? `${selForeign.place} ${jst(selForeign.originTime)} - sonae`
-                : `${KIND_LABEL[v.kind]} - sonae`,
+            : selOffice
+              ? `${selOffice.office.name}の警報・注意報 - sonae`
+              : selWeather
+                ? `${weatherTitle(selWeather)} ${jst(selWeather.reportedAt)} - sonae`
+                : selInfo
+                  ? `${selInfo.title} ${jst(selInfo.reportedAt)} - sonae`
+                  : selForeign
+                    ? `${selForeign.place} ${jst(selForeign.originTime)} - sonae`
+                    : `${KIND_LABEL[v.kind]} - sonae`,
   );
   const user = $derived(data.user);
 </script>
@@ -648,6 +759,35 @@
       {#each CREDITS as c (c)}<li>{c}</li>{/each}
     </ul>
   </footer>
+{/snippet}
+
+{#snippet rowItem(r: RowData)}
+  <li>
+    <Row
+      href={r.href}
+      current={r.current}
+      time={r.time}
+      title={r.title}
+      meta={r.meta}
+    >
+      {#snippet lead()}
+        {#if v.kind === "quake"}
+          <Intensity int={r.quake?.maxInt} />
+        {:else if v.kind === "tsunami" && r.grade}
+          <Grade grade={r.grade} />
+        {:else if r.volcano}
+          <VolcanoLevel level={r.volcano.level} label={r.volcano.label} />
+        {:else if r.warning}
+          <WarningLevel level={r.warning.level} label={r.warning.label} />
+        {/if}
+      {/snippet}
+      {#snippet tags()}
+        {#each r.states as s (s.label)}
+          <span class="tag {s.tone}">{s.label}</span>
+        {/each}
+      {/snippet}
+    </Row>
+  </li>
 {/snippet}
 
 {#snippet dockMenuBody()}
@@ -795,6 +935,10 @@
             <ForeignDetail q={selForeign} />
           {:else if selInfo}
             <AdvisoryDetail a={selInfo} />
+          {:else if selOffice}
+            <WarningDetail o={selOffice} />
+          {:else if selWeather}
+            <WeatherDetail w={selWeather} now={live.now} />
           {:else}
             <div class="empty-state">
               <p class="bold">この情報はありません</p>
@@ -804,8 +948,38 @@
             </div>
           {/if}
         {:else}
-          {#if activeTsunamis.length > 0 || advisories.length > 0 || volcanoAlerts.length > 0}
+          {#if activeTsunamis.length > 0 || advisories.length > 0 || volcanoAlerts.length > 0 || specialOffices.length > 0}
             <div class="alerts-in-list stack">
+              {#each specialOffices as o (o.office.code)}
+                <!-- 気象の特別警報 (レベル 5)。どの一覧の上にも、いちばん先に出す -->
+                <a
+                  class="notice warning notice-link"
+                  href={selectHref(
+                    params,
+                    "weather",
+                    `${OFFICE_PREFIX}${o.office.code}`,
+                  )}
+                  data-testid="special-warning"
+                >
+                  <Icon icon={TriangleAlert} />
+                  <div>
+                    <p class="bold">{o.office.name}に特別警報</p>
+                    <p class="small muted">{jst(o.reportedAt)} 更新</p>
+                    <p class="special-kinds">
+                      {#each o.kinds.filter((k) => k.level === 5) as k (k.code)}
+                        <WarningLevel level={5} label={kindText(k.name)} />
+                      {/each}
+                    </p>
+                    <p class="small">
+                      {o.kinds
+                        .filter((k) => k.level === 5)
+                        .flatMap((k) => k.areas.map((a) => a.name))
+                        .filter((n, i, all) => all.indexOf(n) === i)
+                        .join("、")}
+                    </p>
+                  </div>
+                </a>
+              {/each}
               {#each activeTsunamis as t (t.id)}
                 <TsunamiSummary
                   tsunami={t}
@@ -848,54 +1022,41 @@
           {/if}
 
           <h1 class="visually-hidden">{KIND_LABEL[v.kind]}の一覧</h1>
+          {#if v.kind === "weather" && offices.length > 0}
+            <!-- いま出ている気象警報・注意報 (府県予報区ごと)。日付の並びの前に置く -->
+            <h2 class="day-head" id="day-now">
+              <span class="day-head-chip">いま出ている警報・注意報</span>
+            </h2>
+            <ol class="item-list" data-testid="warning-offices">
+              {#each offices as o (o.office.code)}
+                {@render rowItem(officeRow(o))}
+              {/each}
+            </ol>
+          {/if}
           {#each groups as g (g.day)}
             <h2 class="day-head" id="day-{g.day}">
               <span class="day-head-chip">{dayLabel(g.day)}</span>
             </h2>
             <ol class="item-list">
               {#each g.rows as r (r.key)}
-                <li>
-                  <Row
-                    href={r.href}
-                    current={r.current}
-                    time={r.time}
-                    title={r.title}
-                    meta={r.meta}
-                  >
-                    {#snippet lead()}
-                      {#if v.kind === "quake"}
-                        <Intensity int={r.quake?.maxInt} />
-                      {:else if v.kind === "tsunami" && r.grade}
-                        <Grade grade={r.grade} />
-                      {:else if r.volcano}
-                        <VolcanoLevel
-                          level={r.volcano.level}
-                          label={r.volcano.label}
-                        />
-                      {/if}
-                    {/snippet}
-                    {#snippet tags()}
-                      {#each r.states as s (s.label)}
-                        <span class="tag {s.tone}">{s.label}</span>
-                      {/each}
-                    {/snippet}
-                  </Row>
-                </li>
+                {@render rowItem(r)}
               {/each}
             </ol>
           {:else}
-            <div class="empty-state">
-              {#if query.trim() !== ""}
-                <p class="bold">当てはまるものはありません</p>
-              {:else}
-                <p class="bold">
-                  まだ{KIND_LABEL[v.kind]}の情報を受けていません
-                </p>
-                <p class="small muted">
-                  受けると、ここに新しい順で並びます。受信の状態は「状態」で確かめられます。
-                </p>
-              {/if}
-            </div>
+            {#if !(v.kind === "weather" && offices.length > 0)}
+              <div class="empty-state">
+                {#if query.trim() !== ""}
+                  <p class="bold">当てはまるものはありません</p>
+                {:else}
+                  <p class="bold">
+                    まだ{KIND_LABEL[v.kind]}の情報を受けていません
+                  </p>
+                  <p class="small muted">
+                    受けると、ここに新しい順で並びます。受信の状態は「状態」で確かめられます。
+                  </p>
+                {/if}
+              </div>
+            {/if}
           {/each}
         {/if}
 
@@ -916,6 +1077,7 @@
         volcano={selVolcano}
         foreign={snap.foreignQuakes}
         foreignQuake={selForeign}
+        warnings={snap.warnings}
         shown={!phone.current || tab === "map"}
       />
     </div>
@@ -1171,6 +1333,12 @@
   }
   .notice-link .small:last-child {
     white-space: pre-line;
+  }
+  .special-kinds {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--so-space-1);
+    margin: var(--so-space-1) 0;
   }
   @media (hover: hover) {
     .notice-link:hover {

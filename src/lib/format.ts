@@ -1,6 +1,12 @@
 /** 画面の書き方。時刻はいつも日本時間で出す (気象庁の発表に合わせる) */
 
-import type { Hypocenter, Quake, SourceId, Status } from "./model.ts";
+import type {
+  Hypocenter,
+  Quake,
+  SourceId,
+  Status,
+  WeatherInfo,
+} from "./model.ts";
 
 const dateTime = new Intl.DateTimeFormat("ja-JP", {
   timeZone: "Asia/Tokyo",
@@ -129,6 +135,39 @@ export const VOLCANO_COLORS: Record<number, { bg: string; fg: string }> = {
   2: { bg: "rgb(250 245 0)", fg: "#000" },
   1: { bg: "rgb(242 242 255)", fg: "#000" },
 };
+
+/**
+ * 気象警報・注意報の段の色。配色の指針 (令和 2 年 7 月の一部改訂) の表 1-1 の警戒レベルの列
+ * (5 相当 特別警報 12,0,12・4 相当 土砂災害警戒情報 170,0,170・3 相当 警報 255,40,0・2 注意報 242,231,0・
+ * 発表なし 200,200,203)。指針は危険警報の名前でまだ書き直されていないので、レベル 4 の色を危険警報に当てた。
+ * 気象庁ホームページの警報の地図も同じ色 (2026-11-14 に確かめた)。指定河川洪水予報も同じ表で同じ 4 色
+ */
+export const WARNING_COLORS: Record<number, { bg: string; fg: string }> = {
+  5: { bg: "rgb(12 0 12)", fg: "#fff" },
+  4: { bg: "rgb(170 0 170)", fg: "#fff" },
+  3: { bg: "rgb(255 40 0)", fg: "#fff" },
+  2: { bg: "rgb(242 231 0)", fg: "#000" },
+  0: { bg: "rgb(200 200 203)", fg: "#000" },
+};
+
+/** 「レベル３大雨警報」の全角の数字を半角に (画面の字の幅をそろえる。名前はそのまま) */
+export const kindText = (name: string) =>
+  name.replace(/[０-９]/g, (c) =>
+    String.fromCharCode(c.charCodeAt(0) - 0xfee0),
+  );
+
+/**
+ * 気象の報のタイトル。台風は電文の題名がどれも「台風解析・予報情報」なので、台風番号と名前にする
+ * (「台風第 32 号 CEMPAKA」。番号の上 2 桁は年)
+ */
+export function weatherTitle(
+  w: Pick<WeatherInfo, "title" | "typhoon">,
+): string {
+  const t = w.typhoon;
+  if (!t?.number && !t?.name) return w.title;
+  const no = t.number ? `台風第 ${Number(t.number.slice(2))} 号` : "台風";
+  return t.name ? `${no} ${t.name}` : no;
+}
 
 /**
  * 火山の種類の名前を短くする (「レベル３（入山規制）」→「レベル3 入山規制」)。

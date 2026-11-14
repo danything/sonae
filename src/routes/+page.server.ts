@@ -1,5 +1,5 @@
 import { app } from "#lib/server/receiver.ts";
-import { readView } from "#lib/view.ts";
+import { OFFICE_PREFIX, readView } from "#lib/view.ts";
 
 import type { PageServerLoad } from "./$types";
 
@@ -25,6 +25,11 @@ export const load: PageServerLoad = ({ url }) => {
     tsunami: kind === "tsunami" && id ? (store.tsunami(id) ?? null) : null,
     volcano: kind === "volcano" && id ? (store.volcano(id) ?? null) : null,
     advisory: kind === "info" && id ? (store.advisory(id) ?? null) : null,
+    // 府県予報区の警報・注意報 (`office-…`) は、いまの姿 (layout の warnings) から画面が組む
+    weatherInfo:
+      kind === "weather" && id && !id.startsWith(OFFICE_PREFIX)
+        ? (store.weatherInfo(id) ?? null)
+        : null,
     foreign: kind === "foreign" && id ? (store.foreignQuake(id) ?? null) : null,
     eew:
       kind === "eew" && id
