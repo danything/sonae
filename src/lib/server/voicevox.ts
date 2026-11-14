@@ -16,7 +16,13 @@ import { join } from "node:path";
 
 import type { SonaeEvent } from "#lib/model.ts";
 import { noticeOf } from "#lib/notify.ts";
-import { FIXED_TEXTS, isFixed, readoutOf, SAMPLE } from "#lib/readout.ts";
+import {
+  FIXED_TEXTS,
+  isFixed,
+  readoutCandidates,
+  readoutOf,
+  SAMPLE,
+} from "#lib/readout.ts";
 import {
   ALLOWED_SPEAKERS,
   DEFAULT_SPEAKER,
@@ -48,8 +54,12 @@ const VOICE_TTL_MS = 30 * 24 * 60 * 60_000;
  * 前もって合成する声の数 (既定の声のほか)。声ごとにエンジンがモデルを読み、メモリを 0.5 GB ほど使う
  */
 const VOICES_MAX = 3;
-/** 合成してよい文 (受けた事象の原稿) を覚える数 */
-const ALLOWED_TEXTS_MAX = 2000;
+/**
+ * 合成してよい文 (受けた事象の原稿) を覚える数。気象警報・注意報は 1 通で府県予報区の市町村等ごとの文
+ * (多い府県で 2 百ほど、特別警報なら倍) を通すので、大雨の続く間に地震の文を押し出さないよう多めにする
+ * (文字列を覚えるだけで、合成はしない)
+ */
+const ALLOWED_TEXTS_MAX = 20_000;
 
 interface Job {
   key: string;
@@ -164,7 +174,8 @@ export class Voicevox {
     const n = noticeOf(e, this.now());
     if (!n) return;
     const parts = readoutOf(n);
-    for (const p of parts) this.allow(p);
+    // 気象警報・注意報は住んでいる地域で文が変わるので、市町村等ごとの文も通す (合成は取りに来たときだけ)
+    for (const p of readoutCandidates(n)) this.allow(p);
     if (!this.available) return;
     for (const speaker of this.voicesInUse())
       for (const p of parts)

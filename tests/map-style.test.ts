@@ -10,6 +10,7 @@ import {
   longPeriodLine,
   MAP_LEGEND,
   matchExpr,
+  meFeatures,
   tsunamiPaint,
 } from "#lib/map/style.ts";
 import type { Eew, Quake, Tsunami } from "#lib/model.ts";
@@ -89,6 +90,19 @@ test("層はいつも全部出す。淡色地図の下地は無い", () => {
   expect(style.layers.map((l) => l.id)).toContain("faults");
   expect(Object.keys(style.sources)).not.toContain("pale");
   expect(MAP_LEGEND.map((l) => l.label)).toContain("長周期地震動階級");
+});
+
+test("現在地: 点と、誤差の半径 (メートル) の円", () => {
+  const f = meFeatures(139.767, 35.681, 500);
+  const [circle, dot] = f.features;
+  expect(dot?.geometry.coordinates).toEqual([139.767, 35.681]);
+  if (circle?.geometry.type !== "Polygon") throw new Error("円が無い");
+  const ring = (circle.geometry.coordinates as [number, number][][])[0]!;
+  expect(ring[0]).toEqual(ring.at(-1)!);
+  // 北の点は緯度で約 500 m (1 度は約 111 km)
+  const north = ring[0]!;
+  expect((north[1] - 35.681) * 111_195).toBeCloseTo(500, -1);
+  expect(north[0]).toBeCloseTo(139.767, 6);
 });
 
 test("震源: 深さで色、新しいものほど上に描く", () => {

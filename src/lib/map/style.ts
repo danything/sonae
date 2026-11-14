@@ -77,6 +77,10 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
     note: "噴火警戒レベル 2 以上の火山と、選んだ情報の火山の三角。中の数字はレベル",
   },
   {
+    label: "現在地",
+    note: "地図の右上のボタンを押している間だけ、白い縁の青い点と、位置の誤差の淡い円を出します。位置は端末の中で使うだけで、サーバーには送りません",
+  },
+  {
     label: "活断層",
     note: "都市圏活断層図。大きく寄せたとき (ズーム 11 以上) だけ出ます",
   },
@@ -367,6 +371,10 @@ export function baseStyle(): Record<string, unknown> {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       },
+      me: {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      },
     },
     layers: [
       {
@@ -502,6 +510,85 @@ export function baseStyle(): Record<string, unknown> {
           "circle-stroke-width": 1.5,
         },
         layout: { "circle-sort-key": ["get", "order"] },
+      },
+      // 現在地 (いちばん上)。誤差の円は淡く塗り、点は白い縁の青
+      {
+        id: "me-accuracy",
+        type: "fill",
+        source: "me",
+        filter: ["==", ["get", "kind"], "accuracy"],
+        paint: { "fill-color": ME_COLOR, "fill-opacity": 0.15 },
+      },
+      {
+        id: "me-accuracy-line",
+        type: "line",
+        source: "me",
+        filter: ["==", ["get", "kind"], "accuracy"],
+        paint: {
+          "line-color": ME_COLOR,
+          "line-opacity": 0.5,
+          "line-width": 1,
+        },
+      },
+      {
+        id: "me-dot",
+        type: "circle",
+        source: "me",
+        filter: ["==", ["get", "kind"], "dot"],
+        paint: {
+          "circle-radius": 7,
+          "circle-color": ME_COLOR,
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 2.5,
+        },
+      },
+    ],
+  };
+}
+
+/** 現在地の青い点の色 (震源の深さの青と分けるため、白い縁を太く付ける) */
+export const ME_COLOR = "#1a73e8";
+
+/**
+ * 現在地の点と、位置の誤差の円 (半径はメートル。地図のズームにかかわらず実際の大きさで描くため、
+ * 多角形にする)。端末の中で描くだけで、緯度・経度はサーバーに送らない
+ */
+export function meFeatures(
+  lon: number,
+  lat: number,
+  accuracyM: number,
+  steps = 64,
+) {
+  const R = 6_371_008.8;
+  const r = Math.max(accuracyM, 0) / R;
+  const φ = (lat * Math.PI) / 180;
+  const λ = (lon * Math.PI) / 180;
+  const ring: [number, number][] = [];
+  for (let i = 0; i <= steps; i++) {
+    const θ = (2 * Math.PI * (i % steps)) / steps;
+    const φ2 = Math.asin(
+      Math.sin(φ) * Math.cos(r) + Math.cos(φ) * Math.sin(r) * Math.cos(θ),
+    );
+    const λ2 =
+      λ +
+      Math.atan2(
+        Math.sin(θ) * Math.sin(r) * Math.cos(φ),
+        Math.cos(r) - Math.sin(φ) * Math.sin(φ2),
+      );
+    ring.push([(λ2 * 180) / Math.PI, (φ2 * 180) / Math.PI]);
+  }
+  return {
+    type: "FeatureCollection" as const,
+    features: [
+      {
+        type: "Feature" as const,
+        properties: { kind: "accuracy" },
+        geometry: { type: "Polygon" as const, coordinates: [ring] },
+      },
+      {
+        type: "Feature" as const,
+        properties: { kind: "dot" },
+        geometry: { type: "Point" as const, coordinates: [lon, lat] },
       },
     ],
   };

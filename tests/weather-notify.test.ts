@@ -2,9 +2,22 @@ import { describe, expect, test } from "bun:test";
 
 import { alertFor } from "#lib/alert.ts";
 import { byPrefecture, type Cities, cityAt, homeOf } from "#lib/home.ts";
-import type { SonaeEvent, WeatherInfo, WeatherWarning } from "#lib/model.ts";
+import {
+  areaLevel,
+  type SonaeEvent,
+  type WeatherInfo,
+  type WeatherWarning,
+} from "#lib/model.ts";
 import { matches, noticeFor, noticeOf } from "#lib/notify.ts";
 import { DEFAULT_PREFS, type Home, type PushPrefs } from "#lib/push.ts";
+import {
+  clean,
+  isFixed,
+  OPENINGS,
+  readoutCandidates,
+  readoutOf,
+  sentences,
+} from "#lib/readout.ts";
 import { parseWeatherXml } from "#lib/server/sources/jma-weather.ts";
 
 import { fixture } from "./helpers.ts";
@@ -266,5 +279,110 @@ describe("住んでいる地域を選ぶ", () => {
     expect(cityAt(2, 2, features)).toBe("1");
     expect(cityAt(5, 5, features)).toBeNull();
     expect(cityAt(20, 20, features)).toBeNull();
+  });
+});
+
+describe("気象の読み上げ", () => {
+  test("住んでいる地域の警報: 決まった文、電文の市町村の名前と種類、気象庁の見出しのまま", () => {
+    const n = notice(shimane, prefs({ home: home() }));
+    if (!n) throw new Error("通知が無い");
+    const parts = readoutOf(n);
+    expect(parts[0]).toBe(OPENINGS.weatherWarning);
+    expect(parts[1]).toBe("松江市には、レベル3大雨警報が出ています。");
+    expect(parts.slice(2)).toEqual(sentences(clean(shimane.headline)));
+    // 住んでいる地域の名前 (端末ごとに違う) は読まない。サーバーが通す文の中にある
+    expect(parts.join("")).not.toContain("島根県松江市");
+    const candidates = readoutCandidates(noticeOf(ev(shimane), SHIMANE_AT)!);
+    for (const p of parts) expect(candidates).toContain(p);
+  });
+
+  test("土砂災害危険警報 (前の土砂災害警戒情報) は危険警報の決まった文", () => {
+    const sabo = warning("15_16_01_241031_VPWW56.xml", "VPWW56");
+    const wakkanai = sabo.areas.find((a) => a.name === "稚内市");
+    if (!wakkanai) throw new Error("稚内市が無い");
+    const at = Date.parse(sabo.reportedAt) + 60_000;
+    const base = noticeOf(ev(sabo), at);
+    if (!base) throw new Error("通知の元が無い");
+    const n = noticeFor(
+      base,
+      prefs({
+        home: home({
+          code: wakkanai.code,
+          name: "北海道稚内市",
+          office: "011000",
+          ichiji: "011011",
+        }),
+      }),
+    );
+    if (!n) throw new Error("通知が無い");
+    const parts = readoutOf(n);
+    expect(parts.slice(0, 2)).toEqual([
+      OPENINGS.weatherDanger,
+      "稚内市には、レベル4土砂災害危険警報が出ています。",
+    ]);
+    for (const p of parts) expect(readoutCandidates(base)).toContain(p);
+  });
+
+  test("特別警報: 府県予報区と種類、対象の市町村。住んでいる地域がそこなら地域の種類も", () => {
+    const sp = notice(special, prefs({ home: home({ code: "3220500" }) }));
+    if (!sp) throw new Error("通知が無い");
+    const parts = readoutOf(sp);
+    expect(parts[0]).toBe(OPENINGS.weatherSpecial);
+    expect(parts[1]).toBe("島根県に、レベル5大雨特別警報が出ています。");
+    expect(parts[2]).toStartWith("対象の市町村は、松江市");
+    const all = readoutCandidates(noticeOf(ev(special), SHIMANE_AT)!);
+    for (const p of parts) expect(all).toContain(p);
+    // 特別警報の出ていない市町村に住んでいても、特別警報と自分の地域の文がどれも通る
+    const other = special.areas.find((a) => areaLevel(a) < 5);
+    if (other) {
+      const mixed = notice(
+        special,
+        prefs({ home: home({ code: other.code }) }),
+      );
+      if (!mixed) throw new Error("通知が無い");
+      expect(mixed.special).toBe(true);
+      for (const p of readoutOf(mixed)) expect(all).toContain(p);
+    }
+    // 地域を選んでいなくても、特別警報は読む
+    const anywhere = notice(special, prefs());
+    expect(anywhere && readoutOf(anywhere)[0]).toBe(OPENINGS.weatherSpecial);
+  });
+
+  test("記録的短時間大雨情報・竜巻注意情報は、決まった文と気象庁の見出しだけ。竜巻は有効期限を足す", () => {
+    const rain = info("18_03_01_190412_VPOA50.xml", "VPOA50");
+    const r = noticeOf(
+      { seq: 1, type: "weather", data: rain },
+      Date.parse(rain.reportedAt) + 60_000,
+    );
+    if (!r) throw new Error("通知が無い");
+    expect(readoutOf(r)).toEqual([
+      OPENINGS.recordRain,
+      ...sentences(clean(rain.headline)),
+    ]);
+    expect(readoutOf(r).join("")).toContain("札幌市中央区付近で約100ミリ");
+    const tornado = info("19_08_03_250630_VPHW50.xml", "VPHW50");
+    const t = noticeOf(
+      { seq: 1, type: "weather", data: tornado },
+      Date.parse("2015-07-17T09:30:00+09:00"),
+    );
+    if (!t) throw new Error("通知が無い");
+    const parts = readoutOf(t);
+    expect(parts[0]).toBe(OPENINGS.tornado);
+    expect(parts).toContain(
+      "埼玉県南部、北部は、竜巻などの激しい突風が発生しやすい気象状況になっています。",
+    );
+    expect(parts.at(-1)).toMatch(/^この情報は\d+時\d+分まで有効です。$/);
+  });
+
+  test("決まった文は前もって合成する文に入っている", () => {
+    for (const k of [
+      "weatherSpecial",
+      "weatherDanger",
+      "weatherWarning",
+      "weatherAdvisory",
+      "recordRain",
+      "tornado",
+    ] as const)
+      expect(isFixed(OPENINGS[k])).toBe(true);
   });
 });

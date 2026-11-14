@@ -29,6 +29,7 @@ import {
   VOLCANO_RESIDENTIAL,
   volcanoTop,
   WARNING_PHENOMENON,
+  type WarningArea,
   WEATHER_INFO_LABEL,
   type WeatherInfo,
   type WeatherWarning,
@@ -63,6 +64,11 @@ export interface Notice {
   changeKey?: string;
   /** 気象の特別警報を、住んでいる地域でなくても知らせるもの (条件は「特別警報はどこでも」で見る) */
   special?: boolean;
+  /**
+   * 気象警報・注意報の通知で、住んでいる地域に当たる市町村等 (電文の名前と、出ている種類)。
+   * 読み上げはこれを読む (住んでいる地域の名前は端末ごとに違うので、電文の名前で読む)
+   */
+  area?: WarningArea;
   event: SonaeEvent;
 }
 
@@ -351,6 +357,7 @@ function warningFor(
       urgency: level >= 4 ? "high" : "normal",
       sticky: level >= 4,
       closing: level === 0,
+      ...(mine ? { area: mine } : {}),
     };
   }
   const special = w.areas.filter((a) => areaLevel(a) === 5);
@@ -386,6 +393,7 @@ function warningFor(
   // 住んでいる地域だけの中身に戻り、同じ tag で置き換わる)
   return {
     ...sp,
+    ...(homeNotice.area ? { area: homeNotice.area } : {}),
     tag: homeNotice.tag,
     body: clip(
       `${where}\n${home?.name}: ${homeLevel > 0 ? (mine?.kinds.map((k) => kindText(k.name)).join("・") ?? "") : `${phenomenon}の警報・注意報は解除`}`,

@@ -7,12 +7,17 @@
  *   変わる所 (震源・地域) は事象を受けてから合成する。区切りは文ごとにして、先の文から鳴らせるようにする。
  * - 緊急地震速報の予想震度・到達予想時刻は読まない (docs/design.md の 5 章)。警報は「強い揺れに警戒」と
  *   地域名で伝える。
- * - 気象庁の文 (見出し・津波の付加文) は言い換えずに読む。
+ * - 気象庁の文 (見出し・津波の付加文) は言い換えずに読む。気象は電文の種類の名前と見出しだけを読み、
+ *   雨や風の予想を足さない。
+ * - 気象警報・注意報の通知は住んでいる地域で中身が変わる (`noticeFor`)。サーバーが前もって合成できるよう、
+ *   地域は電文の市町村等の名前で読む (`readoutCandidates` が、電文に出てくる市町村等ごとの文を並べる)。
  * - 読み上げるだけの字なので、半角の数字と日本語の間に空白を入れない (エンジンが間を置くのを避ける)。
  */
 
+import { kindText } from "./format.ts";
 import {
   type AreaIntensity,
+  areaLevel,
   type Eew,
   intensityLabel,
   intensityRank,
@@ -22,6 +27,9 @@ import {
   type TsunamiGrade,
   UNRECEIVED,
   type Volcano,
+  type WarningArea,
+  type WeatherInfo,
+  type WeatherWarning,
 } from "./model.ts";
 import type { Notice } from "./notify.ts";
 
@@ -38,6 +46,12 @@ export const OPENINGS = {
   aftershock: "北海道・三陸沖後発地震注意情報です。",
   eruption: "噴火速報です。",
   volcano: "火山の情報です。",
+  weatherSpecial: "気象の特別警報です。",
+  weatherDanger: "気象の危険警報です。",
+  weatherWarning: "気象の警報です。",
+  weatherAdvisory: "気象の注意報です。",
+  recordRain: "記録的短時間大雨情報です。",
+  tornado: "竜巻注意情報です。",
 } as const;
 
 /** 「試しに聞く」と「試しに鳴らす」で読む文 */
@@ -234,6 +248,90 @@ function volcanoParts(v: Volcano): string[] {
   return [OPENINGS.volcano, `${clean(v.title)}が発表されました。`, ...headline];
 }
 
+const WARNING_OPENING: Record<number, string> = {
+  4: OPENINGS.weatherDanger,
+  3: OPENINGS.weatherWarning,
+  2: OPENINGS.weatherAdvisory,
+};
+
+/** 出ている種類の名前 (段の高い順。「レベル4土砂災害危険警報」) */
+const kindNames = (a: WarningArea, min = 1) =>
+  a.kinds
+    .filter((k) => k.level >= min)
+    .toSorted((x, y) => y.level - x.level)
+    .map((k) => clean(kindText(k.name)));
+
+/**
+ * 気象警報・注意報。住んでいる地域の段 (危険警報・警報・注意報) か、どこかの特別警報。
+ * 種類の名前と見出しは電文のまま読み、雨や風を予想する文は足さない (docs/design.md の 5 章)。
+ * 地域は電文の市町村等の名前で読む (住んでいる地域の名前は端末ごとに違い、サーバーが前もって合成できないため)
+ */
+function warningParts(n: Notice, w: WeatherWarning): string[] {
+  const out: string[] = [];
+  // 住んでいる地域が特別警報のときも (通知は住んでいる地域の通知で言う)、特別警報として読む
+  const special = w.areas.filter((a) => areaLevel(a) === 5);
+  if ((n.special || n.level >= 5) && special.length > 0) {
+    const names = [...new Set(special.flatMap((a) => kindNames(a, 5)))];
+    out.push(OPENINGS.weatherSpecial);
+    out.push(`${clean(w.office.name)}に、${names.join("、")}が出ています。`);
+    out.push(
+      `対象の市町村は、${listOf(
+        special.map((a) => a.name),
+        "市町村",
+      )}です。`,
+    );
+  } else {
+    const opening = WARNING_OPENING[Math.min(n.level, 4)];
+    if (!opening || !n.area) return [];
+    out.push(opening);
+  }
+  if (n.area) {
+    const kinds = kindNames(n.area);
+    if (kinds.length > 0)
+      out.push(`${clean(n.area.name)}には、${kinds.join("、")}が出ています。`);
+  }
+  out.push(...sentences(clean(w.headline)));
+  return out;
+}
+
+/** 記録的短時間大雨情報・竜巻注意情報。決まった文と、気象庁の見出しのまま */
+function weatherInfoParts(i: WeatherInfo): string[] {
+  const headline = sentences(clean(i.headline));
+  if (i.kind === "rain") return [OPENINGS.recordRain, ...headline];
+  if (i.kind === "tornado") {
+    const until = clockText(i.validUntil);
+    // 有効期限は電文の値 (見出しに無ければ足す)
+    const tail =
+      until && !headline.some((s) => s.includes("有効"))
+        ? [`この情報は${until}まで有効です。`]
+        : [];
+    return [OPENINGS.tornado, ...headline, ...tail];
+  }
+  return [];
+}
+
+/**
+ * 読み上げに使うかもしれない文の全部。気象警報・注意報は住んでいる地域で文が変わるので、
+ * 電文に出てくる市町村等ごとに作る。サーバーは、端末が取りに来た文がこの中にあるときだけ合成する
+ */
+export function readoutCandidates(n: Notice): string[] {
+  const e = n.event;
+  if (e.type !== "warning") return readoutOf(n);
+  const w = e.data;
+  const out = new Set<string>();
+  const add = (m: Notice) => {
+    for (const p of readoutOf(m)) out.add(p);
+  };
+  const special = w.areas.some((a) => areaLevel(a) === 5);
+  if (special) add({ ...n, special: true, level: 5 });
+  for (const area of w.areas) {
+    const level = areaLevel(area);
+    add({ ...n, special: false, level, area });
+    if (special) add({ ...n, special: true, level: 5, area });
+  }
+  return [...out];
+}
+
 /**
  * 通知から読み上げの原稿を作る。区切りごとの文の並びで、決まった文 (`isFixed`) はそのまま、
  * 変わる文は 1 文ずつ。取消・解除は読まない (鳴らさないので)。
@@ -269,6 +367,12 @@ export function readoutOf(n: Notice): string[] {
     }
     case "volcano":
       parts = volcanoParts(e.data);
+      break;
+    case "warning":
+      parts = warningParts(n, e.data);
+      break;
+    case "weather":
+      parts = weatherInfoParts(e.data);
       break;
     default:
       parts = [clean(n.title), ...sentences(clean(n.body))];
