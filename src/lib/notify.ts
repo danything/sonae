@@ -298,6 +298,10 @@ export function noticeOf(event: SonaeEvent, now: number): Notice | null {
     case "longperiod":
       // 長周期地震動は地震情報の後に出る観測の詳しい内容なので、知らせない (地震情報で知らせている)
       return null;
+    case "warning":
+    case "weather":
+      // 気象の通知は、選んだ地域ごとに作る (別の PR で足す)
+      return null;
   }
   if (!Number.isFinite(n.at) || now - n.at > FRESH_MS[event.type]) return null;
   return n;
@@ -341,6 +345,8 @@ export function matches(n: Notice, prefs: PushPrefs): boolean {
       return n.level >= (prefs.volcano === "all" ? 2 : VOLCANO_RESIDENTIAL);
     case "longperiod":
     case "foreign":
+    case "warning":
+    case "weather":
       return false;
   }
 }

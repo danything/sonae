@@ -14,7 +14,7 @@ import { cwaSource } from "./sources/cwa.ts";
 import { emscSource } from "./sources/emsc.ts";
 import { geonetSource } from "./sources/geonet.ts";
 import { bosaiTsunamiSource } from "./sources/jma-bosai.ts";
-import { jmaSource } from "./sources/jma.ts";
+import { jmaSource, jmaWeatherSource } from "./sources/jma.ts";
 import { p2pSource } from "./sources/p2p.ts";
 import { ptwcSource } from "./sources/ptwc.ts";
 import type { Incoming, Source, SourceContext } from "./sources/types.ts";
@@ -71,6 +71,7 @@ export function startReceiving(): void {
   };
   a.sources = [
     jmaSource(ctx),
+    jmaWeatherSource(ctx),
     p2pSource(ctx),
     wolfxSource(ctx),
     usgsSource(ctx),
@@ -126,6 +127,6 @@ export function startReceiving(): void {
   // 受信の輪を止めないと、いつまでも終わらない (k8s の入れ替えが遅れる)
   (process as EventEmitter).once("sveltekit:shutdown", () => a.stop?.());
   console.log(
-    "[receiver] 気象庁・P2P地震情報・Wolfx・USGS・PTWC・EMSC・気象庁 bosai (国際津波)・GeoNet の受信を始めました",
+    "[receiver] 気象庁 (地震火山・気象)・P2P地震情報・Wolfx・USGS・PTWC・EMSC・気象庁 bosai (国際津波)・GeoNet の受信を始めました",
   );
 }

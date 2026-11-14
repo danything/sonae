@@ -152,6 +152,31 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX foreign_quakes_origin ON foreign_quakes (origin_time);
   `,
+  `
+  -- 気象警報・注意報 (R06)。府県予報区と種別 (現象) ごとに、いまの状態を 1 行。id は「種別-府県予報区のコード」
+  CREATE TABLE weather_warnings (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL,
+    office TEXT NOT NULL,
+    status TEXT NOT NULL,
+    reported_at TEXT NOT NULL,
+    data TEXT NOT NULL
+  );
+  CREATE INDEX weather_warnings_reported ON weather_warnings (reported_at);
+
+  -- 気象の、報ごとの情報 (記録的短時間大雨・気象防災速報・竜巻注意・指定河川洪水予報・熱中症警戒アラート・台風)。
+  -- series は一連の情報の鍵 (取消・訂正で前の報を引く)
+  CREATE TABLE weather_infos (
+    id TEXT PRIMARY KEY,
+    series TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL,
+    reported_at TEXT NOT NULL,
+    data TEXT NOT NULL
+  );
+  CREATE INDEX weather_infos_series ON weather_infos (series, reported_at);
+  CREATE INDEX weather_infos_reported ON weather_infos (reported_at);
+  `,
 ];
 
 export function openDb(path: string): Database {

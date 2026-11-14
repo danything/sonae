@@ -10,7 +10,13 @@ export type Status = "normal" | "training" | "test";
 export type ForeignSource = "usgs" | "emsc" | "geonet" | "cwa";
 
 export type SourceId =
-  "jma" | "p2p" | "wolfx" | ForeignSource | "ptwc" | "jma-bosai";
+  | "jma"
+  | "jma-weather"
+  | "p2p"
+  | "wolfx"
+  | ForeignSource
+  | "ptwc"
+  | "jma-bosai";
 
 /** 震度の階級。気象庁の XML の書き方 (`5-` は 5 弱) に合わせる */
 export const INTENSITIES = [
@@ -543,6 +549,199 @@ export function foreignFromReports(
   };
 }
 
+/**
+ * 気象の警報・注意報の段 (警戒レベルの数に合わせた)。5 特別警報・4 危険警報・3 警報・2 注意報。
+ * 0 は解除・発表なし
+ */
+export type WarningLevel = 0 | 2 | 3 | 4 | 5;
+
+const WARNING_LEVEL_LABELS: Record<WarningLevel, string> = {
+  5: "特別警報",
+  4: "危険警報",
+  3: "警報",
+  2: "注意報",
+  0: "発表なし",
+};
+export const warningLevelLabel = (l: WarningLevel) => WARNING_LEVEL_LABELS[l];
+
+/**
+ * 警報・注意報の種類のコード (気象警報・注意報 (R06) 解説資料の別表 3) から段。
+ * 30 番台は特別警報、40 番台は危険警報、01〜09 は警報、10〜29 は注意報、00 は解除
+ */
+export function warningLevel(code: string | undefined): WarningLevel {
+  const n = Number(code);
+  if (!code || !Number.isInteger(n) || n <= 0) return 0;
+  if (n >= 30 && n <= 39) return 5;
+  if (n >= 40 && n <= 49) return 4;
+  if (n <= 9) return 3;
+  if (n <= 29) return 2;
+  return 0;
+}
+
+/** 気象警報・注意報 (R06) の電文の種別。現象ごとに分かれる */
+export const WARNING_CODES = [
+  "VPWW55",
+  "VPWW56",
+  "VPWW57",
+  "VPWW58",
+  "VPWW59",
+  "VPWW60",
+  "VPWW61",
+] as const;
+export type WarningCode = (typeof WARNING_CODES)[number];
+
+/** 電文の種別ごとの現象の名前 (Control/Title の括弧の中) */
+export const WARNING_PHENOMENON: Record<WarningCode, string> = {
+  VPWW55: "大雨",
+  VPWW56: "土砂災害",
+  VPWW57: "高潮",
+  VPWW58: "暴風",
+  VPWW59: "波浪",
+  VPWW60: "大雪",
+  VPWW61: "その他の注意報",
+};
+
+/** 1 つの市町村等に出ている 1 つの警報・注意報 */
+export interface WarningKind {
+  /** 種類のコード (別表 3) */
+  code: string;
+  /** 電文のままの名前 (「レベル４土砂災害危険警報」) */
+  name: string;
+  level: WarningLevel;
+  /** 発表・継続・危険警報から警報 など (電文のまま) */
+  status: string;
+}
+
+/** 1 つの市町村等 (気象・地震・火山情報／市町村等のコード、7 桁) と、出ている警報・注意報 */
+export interface WarningArea {
+  code: string;
+  name: string;
+  kinds: WarningKind[];
+}
+
+/**
+ * 気象警報・注意報 (R06、VPWW55〜61)。府県予報区と電文の種別 (現象) ごとに、いまの状態をまるごと持つ。
+ * 新しい報で置き換える (取消は無く、訂正も置き換え)
+ */
+export interface WeatherWarning {
+  /** `<種別>-<府県予報区のコード>` (訓練・試験は後ろに -training・-test) */
+  id: string;
+  code: WarningCode;
+  /** 府県予報区 (6 桁のコードと名前) */
+  office: { code: string; name: string };
+  status: Status;
+  infoType: "発表" | "訂正";
+  reportedAt: string;
+  title: string;
+  headline: string;
+  /** 警報・注意報が出ている市町村等 (解除された・発表の無い市町村等は入れない) */
+  areas: WarningArea[];
+  /** この報で解除された市町村等と、解除された種類 */
+  released: WarningArea[];
+  updatedAt: string;
+}
+
+/** 市町村等でいちばん高い段 */
+export const areaLevel = (a: Pick<WarningArea, "kinds">): WarningLevel =>
+  a.kinds.reduce<WarningLevel>((m, k) => (k.level > m ? k.level : m), 0);
+
+/** 報の中でいちばん高い段 */
+export const warningTop = (w: Pick<WeatherWarning, "areas">): WarningLevel =>
+  w.areas.reduce<WarningLevel>((m, a) => {
+    const l = areaLevel(a);
+    return l > m ? l : m;
+  }, 0);
+
+/**
+ * 気象の、報ごとに出す情報の種類。記録的短時間大雨情報 (VPOA50)・府県気象防災速報 (VPBS50)・
+ * 竜巻注意情報 (VPHW50)・指定河川洪水予報 (VXKO50〜89)・熱中症警戒アラート (VPFT50)・
+ * 台風解析・予報情報 (VPTW60〜65)
+ */
+export type WeatherInfoKind =
+  "rain" | "bosai" | "tornado" | "flood" | "heat" | "typhoon";
+
+export const WEATHER_INFO_LABEL: Record<WeatherInfoKind, string> = {
+  rain: "記録的短時間大雨情報",
+  bosai: "気象防災速報",
+  tornado: "竜巻注意情報",
+  flood: "指定河川洪水予報",
+  heat: "熱中症警戒アラート",
+  typhoon: "台風情報",
+};
+
+/** 台風の実況 (台風解析・予報情報のいちばん初めの「実況」) */
+export interface TyphoonNow {
+  /** 台風番号 (4 桁。2617 は 2026 年の第 17 号)。発生前は無い */
+  number?: string;
+  name?: string;
+  nameKana?: string;
+  /** 台風発生・台風消滅 (温帯低気圧化) など */
+  remark?: string;
+  /** 台風(TY)・熱帯低気圧(TD) など */
+  className?: string;
+  /** 大型・超大型 */
+  areaClass?: string;
+  /** 強い・非常に強い・猛烈な */
+  intensityClass?: string;
+  lat?: number;
+  lon?: number;
+  location?: string;
+  direction?: string;
+  /** 「ゆっくり」「２０キロ」などの文 */
+  speed?: string;
+  pressureHpa?: number;
+  /** 中心付近の最大風速 (m/s) */
+  maxWindMs?: number;
+  /** 最大瞬間風速 (m/s) */
+  maxGustMs?: number;
+}
+
+/** 気象の、報ごとの情報 1 つ。報ごとに 1 行で、一覧には新しい順に並べる */
+export interface WeatherInfo {
+  /** `<種別>-<一連の情報の鍵>-<発表の時刻 (数字だけ)>` */
+  id: string;
+  kind: WeatherInfoKind;
+  /** 電文の種別 (VXKO53 など) */
+  code: string;
+  /** 一連の情報の鍵 (取消・訂正で前の報を引く)。洪水予報は予報区域、台風は TC 番号 */
+  series: string;
+  status: Status;
+  infoType: "発表" | "訂正" | "取消";
+  reportedAt: string;
+  /** 竜巻注意情報の有効期限 */
+  validUntil?: string;
+  title: string;
+  headline: string;
+  /** 本文 (熱中症警戒アラート) */
+  text?: string;
+  /** 段 (指定河川洪水予報だけ。氾濫注意報 2 から氾濫特別警報 5、解除は 0) */
+  level?: WarningLevel;
+  /** 種類の名前 (「レベル３氾濫警報」「記録雨」など) */
+  kindName?: string;
+  /**
+   * 対象の地域。府県予報区・一次細分区域等 (6 桁)、市町村等 (7 桁) のコードと名前。
+   * 洪水予報は河川の名前も入る (コードは河川のもの)
+   */
+  areas: { code: string; name: string }[];
+  typhoon?: TyphoonNow;
+  cancelled: boolean;
+  updatedAt: string;
+}
+
+/**
+ * 指定河川洪水予報の種類のコードから段 (解説資料の表 2。令和 8 年度出水期から)。
+ * 10 は氾濫注意報の解除、2x は氾濫注意報、3x は氾濫警報、4x は氾濫危険警報、5x は氾濫特別警報
+ */
+export function floodLevel(code: string | undefined): WarningLevel {
+  const n = Number(code);
+  if (!code || !Number.isInteger(n)) return 0;
+  if (n >= 50 && n <= 59) return 5;
+  if (n >= 40 && n <= 49) return 4;
+  if (n >= 30 && n <= 39) return 3;
+  if (n >= 20 && n <= 29) return 2;
+  return 0;
+}
+
 export type EventType =
   | "eew"
   | "quake"
@@ -550,7 +749,9 @@ export type EventType =
   | "advisory"
   | "longperiod"
   | "volcano"
-  | "foreign";
+  | "foreign"
+  | "warning"
+  | "weather";
 
 /** SSE と DB の events に載る 1 件。中身はその時点のまるごとの姿 */
 export type SonaeEvent =
@@ -560,7 +761,9 @@ export type SonaeEvent =
   | { seq: number; type: "advisory"; data: Advisory }
   | { seq: number; type: "volcano"; data: Volcano }
   | { seq: number; type: "longperiod"; data: LongPeriod }
-  | { seq: number; type: "foreign"; data: ForeignQuake };
+  | { seq: number; type: "foreign"; data: ForeignQuake }
+  | { seq: number; type: "warning"; data: WeatherWarning }
+  | { seq: number; type: "weather"; data: WeatherInfo };
 
 export interface SourceStatus {
   id: SourceId;

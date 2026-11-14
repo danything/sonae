@@ -32,52 +32,53 @@ import {
 
 import type { Normalized } from "./types.ts";
 
-type V = XML.Value | XML.Value[] | undefined;
+export type V = XML.Value | XML.Value[] | undefined;
 
-const first = (v: V): XML.Value | undefined => (Array.isArray(v) ? v[0] : v);
-const all = (v: V): XML.Value[] =>
+export const first = (v: V): XML.Value | undefined =>
+  Array.isArray(v) ? v[0] : v;
+export const all = (v: V): XML.Value[] =>
   v === undefined ? [] : Array.isArray(v) ? v : [v];
 
-function child(v: V, name: string): XML.Value | undefined {
+export function child(v: V, name: string): XML.Value | undefined {
   const el = first(v);
   return typeof el === "object" ? first(el[name]) : undefined;
 }
-function children(v: V, name: string): XML.Value[] {
+export function children(v: V, name: string): XML.Value[] {
   const el = first(v);
   return typeof el === "object" ? all(el[name]) : [];
 }
 /** 子をたどる (`a/b/c`)。途中が並びなら最初のものをたどる */
-function at(v: V, path: string): XML.Value | undefined {
+export function at(v: V, path: string): XML.Value | undefined {
   let cur: XML.Value | undefined = first(v);
   for (const name of path.split("/")) cur = child(cur, name);
   return cur;
 }
-function text(v: V): string | undefined {
+export function text(v: V): string | undefined {
   const el = first(v);
   if (el === undefined) return undefined;
   if (typeof el === "string") return el;
   const t = el["#text"];
   return typeof t === "string" ? t : undefined;
 }
-const textAt = (v: V, path: string) => {
+export const textAt = (v: V, path: string) => {
   const t = text(at(v, path))?.trim();
   return t === "" ? undefined : t;
 };
-function attr(v: V, name: string): string | undefined {
+export function attr(v: V, name: string): string | undefined {
   const el = first(v);
   if (typeof el !== "object") return undefined;
   const a = el[`@${name}`];
   return typeof a === "string" ? a : undefined;
 }
 
-const STATUS: Record<string, Status> = {
+export const STATUS: Record<string, Status> = {
   通常: "normal",
   訓練: "training",
   試験: "test",
 };
 
-type InfoType = "発表" | "訂正" | "取消";
-const infoTypeOf = (v: string | undefined): InfoType =>
+export type InfoType = "発表" | "訂正" | "取消";
+export const infoTypeOf = (v: string | undefined): InfoType =>
   v === "取消" ? "取消" : v === "訂正" ? "訂正" : "発表";
 
 /** 「震度６弱」や `6-`、「震度５弱以上未入電」を震度の階級に */
@@ -648,7 +649,7 @@ export function parseFeed(xml: string): FeedEntry[] {
 }
 
 /** 電文の中のリンクは、気象庁のサイトのものだけを使う (画面でリンクにするため) */
-function jmaUrl(v: string | undefined): string | undefined {
+export function jmaUrl(v: string | undefined): string | undefined {
   if (!v) return undefined;
   try {
     const u = new URL(v);

@@ -10,6 +10,8 @@ import type {
   TsunamiArea,
   TsunamiObservation,
   Volcano,
+  WeatherInfo,
+  WeatherWarning,
 } from "#lib/model.ts";
 
 /** 1 つの情報源の、1 つの報。まとめ方 (新旧の判定) は store.ts がする */
@@ -45,6 +47,8 @@ export type Normalized =
   | { type: "volcano"; volcano: Omit<Volcano, "updatedAt" | "cancelled"> }
   | { type: "foreign"; report: ForeignReport }
   | { type: "longperiod"; report: LongPeriodReport }
+  | { type: "warning"; warning: Omit<WeatherWarning, "updatedAt"> }
+  | { type: "weather"; info: Omit<WeatherInfo, "updatedAt" | "cancelled"> }
   /** 保存だけする電文 (地震の活動状況・地震回数・長周期地震動など) */
   | { type: "other"; code: string };
 

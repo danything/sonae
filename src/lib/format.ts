@@ -64,6 +64,7 @@ export const STATUS_LABEL: Record<Status, string> = {
 /** 情報源の名前 (状態・発表された情報・緊急地震速報の帯) */
 export const SOURCE_LABEL: Record<SourceId, string> = {
   jma: "気象庁 防災情報 XML",
+  "jma-weather": "気象庁 防災情報 XML (気象)",
   p2p: "P2P地震情報",
   wolfx: "Wolfx Project",
   usgs: "USGS (米国地質調査所)",

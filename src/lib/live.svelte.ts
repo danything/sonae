@@ -148,6 +148,10 @@ export class Live {
           100,
         );
         return true;
+      case "warning":
+      case "weather":
+        // 気象は画面に出す PR で受ける
+        return true;
       case "volcano":
         if (e.data.status !== "normal") return true;
         this.volcanoes = upsert(
