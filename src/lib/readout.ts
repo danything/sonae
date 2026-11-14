@@ -269,8 +269,8 @@ const kindNames = (a: WarningArea, min = 1) =>
 function warningParts(n: Notice, w: WeatherWarning): string[] {
   const out: string[] = [];
   // 住んでいる地域が特別警報のときも (通知は住んでいる地域の通知で言う)、特別警報として読む
-  if (n.special || n.level >= 5) {
-    const special = w.areas.filter((a) => areaLevel(a) === 5);
+  const special = w.areas.filter((a) => areaLevel(a) === 5);
+  if ((n.special || n.level >= 5) && special.length > 0) {
     const names = [...new Set(special.flatMap((a) => kindNames(a, 5)))];
     out.push(OPENINGS.weatherSpecial);
     out.push(`${clean(w.office.name)}に、${names.join("、")}が出ています。`);
