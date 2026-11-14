@@ -4,6 +4,7 @@
   import { page } from "$app/state";
   import { tick } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
+  import CalendarDays from "~icons/lucide/calendar-days";
   import Ellipsis from "~icons/lucide/ellipsis";
   import ExternalLink from "~icons/lucide/external-link";
   import Info from "~icons/lucide/info";
@@ -89,8 +90,9 @@
   /**
    * **sonae の画面はこれ 1 つ** (docs/ui.md)。地図が主で、一覧・詳しい内容・状態・層の切り替えを同じ画面に置く。
    *
-   * - 広い形 (1000px から): 上に全幅のヘッダー (左にロゴ、真ん中に地名で絞る欄、右に字だけのナビ)。
-   *   その下に 一覧 (と、選んだときは詳しい内容) | 地図 | サイドバー (カレンダー・状態・絞り込み・表示)
+   * - 広い形 (1000px から): 上に全幅のヘッダー (左にロゴ、真ん中に地名で絞る欄、右に字だけのナビ。「状態と表示」のメニューもここ)。
+   *   その下は 一覧の列 | 地図 の 2 列。列は左の 1 本だけにして地図を広く取る。
+   *   列の上に種類のチップと日付のカレンダー (メニュー) の 1 行、その下に一覧か、選んだときは詳しい内容
    * - スマホの形: ヘッダーを出さず、地図を画面いっぱいに。一覧は地図の上に重ねる面で、下のタブ (地図・一覧・その他) で切り替える。
    *   下のタブのすぐ上に操作の 1 行 (dock。一覧の種類と「⋯」)。一覧を下へ読むと、下のタブと dock は引っ込む
    *
@@ -475,8 +477,10 @@
                 ? dayKey(selForeign.originTime)
                 : picked,
   );
+  let calMenu = $state(false);
   async function pickDay(day: string) {
     picked = day;
+    calMenu = false;
     if (v.selected) await goto(backHref, { reset: false });
     await tick();
     document.getElementById(`day-${day}`)?.scrollIntoView({ block: "start" });
@@ -517,6 +521,7 @@
   let userMenu = $state(false);
   let moreMenu = $state(false);
   let dockMenu = $state(false);
+  let viewMenu = $state(false);
 
   /** `/` か Ctrl+K で、見えている絞り込みの欄へ */
   function searchShortcut(event: KeyboardEvent): void {
@@ -636,7 +641,7 @@
 {/snippet}
 
 {#snippet credits(where: string)}
-  <!-- 注意文と出典 (docs/design.md の 5 章)。広い形はサイドバーの下、スマホの形は一覧の下 -->
+  <!-- 注意文と出典 (docs/design.md の 5 章)。どちらの形も一覧のいちばん下 -->
   <footer class="foot {where} tiny muted">
     <p>{NOTICE}</p>
     <ul>
@@ -695,6 +700,17 @@
           {live.connected ? "受信に問題があります" : "配信が切れています"}
         </span>
       {/if}
+      <Menu bind:open={viewMenu} align="end" class="view-menu">
+        {#snippet trigger(props)}
+          <button
+            {...props}
+            type="button"
+            class="ghost small"
+            data-testid="view-menu">状態と表示</button
+          >
+        {/snippet}
+        {@render dockMenuBody()}
+      </Menu>
       <a class="button ghost small" href={aboutHref}>出典と注意</a>
       {#if user}
         <button
@@ -722,140 +738,172 @@
   </header>
 
   <main class="stage">
-    <section
-      id="list"
-      class="list-pane"
-      aria-label={v.selected ? "詳しい内容" : `${KIND_LABEL[v.kind]}の一覧`}
-      bind:this={listBox}
-      onscroll={onListScroll}
-      inert={phone.current && tab === "map" ? true : undefined}
-      tabindex="-1"
-    >
-      <div class="phone-search">
-        <SearchField bind:value={query} />
+    <div class="list-col">
+      <!-- 広い形: 一覧の種類のチップと、日付で移るカレンダー (スマホの形では dock のチップ) -->
+      <div class="list-bar" role="toolbar" aria-label="一覧の種類と日付">
+        <div class="chips" role="group" aria-label="一覧の種類">
+          {#each KINDS as k (k)}
+            <a
+              class="chip"
+              href={viewHref(params, { k, ...UNSELECT })}
+              aria-current={!v.selected && v.kind === k ? "true" : undefined}
+              data-testid="filter-{k}"
+            >
+              {KIND_LABEL[k]} <span class="num">{counts[k]}</span>
+            </a>
+          {/each}
+        </div>
+        <Menu bind:open={calMenu} align="end" nav class="cal-menu">
+          {#snippet trigger(props)}
+            <button
+              {...props}
+              type="button"
+              class="ghost icon small"
+              aria-label="日付で移る"
+              title="日付で移る"
+              data-testid="calendar-open"
+            >
+              <Icon icon={CalendarDays} />
+            </button>
+          {/snippet}
+          <Calendar {marks} {today} {pinned} onpick={pickDay} />
+        </Menu>
       </div>
+      <section
+        id="list"
+        class="list-pane"
+        aria-label={v.selected ? "詳しい内容" : `${KIND_LABEL[v.kind]}の一覧`}
+        bind:this={listBox}
+        onscroll={onListScroll}
+        inert={phone.current && tab === "map" ? true : undefined}
+        tabindex="-1"
+      >
+        <div class="phone-search">
+          <SearchField bind:value={query} />
+        </div>
 
-      {#if v.selected}
-        <DetailBar {backHref} onmap={() => (tab = "map")} />
-        {#if selQuake}
-          <QuakeDetail q={selQuake} lp={selLongPeriod} />
-        {:else if selTsunami}
-          <TsunamiDetail t={selTsunami} now={live.now} />
-        {:else if selEew}
-          <EewDetail e={selEew} />
-        {:else if selVolcano}
-          <VolcanoDetail v={selVolcano} />
-        {:else if selForeign}
-          <ForeignDetail q={selForeign} />
-        {:else if selInfo}
-          <AdvisoryDetail a={selInfo} />
-        {:else}
-          <div class="empty-state">
-            <p class="bold">この情報はありません</p>
-            <p class="small muted">
-              保存していないか、取り消されたものです。一覧から選んでください。
-            </p>
-          </div>
-        {/if}
-      {:else}
-        {#if activeTsunamis.length > 0 || advisories.length > 0 || volcanoAlerts.length > 0}
-          <div class="alerts-in-list stack">
-            {#each activeTsunamis as t (t.id)}
-              <TsunamiSummary
-                tsunami={t}
-                href={selectHref(params, "tsunami", t.id)}
-              />
-            {/each}
-            {#each volcanoAlerts as x (x.id)}
-              <a
-                class="notice warning notice-link"
-                href={selectHref(params, "volcano", x.id)}
-              >
-                <Icon icon={TriangleAlert} />
-                <div>
-                  <p class="bold">
-                    {x.code === "VFVO56"
-                      ? `噴火速報 ${x.volcanoes.map((a) => a.name).join("・")}`
-                      : x.title}
-                  </p>
-                  <p class="small muted">{jst(x.reportedAt)} 発表</p>
-                  <p class="small">{x.headline}</p>
-                </div>
-              </a>
-            {/each}
-            {#each advisories as a (a.id)}
-              <a
-                class="notice notice-link"
-                class:warning={isUrgentAdvisory(a)}
-                class:info={!isUrgentAdvisory(a)}
-                href={selectHref(params, "info", a.id)}
-              >
-                <Icon icon={isUrgentAdvisory(a) ? TriangleAlert : Info} />
-                <div>
-                  <p class="bold">{a.title}</p>
-                  <p class="small muted">{jst(a.reportedAt)} 発表</p>
-                  <p class="small">{a.headline}</p>
-                </div>
-              </a>
-            {/each}
-          </div>
-        {/if}
-
-        <h1 class="visually-hidden">{KIND_LABEL[v.kind]}の一覧</h1>
-        {#each groups as g (g.day)}
-          <h2 class="day-head" id="day-{g.day}">
-            <span class="day-head-chip">{dayLabel(g.day)}</span>
-          </h2>
-          <ol class="item-list">
-            {#each g.rows as r (r.key)}
-              <li>
-                <Row
-                  href={r.href}
-                  current={r.current}
-                  time={r.time}
-                  title={r.title}
-                  meta={r.meta}
-                >
-                  {#snippet lead()}
-                    {#if v.kind === "quake"}
-                      <Intensity int={r.quake?.maxInt} />
-                    {:else if v.kind === "tsunami" && r.grade}
-                      <Grade grade={r.grade} />
-                    {:else if r.volcano}
-                      <VolcanoLevel
-                        level={r.volcano.level}
-                        label={r.volcano.label}
-                      />
-                    {/if}
-                  {/snippet}
-                  {#snippet tags()}
-                    {#each r.states as s (s.label)}
-                      <span class="tag {s.tone}">{s.label}</span>
-                    {/each}
-                  {/snippet}
-                </Row>
-              </li>
-            {/each}
-          </ol>
-        {:else}
-          <div class="empty-state">
-            {#if query.trim() !== ""}
-              <p class="bold">当てはまるものはありません</p>
-            {:else}
-              <p class="bold">
-                まだ{KIND_LABEL[v.kind]}の情報を受けていません
-              </p>
+        {#if v.selected}
+          <DetailBar {backHref} onmap={() => (tab = "map")} />
+          {#if selQuake}
+            <QuakeDetail q={selQuake} lp={selLongPeriod} />
+          {:else if selTsunami}
+            <TsunamiDetail t={selTsunami} now={live.now} />
+          {:else if selEew}
+            <EewDetail e={selEew} />
+          {:else if selVolcano}
+            <VolcanoDetail v={selVolcano} />
+          {:else if selForeign}
+            <ForeignDetail q={selForeign} />
+          {:else if selInfo}
+            <AdvisoryDetail a={selInfo} />
+          {:else}
+            <div class="empty-state">
+              <p class="bold">この情報はありません</p>
               <p class="small muted">
-                受けると、ここに新しい順で並びます。受信の状態は「状態」で確かめられます。
+                保存していないか、取り消されたものです。一覧から選んでください。
               </p>
-            {/if}
-          </div>
-        {/each}
-      {/if}
+            </div>
+          {/if}
+        {:else}
+          {#if activeTsunamis.length > 0 || advisories.length > 0 || volcanoAlerts.length > 0}
+            <div class="alerts-in-list stack">
+              {#each activeTsunamis as t (t.id)}
+                <TsunamiSummary
+                  tsunami={t}
+                  href={selectHref(params, "tsunami", t.id)}
+                />
+              {/each}
+              {#each volcanoAlerts as x (x.id)}
+                <a
+                  class="notice warning notice-link"
+                  href={selectHref(params, "volcano", x.id)}
+                >
+                  <Icon icon={TriangleAlert} />
+                  <div>
+                    <p class="bold">
+                      {x.code === "VFVO56"
+                        ? `噴火速報 ${x.volcanoes.map((a) => a.name).join("・")}`
+                        : x.title}
+                    </p>
+                    <p class="small muted">{jst(x.reportedAt)} 発表</p>
+                    <p class="small">{x.headline}</p>
+                  </div>
+                </a>
+              {/each}
+              {#each advisories as a (a.id)}
+                <a
+                  class="notice notice-link"
+                  class:warning={isUrgentAdvisory(a)}
+                  class:info={!isUrgentAdvisory(a)}
+                  href={selectHref(params, "info", a.id)}
+                >
+                  <Icon icon={isUrgentAdvisory(a) ? TriangleAlert : Info} />
+                  <div>
+                    <p class="bold">{a.title}</p>
+                    <p class="small muted">{jst(a.reportedAt)} 発表</p>
+                    <p class="small">{a.headline}</p>
+                  </div>
+                </a>
+              {/each}
+            </div>
+          {/if}
 
-      <!-- 注意文と出典 (広い形はサイドバーの下にある) -->
-      {@render credits("phone-foot")}
-    </section>
+          <h1 class="visually-hidden">{KIND_LABEL[v.kind]}の一覧</h1>
+          {#each groups as g (g.day)}
+            <h2 class="day-head" id="day-{g.day}">
+              <span class="day-head-chip">{dayLabel(g.day)}</span>
+            </h2>
+            <ol class="item-list">
+              {#each g.rows as r (r.key)}
+                <li>
+                  <Row
+                    href={r.href}
+                    current={r.current}
+                    time={r.time}
+                    title={r.title}
+                    meta={r.meta}
+                  >
+                    {#snippet lead()}
+                      {#if v.kind === "quake"}
+                        <Intensity int={r.quake?.maxInt} />
+                      {:else if v.kind === "tsunami" && r.grade}
+                        <Grade grade={r.grade} />
+                      {:else if r.volcano}
+                        <VolcanoLevel
+                          level={r.volcano.level}
+                          label={r.volcano.label}
+                        />
+                      {/if}
+                    {/snippet}
+                    {#snippet tags()}
+                      {#each r.states as s (s.label)}
+                        <span class="tag {s.tone}">{s.label}</span>
+                      {/each}
+                    {/snippet}
+                  </Row>
+                </li>
+              {/each}
+            </ol>
+          {:else}
+            <div class="empty-state">
+              {#if query.trim() !== ""}
+                <p class="bold">当てはまるものはありません</p>
+              {:else}
+                <p class="bold">
+                  まだ{KIND_LABEL[v.kind]}の情報を受けていません
+                </p>
+                <p class="small muted">
+                  受けると、ここに新しい順で並びます。受信の状態は「状態」で確かめられます。
+                </p>
+              {/if}
+            </div>
+          {/each}
+        {/if}
+
+        <!-- 注意文と出典 (どちらの形も一覧のいちばん下) -->
+        {@render credits("list-foot")}
+      </section>
+    </div>
 
     <div class="map-pane">
       <QuakeMap
@@ -872,40 +920,6 @@
         shown={!phone.current || tab === "map"}
       />
     </div>
-
-    <aside class="side-panel" aria-label="状態と絞り込みと表示">
-      <Calendar {marks} {today} {pinned} onpick={pickDay} />
-
-      <h2 class="side-label">状態</h2>
-      <StatusList connected={live.connected} statuses={snap.statuses} />
-
-      <h2 class="side-label">絞り込み</h2>
-      <div class="side-list" role="group" aria-label="一覧の種類">
-        {#each KINDS as k (k)}
-          <a
-            class="side-item"
-            href={viewHref(params, { k, ...UNSELECT })}
-            aria-current={!v.selected && v.kind === k ? "true" : undefined}
-            data-testid="filter-{k}"
-          >
-            <span>{KIND_LABEL[k]}</span>
-            <span class="side-sub num">{counts[k]}</span>
-          </a>
-        {/each}
-      </div>
-
-      <h2 class="side-label">表示</h2>
-      <div class="side-list" role="group" aria-label="表示の切り替え">
-        <ViewList
-          {layers}
-          toggle={toggleLayer}
-          training={data.training}
-          {trainingHref}
-        />
-      </div>
-
-      {@render credits("side-foot")}
-    </aside>
   </main>
 
   <!-- スマホの形: 下のタブのすぐ上の操作の 1 行 -->
@@ -1012,8 +1026,8 @@
 
 <style>
   /*
-   * 1 つの画面の外枠。窓の高さいっぱいにし、ページそのものは巻かない (一覧とサイドバーはそれぞれの箱の中で巻く)。
-   * 広い形は ヘッダー / 一覧 | 地図 | サイドバー。スマホの形は地図を画面いっぱいにし、一覧はその上に重ねる面
+   * 1 つの画面の外枠。窓の高さいっぱいにし、ページそのものは巻かない (一覧は列の箱の中で巻く)。
+   * 広い形は ヘッダー / 一覧の列 | 地図。スマホの形は地図を画面いっぱいにし、一覧はその上に重ねる面
    */
   .shell {
     position: relative;
@@ -1100,15 +1114,45 @@
     white-space: nowrap;
   }
 
-  /* ---- 本体 (広い形): 一覧 | 地図 | サイドバー ---- */
+  /* ---- 本体 (広い形): 一覧の列 | 地図。列は左の 1 本だけにして、残りの幅を地図に回す ---- */
   .stage {
     display: grid;
     flex: 1 1 0%;
-    grid-template-columns: 24rem minmax(0, 1fr) 20rem;
+    grid-template-columns: 22rem minmax(0, 1fr);
     min-height: 0;
+  }
+  .list-col {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  /*
+   * 列の上 (種類のチップと、カレンダーを開くボタン)。地のまま、巻かずに残す。
+   * チップは列の幅に入りきらないぶんを次の行へ折り返す (横に流すと後ろの種類が隠れて見つけにくい)
+   */
+  .list-bar {
+    display: flex;
+    flex: none;
+    align-items: flex-start;
+    gap: var(--so-space-1);
+    padding: 0 var(--so-space-2) var(--so-space-2);
+  }
+  .list-bar .chips {
+    flex: 1 1 0%;
+    min-width: 0;
+  }
+  .list-bar :global(.icon) {
+    flex-shrink: 0;
+  }
+  :global(.menu.cal-menu) {
+    width: 18rem;
+  }
+  :global(.menu.view-menu) {
+    width: 22rem;
   }
   .list-pane {
     display: flex;
+    flex: 1 1 0%;
     flex-direction: column;
     gap: var(--so-space-2);
     min-height: 0;
@@ -1138,7 +1182,10 @@
     --map-radius: var(--so-item-radius);
     isolation: isolate;
     min-height: 0;
-    padding: 0 0 var(--so-space-3);
+    padding: 0 var(--so-space-3) var(--so-space-3) 0;
+  }
+  .list-foot {
+    margin-top: var(--so-space-4);
   }
   .foot p,
   .foot ul {
@@ -1151,14 +1198,13 @@
     list-style: none;
   }
   .phone-search,
-  .phone-foot,
   .dock,
   .tabbar {
     display: none;
   }
   @media (min-width: 1600px) {
     .stage {
-      grid-template-columns: 28rem minmax(0, 1fr) 22rem;
+      grid-template-columns: 26rem minmax(0, 1fr);
     }
   }
 
@@ -1168,8 +1214,12 @@
     --dock-h: 2.75rem;
   }
   :global(:where(html[data-phone])) .navbar,
-  :global(:where(html[data-phone])) .side-panel {
+  :global(:where(html[data-phone])) .list-bar {
     display: none;
+  }
+  /* 列の箱は作らず、一覧をこれまでどおり地図の上に重ねる */
+  :global(:where(html[data-phone])) .list-col {
+    display: contents;
   }
   :global(:where(html[data-phone])) .stage {
     position: relative;
@@ -1207,10 +1257,6 @@
   }
   :global(:where(html[data-phone])) .phone-search {
     display: block;
-  }
-  :global(:where(html[data-phone])) .phone-foot {
-    display: block;
-    margin-top: var(--so-space-4);
   }
 
   /* dock (一覧の種類と「⋯」)。下のタブから `--so-dock-gap` 上のカプセル */

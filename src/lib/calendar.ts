@@ -1,4 +1,4 @@
-/** サイドバーの月のカレンダーの数え方。月は `YYYY-MM`、日は `YYYY-MM-DD` (どちらも日本時間) */
+/** 月のカレンダーの数え方。月は `YYYY-MM`、日は `YYYY-MM-DD` (どちらも日本時間) */
 
 const pad = (n: number) => String(n).padStart(2, "0");
 
