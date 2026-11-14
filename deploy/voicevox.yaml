@@ -27,7 +27,7 @@ spec:
       automountServiceAccountToken: false
       containers:
         - name: voicevox
-          image: voicevox/voicevox_engine:0.26.1
+          image: voicevox/voicevox_engine:0.26.2
           ports:
             - containerPort: 50021
           env:

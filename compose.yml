@@ -30,7 +30,7 @@ services:
   # sonae とは別のコンテナにする (ライセンス・イメージの大きさ・CPU とメモリを分けるため。docs/design.md の 2.4)。
   # 外には公開せず、sonae だけが同じネットワークの中からつなぐ
   voicevox:
-    image: voicevox/voicevox_engine:0.26.1
+    image: voicevox/voicevox_engine:0.26.2
     environment:
       - VV_CPU_NUM_THREADS=2
     cpus: 2
