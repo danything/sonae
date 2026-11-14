@@ -263,7 +263,9 @@ export function parseWeatherXml(xml: string, code: string): Normalized[] {
         ? eventId?.split("_")[0]
         : kind === "tornado"
           ? areas[0]?.code
-          : eventId) || code;
+          : eventId) ||
+      // 鍵が取れない報は、ほかの報と結ばない (取消・訂正で関係のない報に触らない)
+      `${code}${reportedAt.replace(/[^0-9]/g, "").slice(0, 14)}`;
     const firstKind = at(head, "Headline/Information/Item/Kind");
     const kindName =
       kind === "bosai"
