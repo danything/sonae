@@ -61,6 +61,8 @@ export interface Notice {
    * 報ごとに M や震源が少しずつ変わるので、警報の地域が増えたときだけ送り直す
    */
   changeKey?: string;
+  /** 気象の特別警報を、住んでいる地域でなくても知らせるもの (条件は「特別警報はどこでも」で見る) */
+  special?: boolean;
   event: SonaeEvent;
 }
 
@@ -353,32 +355,42 @@ function warningFor(
   }
   const special = w.areas.filter((a) => areaLevel(a) === 5);
   const homeLevel = homeNotice?.level ?? 0;
-  // 同じ府県予報区に特別警報が出ていて、住んでいる地域は特別警報でないときは、特別警報のほうを知らせる
-  // (いちばん重い情報を先に。住んでいる地域が特別警報なら、上の住んでいる地域の通知が特別警報を言う)
-  if (prefs.weatherSpecial && special.length > 0 && homeLevel < 5) {
-    const names = [
-      ...new Set(
-        special.flatMap((a) =>
-          a.kinds.filter((k) => k.level === 5).map((k) => kindText(k.name)),
-        ),
+  // 同じ府県予報区のほかの市町村等に特別警報が出ているときは、特別警報を先に言う
+  // (住んでいる地域が特別警報なら、上の住んでいる地域の通知が特別警報を言う)
+  if (!prefs.weatherSpecial || special.length === 0 || homeLevel >= 5)
+    return homeNotice;
+  const names = [
+    ...new Set(
+      special.flatMap((a) =>
+        a.kinds.filter((k) => k.level === 5).map((k) => kindText(k.name)),
       ),
-    ];
-    const cities = special.map((a) => a.name);
-    return {
-      ...n,
-      tag: `warning:special:${w.office.code}:${w.code}`,
-      level: 5,
-      title: `${w.office.name}に${names.join("・")}`,
-      body: clip(
-        `${cities.slice(0, 8).join("・")}${cities.length > 8 ? ` ほか ${cities.length - 8} 市町村` : ""}`,
-      ),
-      url,
-      urgency: "high",
-      sticky: true,
-      closing: false,
-    };
-  }
-  return homeNotice;
+    ),
+  ];
+  const cities = special.map((a) => a.name);
+  const where = `${cities.slice(0, 8).join("・")}${cities.length > 8 ? ` ほか ${cities.length - 8} 市町村` : ""}`;
+  const sp: Notice = {
+    ...n,
+    tag: `warning:special:${w.office.code}:${w.code}`,
+    level: 5,
+    title: `${w.office.name}に${names.join("・")}`,
+    body: clip(where),
+    url,
+    urgency: "high",
+    sticky: true,
+    closing: false,
+    special: true,
+  };
+  if (!homeNotice) return sp;
+  // 住んでいる地域がこの府県予報区にあるときは、住んでいる地域の tag のまま特別警報を言い、
+  // 住んでいる地域の状態も添える (住んでいる地域の続報・解除を落とさない。特別警報が終われば
+  // 住んでいる地域だけの中身に戻り、同じ tag で置き換わる)
+  return {
+    ...sp,
+    tag: homeNotice.tag,
+    body: clip(
+      `${where}\n${home?.name}: ${homeLevel > 0 ? (mine?.kinds.map((k) => kindText(k.name)).join("・") ?? "") : `${phenomenon}の警報・注意報は解除`}`,
+    ),
+  };
 }
 
 /** 記録的短時間大雨情報・竜巻注意情報。住んでいる地域 (市町村等・一次細分区域・府県予報区) が対象のときだけ */
@@ -505,7 +517,7 @@ export function matches(n: Notice, prefs: PushPrefs): boolean {
       return n.level >= (prefs.volcano === "all" ? 2 : VOLCANO_RESIDENTIAL);
     case "warning":
       // どこかの特別警報 (住んでいる地域でなくても) と、住んでいる地域の警報以上 (「all」なら注意報から)
-      if (n.tag.startsWith("warning:special:")) return prefs.weatherSpecial;
+      if (n.special) return prefs.weatherSpecial;
       if (prefs.weather === "off") return false;
       return n.level >= (prefs.weather === "all" ? 2 : 3);
     case "weather":

@@ -117,6 +117,29 @@ describe("気象警報・注意報の通知", () => {
     expect(notice(special, prefs({ weatherSpecial: false }))).toBeNull();
   });
 
+  test("同じ府県予報区のほかの市町村に特別警報が出ていたら、住んでいる地域の tag のまま特別警報を言う", () => {
+    // 奥出雲町はレベル２大雨注意報、ほかの市町村に大雨特別警報
+    const okuizumo = home({ code: "3234300", name: "島根県奥出雲町" });
+    const n = notice(special, prefs({ home: okuizumo }));
+    expect(n?.tag).toBe("warning:3234300:VPWW55");
+    expect(n?.level).toBe(5);
+    expect(n?.title).toBe("島根県にレベル5大雨特別警報");
+    expect(n?.body).toContain("島根県奥出雲町: レベル2大雨注意報");
+    expect(n && matches(n, prefs({ home: okuizumo, weather: "off" }))).toBe(
+      true,
+    );
+    // 解除された市町村でも、特別警報を言いながら解除を添える (解除を落とさない)
+    const oki = home({ code: "3252800", name: "島根県隠岐の島町" });
+    const m = notice(special, prefs({ home: oki }));
+    expect(m?.tag).toBe("warning:3252800:VPWW55");
+    expect(m?.body).toContain("大雨の警報・注意報は解除");
+    expect(m?.closing).toBe(false);
+    // 特別警報が終わったら、住んでいる地域だけの中身に戻る (同じ tag)
+    expect(notice(shimane, prefs({ home: okuizumo }))?.tag).toBe(
+      "warning:3234300:VPWW55",
+    );
+  });
+
   test("住んでいる地域が特別警報なら、地域の通知で言う", () => {
     const n = notice(special, prefs({ home: home() }));
     expect(n?.tag).toBe("warning:3220100:VPWW55");
