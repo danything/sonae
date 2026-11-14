@@ -56,25 +56,49 @@ describe("通知の条件", () => {
       normalizePrefs({
         eew: "loud",
         quakeMinInt: "8",
-        area: { code: "x", name: "a" },
+        home: { code: "x", name: "a" },
         tsunami: "major",
         advisory: false,
+        weather: "loud",
       }),
     ).toEqual({ ...DEFAULT_PREFS, tsunami: "major", advisory: false });
     expect(
-      normalizePrefs({ area: { code: "340", name: "千葉県北西部" } }).area,
-    ).toEqual({ code: "340", name: "千葉県北西部" });
+      normalizePrefs({
+        home: {
+          code: "1221700",
+          name: "千葉県柏市",
+          quake: { code: "340", name: "千葉県北西部" },
+          office: "120000",
+          ichiji: "120010",
+          lat: 35.8,
+        },
+      }).home,
+    ).toEqual({
+      code: "1221700",
+      name: "千葉県柏市",
+      quake: { code: "340", name: "千葉県北西部" },
+      office: "120000",
+      ichiji: "120010",
+    });
   });
 
-  test("既定は 警報だけ・最大震度 4 以上・津波注意報以上・南海トラフ等はオン", () => {
+  test("前の形の「現在地」(地震情報の細分区域だけ) は読まない (選び直してもらう)", () => {
+    expect(
+      normalizePrefs({ area: { code: "340", name: "千葉県北西部" } }).home,
+    ).toBeNull();
+  });
+
+  test("既定は 警報だけ・最大震度 4 以上・津波注意報以上・南海トラフ等はオン・気象は地域の警報以上と特別警報", () => {
     expect(DEFAULT_PREFS).toEqual({
       eew: "warning",
       quakeMinInt: "4",
-      area: null,
+      home: null,
       areaMinInt: "3",
       tsunami: "watch",
       advisory: true,
       volcano: "warning",
+      weather: "warning",
+      weatherSpecial: true,
     });
   });
 });
@@ -89,25 +113,22 @@ describe("何を知らせるか", () => {
       NOW,
     );
     if (!n3) throw new Error("通知が無い");
+    const tokyo = {
+      code: "1310100",
+      name: "東京都千代田区",
+      quake: { code: "350", name: "東京都２３区" },
+      office: "130000",
+      ichiji: "130010",
+    };
     expect(matches(n3, prefs())).toBe(false);
-    expect(
-      matches(n3, prefs({ area: { code: "350", name: "東京都２３区" } })),
-    ).toBe(true);
-    expect(
-      matches(
-        n3,
-        prefs({ area: { code: "350", name: "東京都２３区" }, areaMinInt: "4" }),
-      ),
-    ).toBe(false);
+    expect(matches(n3, prefs({ home: tokyo }))).toBe(true);
+    expect(matches(n3, prefs({ home: tokyo, areaMinInt: "4" }))).toBe(false);
     // P2P の震度速報には地域のコードが無い。名前で見る
     const p2p = noticeOf(
       quake({ maxInt: "3", areas: [{ name: "東京都２３区", int: "3" }] }),
       NOW,
     );
-    expect(
-      p2p &&
-        matches(p2p, prefs({ area: { code: "350", name: "東京都２３区" } })),
-    ).toBe(true);
+    expect(p2p && matches(p2p, prefs({ home: tokyo }))).toBe(true);
 
     const n4 = noticeOf(quake(), NOW);
     expect(n4 && matches(n4, prefs())).toBe(true);

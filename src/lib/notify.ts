@@ -5,12 +5,20 @@
  * どこからでも読むので、Bun や DOM にしか無いものは使わない。
  */
 
-import { jst, magnitudeText, placeName, quakeName } from "#lib/format.ts";
+import {
+  jst,
+  kindText,
+  magnitudeText,
+  placeName,
+  quakeName,
+} from "#lib/format.ts";
 import {
   type Advisory,
+  areaLevel,
   type Eew,
   intensityLabel,
   intensityRank,
+  isExpired,
   isUrgentAdvisory,
   type Quake,
   type SonaeEvent,
@@ -20,9 +28,13 @@ import {
   type Volcano,
   VOLCANO_RESIDENTIAL,
   volcanoTop,
+  WARNING_PHENOMENON,
+  WEATHER_INFO_LABEL,
+  type WeatherInfo,
+  type WeatherWarning,
 } from "#lib/model.ts";
 import type { PushPrefs, TsunamiLevel } from "#lib/push.ts";
-import { selectHref } from "#lib/view.ts";
+import { OFFICE_PREFIX, selectHref } from "#lib/view.ts";
 
 /** 押したときに開く所 (1 つの画面で、その件を選んだ URL。docs/ui.md) */
 const NONE = new URLSearchParams();
@@ -52,13 +64,18 @@ export interface Notice {
   event: SonaeEvent;
 }
 
-/** 送るのをやめる古さ。緊急地震速報は数分で意味が無くなる。地震は 1 時間、津波・お知らせ・火山は 6 時間 */
+/**
+ * 送るのをやめる古さ。緊急地震速報は数分で意味が無くなる。地震は 1 時間、津波・お知らせ・火山・気象の警報は 6 時間。
+ * 気象の報 (記録的短時間大雨情報・竜巻注意情報) は 1 時間 (竜巻注意情報の有効期限は約 1 時間)
+ */
 export const FRESH_MS = {
   eew: 3 * 60_000,
   quake: 60 * 60_000,
   tsunami: 6 * 60 * 60_000,
   advisory: 6 * 60 * 60_000,
   volcano: 6 * 60 * 60_000,
+  warning: 6 * 60 * 60_000,
+  weather: 60 * 60_000,
 } as const;
 
 const TTL = {
@@ -67,6 +84,8 @@ const TTL = {
   tsunami: 6 * 60 * 60,
   advisory: 6 * 60 * 60,
   volcano: 6 * 60 * 60,
+  warning: 6 * 60 * 60,
+  weather: 60 * 60,
 } as const;
 
 const BODY_MAX = 300;
@@ -270,7 +289,140 @@ function volcanoNotice(v: Volcano, event: SonaeEvent): Notice {
 }
 
 /**
+ * 気象の通知の元。住んでいる地域で中身が変わるので、ここでは時刻と送り方だけを決め、
+ * 中身は購読ごとに `noticeFor` で作る
+ */
+function weatherBase(event: SonaeEvent, at: number, ttl: number): Notice {
+  return {
+    tag: "",
+    level: 0,
+    title: "",
+    body: "",
+    url: "/",
+    urgency: "normal",
+    ttl,
+    sticky: false,
+    closing: false,
+    at,
+    event,
+  };
+}
+
+const levelName = (l: number) =>
+  l >= 5 ? "特別警報" : l >= 4 ? "危険警報" : l >= 3 ? "警報" : "注意報";
+
+/** 気象警報・注意報の通知。住んでいる地域の段か、どこかの特別警報か */
+function warningFor(
+  n: Notice,
+  w: WeatherWarning,
+  prefs: PushPrefs,
+): Notice | null {
+  const url = selectHref(NONE, "weather", `${OFFICE_PREFIX}${w.office.code}`);
+  const home = prefs.home;
+  const mine = home ? w.areas.find((a) => a.code === home.code) : undefined;
+  const released = home
+    ? w.released.find((a) => a.code === home.code)
+    : undefined;
+  const phenomenon = WARNING_PHENOMENON[w.code];
+  let homeNotice: Notice | null = null;
+  if (home && (mine || released)) {
+    const level = mine ? areaLevel(mine) : 0;
+    const kinds = (mine?.kinds ?? [])
+      .toSorted((a, b) => b.level - a.level)
+      .map((k) => kindText(k.name));
+    homeNotice = {
+      ...n,
+      tag: `warning:${home.code}:${w.code}`,
+      level,
+      title:
+        level > 0
+          ? `${home.name}に${kinds[0] ?? levelName(level)}`
+          : `${home.name}の${phenomenon}の警報・注意報の解除`,
+      body: clip(
+        level > 0
+          ? [kinds.join("・"), w.headline].filter(Boolean).join("\n")
+          : (
+              released?.kinds.map((k) => `${kindText(k.name)}は解除`) ?? []
+            ).join("・"),
+      ),
+      url,
+      urgency: level >= 4 ? "high" : "normal",
+      sticky: level >= 4,
+      closing: level === 0,
+    };
+  }
+  const special = w.areas.filter((a) => areaLevel(a) === 5);
+  const homeLevel = homeNotice?.level ?? 0;
+  // 同じ府県予報区に特別警報が出ていて、住んでいる地域は特別警報でないときは、特別警報のほうを知らせる
+  // (いちばん重い情報を先に。住んでいる地域が特別警報なら、上の住んでいる地域の通知が特別警報を言う)
+  if (prefs.weatherSpecial && special.length > 0 && homeLevel < 5) {
+    const names = [
+      ...new Set(
+        special.flatMap((a) =>
+          a.kinds.filter((k) => k.level === 5).map((k) => kindText(k.name)),
+        ),
+      ),
+    ];
+    const cities = special.map((a) => a.name);
+    return {
+      ...n,
+      tag: `warning:special:${w.office.code}:${w.code}`,
+      level: 5,
+      title: `${w.office.name}に${names.join("・")}`,
+      body: clip(
+        `${cities.slice(0, 8).join("・")}${cities.length > 8 ? ` ほか ${cities.length - 8} 市町村` : ""}`,
+      ),
+      url,
+      urgency: "high",
+      sticky: true,
+      closing: false,
+    };
+  }
+  return homeNotice;
+}
+
+/** 記録的短時間大雨情報・竜巻注意情報。住んでいる地域 (市町村等・一次細分区域・府県予報区) が対象のときだけ */
+function weatherInfoFor(
+  n: Notice,
+  i: WeatherInfo,
+  prefs: PushPrefs,
+): Notice | null {
+  const home = prefs.home;
+  if (!home) return null;
+  const keys = [home.code, home.ichiji, home.office].filter(Boolean);
+  if (!i.areas.some((a) => keys.includes(a.code))) return null;
+  return {
+    ...n,
+    tag: `weather:${i.series}`,
+    level: i.cancelled ? 0 : 3,
+    title: i.cancelled
+      ? `${WEATHER_INFO_LABEL[i.kind]} (取消)`
+      : `${WEATHER_INFO_LABEL[i.kind]} ${home.name}`,
+    body: clip(
+      i.cancelled
+        ? "先ほどの情報は取り消されました。"
+        : i.headline.replace(/\s+/g, " ").trim(),
+    ),
+    url: selectHref(NONE, "weather", i.id),
+    urgency: "high",
+    closing: i.cancelled,
+  };
+}
+
+/**
+ * 購読の条件に合わせて通知の中身を決める。気象は住んでいる地域で中身が変わるので、ここで作る。
+ * ほかの種類はそのまま返す。この購読に関係しない気象の通知は null
+ */
+export function noticeFor(n: Notice, prefs: PushPrefs): Notice | null {
+  const e = n.event;
+  if (e.type === "warning") return warningFor(n, e.data, prefs);
+  if (e.type === "weather") return weatherInfoFor(n, e.data, prefs);
+  return n;
+}
+
+/**
  * イベントから通知を作る。知らせないもの (訓練・試験・遠地地震・定例のお知らせ・古すぎるもの) は null。
+ * 気象の通知は、購読ごとに `noticeFor` で中身を決める
  */
 export function noticeOf(event: SonaeEvent, now: number): Notice | null {
   // 海外の地震は知らせない (遠地地震と同じ。日本に津波のおそれがあれば気象庁が津波の情報を出す)
@@ -299,9 +451,16 @@ export function noticeOf(event: SonaeEvent, now: number): Notice | null {
       // 長周期地震動は地震情報の後に出る観測の詳しい内容なので、知らせない (地震情報で知らせている)
       return null;
     case "warning":
-    case "weather":
-      // 気象の通知は、選んだ地域ごとに作る (別の PR で足す)
-      return null;
+      n = weatherBase(event, Date.parse(event.data.reportedAt), TTL.warning);
+      break;
+    case "weather": {
+      const i = event.data;
+      // 知らせるのは記録的短時間大雨情報と竜巻注意情報だけ。有効期限の過ぎた竜巻注意情報は知らせない
+      if (i.kind !== "rain" && i.kind !== "tornado") return null;
+      if (isExpired(i, now)) return null;
+      n = weatherBase(event, Date.parse(i.reportedAt), TTL.weather);
+      break;
+    }
   }
   if (!Number.isFinite(n.at) || now - n.at > FRESH_MS[event.type]) return null;
   return n;
@@ -325,7 +484,8 @@ export function matches(n: Notice, prefs: PushPrefs): boolean {
         intensityRank(q.maxInt) >= intensityRank(prefs.quakeMinInt)
       )
         return true;
-      const area = prefs.area;
+      // 住んでいる地域が入る地震情報／細分区域
+      const area = prefs.home?.quake;
       if (!area) return false;
       // P2P の震度速報には地域のコードが無いので、名前でも見る
       return q.areas.some(
@@ -343,10 +503,16 @@ export function matches(n: Notice, prefs: PushPrefs): boolean {
       if (prefs.volcano === "off") return false;
       if (e.data.code === "VFVO56") return true;
       return n.level >= (prefs.volcano === "all" ? 2 : VOLCANO_RESIDENTIAL);
+    case "warning":
+      // どこかの特別警報 (住んでいる地域でなくても) と、住んでいる地域の警報以上 (「all」なら注意報から)
+      if (n.tag.startsWith("warning:special:")) return prefs.weatherSpecial;
+      if (prefs.weather === "off") return false;
+      return n.level >= (prefs.weather === "all" ? 2 : 3);
+    case "weather":
+      // 住んでいる地域の記録的短時間大雨情報・竜巻注意情報 (地域は noticeFor で絞ってある)
+      return prefs.weather !== "off";
     case "longperiod":
     case "foreign":
-    case "warning":
-    case "weather":
       return false;
   }
 }

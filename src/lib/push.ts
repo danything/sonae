@@ -19,36 +19,95 @@ export type EewLevel = (typeof EEW_LEVELS)[number];
 export const VOLCANO_LEVELS = ["warning", "all", "off"] as const;
 export type VolcanoLevel = (typeof VOLCANO_LEVELS)[number];
 
+/**
+ * 気象の通知 (住んでいる地域)。警報以上 (危険警報・特別警報、記録的短時間大雨情報・竜巻注意情報も) /
+ * 注意報も / 送らない
+ */
+export const WEATHER_LEVELS = ["warning", "all", "off"] as const;
+export type WeatherLevel = (typeof WEATHER_LEVELS)[number];
+
+/**
+ * 住んでいる地域。1 つの市町村等 (気象警報等) を選び、地震と気象の両方の条件に使う。
+ * 地震情報／細分区域・府県予報区・一次細分区域は、選んだときに画面が市町村等の表 (`static/areas/cities.json`)
+ * から引いて一緒に持つ (サーバーと Service Worker が表を読まずに判定できるように)。緯度・経度は持たない
+ */
+export interface Home {
+  /** 市町村等のコード (気象・地震・火山情報／市町村等、7 桁) */
+  code: string;
+  /** 府県と市町村の名前 (「群馬県前橋市」) */
+  name: string;
+  /** 地震情報／細分区域 */
+  quake: { code: string; name: string } | null;
+  /** 府県予報区のコード (6 桁) */
+  office: string | null;
+  /** 一次細分区域のコード (6 桁。記録的短時間大雨情報の地域) */
+  ichiji: string | null;
+}
+
 /** 端末 (ブラウザの購読) ごとに選ぶ、何を知らせるか */
 export interface PushPrefs {
   eew: EewLevel;
   /** 最大震度がこれ以上の地震。"off" で送らない */
   quakeMinInt: Intensity | "off";
-  /** 現在地 (地震情報の細分区域)。無ければ現在地の条件は使わない */
-  area: { code: string; name: string } | null;
-  /** 現在地でこの震度以上なら、最大震度の条件に届かなくても送る */
+  /** 住んでいる地域。無ければ地域の条件 (地震の地域の震度・気象) は使わない */
+  home: Home | null;
+  /** 住んでいる地域でこの震度以上なら、最大震度の条件に届かなくても送る */
   areaMinInt: Intensity;
   tsunami: TsunamiLevel;
   /** 南海トラフ地震臨時情報・定例外の解説情報・後発地震注意情報 */
   advisory: boolean;
   /** 火山 (噴火速報・噴火警報) */
   volcano: VolcanoLevel;
+  /** 住んでいる地域の気象警報・注意報と、記録的短時間大雨情報・竜巻注意情報 */
+  weather: WeatherLevel;
+  /** 気象の特別警報は、住んでいる地域でなくても知らせる */
+  weatherSpecial: boolean;
 }
 
 /**
  * 既定値。理由は docs/design.md の 2.4 (持ち主の決定、2026-11-13)。
- * 警報だけ・最大震度 4 以上・現在地で 3 以上・津波注意報以上・南海トラフ等はオン。
+ * 警報だけ・最大震度 4 以上・住んでいる地域で 3 以上・津波注意報以上・南海トラフ等はオン。
  * 火山は噴火速報と噴火警報 (居住地域) だけ (2026-11-14 に足した。理由は同じ節)。
+ * 気象は住んでいる地域の警報以上と、どこでも特別警報 (2026-11-14 に足した。注意報は既定で送らない)。
  */
 export const DEFAULT_PREFS: PushPrefs = {
   eew: "warning",
   quakeMinInt: "4",
-  area: null,
+  home: null,
   areaMinInt: "3",
   tsunami: "watch",
   advisory: true,
   volcano: "warning",
+  weather: "warning",
+  weatherSpecial: true,
 };
+
+const code = (v: unknown, digits: number): string | null =>
+  typeof v === "string" && new RegExp(`^\\d{${digits}}$`).test(v) ? v : null;
+const label = (v: unknown): string | null =>
+  typeof v === "string" && v.length > 0 && v.length <= 40 ? v : null;
+
+/** 住んでいる地域を読む。市町村等のコードと名前が読めなければ無し */
+function readHome(v: unknown): Home | null {
+  if (typeof v !== "object" || v === null) return null;
+  const o = v as Record<string, unknown>;
+  const c = code(o.code, 7);
+  const name = label(o.name);
+  if (!c || !name) return null;
+  const q =
+    typeof o.quake === "object" && o.quake !== null
+      ? (o.quake as Record<string, unknown>)
+      : {};
+  const qc = code(q.code, 3);
+  const qn = label(q.name);
+  return {
+    code: c,
+    name,
+    quake: qc && qn ? { code: qc, name: qn } : null,
+    office: code(o.office, 6),
+    ichiji: code(o.ichiji, 6),
+  };
+}
 
 const pick = <T extends string>(
   list: readonly T[],
@@ -62,22 +121,14 @@ export function normalizePrefs(input: unknown): PushPrefs {
     typeof input === "object" && input !== null
       ? (input as Record<string, unknown>)
       : {};
-  const area = o.area as Record<string, unknown> | null | undefined;
+  // 前の形の「現在地」(地震情報の細分区域だけ。area) は市町村等が分からないので読まない (選び直してもらう)
   return {
     eew: pick(EEW_LEVELS, o.eew, DEFAULT_PREFS.eew),
     quakeMinInt:
       o.quakeMinInt === "off" || isIntensity(o.quakeMinInt)
         ? o.quakeMinInt
         : DEFAULT_PREFS.quakeMinInt,
-    area:
-      area &&
-      typeof area.code === "string" &&
-      /^\d{1,6}$/.test(area.code) &&
-      typeof area.name === "string" &&
-      area.name.length > 0 &&
-      area.name.length <= 40
-        ? { code: area.code, name: area.name }
-        : null,
+    home: readHome(o.home),
     areaMinInt: isIntensity(o.areaMinInt)
       ? o.areaMinInt
       : DEFAULT_PREFS.areaMinInt,
@@ -85,6 +136,11 @@ export function normalizePrefs(input: unknown): PushPrefs {
     advisory:
       typeof o.advisory === "boolean" ? o.advisory : DEFAULT_PREFS.advisory,
     volcano: pick(VOLCANO_LEVELS, o.volcano, DEFAULT_PREFS.volcano),
+    weather: pick(WEATHER_LEVELS, o.weather, DEFAULT_PREFS.weather),
+    weatherSpecial:
+      typeof o.weatherSpecial === "boolean"
+        ? o.weatherSpecial
+        : DEFAULT_PREFS.weatherSpecial,
   };
 }
 
