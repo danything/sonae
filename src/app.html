@@ -17,7 +17,7 @@
       href="%sveltekit.assets%/icons/apple-touch-icon.png"
     />
     <script>
-      // 描く前にテーマを当てる (denpa と同じ。保存が無ければ暗いテーマ)。
+      // 描く前にテーマを当てる (denpa と同じ。保存が無ければ端末に合わせる)。
       // 端末の控えを読めないとき (サイトのデータを止めた Safari などで投げる) も既定のまま
       (() => {
         // スマホの形 (上のヘッダーを出さず、下のタブ) の印。条件は `#lib/phone-form.ts` と同じ。
@@ -33,7 +33,7 @@
         } catch {
           // 既定のまま
         }
-        const mode = saved === "light" || saved === "system" ? saved : "dark";
+        const mode = saved === "light" || saved === "dark" ? saved : "system";
         const dark =
           mode === "dark" ||
           (mode === "system" &&

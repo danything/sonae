@@ -2,17 +2,14 @@ import { expect, test } from "bun:test";
 
 import {
   baseStyle,
-  defaultLayers,
   DEPTH_COLORS,
   eewFill,
   hypocenterFeatures,
   intensityFill,
   intensityLabels,
-  LAYERS,
   longPeriodLine,
-  mapVisibility,
+  MAP_LEGEND,
   matchExpr,
-  readLayers,
   tsunamiPaint,
 } from "#lib/map/style.ts";
 import type { Eew, Quake, Tsunami } from "#lib/model.ts";
@@ -83,24 +80,15 @@ test("震度のラベル: 名前しか無いものはコードを引き、大き
   expect(labels.map((l) => l.int)).toEqual(["4", "6-"]);
 });
 
-test("層のオン・オフ: 覚えたものを読み、壊れていれば既定", () => {
-  expect(readLayers(null)).toEqual(defaultLayers());
-  expect(readLayers("{壊れた")).toEqual(defaultLayers());
-  expect(readLayers('{"faults":true,"unknown":1}').faults).toBe(true);
-});
-
-test("層の出し入れ: style のどの層も切り替えで決まり、淡色地図は写真と入れ替わる", () => {
+test("層はいつも全部出す。淡色地図の下地は無い", () => {
   const style = baseStyle() as {
-    layers: { id: string; layout: { visibility: string } }[];
+    sources: Record<string, unknown>;
+    layers: { id: string; layout?: { visibility?: string } }[];
   };
-  const shown = mapVisibility(defaultLayers());
-  for (const l of style.layers) {
-    expect(l.id in shown).toBe(true);
-    expect(l.layout.visibility).toBe(shown[l.id] ? "visible" : "none");
-  }
-  const labels = mapVisibility({ ...defaultLayers(), labels: true });
-  expect([labels.photo, labels.pale]).toEqual([false, true]);
-  expect(LAYERS.some((l) => l.id === "labels")).toBe(true);
+  for (const l of style.layers) expect(l.layout?.visibility).toBeUndefined();
+  expect(style.layers.map((l) => l.id)).toContain("faults");
+  expect(Object.keys(style.sources)).not.toContain("pale");
+  expect(MAP_LEGEND.map((l) => l.label)).toContain("長周期地震動階級");
 });
 
 test("震源: 深さで色、新しいものほど上に描く", () => {
@@ -129,5 +117,4 @@ test("長周期地震動の枠: 階級 1 以上の地域だけを、階級の色
     "rgba(0,0,0,0)",
   ]);
   expect(longPeriodLine([])).toBe("rgba(0,0,0,0)");
-  expect(defaultLayers().longperiod).toBe(false);
 });

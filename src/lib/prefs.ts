@@ -1,5 +1,5 @@
 /**
- * 端末に覚えさせる好み (テーマ・地図の層)。localStorage は、サイトのデータを止めた Safari や
+ * 端末に覚えさせる好み (テーマ・一覧で隠す種類)。localStorage は、サイトのデータを止めた Safari や
  * プライベートの窓で投げることがあるので、読めなければ既定のまま、書けなければ覚えないだけにする。
  */
 
@@ -16,6 +16,14 @@ export function writePref(key: string, value: string): void {
     localStorage.setItem(`sonae.${key}`, value);
   } catch {
     // 覚えられないだけ
+  }
+}
+
+export function removePref(key: string): void {
+  try {
+    localStorage.removeItem(`sonae.${key}`);
+  } catch {
+    // 消せないだけ (読む所はもう無い)
   }
 }
 

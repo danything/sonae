@@ -61,7 +61,7 @@ describe("気象警報・注意報の通知", () => {
     expect(n?.tag).toBe("warning:3220100:VPWW55");
     expect(n?.level).toBe(3);
     expect(n?.title).toBe("島根県松江市にレベル3大雨警報");
-    expect(n?.url).toBe("/?k=weather&w=office-320000");
+    expect(n?.url).toBe("/?w=office-320000");
     expect(n && matches(n, prefs({ home: home() }))).toBe(true);
     expect(notice(shimane, prefs())).toBeNull();
   });

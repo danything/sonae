@@ -39,116 +39,48 @@ export const PHOTO_ATTRIBUTION = [
 export const JMA_GIS_ATTRIBUTION =
   '<a href="https://www.data.jma.go.jp/developer/gis.html" target="_blank" rel="noopener">気象庁 予報区等 GIS データ</a> を加工';
 
-export type LayerId =
-  | "boundaries"
-  | "labels"
-  | "hypocenters"
-  | "intensity"
-  | "tsunami"
-  | "eew"
-  | "faults"
-  | "volcano"
-  | "longperiod"
-  | "foreign"
-  | "warning";
-
-export interface LayerInfo {
-  id: LayerId;
-  label: string;
-  /** 既定でオンか */
-  on: boolean;
-  note?: string;
-}
-
-/** 重ねる層。並びは画面の切り替えの並び */
-export const LAYERS: LayerInfo[] = [
-  { id: "intensity", label: "各地の震度", on: true },
+/**
+ * 地図の見方 (「出典と注意」の窓に出す)。層はいつも全部出していて、オン・オフは無い (docs/map.md)。
+ * 色の意味は地図の上には書かないので、ここに言葉で書く
+ */
+export const MAP_LEGEND: { label: string; note: string }[] = [
   {
-    id: "hypocenters",
-    label: "震源",
-    on: true,
-    note: "新しい 50 件。色は深さ (30 km まで赤・100 km まで黄・300 km まで緑・それより深いと青)、大きさは M",
+    label: "各地の震度",
+    note: "地図に出している地震 (選んだ地震か、いちばん新しい地震) の、地域ごとの震度の色と数字",
   },
   {
-    id: "longperiod",
+    label: "震源",
+    note: "新しい 50 件の丸。色は深さ (30 km まで赤・100 km まで黄・300 km まで緑・それより深いと青)、大きさは M。地図に出している地震は ×",
+  },
+  {
     label: "長周期地震動階級",
-    on: false,
     note: "地図に出している地震で、階級 1 以上を観測した地域を太い枠で囲みます。枠の色は階級 4 紫・3 赤・2 橙・1 黄",
   },
-  { id: "tsunami", label: "津波の警報・注意報", on: true },
-  { id: "eew", label: "緊急地震速報", on: true },
   {
-    id: "warning",
+    label: "津波の警報・注意報",
+    note: "津波予報区の海岸の線を区分の色で引きます。大津波警報は線が太くなります",
+  },
+  {
+    label: "緊急地震速報",
+    note: "出ている間の震央の × と、警報の出た地域 (赤く塗って縁取ります)",
+  },
+  {
     label: "気象警報・注意報",
-    on: true,
     note: "市町村等を段の色で塗ります。特別警報 黒・危険警報 紫・警報 赤・注意報 黄 (気象庁の配色)",
   },
   {
-    id: "foreign",
     label: "海外の地震",
-    on: true,
     note: "新しい 50 件。白い縁の丸 (色と大きさは震源と同じ)",
   },
   {
-    id: "volcano",
     label: "火山",
-    on: true,
-    note: "噴火警戒レベル 2 以上の火山と、選んだ情報の火山",
-  },
-  { id: "boundaries", label: "区域の境界", on: true },
-  {
-    id: "labels",
-    label: "地名 (淡色地図)",
-    on: false,
-    note: "下地を写真から、地名の入った淡色地図に替えます",
+    note: "噴火警戒レベル 2 以上の火山と、選んだ情報の火山の三角。中の数字はレベル",
   },
   {
-    id: "faults",
     label: "活断層",
-    on: false,
     note: "都市圏活断層図。大きく寄せたとき (ズーム 11 以上) だけ出ます",
   },
 ];
-
-export type LayerState = Record<LayerId, boolean>;
-
-export const defaultLayers = (): LayerState =>
-  Object.fromEntries(LAYERS.map((l) => [l.id, l.on])) as LayerState;
-
-/** 覚えていた層のオン・オフを読む。知らない鍵や壊れた値は既定に戻す */
-export function readLayers(raw: string | null): LayerState {
-  const state = defaultLayers();
-  if (!raw) return state;
-  try {
-    const v = JSON.parse(raw) as Record<string, unknown>;
-    for (const l of LAYERS)
-      if (typeof v[l.id] === "boolean") state[l.id] = v[l.id] as boolean;
-  } catch {
-    // 既定のまま
-  }
-  return state;
-}
-
-/**
- * 切り替えから、MapLibre の層ごとに出すかどうかを決める。淡色地図は写真の上に透かして重ねると
- * 地図全体がくすむので、オンのときは写真の代わりの下地にする
- */
-export function mapVisibility(s: LayerState): Record<string, boolean> {
-  return {
-    photo: !s.labels,
-    pale: s.labels,
-    faults: s.faults,
-    "warning-fill": s.warning,
-    "quake-fill": s.intensity,
-    "eew-fill": s.eew,
-    "eew-line": s.eew,
-    "quake-line": s.boundaries,
-    "longperiod-line": s.longperiod,
-    tsunami: s.tsunami,
-    hypocenters: s.hypocenters,
-    foreign: s.foreign,
-  };
-}
 
 const TRANSPARENT = "rgba(0,0,0,0)";
 
@@ -393,10 +325,7 @@ export function volcanoMarks(
 }
 
 /** 下地と、データの無い層。データ (色の式・点) は地図を作ったあとで差し込む */
-export function baseStyle(
-  state: LayerState = defaultLayers(),
-): Record<string, unknown> {
-  const shown = mapVisibility(state);
+export function baseStyle(): Record<string, unknown> {
   return {
     version: 8,
     sources: {
@@ -407,14 +336,6 @@ export function baseStyle(
         minzoom: 2,
         maxzoom: 18,
         attribution: PHOTO_ATTRIBUTION,
-      },
-      pale: {
-        type: "raster",
-        tiles: [`${GSI}/pale/{z}/{x}/{y}.png`],
-        tileSize: 256,
-        minzoom: 5,
-        maxzoom: 18,
-        attribution: `<a href="${TILES}" target="_blank" rel="noopener">国土地理院</a> (淡色地図)`,
       },
       faults: {
         type: "raster",
@@ -447,7 +368,7 @@ export function baseStyle(
         data: { type: "FeatureCollection", features: [] },
       },
     },
-    layers: withVisibility(shown, [
+    layers: [
       {
         id: "photo",
         type: "raster",
@@ -484,8 +405,7 @@ export function baseStyle(
           ],
         },
       },
-      // 地名は淡色地図。写真に透かして重ねると全体がくすむので、オンのときは写真の代わりの下地にする
-      { id: "pale", type: "raster", source: "pale" },
+      // 活断層はいつも重ねる。タイルはズーム 11 からしか無いので、引いているときは読みに行かない
       {
         id: "faults",
         type: "raster",
@@ -583,22 +503,8 @@ export function baseStyle(
         },
         layout: { "circle-sort-key": ["get", "order"] },
       },
-    ]),
+    ],
   };
-}
-
-/** 切っている層は作るときから隠す (淡色地図・活断層のタイルを読みに行かない) */
-function withVisibility(
-  shown: Record<string, boolean>,
-  layers: ({ id: string; layout?: object } & Record<string, unknown>)[],
-) {
-  return layers.map((l) => ({
-    ...l,
-    layout: {
-      ...l.layout,
-      visibility: shown[l.id] === false ? "none" : "visible",
-    },
-  }));
 }
 
 /** 日本の全体が入る範囲 (南西・北東) */

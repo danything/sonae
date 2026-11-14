@@ -187,7 +187,7 @@ describe("通知", () => {
     if (!n) throw new Error("通知が無い");
     expect(n.title).toBe("噴火速報 御嶽山");
     expect(n.urgency).toBe("high");
-    expect(n.url).toBe(`/?k=volcano&v=${encodeURIComponent(flash.id)}`);
+    expect(n.url).toBe(`/?v=${encodeURIComponent(flash.id)}`);
     expect(matches(n, DEFAULT_PREFS)).toBe(true);
 
     const hakone = full(HAKONE);

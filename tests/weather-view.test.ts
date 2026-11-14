@@ -66,9 +66,8 @@ describe("URL", () => {
   test("気象の一覧と、府県予報区・気象の報を選ぶ", () => {
     const empty = new URLSearchParams();
     const href = selectHref(empty, "weather", "office-320000");
-    expect(href).toBe("/?k=weather&w=office-320000");
+    expect(href).toBe("/?w=office-320000");
     const v = readView(new URL(`https://x${href}`).searchParams);
-    expect(v.kind).toBe("weather");
     expect(v.selected).toEqual({ kind: "weather", id: "office-320000" });
   });
 });

@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
 import { monthGrid, monthLabel, stepMonth } from "#lib/calendar.ts";
+import { isTsunamiWarning, type TsunamiGrade } from "#lib/model.ts";
 import {
   dayKey,
   dayLabel,
   groupByDay,
   legacyRedirect,
   matches,
+  newestFirst,
+  readHidden,
   readView,
   selectHref,
   viewHref,
@@ -17,28 +20,22 @@ const legacy = (path: string) =>
   legacyRedirect(new URL(path, "https://s.example"));
 
 describe("URL の query (readView)", () => {
-  test("何も無ければ地震の一覧で、何も選んでいない", () => {
+  test("何も無ければ何も選んでいない", () => {
     expect(readView(p(""))).toEqual({
-      kind: "quake",
       selected: null,
       training: false,
       about: false,
     });
   });
 
-  test("選んだものの種類が一覧の種類になる (k が無いとき)", () => {
+  test("選んだもの", () => {
     const v = readView(p("t=abc"));
-    expect(v.kind).toBe("tsunami");
     expect(v.selected).toEqual({ kind: "tsunami", id: "abc" });
   });
 
-  test("知らない k は捨てる", () => {
-    expect(readView(p("k=nope")).kind).toBe("quake");
-  });
-
-  test("訓練と出典の窓", () => {
+  test("訓練と出典の窓 (前の一覧の種類 k は読まない)", () => {
     const v = readView(p("k=eew&training=1&about=1"));
-    expect(v.kind).toBe("eew");
+    expect(v).not.toHaveProperty("kind");
     expect(v.training).toBe(true);
     expect(v.about).toBe(true);
   });
@@ -51,14 +48,27 @@ describe("リンク (viewHref・selectHref)", () => {
     );
   });
 
-  test("既定の k=quake は書かず、空なら /", () => {
-    expect(viewHref(p("q=1"), { k: "quake", q: null })).toBe("/");
+  test("前の一覧の種類 k は外し、空なら /", () => {
+    expect(viewHref(p("k=tsunami&q=1"), { q: null })).toBe("/");
+    expect(selectHref(p("k=quake"), "weather", "office-1")).toBe(
+      "/?w=office-1",
+    );
   });
 
   test("ほかの鍵は残す", () => {
-    expect(viewHref(p("k=eew&training=1&e=9"), { e: null })).toBe(
-      "/?k=eew&training=1",
-    );
+    expect(viewHref(p("training=1&e=9"), { e: null })).toBe("/?training=1");
+  });
+});
+
+describe("一覧で隠す種類 (readHidden)", () => {
+  test("既定は全部出す。知らない種類と壊れた値は捨てる", () => {
+    expect(readHidden(null)).toEqual([]);
+    expect(readHidden("{壊れた")).toEqual([]);
+    expect(readHidden('{"foreign":true}')).toEqual([]);
+    expect(readHidden('["foreign","nope","info"]')).toEqual([
+      "foreign",
+      "info",
+    ]);
   });
 });
 
@@ -66,11 +76,11 @@ describe("前の画面の URL (legacyRedirect)", () => {
   test.each([
     ["/quakes/20261113084300", "/?q=20261113084300"],
     ["/quakes/a%2Fb", "/?q=a%2Fb"],
-    ["/tsunami/t-1", "/?k=tsunami&t=t-1"],
-    ["/tsunami", "/?k=tsunami"],
-    ["/tsunami/", "/?k=tsunami"],
-    ["/eew", "/?k=eew"],
-    ["/eew?training=1", "/?k=eew&training=1"],
+    ["/tsunami/t-1", "/?t=t-1"],
+    ["/tsunami", "/"],
+    ["/tsunami/", "/"],
+    ["/eew", "/"],
+    ["/eew?training=1", "/?training=1"],
     ["/map", "/"],
     ["/map?quake=q1", "/?q=q1"],
     ["/about", "/?about=1"],
@@ -109,6 +119,33 @@ describe("日ごとに束ねる", () => {
       { day: "2026-11-13", items: items.slice(2) },
     ]);
   });
+});
+
+test("1 本の一覧: 種類をまたいで新しい順。同じ時刻は元の順、読めない時刻は後ろ", () => {
+  const items = [
+    { k: "quake", at: "2026-11-14T01:00:00Z" },
+    { k: "weather", at: "2026-11-14T03:00:00Z" },
+    { k: "info", at: undefined },
+    { k: "eew", at: "2026-11-14T01:00:00Z" },
+    { k: "volcano", at: "2026-11-14T02:00:00+09:00" },
+  ];
+  expect(newestFirst(items, (x) => x.at).map((x) => x.k)).toEqual([
+    "weather",
+    "quake",
+    "eew",
+    "volcano",
+    "info",
+  ]);
+});
+
+test("一覧の先頭に出す津波は、大津波警報と津波警報だけ", () => {
+  const t = (...grades: TsunamiGrade[]) => ({
+    areas: grades.map((grade) => ({ name: "x", grade, kindName: "" })),
+  });
+  expect(isTsunamiWarning(t("watch", "major"))).toBe(true);
+  expect(isTsunamiWarning(t("warning"))).toBe(true);
+  expect(isTsunamiWarning(t("watch", "forecast"))).toBe(false);
+  expect(isTsunamiWarning(t())).toBe(false);
 });
 
 test("絞り込みは、空白で区切った言葉がどれも入っていれば当たり", () => {

@@ -184,6 +184,12 @@ export const tsunamiTop = (t: Pick<Tsunami, "areas">): TsunamiGrade =>
     (g) => g !== "none" && t.areas.some((a) => a.grade === g),
   ) ?? "none";
 
+/** 大津波警報か津波警報が出ている (一覧の先頭に、種類のチップにかかわらず出す) */
+export const isTsunamiWarning = (t: Pick<Tsunami, "areas">): boolean => {
+  const top = tsunamiTop(t);
+  return top === "major" || top === "warning";
+};
+
 export interface TsunamiArea {
   code?: string;
   name: string;

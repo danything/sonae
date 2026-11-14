@@ -36,7 +36,6 @@
   import SearchField from "#lib/components/SearchField.svelte";
   import StatusList from "#lib/components/StatusList.svelte";
   import TsunamiSummary from "#lib/components/TsunamiSummary.svelte";
-  import ViewList from "#lib/components/ViewList.svelte";
   import VolcanoLevel from "#lib/components/VolcanoLevel.svelte";
   import WarningLevel from "#lib/components/WarningLevel.svelte";
   import { activeEews } from "#lib/eew.ts";
@@ -54,7 +53,6 @@
     weatherTitle,
   } from "#lib/format.ts";
   import { live } from "#lib/live.svelte.ts";
-  import { type LayerId, type LayerState, readLayers } from "#lib/map/style.ts";
   import {
     type Advisory,
     type Eew,
@@ -62,6 +60,7 @@
     isExpired,
     isPinnedAdvisory,
     isTsunamiActive,
+    isTsunamiWarning,
     isUrgentAdvisory,
     type OfficeWarnings,
     type Quake,
@@ -81,6 +80,7 @@
   import {
     applyTheme,
     readPref,
+    removePref,
     type ThemeMode,
     writePref,
   } from "#lib/prefs.ts";
@@ -92,7 +92,9 @@
     KIND_LABEL,
     KINDS,
     matches,
+    newestFirst,
     OFFICE_PREFIX,
+    readHidden,
     readView,
     selectHref,
     UNSELECT,
@@ -100,13 +102,16 @@
   } from "#lib/view.ts";
 
   /**
-   * **sonae の画面はこれ 1 つ** (docs/ui.md)。地図が主で、一覧・詳しい内容・状態・層の切り替えを同じ画面に置く。
+   * **sonae の画面はこれ 1 つ** (docs/ui.md)。地図が主で、一覧と詳しい内容を同じ画面に置く。
    *
-   * - 広い形 (1000px から): 上に全幅のヘッダー (左にロゴ、真ん中に地名で絞る欄、右に字だけのナビ。「状態と表示」のメニューもここ)。
-   *   その下は 一覧の列 | 地図 の 2 列。列は左の 1 本だけにして地図を広く取る。
-   *   列の上に種類のチップと日付のカレンダー (メニュー) の 1 行、その下に一覧か、選んだときは詳しい内容
+   * - 広い形 (1000px から): 上に全幅のヘッダー (左にロゴ、真ん中に地名で絞る欄、右に字だけのナビ)。
+   *   その下は 地図 | 一覧の列 の 2 列。列は右の 1 本だけにして地図を広く取る (denpa の観る画面の右の列と同じ置き方)。
+   *   列の上に種類で絞るチップと日付のカレンダー (メニュー) の 1 行、その下に一覧か、選んだときは詳しい内容
    * - スマホの形: ヘッダーを出さず、地図を画面いっぱいに。一覧は地図の上に重ねる面で、下のタブ (地図・一覧・その他) で切り替える。
-   *   下のタブのすぐ上に操作の 1 行 (dock。一覧の種類と「⋯」)。一覧を下へ読むと、下のタブと dock は引っ込む
+   *   下のタブのすぐ上に操作の 1 行 (dock。種類で絞るチップか、地図に出している地震)。一覧を下へ読むと、下のタブと dock は引っ込む
+   *
+   * 一覧は全部の種類を新しい順に 1 本に並べる。チップは種類ごとに出す・隠すを切り替え、端末に覚える。
+   * いま出ている緊急地震速報・大津波警報・津波警報・気象の特別警報は、チップにかかわらず一覧の先頭に出す
    *
    * 何を見ているかは URL の query に持つ (`#lib/view.ts`)。行を押すと `?q=<id>` などに替わり、そのリンクを送れば同じ所が開く
    */
@@ -206,44 +211,52 @@
   });
 
   const quakeTime = (q: Quake) => q.originTime ?? q.updatedAt;
-  const groups = $derived.by(() => {
-    switch (v.kind) {
-      case "quake":
-        return groupByDay(quakes, quakeTime).map((g) => ({
-          day: g.day,
-          rows: g.items.map((q) => quakeRow(q)),
-        }));
-      case "tsunami":
-        return groupByDay(tsunamis, (t) => t.issuedAt).map((g) => ({
-          day: g.day,
-          rows: g.items.map((t) => tsunamiRow(t)),
-        }));
-      case "eew":
-        return groupByDay(eews, (e) => e.issuedAt).map((g) => ({
-          day: g.day,
-          rows: g.items.map((e) => eewRow(e)),
-        }));
-      case "volcano":
-        return groupByDay(volcanoes, (x) => x.reportedAt).map((g) => ({
-          day: g.day,
-          rows: g.items.map((x) => volcanoRow(x)),
-        }));
-      case "foreign":
-        return groupByDay(foreigns, (x) => x.originTime).map((g) => ({
-          day: g.day,
-          rows: g.items.map((x) => foreignRow(x)),
-        }));
-      case "weather":
-        return groupByDay(weathers, (x) => x.reportedAt).map((g) => ({
-          day: g.day,
-          rows: g.items.map((x) => weatherRow(x)),
-        }));
-      case "info":
-        return groupByDay(infos, (a) => a.reportedAt).map((g) => ({
-          day: g.day,
-          rows: g.items.map((a) => infoRow(a)),
-        }));
+
+  // ---- 種類で絞るチップ (隠す種類を端末に覚える。既定は全部出す) ----
+  let hidden = $state<Kind[]>([]);
+  $effect.pre(() => {
+    hidden = readHidden(readPref("list.hidden"));
+    // 前の地図の層のオン・オフ (層はいつも全部出すので読まない)
+    removePref("map.layers");
+  });
+  const shownKind = (k: Kind) => !hidden.includes(k);
+  function toggleKind(k: Kind) {
+    hidden = shownKind(k) ? [...hidden, k] : hidden.filter((x) => x !== k);
+    writePref("list.hidden", JSON.stringify(hidden));
+    // 詳しい内容を見ているときは、絞った一覧へ戻る
+    if (v.selected) void goto(backHref, { reset: false });
+  }
+
+  /**
+   * 一覧の 1 本の並び。種類をまたいで時刻の新しい順に並べ、日付の見出しで束ねる。
+   * 府県予報区の警報・注意報は、その府県予報区のいちばん新しい報の時刻に並ぶ (出ている間は残る)
+   */
+  const timeline = $derived.by(() => {
+    const items: { at: string; row: () => RowData }[] = [];
+    function add<T>(
+      kind: Kind,
+      list: T[],
+      at: (x: T) => string | undefined,
+      row: (x: T) => RowData,
+    ) {
+      if (!shownKind(kind)) return;
+      for (const x of list) items.push({ at: at(x) ?? "", row: () => row(x) });
     }
+    add("quake", quakes, quakeTime, quakeRow);
+    add("tsunami", tsunamis, (t) => t.issuedAt, tsunamiRow);
+    add("eew", eews, (e) => e.issuedAt, eewRow);
+    add("volcano", volcanoes, (x) => x.eventTime ?? x.reportedAt, volcanoRow);
+    add("weather", offices, (o) => o.reportedAt, officeRow);
+    add("weather", weathers, (x) => x.reportedAt, weatherRow);
+    add("foreign", foreigns, (x) => x.originTime, foreignRow);
+    add("info", infos, (a) => a.reportedAt, infoRow);
+    return groupByDay(
+      newestFirst(items, (x) => x.at),
+      (x) => x.at,
+    ).map((g) => ({
+      day: g.day,
+      rows: g.items.map((x) => x.row()),
+    }));
   });
   function foreignRow(x: ForeignQuake): RowData {
     return {
@@ -253,6 +266,7 @@
       time: jstTime(x.originTime),
       title: x.place || "場所は不明",
       meta: [
+        "海外の地震",
         x.magnitude === undefined ? "" : `M${x.magnitude.toFixed(1)}`,
         x.depthKm === undefined ? "" : `深さ 約 ${Math.round(x.depthKm)} km`,
         x.reports.map((r) => r.source.toUpperCase()).join("・"),
@@ -270,7 +284,7 @@
       href: selectHref(params, "weather", id),
       current: v.selected?.kind === "weather" && v.selected.id === id,
       time: jstTime(o.reportedAt),
-      title: o.office.name,
+      title: `${o.office.name}の警報・注意報`,
       meta: o.kinds.map((k) => kindText(k.name)).join("・"),
       warning: { level: o.top },
       states: [],
@@ -422,7 +436,7 @@
       time: jstClock(e.issuedAt),
       title: placeName(e.hypocenter),
       meta: [
-        e.kind === "warning" ? "警報" : "予報",
+        e.kind === "warning" ? "緊急地震速報 (警報)" : "緊急地震速報 (予報)",
         `第 ${e.serial} 報${e.final ? " (最終)" : ""}`,
         e.magnitude !== undefined ? magnitudeText(e) : "",
         e.warnAreas.length > 0 ? e.warnAreas.join("、") : "",
@@ -463,8 +477,32 @@
     ),
     ...snap.volcanoLevels.filter((x) => volcanoTop(x) >= VOLCANO_RESIDENTIAL),
   ]);
-  /** 気象: いま特別警報 (レベル 5) が出ている府県予報区。どの一覧の上にも出す (いちばん重い気象の情報) */
+  /** 気象: いま特別警報 (レベル 5) が出ている府県予報区。チップにかかわらず一覧の先頭に出す */
   const specialOffices = $derived(allOffices.filter((o) => o.top === 5));
+  /**
+   * 一覧の先頭に出すもの。いま出ている緊急地震速報・大津波警報・津波警報・特別警報はチップにかかわらず出し
+   * (身を守る動きにつなげるもの)、ほかの津波・噴火・お知らせはその種類を出しているときだけ
+   */
+  const pinnedEews = $derived(banners.filter((e) => !e.cancelled));
+  const pinnedTsunamis = $derived(activeTsunamis.filter(isTsunamiWarning));
+  const otherTsunamis = $derived(
+    shownKind("tsunami")
+      ? activeTsunamis.filter((t) => !isTsunamiWarning(t))
+      : [],
+  );
+  const shownVolcanoAlerts = $derived(
+    shownKind("volcano") ? volcanoAlerts : [],
+  );
+  const shownAdvisories = $derived(shownKind("info") ? advisories : []);
+  const hasPinned = $derived(
+    pinnedEews.length +
+      pinnedTsunamis.length +
+      specialOffices.length +
+      otherTsunamis.length +
+      shownVolcanoAlerts.length +
+      shownAdvisories.length >
+      0,
+  );
 
   // ---- 選んだもの (SSE で続報が来たら差し替える) ----
   const selQuake = $derived(
@@ -524,17 +562,8 @@
   );
   const mapTsunamis = $derived(selTsunami ? [selTsunami] : activeTsunamis);
   const mapEews = $derived(selEew ? [selEew] : banners);
-  // 層のオン・オフは端末に覚えさせる
-  let layers = $state<LayerState>(readLayers(null));
-  $effect.pre(() => {
-    layers = readLayers(readPref("map.layers"));
-  });
-  function toggleLayer(id: LayerId) {
-    layers[id] = !layers[id];
-    writePref("map.layers", JSON.stringify(layers));
-  }
   const trainingHref = $derived(
-    viewHref(params, { k: "eew", training: data.training ? null : "1" }),
+    viewHref(params, { training: data.training ? null : "1" }),
   );
 
   // ---- スマホの形: 地図と一覧の切り替え (選んだもので開いたときは一覧) ----
@@ -564,7 +593,7 @@
   // ---- カレンダー ----
   const today = $derived(dayKey(new Date(live.now).toISOString()));
   const marks = $derived(
-    new Map(groups.map((g) => [g.day, g.rows.length] as const)),
+    new Map(timeline.map((g) => [g.day, g.rows.length] as const)),
   );
   let picked = $state<string | null>(null);
   const pinned = $derived(
@@ -593,13 +622,13 @@
     document.getElementById(`day-${day}`)?.scrollIntoView({ block: "start" });
   }
 
-  // ---- テーマ (暗い・明るい・端末に合わせる。既定は暗い) ----
+  // ---- テーマ (暗い・明るい・端末に合わせる。既定は端末に合わせる) ----
   const THEMES: { mode: ThemeMode; label: string }[] = [
     { mode: "dark", label: "暗い" },
     { mode: "light", label: "明るい" },
     { mode: "system", label: "端末に合わせる" },
   ];
-  let theme = $state<ThemeMode>("dark");
+  let theme = $state<ThemeMode>("system");
   $effect(() => {
     const m = document.documentElement.dataset.themeMode;
     if (m === "light" || m === "system" || m === "dark") theme = m;
@@ -609,7 +638,7 @@
     applyTheme(mode);
   }
 
-  // ---- 状態 (つながっていないものがあれば、ヘッダーと dock の「⋯」に注意の印) ----
+  // ---- 状態 (つながっていないものがあるときだけ、ヘッダーと dock に注意の印。押すと情報源ごとの受信) ----
   const trouble = $derived(
     browser &&
       (!live.connected || snap.statuses.some((s) => s.state !== "connected")),
@@ -628,7 +657,7 @@
   let userMenu = $state(false);
   let moreMenu = $state(false);
   let dockMenu = $state(false);
-  let viewMenu = $state(false);
+  let statusMenu = $state(false);
 
   /** `/` か Ctrl+K で、見えている絞り込みの欄へ */
   function searchShortcut(event: KeyboardEvent): void {
@@ -674,7 +703,7 @@
                   ? `${selInfo.title} ${jst(selInfo.reportedAt)} - sonae`
                   : selForeign
                     ? `${selForeign.place} ${jst(selForeign.originTime)} - sonae`
-                    : `${KIND_LABEL[v.kind]} - sonae`,
+                    : "sonae",
   );
   const user = $derived(data.user);
 </script>
@@ -771,9 +800,9 @@
       meta={r.meta}
     >
       {#snippet lead()}
-        {#if v.kind === "quake"}
-          <Intensity int={r.quake?.maxInt} />
-        {:else if v.kind === "tsunami" && r.grade}
+        {#if r.quake}
+          <Intensity int={r.quake.maxInt} />
+        {:else if r.grade}
           <Grade grade={r.grade} />
         {:else if r.volcano}
           <VolcanoLevel level={r.volcano.level} label={r.volcano.label} />
@@ -790,17 +819,123 @@
   </li>
 {/snippet}
 
-{#snippet dockMenuBody()}
-  <p class="menu-head">状態</p>
+{#snippet statusBody()}
+  <p class="menu-head">
+    {live.connected ? "受信に問題があります" : "配信が切れています"}
+  </p>
   <StatusList connected={live.connected} statuses={snap.statuses} />
-  <div class="menu-gap"></div>
-  <p class="menu-head">表示</p>
-  <ViewList
-    {layers}
-    toggle={toggleLayer}
-    training={data.training}
-    {trainingHref}
-  />
+{/snippet}
+
+{#snippet kindChips(where: string)}
+  <!-- 種類で絞るチップ。押すたびにその種類を出す・隠す (並びの中なので、出している印は幅いっぱいの下線と太字) -->
+  <div class="chips {where}" role="group" aria-label="出す種類">
+    {#each KINDS as k (k)}
+      <button
+        type="button"
+        class="chip"
+        aria-pressed={shownKind(k)}
+        onclick={() => toggleKind(k)}
+        data-testid="filter-{k}"
+      >
+        {KIND_LABEL[k]} <span class="num">{counts[k]}</span>
+      </button>
+    {/each}
+  </div>
+{/snippet}
+
+{#snippet pinnedNotices()}
+  <div class="alerts-in-list stack" data-testid="pinned">
+    {#each pinnedEews as e (e.eventId)}
+      <!-- 出ている緊急地震速報。帯 (画面の上) と同じものを、一覧からも詳しい内容へ移れるように置く -->
+      <a
+        class="notice warning notice-link"
+        href={selectHref(params, "eew", e.eventId)}
+        data-testid="pinned-eew"
+      >
+        <Icon icon={TriangleAlert} />
+        <div>
+          <p class="bold">
+            {e.kind === "warning"
+              ? "緊急地震速報 (警報)"
+              : "緊急地震速報 (予報)"}
+          </p>
+          <p class="small muted">{jstClock(e.issuedAt)} 発表</p>
+          <p class="small">
+            {[
+              placeName(e.hypocenter),
+              e.kind === "warning" ? e.warnAreas.join("、") : "",
+            ]
+              .filter(Boolean)
+              .join("・")}
+          </p>
+        </div>
+      </a>
+    {/each}
+    {#each pinnedTsunamis as t (t.id)}
+      <TsunamiSummary tsunami={t} href={selectHref(params, "tsunami", t.id)} />
+    {/each}
+    {#each specialOffices as o (o.office.code)}
+      <!-- 気象の特別警報 (レベル 5) -->
+      <a
+        class="notice warning notice-link"
+        href={selectHref(params, "weather", `${OFFICE_PREFIX}${o.office.code}`)}
+        data-testid="special-warning"
+      >
+        <Icon icon={TriangleAlert} />
+        <div>
+          <p class="bold">{o.office.name}に特別警報</p>
+          <p class="small muted">{jst(o.reportedAt)} 更新</p>
+          <p class="special-kinds">
+            {#each o.kinds.filter((k) => k.level === 5) as k (k.code)}
+              <WarningLevel level={5} label={kindText(k.name)} />
+            {/each}
+          </p>
+          <p class="small">
+            {o.kinds
+              .filter((k) => k.level === 5)
+              .flatMap((k) => k.areas.map((a) => a.name))
+              .filter((n, i, all) => all.indexOf(n) === i)
+              .join("、")}
+          </p>
+        </div>
+      </a>
+    {/each}
+    {#each otherTsunamis as t (t.id)}
+      <TsunamiSummary tsunami={t} href={selectHref(params, "tsunami", t.id)} />
+    {/each}
+    {#each shownVolcanoAlerts as x (x.id)}
+      <a
+        class="notice warning notice-link"
+        href={selectHref(params, "volcano", x.id)}
+      >
+        <Icon icon={TriangleAlert} />
+        <div>
+          <p class="bold">
+            {x.code === "VFVO56"
+              ? `噴火速報 ${x.volcanoes.map((a) => a.name).join("・")}`
+              : x.title}
+          </p>
+          <p class="small muted">{jst(x.reportedAt)} 発表</p>
+          <p class="small">{x.headline}</p>
+        </div>
+      </a>
+    {/each}
+    {#each shownAdvisories as a (a.id)}
+      <a
+        class="notice notice-link"
+        class:warning={isUrgentAdvisory(a)}
+        class:info={!isUrgentAdvisory(a)}
+        href={selectHref(params, "info", a.id)}
+      >
+        <Icon icon={isUrgentAdvisory(a) ? TriangleAlert : Info} />
+        <div>
+          <p class="bold">{a.title}</p>
+          <p class="small muted">{jst(a.reportedAt)} 発表</p>
+          <p class="small">{a.headline}</p>
+        </div>
+      </a>
+    {/each}
+  </div>
 {/snippet}
 
 <div
@@ -834,22 +969,22 @@
         {@render soundButton("small")}
       {/if}
       {#if trouble}
-        <span class="trouble" role="status">
-          <Icon icon={TriangleAlert} size={1} />
-          {live.connected ? "受信に問題があります" : "配信が切れています"}
-        </span>
+        <!-- 受信に問題があるときだけの注意の印。押すと情報源ごとの受信をメニューの箱で出す -->
+        <Menu bind:open={statusMenu} align="end" class="status-menu">
+          {#snippet trigger(props)}
+            <button
+              {...props}
+              type="button"
+              class="ghost small trouble"
+              data-testid="trouble"
+            >
+              <Icon icon={TriangleAlert} size={1} />
+              {live.connected ? "受信に問題があります" : "配信が切れています"}
+            </button>
+          {/snippet}
+          {@render statusBody()}
+        </Menu>
       {/if}
-      <Menu bind:open={viewMenu} align="end" class="view-menu">
-        {#snippet trigger(props)}
-          <button
-            {...props}
-            type="button"
-            class="ghost small"
-            data-testid="view-menu">状態と表示</button
-          >
-        {/snippet}
-        {@render dockMenuBody()}
-      </Menu>
       <a class="button ghost small" href={aboutHref}>出典と注意</a>
       {#if user}
         <button
@@ -878,20 +1013,9 @@
 
   <main class="stage">
     <div class="list-col">
-      <!-- 広い形: 一覧の種類のチップと、日付で移るカレンダー (スマホの形では dock のチップ) -->
-      <div class="list-bar" role="toolbar" aria-label="一覧の種類と日付">
-        <div class="chips" role="group" aria-label="一覧の種類">
-          {#each KINDS as k (k)}
-            <a
-              class="chip"
-              href={viewHref(params, { k, ...UNSELECT })}
-              aria-current={!v.selected && v.kind === k ? "true" : undefined}
-              data-testid="filter-{k}"
-            >
-              {KIND_LABEL[k]} <span class="num">{counts[k]}</span>
-            </a>
-          {/each}
-        </div>
+      <!-- 広い形: 種類で絞るチップと、日付で移るカレンダー (スマホの形では dock のチップ) -->
+      <div class="list-bar" role="toolbar" aria-label="出す種類と日付">
+        {@render kindChips("bar")}
         <Menu bind:open={calMenu} align="end" nav class="cal-menu">
           {#snippet trigger(props)}
             <button
@@ -911,7 +1035,7 @@
       <section
         id="list"
         class="list-pane"
-        aria-label={v.selected ? "詳しい内容" : `${KIND_LABEL[v.kind]}の一覧`}
+        aria-label={v.selected ? "詳しい内容" : "一覧"}
         bind:this={listBox}
         onscroll={onListScroll}
         inert={phone.current && tab === "map" ? true : undefined}
@@ -948,92 +1072,12 @@
             </div>
           {/if}
         {:else}
-          {#if activeTsunamis.length > 0 || advisories.length > 0 || volcanoAlerts.length > 0 || specialOffices.length > 0}
-            <div class="alerts-in-list stack">
-              {#each specialOffices as o (o.office.code)}
-                <!-- 気象の特別警報 (レベル 5)。どの一覧の上にも、いちばん先に出す -->
-                <a
-                  class="notice warning notice-link"
-                  href={selectHref(
-                    params,
-                    "weather",
-                    `${OFFICE_PREFIX}${o.office.code}`,
-                  )}
-                  data-testid="special-warning"
-                >
-                  <Icon icon={TriangleAlert} />
-                  <div>
-                    <p class="bold">{o.office.name}に特別警報</p>
-                    <p class="small muted">{jst(o.reportedAt)} 更新</p>
-                    <p class="special-kinds">
-                      {#each o.kinds.filter((k) => k.level === 5) as k (k.code)}
-                        <WarningLevel level={5} label={kindText(k.name)} />
-                      {/each}
-                    </p>
-                    <p class="small">
-                      {o.kinds
-                        .filter((k) => k.level === 5)
-                        .flatMap((k) => k.areas.map((a) => a.name))
-                        .filter((n, i, all) => all.indexOf(n) === i)
-                        .join("、")}
-                    </p>
-                  </div>
-                </a>
-              {/each}
-              {#each activeTsunamis as t (t.id)}
-                <TsunamiSummary
-                  tsunami={t}
-                  href={selectHref(params, "tsunami", t.id)}
-                />
-              {/each}
-              {#each volcanoAlerts as x (x.id)}
-                <a
-                  class="notice warning notice-link"
-                  href={selectHref(params, "volcano", x.id)}
-                >
-                  <Icon icon={TriangleAlert} />
-                  <div>
-                    <p class="bold">
-                      {x.code === "VFVO56"
-                        ? `噴火速報 ${x.volcanoes.map((a) => a.name).join("・")}`
-                        : x.title}
-                    </p>
-                    <p class="small muted">{jst(x.reportedAt)} 発表</p>
-                    <p class="small">{x.headline}</p>
-                  </div>
-                </a>
-              {/each}
-              {#each advisories as a (a.id)}
-                <a
-                  class="notice notice-link"
-                  class:warning={isUrgentAdvisory(a)}
-                  class:info={!isUrgentAdvisory(a)}
-                  href={selectHref(params, "info", a.id)}
-                >
-                  <Icon icon={isUrgentAdvisory(a) ? TriangleAlert : Info} />
-                  <div>
-                    <p class="bold">{a.title}</p>
-                    <p class="small muted">{jst(a.reportedAt)} 発表</p>
-                    <p class="small">{a.headline}</p>
-                  </div>
-                </a>
-              {/each}
-            </div>
+          {#if hasPinned}
+            {@render pinnedNotices()}
           {/if}
 
-          <h1 class="visually-hidden">{KIND_LABEL[v.kind]}の一覧</h1>
-          {#if v.kind === "weather" && offices.length > 0}
-            <!-- いま出ている気象警報・注意報 (府県予報区ごと)。日付の並びの前に置く -->
-            <h2 class="day-head" id="day-now">
-              <span class="day-head-chip">いま出ている警報・注意報</span>
-            </h2>
-            <ol class="item-list" data-testid="warning-offices">
-              {#each offices as o (o.office.code)}
-                {@render rowItem(officeRow(o))}
-              {/each}
-            </ol>
-          {/if}
-          {#each groups as g (g.day)}
+          <h1 class="visually-hidden">一覧</h1>
+          {#each timeline as g (g.day)}
             <h2 class="day-head" id="day-{g.day}">
               <span class="day-head-chip">{dayLabel(g.day)}</span>
             </h2>
@@ -1043,20 +1087,17 @@
               {/each}
             </ol>
           {:else}
-            {#if !(v.kind === "weather" && offices.length > 0)}
-              <div class="empty-state">
-                {#if query.trim() !== ""}
-                  <p class="bold">当てはまるものはありません</p>
-                {:else}
-                  <p class="bold">
-                    まだ{KIND_LABEL[v.kind]}の情報を受けていません
-                  </p>
-                  <p class="small muted">
-                    受けると、ここに新しい順で並びます。受信の状態は「状態」で確かめられます。
-                  </p>
-                {/if}
-              </div>
-            {/if}
+            <div class="empty-state">
+              {#if query.trim() !== "" || hidden.length > 0}
+                <p class="bold">当てはまるものはありません</p>
+              {:else}
+                <p class="bold">まだ情報を受けていません</p>
+                <p class="small muted">
+                  受けると、ここに新しい順で並びます。受信に問題があるときは、ヘッダー
+                  (スマホの形は下の操作の 1 行) に注意の印が出ます。
+                </p>
+              {/if}
+            </div>
           {/each}
         {/if}
 
@@ -1072,7 +1113,6 @@
         quakes={snap.quakes}
         tsunamis={mapTsunamis}
         eews={mapEews}
-        {layers}
         volcanoes={snap.volcanoLevels}
         volcano={selVolcano}
         foreign={snap.foreignQuakes}
@@ -1084,19 +1124,13 @@
   </main>
 
   <!-- スマホの形: 下のタブのすぐ上の操作の 1 行 -->
-  <div class="dock" role="toolbar" aria-label="一覧の種類と表示">
+  <div
+    class="dock"
+    role="toolbar"
+    aria-label="出す種類と、地図に出している地震"
+  >
     {#if tab === "list"}
-      <div class="chips scroll" role="group" aria-label="一覧の種類">
-        {#each KINDS as k (k)}
-          <a
-            class="chip"
-            href={viewHref(params, { k, ...UNSELECT })}
-            aria-current={!v.selected && v.kind === k ? "true" : undefined}
-          >
-            {KIND_LABEL[k]} <span class="num">{counts[k]}</span>
-          </a>
-        {/each}
-      </div>
+      {@render kindChips("scroll")}
     {:else if mapQuake}
       <a
         class="dock-quake"
@@ -1114,22 +1148,25 @@
     {#if alerter.blocked}
       {@render soundButton("small dock-sound")}
     {/if}
-    <Menu bind:open={dockMenu} side="top" align="end" class="dock-menu">
-      {#snippet trigger(props)}
-        <button
-          {...props}
-          type="button"
-          class="ghost icon small dock-more"
-          class:warn={trouble}
-          aria-label={trouble
-            ? "状態と表示 (受信に問題があります)"
-            : "状態と表示"}
-        >
-          <Icon icon={trouble ? TriangleAlert : Ellipsis} />
-        </button>
-      {/snippet}
-      {@render dockMenuBody()}
-    </Menu>
+    {#if trouble}
+      <!-- 受信に問題があるときだけの注意の印。押すと情報源ごとの受信 -->
+      <Menu bind:open={dockMenu} side="top" align="end" class="dock-menu">
+        {#snippet trigger(props)}
+          <button
+            {...props}
+            type="button"
+            class="ghost icon small dock-more warn"
+            aria-label={live.connected
+              ? "受信に問題があります"
+              : "配信が切れています"}
+            data-testid="dock-trouble"
+          >
+            <Icon icon={TriangleAlert} />
+          </button>
+        {/snippet}
+        {@render statusBody()}
+      </Menu>
+    {/if}
   </div>
 
   <!-- スマホの形の下のタブ -->
@@ -1181,7 +1218,11 @@
 
   <AboutDialog open={v.about} onclose={closeAbout} />
   {#if user}
-    <PushSettings bind:open={pushOpen} />
+    <PushSettings
+      bind:open={pushOpen}
+      training={data.training}
+      {trainingHref}
+    />
   {/if}
 </div>
 
@@ -1265,25 +1306,31 @@
     color: var(--so-warn-text);
     white-space: nowrap;
   }
+  /* 受信に問題があるときだけの注意の印 (押すと情報源ごとの受信) */
   .trouble {
-    display: inline-flex;
-    align-items: center;
     gap: var(--so-space-1);
-    margin-right: var(--so-space-2);
     color: var(--so-warn-text);
-    font-size: var(--so-text-xs);
     white-space: nowrap;
   }
+  :global(.menu.status-menu) {
+    width: 22rem;
+  }
 
-  /* ---- 本体 (広い形): 一覧の列 | 地図。列は左の 1 本だけにして、残りの幅を地図に回す ---- */
+  /*
+   * ---- 本体 (広い形): 地図 | 一覧の列。列は右の 1 本だけにして、残りの幅を地図に回す ----
+   * denpa の観る画面 (映像と右の列) と同じく、主の中身を左、添える列を右に置く。
+   * DOM は一覧が先 (本文へ移動のリンクとキーボードの順) のまま、置く場所だけ入れ替える
+   */
   .stage {
     display: grid;
     flex: 1 1 0%;
-    grid-template-columns: 22rem minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 22rem;
     min-height: 0;
   }
   .list-col {
     display: flex;
+    grid-row: 1;
+    grid-column: 2;
     flex-direction: column;
     min-height: 0;
   }
@@ -1307,9 +1354,6 @@
   }
   :global(.menu.cal-menu) {
     width: 18rem;
-  }
-  :global(.menu.view-menu) {
-    width: 22rem;
   }
   .list-pane {
     display: flex;
@@ -1347,9 +1391,11 @@
   }
   .map-pane {
     --map-radius: var(--so-item-radius);
+    grid-row: 1;
+    grid-column: 1;
     isolation: isolate;
     min-height: 0;
-    padding: 0 var(--so-space-3) var(--so-space-3) 0;
+    padding: 0 0 var(--so-space-3) var(--so-space-3);
   }
   .list-foot {
     margin-top: var(--so-space-4);
@@ -1371,7 +1417,7 @@
   }
   @media (min-width: 1600px) {
     .stage {
-      grid-template-columns: 26rem minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr) 26rem;
     }
   }
 
@@ -1426,7 +1472,7 @@
     display: block;
   }
 
-  /* dock (一覧の種類と「⋯」)。下のタブから `--so-dock-gap` 上のカプセル */
+  /* dock (種類で絞るチップか地図に出している地震と、受信に問題があるときの注意の印)。下のタブから `--so-dock-gap` 上のカプセル */
   :global(:where(html[data-phone])) .dock {
     position: fixed;
     inset-inline: var(--so-dock-inset);

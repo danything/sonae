@@ -8,6 +8,8 @@
    */
   import "@anyblades/blades/components/modal";
 
+  import { goto } from "$app/navigation";
+
   import { alerter } from "#lib/alerter.svelte.ts";
   import { byPrefecture, type Cities, cityAt, homeOf } from "#lib/home.ts";
   import { INTENSITIES, intensityLabel } from "#lib/model.ts";
@@ -25,7 +27,17 @@
     prefs: PushPrefs;
     createdAt: number;
   }
-  let { open = $bindable(false) }: { open?: boolean } = $props();
+  let {
+    open = $bindable(false),
+    training,
+    trainingHref,
+  }: {
+    open?: boolean;
+    /** 一覧に緊急地震速報の訓練・試験も出しているか (URL の `training=1`) */
+    training: boolean;
+    /** 訓練・試験の出し入れを切り替えたリンク */
+    trainingHref: string;
+  } = $props();
 
   type Info =
     | { enabled: false }
@@ -491,6 +503,21 @@
         >
       </div>
     {/if}
+
+    <h2 class="section-head">訓練・試験</h2>
+    <label>
+      <input
+        type="checkbox"
+        role="switch"
+        checked={training}
+        onchange={() => goto(trainingHref, { replace: true, reset: false })}
+        data-testid="show-training"
+      />
+      緊急地震速報の訓練・試験も一覧に出す
+    </label>
+    <p class="small muted">
+      一覧と地図に出すだけで、音・読み上げ・Web Push では知らせません。
+    </p>
 
     <h2 class="section-head">Web Push (タブを閉じていても届く)</h2>
     {#if !info}

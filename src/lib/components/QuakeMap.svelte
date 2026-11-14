@@ -4,7 +4,6 @@
   // MapLibre の描き手の worker。既定では本体の隣の maplibre-gl-worker.mjs を探すが、束ねると
   // 見つからないので、Vite に別に束ねさせて URL を渡す
   import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
-  import { untrack } from "svelte";
 
   import {
     INTENSITY_COLORS,
@@ -19,9 +18,7 @@
     intensityFill,
     intensityLabels,
     JAPAN_BOUNDS,
-    type LayerState,
     longPeriodLine,
-    mapVisibility,
     tsunamiPaint,
     volcanoMarks,
     warningFill,
@@ -39,7 +36,7 @@
   } from "#lib/model.ts";
 
   /**
-   * 地図 (docs/map.md)。下地は国土地理院のシームレス空中写真。その上に層を重ね、層ごとに出し入れする。
+   * 地図 (docs/map.md)。下地は国土地理院のシームレス空中写真。その上に層をいつも全部重ねる (オン・オフは無い)。
    * カメラは飛ばさない (jumpTo)。MapLibre は止まっている間は描かないので、開いているだけで CPU は使わない。
    */
   let {
@@ -48,7 +45,6 @@
     quakes,
     tsunamis,
     eews,
-    layers,
     volcanoes = [],
     volcano = null,
     foreign = [],
@@ -64,7 +60,6 @@
     quakes: Quake[];
     tsunamis: Tsunami[];
     eews: Eew[];
-    layers: LayerState;
     /** 火山ごとのいまの噴火警報・予報 */
     volcanoes?: Volcano[];
     /** 選んだ火山の報 (寄せる) */
@@ -120,7 +115,7 @@
         codeByName.set(f.properties.name, f.properties.code);
       created = new MapClass({
         container,
-        style: baseStyle(untrack(() => layers)) as never,
+        style: baseStyle() as never,
         bounds: JAPAN_BOUNDS,
         attributionControl: { compact: true },
         // 回すと読みにくいだけなので、北を上に固定する
@@ -153,13 +148,6 @@
       created?.remove();
       map = undefined;
     };
-  });
-
-  // 層の出し入れ
-  $effect(() => {
-    if (!map) return;
-    for (const [layer, on] of Object.entries(mapVisibility(layers)))
-      map.setLayoutProperty(layer, "visibility", on ? "visible" : "none");
   });
 
   /**
@@ -236,16 +224,12 @@
       quake?.updatedAt,
       eewSig(eews),
       foreignQuake?.id,
-      layers.intensity,
-      layers.hypocenters,
-      layers.eew,
-      layers.foreign,
     );
     if (next === markedSig) return;
     markedSig = next;
     for (const m of markers) m.remove();
     markers = [];
-    if (layers.intensity && quake) {
+    if (quake) {
       for (const l of intensityLabels(quake.areas, points, codeByName)) {
         const el = document.createElement("span");
         const c = INTENSITY_COLORS[l.int];
@@ -262,7 +246,6 @@
       }
     }
     if (
-      layers.hypocenters &&
       quake?.hypocenter?.lat !== undefined &&
       quake.hypocenter.lon !== undefined
     ) {
@@ -273,7 +256,7 @@
           .addTo(map),
       );
     }
-    if (layers.foreign && foreignQuake) {
+    if (foreignQuake) {
       const el = epicenter(`震央 ${foreignQuake.place}`, false);
       markers.push(
         new MarkerClass({ element: el })
@@ -281,24 +264,22 @@
           .addTo(map),
       );
     }
-    if (layers.eew) {
-      for (const e of eews) {
-        if (
-          e.cancelled ||
-          e.hypocenter?.lat === undefined ||
-          e.hypocenter.lon === undefined
-        )
-          continue;
-        const el = epicenter(
-          `緊急地震速報の震央 ${e.hypocenter.name}${e.assumed ? " (仮定震源)" : ""}`,
-          true,
-        );
-        markers.push(
-          new MarkerClass({ element: el })
-            .setLngLat([e.hypocenter.lon, e.hypocenter.lat])
-            .addTo(map),
-        );
-      }
+    for (const e of eews) {
+      if (
+        e.cancelled ||
+        e.hypocenter?.lat === undefined ||
+        e.hypocenter.lon === undefined
+      )
+        continue;
+      const el = epicenter(
+        `緊急地震速報の震央 ${e.hypocenter.name}${e.assumed ? " (仮定震源)" : ""}`,
+        true,
+      );
+      markers.push(
+        new MarkerClass({ element: el })
+          .setLngLat([e.hypocenter.lon, e.hypocenter.lat])
+          .addTo(map),
+      );
     }
   });
 
@@ -306,9 +287,7 @@
   let volcanoSig = "";
   $effect(() => {
     if (!map || !MarkerClass) return;
-    const marks = layers.volcano
-      ? volcanoMarks(volcanoes, volcano, volcanoPoints)
-      : [];
+    const marks = volcanoMarks(volcanoes, volcano, volcanoPoints);
     const next = sig(marks);
     if (next === volcanoSig) return;
     volcanoSig = next;

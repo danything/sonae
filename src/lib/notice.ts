@@ -14,7 +14,7 @@ export const CREDITS = [
   "気象警報・注意報と気象の情報: 気象庁ホームページ (防災情報 XML) を加工して作成。sonae は気象庁の発表を中継するだけで、予報や警報を自分で出しません",
   "緊急地震速報: Wolfx Project・P2P地震情報",
   "地震情報・津波予報の速報: P2P地震情報",
-  "地図: 国土地理院 (シームレス空中写真・淡色地図・都市圏活断層図)・気象庁 予報区等 GIS データを加工",
+  "地図: 国土地理院 (シームレス空中写真・都市圏活断層図)・気象庁 予報区等 GIS データを加工",
   "火山の位置・国際津波関連情報: 気象庁ホームページ (活火山の一覧・北西太平洋津波情報) を加工",
   "海外の地震: Credit: U.S. Geological Survey・Credit: EMSC-CSEM SeismicPortal, https://www.seismicportal.eu (CC BY 4.0、M4.5 以上を選んで表示)",
   "ニュージーランドの地震: We acknowledge the New Zealand GeoNet programme and its sponsors NHC, Earth Sciences NZ, LINZ, NEMA and MBIE for providing data (CC BY 3.0 NZ)",

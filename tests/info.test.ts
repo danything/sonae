@@ -93,11 +93,10 @@ describe("地震の活動状況・地震回数 (VXSE56・60)", () => {
   });
 });
 
-test("お知らせを選ぶ URL は k=info と i=<id>", () => {
+test("お知らせを選ぶ URL は i=<id>", () => {
   const href = selectHref(new URLSearchParams(), "info", "VXSE56-1");
-  expect(href).toBe("/?k=info&i=VXSE56-1");
+  expect(href).toBe("/?i=VXSE56-1");
   expect(readView(new URLSearchParams(href.slice(2)))).toMatchObject({
-    kind: "info",
     selected: { kind: "info", id: "VXSE56-1" },
   });
 });

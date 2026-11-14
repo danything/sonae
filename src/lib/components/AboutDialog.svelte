@@ -2,11 +2,13 @@
   import "@anyblades/blades/components/modal";
 
   import { alerter } from "#lib/alerter.svelte.ts";
+  import { MAP_LEGEND } from "#lib/map/style.ts";
   import { CREDITS, EEW_NOTICE, NOTICE } from "#lib/notice.ts";
 
   /**
    * **出典と注意**。ヘッダーと「その他」のメニューから開く窓。URL の `about=1` で開いたまま共有できる。
-   * 情報源の状況はヘッダーの「状態と表示」(スマホの形は dock の「⋯」) の「状態」にある。閉じるのは左下の「閉じる」・幕・Esc
+   * 地図の色の意味 (「地図の見方」) もここに書く (層はいつも全部出していて、切り替えの並びが無いため)。
+   * 閉じるのは左下の「閉じる」・幕・Esc
    */
   let { open, onclose }: { open: boolean; onclose: () => void } = $props();
   let dialog = $state<HTMLDialogElement>();
@@ -42,6 +44,13 @@
           rel="noopener">緊急地震速報 (警報) 及び (予報) について</a
         >)。sonae は、地点ごとの震度や到達時刻を自分で予想しません。
       </p>
+      <h2>地図の見方</h2>
+      <dl class="small legend" data-testid="map-legend">
+        {#each MAP_LEGEND as l (l.label)}
+          <dt>{l.label}</dt>
+          <dd>{l.note}</dd>
+        {/each}
+      </dl>
       <h2>もっと詳しく</h2>
       <ul class="small">
         <li>
@@ -147,5 +156,15 @@
   ul {
     margin: 0;
     padding-left: var(--so-space-5);
+  }
+  .legend {
+    margin: 0;
+  }
+  .legend dt {
+    font-weight: var(--so-weight-bold);
+  }
+  .legend dd {
+    margin: 0 0 var(--so-space-2);
+    color: var(--so-muted);
   }
 </style>

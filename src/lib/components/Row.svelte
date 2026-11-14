@@ -4,7 +4,7 @@
   /**
    * **一覧の 1 行** (denpa のホームの行と同じ形)。件の面に乗せた幅いっぱいの 2 段。
    *
-   * - 左に震度のラベルか津波の区分 (`lead`)
+   * - 左に震度のラベル・津波の区分・火山や気象の段 (`lead`)。ラベルの無い種類も同じ幅を空ける
    * - 1 段目: 時刻 (控えた字)・タイトル (本文)、右に状態のバッジ (`tags`。取消・速報のような状態だけ)
    * - 2 段目: 控えた字の補足 (M・深さ・地域)。1 行で「…」と切る
    *
@@ -35,7 +35,7 @@
   aria-current={current ? "true" : undefined}
   data-testid="row"
 >
-  {#if lead}<span class="lead">{@render lead()}</span>{/if}
+  <span class="lead">{@render lead?.()}</span>
   <span class="row-body">
     <span class="title-line">
       <span class="t-time num">{time}</span>
@@ -74,9 +74,12 @@
     border-radius: var(--so-mark);
     background: var(--pico-primary);
   }
+  /* 種類をまたいで並ぶ一覧で、時刻とタイトルの始まりをそろえる (ラベルの無い行も同じ幅を空ける) */
   .lead {
     display: flex;
     flex-shrink: 0;
+    justify-content: center;
+    min-width: 3.25rem;
   }
   .row-body {
     display: flex;
