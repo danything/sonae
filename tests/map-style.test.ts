@@ -4,6 +4,7 @@ import {
   baseStyle,
   DEPTH_COLORS,
   eewFill,
+  hazardVisibility,
   hypocenterFeatures,
   intensityFill,
   intensityLabels,
@@ -11,6 +12,9 @@ import {
   MAP_LEGEND,
   matchExpr,
   meFeatures,
+  mergeShelters,
+  readHazard,
+  tilesIn,
   tsunamiPaint,
 } from "#lib/map/style.ts";
 import type { Eew, Quake, Tsunami } from "#lib/model.ts";
@@ -86,10 +90,55 @@ test("層はいつも全部出す。淡色地図の下地は無い", () => {
     sources: Record<string, unknown>;
     layers: { id: string; layout?: { visibility?: string } }[];
   };
-  for (const l of style.layers) expect(l.layout?.visibility).toBeUndefined();
+  for (const l of style.layers)
+    if (!l.id.startsWith("hazard-"))
+      expect(l.layout?.visibility).toBeUndefined();
   expect(style.layers.map((l) => l.id)).toContain("faults");
   expect(Object.keys(style.sources)).not.toContain("pale");
   expect(MAP_LEGEND.map((l) => l.label)).toContain("長周期地震動階級");
+});
+
+test("ハザードマップ: 選んだものだけ出す。既定と知らない値はなし", () => {
+  expect(readHazard(null)).toBe("none");
+  expect(readHazard("nope")).toBe("none");
+  expect(readHazard("landslide")).toBe("landslide");
+  const shown = hazardVisibility("landslide");
+  expect(Object.entries(shown).filter(([, on]) => on).length).toBe(3);
+  expect(Object.values(hazardVisibility("none")).some(Boolean)).toBe(false);
+  const style = baseStyle("https://s.example", "flood") as {
+    sprite: string;
+    glyphs?: string;
+    layers: { id: string; layout?: { visibility?: string } }[];
+  };
+  const flood = style.layers.find(
+    (l) => l.id === "hazard-01_flood_l2_shinsuishin_data",
+  );
+  expect(flood?.layout?.visibility).toBe("visible");
+  // 字体は外から読まない。記号は自分で配る
+  expect(style.glyphs).toBeUndefined();
+  expect(style.sprite).toBe("https://s.example/map/gsi/sprite/std");
+});
+
+test("避難場所: 見ている範囲のズーム 10 のタイル。多すぎたら読まない", () => {
+  // 東京駅のまわり (ズーム 10 で 909/403)
+  expect(tilesIn([139.75, 35.67, 139.78, 35.69], 10)).toEqual([[909, 403]]);
+  expect(tilesIn([130, 30, 140, 40], 10)).toEqual([]);
+});
+
+test("避難場所: 災害ごとの層と指定避難所を、同じ施設 1 つにまとめる", () => {
+  const f = (name: string, props: Record<string, unknown> = {}) => ({
+    geometry: { coordinates: [139.7, 35.6] },
+    properties: { name, address: "東京都", ...props },
+  });
+  const merged = mergeShelters([
+    { layer: "skhb01", features: [f("A小", { disaster1: 1, disaster4: 1 })] },
+    { layer: "skhb04", features: [f("A小", { disaster1: 1, disaster4: 1 })] },
+    { layer: "sih", features: [f("A小"), f("B中")] },
+  ]);
+  expect(merged.map((m) => m.properties)).toEqual([
+    { name: "A小", address: "東京都", disasters: [1, 4], shelter: true },
+    { name: "B中", address: "東京都", disasters: [], shelter: true },
+  ]);
 });
 
 test("現在地: 点と、誤差の半径 (メートル) の円", () => {

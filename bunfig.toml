@@ -8,4 +8,6 @@ ignorePatterns = [
   "tests/fixtures/**",
   # 気象庁の GIS データから tools/areas/build.sh で作るもの
   "static/areas/**",
+  # 国土地理院のスタイルとスプライトから tools/gsi/build.ts で作るもの
+  "static/map/gsi/**",
 ]

@@ -40,6 +40,220 @@ export const JMA_GIS_ATTRIBUTION =
   '<a href="https://www.data.jma.go.jp/developer/gis.html" target="_blank" rel="noopener">気象庁 予報区等 GIS データ</a> を加工';
 
 /**
+ * 地理院地図Vector (国土地理院最適化ベクトルタイル) の PMTiles。試験公開で URL が変わりうる (docs/map.md)。
+ * 前の `{z}/{x}/{y}.pbf` の配信は 2023 年のデータで止まっているので、PMTiles の 1 ファイルを範囲で読む
+ */
+export const GSI_VECTOR_URL =
+  "https://cyberjapandata.gsi.go.jp/xyz/optimal_bvmap-v1/optimal_bvmap-v1.pmtiles";
+export const GSI_VECTOR_ATTRIBUTION = `<a href="https://github.com/gsi-cyberjapan/optimal_bvmap" target="_blank" rel="noopener">国土地理院最適化ベクトルタイル</a> を加工`;
+
+/** 地図の字と印に使う端末の字体 (字体のファイルは外から読まない。tools/gsi/build.ts と同じ) */
+export const TEXT_FONT_CSS = '"Noto Sans JP", sans-serif';
+
+/** ハザードマップ (重ねるハザードマップのラスタータイル)。選ぶのは 1 つだけ (色がぶつかるため) */
+export type HazardId = "none" | "flood" | "landslide" | "tsunami";
+const DISAPORTAL = "https://disaportaldata.gsi.go.jp/raster";
+const LEGEND = "https://disaportal.gsi.go.jp/hazardmap/copyright/img";
+export const HAZARD_ATTRIBUTION = `<a href="https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html" target="_blank" rel="noopener">ハザードマップポータルサイト</a>`;
+
+export interface Hazard {
+  id: Exclude<HazardId, "none">;
+  /** 選択肢の名前 */
+  label: string;
+  /** 凡例の上に出す、何の想定か */
+  title: string;
+  /** タイルの層 (土砂災害は 3 つを重ねる) */
+  layers: string[];
+  /** 公式の凡例の画像 */
+  legends: { src: string; alt: string; name?: string }[];
+}
+
+export const HAZARDS: Hazard[] = [
+  {
+    id: "flood",
+    label: "洪水",
+    title: "洪水浸水想定区域 (想定最大規模)",
+    layers: ["01_flood_l2_shinsuishin_data"],
+    legends: [
+      {
+        src: `${LEGEND}/shinsui_legend3.png`,
+        alt: "浸水深の凡例: 0.5m 未満から 20m 以上まで、深いほど濃い色",
+      },
+    ],
+  },
+  {
+    id: "landslide",
+    label: "土砂災害",
+    title: "土砂災害警戒区域 (土石流・急傾斜地の崩壊・地すべり)",
+    layers: [
+      "05_dosekiryukeikaikuiki",
+      "05_kyukeishakeikaikuiki",
+      "05_jisuberikeikaikuiki",
+    ],
+    legends: [
+      {
+        src: `${LEGEND}/keikai_dosekiryu.png`,
+        alt: "土石流の警戒区域と特別警戒区域の凡例",
+        name: "土石流",
+      },
+      {
+        src: `${LEGEND}/keikai_kyukeisya.png`,
+        alt: "急傾斜地の崩壊の警戒区域と特別警戒区域の凡例",
+        name: "急傾斜地の崩壊",
+      },
+      {
+        src: `${LEGEND}/keikai_jisuberi.png`,
+        alt: "地すべりの警戒区域と特別警戒区域の凡例",
+        name: "地すべり",
+      },
+    ],
+  },
+  {
+    id: "tsunami",
+    label: "津波",
+    title: "津波浸水想定",
+    layers: ["04_tsunami_newlegend_data"],
+    legends: [
+      {
+        src: `${LEGEND}/shinsui_legend3.png`,
+        alt: "浸水深の凡例: 0.5m 未満から 20m 以上まで、深いほど濃い色",
+      },
+    ],
+  },
+];
+
+/** ハザードマップの層ごとに出すかどうか (選んだものだけ。なしなら全部隠す) */
+export function hazardVisibility(id: HazardId): Record<string, boolean> {
+  return Object.fromEntries(
+    HAZARDS.flatMap((h) => h.layers.map((l) => [`hazard-${l}`, h.id === id])),
+  );
+}
+
+/** 端末に覚えた選択を読む。知らない値は「なし」 */
+export const readHazard = (raw: string | null): HazardId =>
+  HAZARDS.some((h) => h.id === raw) ? (raw as HazardId) : "none";
+
+/**
+ * 指定緊急避難場所 (災害ごとに skhb01〜08) と指定避難所 (sih)。地理院タイルの GeoJSON で、ズーム 10 のタイルしか無い。
+ * 寄せたとき (ズーム 14 から) だけ、見ている範囲のタイルを読む
+ */
+export const SHELTER_LAYERS = [
+  "skhb01",
+  "skhb02",
+  "skhb03",
+  "skhb04",
+  "skhb05",
+  "skhb06",
+  "skhb07",
+  "skhb08",
+  "sih",
+] as const;
+export const SHELTER_TILE_ZOOM = 10;
+export const SHELTER_MIN_ZOOM = 14;
+/** 指定緊急避難場所の disaster1〜8 の災害 (地理院タイル一覧の備考の順) */
+export const SHELTER_DISASTERS = [
+  "洪水",
+  "崖崩れ、土石流及び地滑り",
+  "高潮",
+  "地震",
+  "津波",
+  "大規模な火事",
+  "内水氾濫",
+  "火山現象",
+] as const;
+export const SHELTER_ATTRIBUTION = `<a href="https://www.gsi.go.jp/bousaichiri/hinanbasho.html" target="_blank" rel="noopener">国土地理院 (指定緊急避難場所・指定避難所データ)</a>`;
+
+/** 見ている範囲 (西・南・東・北) に掛かるズーム z のタイル。多すぎたら空 (読みすぎない) */
+export function tilesIn(
+  [west, south, east, north]: [number, number, number, number],
+  z: number,
+  max = 4,
+): [number, number][] {
+  const n = 2 ** z;
+  const x = (lon: number) =>
+    Math.min(n - 1, Math.max(0, Math.floor(((lon + 180) / 360) * n)));
+  const y = (lat: number) => {
+    const r = (Math.max(-85, Math.min(85, lat)) * Math.PI) / 180;
+    return Math.min(
+      n - 1,
+      Math.max(
+        0,
+        Math.floor(
+          ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * n,
+        ),
+      ),
+    );
+  };
+  const out: [number, number][] = [];
+  for (let tx = x(west); tx <= x(east); tx++)
+    for (let ty = y(north); ty <= y(south); ty++) out.push([tx, ty]);
+  return out.length > max ? [] : out;
+}
+
+interface ShelterProps {
+  name?: string;
+  address?: string;
+  remarks?: string | null;
+  [k: string]: unknown;
+}
+export interface ShelterFeature {
+  type: "Feature";
+  geometry: { type: "Point"; coordinates: [number, number] };
+  properties: {
+    name: string;
+    address: string;
+    /** 指定緊急避難場所として対応する災害 (SHELTER_DISASTERS の番号、1 から) */
+    disasters: number[];
+    /** 指定避難所でもある */
+    shelter: boolean;
+  };
+}
+
+/**
+ * 層ごとの GeoJSON をまとめ、同じ場所・同じ名前の施設を 1 つにする (指定緊急避難場所は災害ごとの層に
+ * 同じ施設が何度も出て、指定避難所を兼ねるものも多い)
+ */
+export function mergeShelters(
+  parts: {
+    layer: (typeof SHELTER_LAYERS)[number];
+    features: {
+      geometry: { coordinates: number[] };
+      properties: ShelterProps;
+    }[];
+  }[],
+): ShelterFeature[] {
+  const byKey = new Map<string, ShelterFeature>();
+  for (const { layer, features } of parts) {
+    for (const f of features) {
+      const [lon, lat] = f.geometry.coordinates;
+      if (typeof lon !== "number" || typeof lat !== "number") continue;
+      const p = f.properties;
+      const key = `${lon.toFixed(6)},${lat.toFixed(6)},${p.name ?? ""}`;
+      const cur =
+        byKey.get(key) ??
+        ({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [lon, lat] },
+          properties: {
+            name: p.name ?? "",
+            address: p.address ?? "",
+            disasters: [],
+            shelter: false,
+          },
+        } satisfies ShelterFeature);
+      if (layer === "sih") cur.properties.shelter = true;
+      else
+        for (let i = 1; i <= 8; i++)
+          if (p[`disaster${i}`] === 1 && !cur.properties.disasters.includes(i))
+            cur.properties.disasters.push(i);
+      byKey.set(key, cur);
+    }
+  }
+  for (const f of byKey.values()) f.properties.disasters.sort((a, b) => a - b);
+  return [...byKey.values()];
+}
+
+/**
  * 地図の見方 (「出典と注意」の窓に出す)。層はいつも全部出していて、オン・オフは無い (docs/map.md)。
  * 色の意味は地図の上には書かないので、ここに言葉で書く
  */
@@ -75,6 +289,18 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "火山",
     note: "噴火警戒レベル 2 以上の火山と、選んだ情報の火山の三角。中の数字はレベル",
+  },
+  {
+    label: "道路・地名・施設の記号",
+    note: "国土地理院の地理院地図Vector。寄せるほど細い道と小さな地名まで出ます。高速道路は橙・国道は黄・ほかの道は白",
+  },
+  {
+    label: "指定緊急避難場所・指定避難所",
+    note: "大きく寄せたとき (ズーム 14 以上) だけ、緑の「避」の印で出します。押すと、どの災害に対応する指定緊急避難場所か、指定避難所かが出ます。国土地理院のデータで最新でないことや載っていない施設があるので、避難先は市町村の情報で確かめてください。指定緊急避難場所は災害のときに逃げる場所 (災害の種類ごと)、指定避難所は家に戻れないときに過ごす場所です",
+  },
+  {
+    label: "ハザードマップ",
+    note: "地図の左上で、なし・洪水 (想定最大規模の浸水)・土砂災害 (警戒区域)・津波 (浸水想定) から 1 つを選べます。色の意味は選んだときに出る公式の凡例のとおりです。想定の無い川や地域は塗られていないので、色が無くても安全とは限りません",
   },
   {
     label: "現在地",
@@ -329,10 +555,42 @@ export function volcanoMarks(
 }
 
 /** 下地と、データの無い層。データ (色の式・点) は地図を作ったあとで差し込む */
-export function baseStyle(): Record<string, unknown> {
+export function baseStyle(
+  /** スプライト (地理院の記号) を置いた所の頭。MapLibre は相対の URL を読まない */
+  origin = "",
+  hazard: HazardId = "none",
+): Record<string, unknown> {
+  const hazardShown = hazardVisibility(hazard);
   return {
     version: 8,
+    // 字体 (glyphs) の URL は書かない。MapLibre は端末の字体で字を描く (外から字体を読まない。docs/map.md)
+    sprite: `${origin}/map/gsi/sprite/std`,
     sources: {
+      gsi: {
+        type: "vector",
+        url: `pmtiles://${GSI_VECTOR_URL}`,
+        attribution: GSI_VECTOR_ATTRIBUTION,
+      },
+      ...Object.fromEntries(
+        HAZARDS.flatMap((h) =>
+          h.layers.map((l, i) => [
+            `hazard-${l}`,
+            {
+              type: "raster",
+              tiles: [`${DISAPORTAL}/${l}/{z}/{x}/{y}.png`],
+              tileSize: 256,
+              minzoom: 2,
+              maxzoom: 17,
+              ...(i === 0 ? { attribution: HAZARD_ATTRIBUTION } : {}),
+            },
+          ]),
+        ),
+      ),
+      shelters: {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+        attribution: SHELTER_ATTRIBUTION,
+      },
       photo: {
         type: "raster",
         tiles: [`${GSI}/seamlessphoto/{z}/{x}/{y}.jpg`],
@@ -413,12 +671,25 @@ export function baseStyle(): Record<string, unknown> {
           ],
         },
       },
+      // ハザードマップ (選んだものだけ。写真のすぐ上に、透かして重ねる)
+      ...HAZARDS.flatMap((h) =>
+        h.layers.map((l) => ({
+          id: `hazard-${l}`,
+          type: "raster",
+          source: `hazard-${l}`,
+          paint: { "raster-opacity": 0.75 },
+          layout: {
+            visibility: hazardShown[`hazard-${l}`] ? "visible" : "none",
+          },
+        })),
+      ),
       // 活断層はいつも重ねる。タイルはズーム 11 からしか無いので、引いているときは読みに行かない
       {
         id: "faults",
         type: "raster",
         source: "faults",
-        paint: { "raster-opacity": 0.9 },
+        // 都市圏活断層図は地形の分類で塗った地図なので、写真が見えるよう透かす
+        paint: { "raster-opacity": 0.45 },
       },
       // 気象警報・注意報は震度の下に塗る (地震のときは震度を見せる)
       {
@@ -465,6 +736,7 @@ export function baseStyle(): Record<string, unknown> {
         layout: { "line-cap": "round", "line-join": "round" },
         paint: { "line-color": TRANSPARENT, "line-width": 0 },
       },
+      ...roadLayers(),
       {
         id: "hypocenters",
         type: "circle",
@@ -511,6 +783,18 @@ export function baseStyle(): Record<string, unknown> {
         },
         layout: { "circle-sort-key": ["get", "order"] },
       },
+      // 地理院の注記 (地名・施設の記号) は、地図を作ったあとでここ (避難場所の下) に差し込む (`/map/gsi/anno.json`)
+      {
+        id: "shelters",
+        type: "symbol",
+        source: "shelters",
+        minzoom: SHELTER_MIN_ZOOM,
+        layout: {
+          "icon-image": "shelter",
+          "icon-allow-overlap": true,
+          "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.8, 17, 1.1],
+        },
+      },
       // 現在地 (いちばん上)。誤差の円は淡く塗り、点は白い縁の青
       {
         id: "me-accuracy",
@@ -544,6 +828,86 @@ export function baseStyle(): Record<string, unknown> {
       },
     ],
   };
+}
+
+/**
+ * 道路 (地理院地図Vector の道路中心線)。写真の上で読めるよう、細い黒い縁取りの上に明るい線を引く。
+ * 引いているときは高速道路と国道だけ、寄せるほど細い道まで出す (読むタイルと描く線を減らす)
+ */
+export function roadLayers(): Record<string, unknown>[] {
+  const kinds: {
+    id: string;
+    ctg: string[];
+    min: number;
+    color: string;
+    w: [number, number, number, number];
+  }[] = [
+    {
+      id: "minor",
+      ctg: ["市区町村道等", "不明"],
+      min: 13,
+      color: "rgba(255,255,255,0.85)",
+      w: [13, 0.6, 16, 2.5],
+    },
+    {
+      id: "pref",
+      ctg: ["都道府県道"],
+      min: 10,
+      color: "#ffffff",
+      w: [10, 0.6, 16, 4],
+    },
+    {
+      id: "national",
+      ctg: ["国道"],
+      min: 7,
+      color: "#ffe066",
+      w: [7, 0.6, 16, 5],
+    },
+    {
+      id: "motorway",
+      ctg: ["高速自動車国道等"],
+      min: 6,
+      color: "#ffa04d",
+      w: [6, 0.8, 16, 5],
+    },
+  ];
+  return kinds.flatMap((k) => {
+    const [z0, w0, z1, w1] = k.w;
+    const base = {
+      type: "line",
+      source: "gsi",
+      "source-layer": "RdCL",
+      minzoom: k.min,
+      filter: ["in", ["get", "vt_rdctg"], ["literal", k.ctg]],
+      layout: { "line-join": "round", "line-cap": "round" },
+    };
+    return [
+      {
+        ...base,
+        id: `road-${k.id}-casing`,
+        paint: {
+          "line-color": "rgba(0,0,0,0.55)",
+          "line-width": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            z0,
+            w0 + 1.2,
+            z1,
+            w1 + 2,
+          ],
+        },
+      },
+      {
+        ...base,
+        id: `road-${k.id}`,
+        paint: {
+          "line-color": k.color,
+          "line-width": ["interpolate", ["linear"], ["zoom"], z0, w0, z1, w1],
+        },
+      },
+    ];
+  });
 }
 
 /** 現在地の青い点の色 (震源の深さの青と分けるため、白い縁を太く付ける) */
