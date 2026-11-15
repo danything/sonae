@@ -406,10 +406,13 @@ export function readoutOf(n: Notice): string[] {
 
 /**
  * 1 度にまとめて鳴らす通知 (住んでいる地域と現在地の両方に当たった報。`#lib/alert.ts` の `groupAlerts`) の原稿。
- * 先の通知の原稿に、後の通知の原稿で先に無い文だけを足す (冒頭の文と見出しを 2 度読まない)
+ * 住んでいる地域の原稿を先に読み、現在地の原稿は後ろで「現在地の情報です。」から読む (鳴らすのが現在地の
+ * 通知でも、後ろの地域の文が現在地か分かるように)。後の原稿は、先に無い文だけを足す (冒頭の文と見出しを 2 度読まない)
  */
 export function readoutOfAll(ns: Notice[]): string[] {
-  const [first, ...rest] = ns;
+  const [first, ...rest] = ns.toSorted(
+    (a, b) => Number(a.here === true) - Number(b.here === true),
+  );
   if (!first) return [];
   const out = readoutOf(first);
   const seen = new Set(out);

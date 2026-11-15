@@ -622,6 +622,8 @@
   $effect(() => {
     void trackHere(me ? { lat: me.lat, lon: me.lon } : undefined);
   });
+  // 地図が外れたら (位置も追わなくなる) 現在地の市町村等を空にする
+  $effect(() => () => void trackHere(undefined));
 
   // 現在地を描き、押して始めたときは最初に取れたときだけそこへ寄せる
   $effect(() => {

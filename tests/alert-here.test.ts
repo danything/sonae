@@ -151,6 +151,15 @@ describe("開いているときは、現在地の気象も知らせる", () => {
     expect(h.also.map((n) => n.title)).toEqual([
       "島根県奥出雲町にレベル2大雨注意報",
     ]);
+    // 読み上げは住んでいる地域を先に、現在地は後ろで「現在地の情報です。」から読む
+    const parts = readoutOfAll([h.ring, ...h.also].filter((n) => n !== null));
+    expect(parts[0]).toBe("気象の注意報です。");
+    expect(parts.indexOf(HERE)).toBeGreaterThan(
+      parts.indexOf("奥出雲町には、レベル2大雨注意報が出ています。"),
+    );
+    expect(parts[parts.indexOf(HERE) + 1]).toBe(
+      "松江市には、レベル3大雨警報が出ています。",
+    );
   });
 
   test("現在地の注意報は「注意報も」のときだけ知らせる (住んでいる地域と同じ条件)", () => {
@@ -183,6 +192,10 @@ describe("開いているときは、現在地の気象も知らせる", () => {
     expect(g.also.map((n) => n.tag)).toEqual(["warning:3234300:VPWW55"]);
     expect(g.also[0]?.body).toContain(
       "現在地の島根県奥出雲町: レベル2大雨注意報",
+    );
+    // 見出しは府県予報区の名前になるので、現在地の通知と分かるように添える
+    expect(g.also[0]?.title).toBe(
+      "島根県にレベル5大雨特別警報 (現在地を含む地域)",
     );
     const parts = readoutOfAll([g.ring, ...g.also].filter((n) => n !== null));
     expect(parts.filter((s) => s === "気象の特別警報です。")).toHaveLength(1);

@@ -459,6 +459,10 @@ export function hereNoticeFor(
     home: { ...here, name: `現在地の${here.name}` },
   });
   if (!m || m.tag.startsWith("warning:special:")) return null;
+  // 同じ府県予報区のほかの市町村の特別警報を言う通知は、見出しが府県予報区の名前になるので、
+  // 現在地の通知と分かるように添える (現在地の状態は本文に「現在地の…」で入る)
+  if (m.special)
+    return { ...m, title: `${m.title} (現在地を含む地域)`, here: true };
   return { ...m, here: true };
 }
 
