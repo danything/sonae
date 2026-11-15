@@ -31,8 +31,19 @@ spec:
           ports:
             - containerPort: 50021
           env:
+            # 合成に使うスレッドの数 (values.yaml の voicevox.cpuThreads)
             - name: VV_CPU_NUM_THREADS
+              {{- if gt (int .Values.voicevox.cpuThreads) 0 }}
               value: {{ .Values.voicevox.cpuThreads | quote }}
+              {{- else }}
+              # limits.cpu (無ければノードの allocatable の CPU の数。端数は切り上げ)
+              valueFrom:
+                resourceFieldRef:
+                  containerName: voicevox
+                  resource: limits.cpu
+                  # 書かないと API サーバが "0" を入れ、Argo CD の差分に出続ける
+                  divisor: "1"
+              {{- end }}
           {{- with .Values.voicevox.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

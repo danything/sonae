@@ -281,8 +281,26 @@ export class Voicevox {
     return res;
   }
 
-  /** audio_query で読みと抑揚を作り、synthesis で WAV にする */
+  /**
+   * audio_query で読みと抑揚を作り、synthesis で WAV にする。かかった秒数と音の秒数を 1 行で出す
+   * (話している間に次の文が間に合うかを見るため。文の中身は出さず、字数だけ)
+   */
   async synthesize(
+    speaker: number,
+    text: string,
+  ): Promise<Uint8Array<ArrayBuffer>> {
+    const started = performance.now();
+    const wav = await this.synthesizeOnce(speaker, text);
+    const took = (performance.now() - started) / 1000;
+    const sound = wavSeconds(wav);
+    console.log(
+      `[voicevox] 合成 ${isFixed(text) ? "決まった文" : "事象の文"} ${text.length} 字 声 ${speaker}: ` +
+        `${took.toFixed(2)} 秒 / 音 ${sound === undefined ? "?" : sound.toFixed(2)} 秒`,
+    );
+    return wav;
+  }
+
+  private async synthesizeOnce(
     speaker: number,
     text: string,
   ): Promise<Uint8Array<ArrayBuffer>> {
@@ -428,6 +446,28 @@ export class Voicevox {
       console.warn(`[voicevox] 使われている声を覚えられませんでした: ${err}`);
     }
   }
+}
+
+/**
+ * WAV の音の秒数 (`data` の大きさ ÷ fmt の 1 秒あたりのバイト数)。WAV として読めなければ undefined
+ */
+export function wavSeconds(wav: Uint8Array): number | undefined {
+  if (wav.byteLength < 12) return undefined;
+  const view = new DataView(wav.buffer, wav.byteOffset, wav.byteLength);
+  const tag = (at: number) => String.fromCharCode(...wav.subarray(at, at + 4));
+  if (tag(0) !== "RIFF" || tag(8) !== "WAVE") return undefined;
+  let byteRate = 0;
+  for (let at = 12; at + 8 <= wav.byteLength;) {
+    const size = view.getUint32(at + 4, true);
+    if (tag(at) === "fmt " && at + 20 <= wav.byteLength)
+      byteRate = view.getUint32(at + 16, true);
+    if (tag(at) === "data")
+      return byteRate > 0
+        ? Math.min(size, wav.byteLength - at - 8) / byteRate
+        : undefined;
+    at += 8 + size + (size % 2);
+  }
+  return undefined;
 }
 
 /** 環境変数から作る。`VOICEVOX_URL` が空なら作らない (画面は端末の読み上げで読む) */
