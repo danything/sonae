@@ -1,7 +1,7 @@
 <script lang="ts">
   /**
    * 通知の条件と、開いているときの音・読み上げと、Web Push の登録 (docs/design.md の 2.4)。
-   * ヘッダーのナビ (スマホの形は「その他」) の「通知」から開くダイアログ 1 つに閉じる。
+   * ヘッダーのナビ (スマホの形は下のタブ) の「通知」から開くダイアログ 1 つに閉じる。
    * 開け閉めは `open` で持つ (閉じるのは左下の「閉じる」・幕・Esc)。
    * 条件はブラウザごとに 1 つで、音・読み上げのために端末 (localStorage) に、Web Push のためにサーバー (購読) に持つ。
    * サーバーに VAPID の鍵が無いときは、Web Push の節にそう出すだけ (条件と音・読み上げは使える)。
@@ -17,12 +17,13 @@
     homeAt,
     loadCities as readCities,
     prefsSettled,
+    pushBlock,
     type PushInfo,
-    pushSupported,
     queuePrefs,
     readPushState,
     sendPrefs,
   } from "#lib/push-client.ts";
+  import { type PushBlock, pushBlockText } from "#lib/push-support.ts";
   import { DEFAULT_PREFS, normalizePrefs, type PushPrefs } from "#lib/push.ts";
   import { voiceLabel } from "#lib/voices.ts";
 
@@ -40,7 +41,8 @@
 
   let dialog = $state<HTMLDialogElement>();
   let info = $state<PushInfo>();
-  let supported = $state(true);
+  /** Web Push を使えない訳 (機能が無い・届かない宛先を返した)。使えそうなら null */
+  let block = $state<PushBlock | null>(null);
   let endpoint = $state<string>();
   let prefs = $state<PushPrefs>({ ...DEFAULT_PREFS });
   /** 住んでいる地域の候補 (市町村等の表) と、地震情報／細分区域の名前 */
@@ -105,7 +107,7 @@
     prefs = normalizePrefs(alerter.prefs);
     pref = prefs.home?.code.slice(0, 2) ?? "";
     if (Object.keys(cities).length === 0) void loadCities();
-    supported = pushSupported();
+    block = pushBlock();
     let state: Awaited<ReturnType<typeof readPushState>>;
     try {
       state = await readPushState();
@@ -115,7 +117,9 @@
     }
     info = state.info;
     endpoint = state.endpoint;
-    if (!info.enabled || !supported) return;
+    // 今の購読が届かない宛先なら、ここで分かる (readPushState が覚える)
+    block = pushBlock();
+    if (!info.enabled || block) return;
     const mine = info.subscriptions.find((s) => s.endpoint === endpoint);
     if (mine) {
       prefs = normalizePrefs(mine.prefs);
@@ -230,7 +234,8 @@
     message = "";
     const result = await save();
     await load();
-    message = result;
+    // 届かない宛先だったときは、文を Web Push の節そのものに出すので重ねない
+    message = block ? "" : result;
   }
 
   /**
@@ -582,11 +587,10 @@
       <p class="small">
         サーバーに VAPID の鍵が入っていないので、Web Push は切ってあります。
       </p>
-    {:else if !supported}
-      <p class="small">
-        このブラウザは Web Push に対応していません。iPhone・iPad
-        は、共有ボタンから「ホーム画面に追加」した sonae (iOS 16.4 以降)
-        で開いてください。
+    {:else if block}
+      <!-- 黙って押せないままにしない。何ができないかと、代わりの道を言う -->
+      <p class="small" role="status" data-testid="push-unsupported">
+        {pushBlockText(block, navigator.userAgent)}
       </p>
     {:else}
       <p class="small muted">

@@ -5,7 +5,7 @@
 ## 鍵が無いとき
 
 VAPID の鍵 (`VAPID_PRIVATE_JWK`) が無ければ、**Web Push だけを切って普通に動く**。
-ヘッダーの「通知」(スマホの形は「その他」の「通知」)を開くと「鍵が入っていない」と出て、登録は受けない。受信・画面・SSE は変わらない。
+ヘッダーの「通知」(スマホの形は下のタブの「通知」)を開くと「鍵が入っていない」と出て、登録は受けない。受信・画面・SSE は変わらない。
 起動の記録に `[push] VAPID の鍵 (VAPID_PRIVATE_JWK) が無いので、Web Push は切ってあります` と出る。
 
 ## 環境変数
@@ -52,7 +52,7 @@ Helm chart (`charts/sonae`) はもう `vapid-private-jwk` を `optional: true` �
    kubectl -n sonae logs deploy/sonae | grep '\[push\]'
    ```
 
-4. <https://s.doany.io> を開き、ヘッダーの「通知」(スマホの形は「その他」の「通知」)→「このブラウザで受ける」→「試しに送る」で届くか見る。
+4. <https://s.doany.io> を開き、ヘッダーの「通知」(スマホの形は下のタブの「通知」)→「このブラウザで受ける」→「試しに送る」で届くか見る。
    iPhone・iPad は、Safari の共有ボタンから「ホーム画面に追加」した sonae (iOS 16.4 以降) で開いてからにする。
 
 手元で試すときは、`compose.override.yml` に `VAPID_PRIVATE_JWK` と `VAPID_SUBJECT` (`mailto:...`。手元の
@@ -82,9 +82,26 @@ sonae を開いている間は、画面も SSE で受けて OS の通知を出�
 なので、購読は残る)。それぞれのブラウザで「通知」を開き直すと、公開鍵が違うことに気づいて購読を作り直す。
 使わなくなった購読は、「通知」の「ほかのブラウザ」から解除する。
 
+## 使えないブラウザ
+
+Web Push を使えないブラウザでは、「通知」の Web Push の節に、何ができないかと代わりの道を出す (`#lib/push-support.ts`)。
+「このブラウザで受ける」を黙って押せないままにしない。決めるのはできるだけ機能の有無と、ブラウザが返した購読の宛先で、ブラウザの名前は文に添える一言にだけ使う。
+
+- **機能が無い** (Service Worker・`PushManager`・`Notification` のどれか): 無いものの名前と、Chrome・Firefox・Safari・パソコンの Edge で開くことを出す。ボタンは出さない
+- **iPhone・iPad の Safari で、ホーム画面に追加せずに開いている** (`navigator.standalone` が false): 「ホーム画面に追加」を案内する
+- **登録はできたが、届かない宛先を返した** (受け付ける配信サービスの https でない): サーバーに送らず、購読を消し、宛先の名前と、Chrome で開くことを出す。ページを開いている間は覚え、窓を開き直してもボタンを出さない。前に作った購読が届かない宛先だったときも、窓を開いたときに同じように消して出す
+  - **Android の Edge** がこれに当たる。2025-12 (Edge 143) から、許可は `granted` になり `pushManager.subscribe()` も成功するが、endpoint が `https://permanently-removed.invalid/...` になり、届かないと報告されている
+    ([Microsoft Q&A「Edge on Android and push subscription」](https://learn.microsoft.com/en-us/answers/questions/5686199/edge-on-android-and-push-subscription)。モデレーターの回答 "push messages cannot be delivered on Edge for Android in this scenario"。2026-11-15 に確かめた)。
+    それより前は登録の途中で例外になることもあった ([同じ件の別の質問](https://learn.microsoft.com/en-us/answers/questions/5781524/))。Microsoft の正式な告知や、直ったという記載は見つからない。
+    caniuse と MDN の互換表には Edge for Android の列が無い
+  - 文は「このブラウザ (Android の Edge) は…」と名前を添え、Android の Chrome で開く (アプリとして入れるときも Chrome から) ことを案内する。Edge が直って正しい宛先を返せば、そのまま登録できる
+- **登録が例外で止まった** (配信サービスにつながらない など): 例外の名前と、ほかのブラウザで試すことを出す
+- どれでも、開いている間の OS の通知・音・読み上げ (「開いているとき」) は Web Push と別なので使える、と添える。
+  Android の Edge で、開いている間の OS の通知 (`showNotification`) が出るかは実機で確かめていない
+
 ## 届かないとき
 
 - 記録の `[push] 送れませんでした (<配信サービス>, <状態>)` を見る。404・410 は購読が切れたので、自分で消している。
-- 受け付ける配信サービスは FCM (Chrome・Edge)・Mozilla (Firefox)・Apple (Safari)・WNS だけ (`src/lib/server/push.ts` の `PUSH_HOSTS`)。
+- 受け付ける配信サービスは FCM (Chrome・Edge)・Mozilla (Firefox)・Apple (Safari)・WNS だけ (`src/lib/push.ts` の `PUSH_HOSTS`。画面も登録の前に同じ決まりで見る)。
   ほかのブラウザで「購読の形が違うか、知らない配信サービスです」と出たら、ここに足す。
 - 端末の側で通知が止められていないか (OS の集中モード・ブラウザのサイトの設定)。
