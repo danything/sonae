@@ -337,9 +337,18 @@ function Install-Sonae([string]$Ref) {
         New-Item -ItemType Directory -Force -Path $Prefix | Out-Null
         $parts = @('server')
         if ($voicevoxNew) { $parts += 'voicevox' }
+        # 前のものは .old に退けてから入れ替え、入ってから消す (途中で落ちても、前のものが残る)
         foreach ($part in $parts) {
-            if (Test-Path -LiteralPath "$Prefix\$part") { Remove-Item -Recurse -Force -LiteralPath "$Prefix\$part" }
-            Move-Item -LiteralPath "$work\new\$part" -Destination "$Prefix\$part"
+            $old = "$Prefix\$part.old"
+            if (Test-Path -LiteralPath $old) { Remove-Item -Recurse -Force -LiteralPath $old }
+            if (Test-Path -LiteralPath "$Prefix\$part") { Move-Item -LiteralPath "$Prefix\$part" -Destination $old }
+            try {
+                Move-Item -LiteralPath "$work\new\$part" -Destination "$Prefix\$part"
+            } catch {
+                if (Test-Path -LiteralPath $old) { Move-Item -LiteralPath $old -Destination "$Prefix\$part" }
+                throw "$Prefix\$part に置けません ($($_.Exception.Message))"
+            }
+            if (Test-Path -LiteralPath $old) { Remove-Item -Recurse -Force -LiteralPath $old }
         }
         Set-Owned $Data @($System, $Administrators) $Administrators
         New-Item -ItemType Directory -Force -Path $Logs | Out-Null

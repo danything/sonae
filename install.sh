@@ -368,7 +368,11 @@ mac_stop() {
   launchctl print "$1" >/dev/null 2>&1 || return 0
   say "動いている ${1##*/} を止めます"
   launchctl bootout "$1" 2>/dev/null || true
-  while launchctl print "$1" >/dev/null 2>&1; do sleep 1; done
+  for _ in $(seq 120); do
+    launchctl print "$1" >/dev/null 2>&1 || return 0
+    sleep 1
+  done
+  die "${1##*/} が 2 分たっても止まりません (sudo launchctl bootout $1 で止めてから、もう一度流してください)"
 }
 
 check() {
@@ -482,7 +486,13 @@ mac_register_server() {
     # 1 行ずつ KEY=値 として読む (sh として読まない。値の空白や記号 (VAPID の鍵の JSON) をそのまま渡す)
     echo 'if [ -f "$env_file" ]; then'
     echo '  while IFS= read -r line || [ -n "$line" ]; do'
-    echo '    case "$line" in "" | "#"*) continue ;; *=*) export "${line%%=*}=${line#*=}" ;; esac'
+    # 名前が識別子でない行 (手で書いた打ち間違い) は飛ばす。export が失敗すると sh ごと終わり、launchd が起こし直し続けるため。
+    # Windows のメモ帳で保存した CRLF の \r も落とす
+    printf '%s\n' '    line=$(printf "%s" "$line" | tr -d "\r")'
+    echo '    case "$line" in "" | "#"*) continue ;; [A-Za-z_]*=*) ;; *) continue ;; esac'
+    echo '    name=${line%%=*}'
+    echo '    case "$name" in *[!A-Za-z0-9_]*) continue ;; esac'
+    echo '    export "$name=${line#*=}"'
     echo '  done < "$env_file"'
     echo 'fi'
     for kv in \
@@ -564,10 +574,13 @@ mac_main() {
   chmod 755 "$PREFIX"
   parts=server
   [ "$vv_new" = no ] || parts="$parts voicevox"
+  # 前のものは .old に退けてから入れ替え、入ってから消す (途中で落ちても、前のものが残る)
   for part in $parts; do
-    rm -rf "${PREFIX:?}/$part"
-    mv "new/$part" "$PREFIX/$part"
+    rm -rf "${PREFIX:?}/$part.old"
+    if [ -e "$PREFIX/$part" ]; then mv "$PREFIX/$part" "$PREFIX/$part.old"; fi
+    mv "new/$part" "$PREFIX/$part" || { mv "$PREFIX/$part.old" "$PREFIX/$part"; die "$PREFIX/$part に置けません"; }
     chown -R root:wheel "$PREFIX/$part"
+    rm -rf "${PREFIX:?}/$part.old"
   done
 
   mac_data_dir

@@ -64,6 +64,18 @@ irm https://raw.githubusercontent.com/danything/sonae/main/install.ps1 | iex   #
 
 Mac で渡すときは `sudo -E` にします (sudo は環境変数を落とす)。
 
+### 配布物を確かめる
+
+インストーラが照らす `.sha256` は同じリリースに置いてあるので、分かるのはダウンロード中に壊れたことだけです (リリースごと差し替えられたら気づけない)。
+Mac と Windows の配布物には、このリポジトリのリリースの workflow が作ったという出所の証明 (attestation) を付けてあるので、気になるときは確かめてから入れます。
+
+```sh
+gh attestation verify sonae-0.1.0-windows-x64.zip -R danything/sonae
+```
+
+VOICEVOX のエンジンは、sonae のリリースを作ったときに記録した sha256 (配布物の `voicevox.txt`) と照らすので、後から差し替えられても気づけます。
+Linux の genkan は、[danything/genkan](https://github.com/danything/genkan) の `init.sh` を流して入れます (同じ持ち主のもの)。
+
 ## ログイン
 
 **ログイン (OIDC) の 3 つ (`OIDC_ISSUER`・`OIDC_CLIENT_ID`・`OIDC_CLIENT_SECRET`) が揃うまで、画面は開きません**
