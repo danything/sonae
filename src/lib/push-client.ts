@@ -70,7 +70,13 @@ export async function readPushState(): Promise<{
   const sub = await (
     await navigator.serviceWorker.ready
   ).pushManager.getSubscription();
-  if (sub) endpointBlocked ??= endpointBlock(sub.endpoint);
+  // 前に作った購読が届かない宛先なら、覚えて消す (サーバーには登録されていないので、ブラウザにだけ残っている)
+  const bad = sub ? endpointBlock(sub.endpoint) : null;
+  if (sub && bad) {
+    endpointBlocked ??= bad;
+    await sub.unsubscribe().catch(() => false);
+    return { info, endpoint: undefined };
+  }
   return { info, endpoint: sub?.endpoint };
 }
 

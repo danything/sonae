@@ -89,7 +89,7 @@ Web Push を使えないブラウザでは、「通知」の Web Push の節に�
 
 - **機能が無い** (Service Worker・`PushManager`・`Notification` のどれか): 無いものの名前と、Chrome・Firefox・Safari・パソコンの Edge で開くことを出す。ボタンは出さない
 - **iPhone・iPad の Safari で、ホーム画面に追加せずに開いている** (`navigator.standalone` が false): 「ホーム画面に追加」を案内する
-- **登録はできたが、届かない宛先を返した** (受け付ける配信サービスの https でない): サーバーに送らず、購読を消し、宛先の名前と、Chrome で開くことを出す。ページを開いている間は覚え、窓を開き直してもボタンを出さない
+- **登録はできたが、届かない宛先を返した** (受け付ける配信サービスの https でない): サーバーに送らず、購読を消し、宛先の名前と、Chrome で開くことを出す。ページを開いている間は覚え、窓を開き直してもボタンを出さない。前に作った購読が届かない宛先だったときも、窓を開いたときに同じように消して出す
   - **Android の Edge** がこれに当たる。2025-12 (Edge 143) から、許可は `granted` になり `pushManager.subscribe()` も成功するが、endpoint が `https://permanently-removed.invalid/...` になり、届かないと報告されている
     ([Microsoft Q&A「Edge on Android and push subscription」](https://learn.microsoft.com/en-us/answers/questions/5686199/edge-on-android-and-push-subscription)。モデレーターの回答 "push messages cannot be delivered on Edge for Android in this scenario"。2026-11-15 に確かめた)。
     それより前は登録の途中で例外になることもあった ([同じ件の別の質問](https://learn.microsoft.com/en-us/answers/questions/5781524/))。Microsoft の正式な告知や、直ったという記載は見つからない。
