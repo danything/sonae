@@ -19,6 +19,7 @@
     volcanoKindText,
     WARNING_COLORS,
   } from "#lib/format.ts";
+  import { edgePadding } from "#lib/map/edges.ts";
   import {
     autoLocate,
     type GeoPermission,
@@ -896,6 +897,29 @@
 
   /** 押した避難場所の名前・住所と、どの災害に対応するか。文は DOM で組み、HTML として読まない */
   let shelterPopup: Popup | undefined;
+
+  /**
+   * 吹き出しの形。隅の出典と右下の操作 (スマホの形はその下の dock と下のタブも) の側へは開かず、反対の向きに開く
+   */
+  let creditEl = $state<HTMLAnchorElement>();
+  let controlsEl = $state<HTMLDivElement>();
+  function popupOptions(): {
+    maxWidth: string;
+    closeButton: boolean;
+    padding?: { top: number; bottom: number; left: number; right: number };
+  } {
+    const box = container?.getBoundingClientRect();
+    return {
+      maxWidth: "18rem",
+      closeButton: false,
+      padding: box
+        ? edgePadding(box, [
+            creditEl?.getBoundingClientRect(),
+            controlsEl?.getBoundingClientRect(),
+          ])
+        : undefined,
+    };
+  }
   function openShelter(p: Record<string, unknown>, at: LngLat): void {
     if (!map || !PopupClass) return;
     // MapLibre は GeoJSON の配列を文字列にして渡してくる
@@ -923,7 +947,7 @@
     );
     shelterPopup?.remove();
     warningPopup?.remove();
-    shelterPopup = new PopupClass({ maxWidth: "18rem", closeButton: false })
+    shelterPopup = new PopupClass(popupOptions())
       .setLngLat(at)
       .setDOMContent(box)
       .addTo(map);
@@ -979,7 +1003,7 @@
     }
     shelterPopup?.remove();
     warningPopup?.remove();
-    warningPopup = new PopupClass({ maxWidth: "18rem", closeButton: false })
+    warningPopup = new PopupClass(popupOptions())
       .setLngLat(at)
       .setDOMContent(box)
       .addTo(map);
@@ -1154,7 +1178,7 @@
       地図の上に置く操作は、ハザードマップの選択と現在地のボタンだけ (docs/design.md の 6.2)。
       どちらも右下に、隅の出典の上にまとめる。並びは下から、操作の 1 行・凡例・知らせ (column-reverse)
     -->
-    <div class="controls" data-testid="map-controls">
+    <div class="controls" bind:this={controlsEl} data-testid="map-controls">
       <div class="control-row">
         <!-- マウスを乗せただけで選択肢を開く ((hover: hover) の端末だけ)。外れたら少し待って閉じる -->
         <div
@@ -1264,8 +1288,11 @@
         <p class="locate-note small" role="status">{locateNote}</p>
       {/if}
     </div>
-    <a class="map-credit" href={aboutHref} data-testid="map-credit"
-      >{creditText}</a
+    <a
+      class="map-credit"
+      href={aboutHref}
+      bind:this={creditEl}
+      data-testid="map-credit">{creditText}</a
     >
     <!--
       地図のメニュー (右クリック・長押し)。押した所に目に見えない引き金を置き、ほかのメニューと同じ Menu で開く
@@ -1321,32 +1348,41 @@
 
 <style>
   .map-box {
+    /* 隅の出典 (1 行) の高さ。広い形は下の角、スマホの形は上の角に置くので、そちらの端を空ける */
+    --credit-bottom: 0.9375rem;
+    --credit-top: 0px;
     position: relative;
     width: 100%;
     height: 100%;
+  }
+  :global(html[data-phone]) .map-box {
+    --credit-bottom: 0px;
+    --credit-top: 0.9375rem;
   }
   /*
    * 現在地のボタン。地図 (動く中身) の上に重なるので操作の層 (面と影) に乗せる。
    * オンは並びの外の切り替えなので、主の色のアイコンと短い下線 (denpa の 6 章「ボタン」)
    */
   /*
-   * 地図の上の操作 (ハザードマップの選択と現在地のボタン) は右下にまとめる。隅の出典 (1 行) のすぐ上で、
-   * スマホの形では下のタブと dock の上 (`--map-bottom`)。並びは下から操作の 1 行・凡例・知らせ
+   * 地図の上の操作 (ハザードマップの選択と現在地のボタン) は右下にまとめる。広い形は隅の出典 (1 行) のすぐ上、
+   * スマホの形は下のタブと dock のすぐ上 (`--map-bottom`。出典は上の角)。並びは下から操作の 1 行・凡例・知らせ
    */
   .controls {
     position: absolute;
     right: var(--so-space-3);
-    bottom: calc(var(--map-bottom, 0px) + var(--so-space-2) + 0.9375rem);
+    bottom: calc(
+      var(--map-bottom, 0px) + var(--so-space-2) + var(--credit-bottom)
+    );
     z-index: 1;
     display: flex;
     flex-direction: column-reverse;
     align-items: flex-end;
     gap: var(--so-space-2);
     max-width: min(18rem, calc(100% - 2 * var(--so-space-3)));
-    /* 上の帯 (音が止まっているとき) と、上の余白にかからない高さまで */
+    /* 上の帯 (音が止まっているとき)・上の余白・スマホの形の上の角の出典にかからない高さまで */
     max-height: calc(
-      100% - var(--map-top, 0px) - var(--map-bottom, 0px) - 3 *
-        var(--so-space-3)
+      100% - var(--map-top, 0px) - var(--map-bottom, 0px) - var(--credit-top) -
+        var(--credit-bottom) - 3 * var(--so-space-3)
     );
     pointer-events: none;
   }
@@ -1520,7 +1556,7 @@
   .place-note {
     position: absolute;
     left: 50%;
-    top: calc(var(--map-top, 0px) + var(--so-space-3));
+    top: calc(var(--map-top, 0px) + var(--credit-top) + var(--so-space-3));
     z-index: 1;
     max-width: min(24rem, calc(100% - 2 * var(--so-space-3)));
     margin: 0;
@@ -1552,9 +1588,11 @@
     justify-content: center;
   }
   /*
-   * 地図の右下の短い出典 (いつも見える。国土地理院の出典の記載の決まり)。押すと「出典と注意」の窓。
+   * 地図の隅の短い出典 (いつも見える。国土地理院の出典の記載の決まり)。押すと「出典と注意」の窓。
    * 地図の隅にぴったり付けた、余白の無い薄い帯にする (よくある地図の出典の形)。地図を覆わないよう小さく薄く、
-   * 写真の上でも読めるよう地の色を 65% の濃さで敷く。スマホの形では下のタブと dock の上 (`--map-bottom`)
+   * 写真の上でも読めるよう地の色を 65% の濃さで敷く。
+   * スマホの形は地図の上の角 (右上)。下は浮いた下のタブ・dock・操作が重なり、ぴったり付ける角が無いため。
+   * 上の帯 (緊急地震速報・音が止まっている) は地図を押し下げるので、帯にも隠れない
    */
   .map-credit {
     position: absolute;
@@ -1577,6 +1615,14 @@
     content: "";
     position: absolute;
     inset: -0.75rem 0 0;
+  }
+  :global(html[data-phone]) .map-credit {
+    top: var(--map-top, 0px);
+    bottom: auto;
+    border-radius: 0;
+  }
+  :global(html[data-phone]) .map-credit::after {
+    inset: 0 0 -0.75rem;
   }
   .map-credit:hover {
     text-decoration: underline;
