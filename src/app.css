@@ -996,11 +996,22 @@ dialog[open] > .modal-box {
   box-shadow: none;
   cursor: default;
 }
+/*
+ * 窓の下の段 (「閉じる」と操作)。中身が長くて窓の中を巻いても、いつも窓の下端に貼り付けて見せる
+ * (denpa の番組の詳細と同じ)。箱の左右と下の余白まで広げて地を塗り、巻いた中身がその裏を通る
+ */
 .modal-foot {
+  position: sticky;
+  bottom: calc(-1 * var(--modal-pad-bottom, var(--so-space-5)));
+  z-index: 1;
   display: flex;
   align-items: flex-end;
   gap: var(--so-space-2);
-  margin: var(--so-space-5) 0 0;
+  margin: var(--so-space-5) calc(-1 * var(--so-space-5))
+    calc(-1 * var(--modal-pad-bottom, var(--so-space-5)));
+  padding: var(--so-space-3) var(--so-space-5)
+    var(--modal-pad-bottom, var(--so-space-5));
+  background: var(--so-surface);
 }
 @media (max-width: 639.98px) {
   .modal-box {
@@ -1008,7 +1019,8 @@ dialog[open] > .modal-box {
     max-width: none;
     max-height: calc(100% - 2.5rem);
     border-radius: var(--so-radius-lg) var(--so-radius-lg) 0 0;
-    padding-bottom: calc(var(--so-space-5) + env(safe-area-inset-bottom));
+    --modal-pad-bottom: calc(var(--so-space-5) + env(safe-area-inset-bottom));
+    padding-bottom: var(--modal-pad-bottom);
   }
   dialog:has(> article.modal-box) {
     padding: 0;
