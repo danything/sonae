@@ -30,6 +30,8 @@ export interface AlertSettings {
   voice?: number;
   /** OS の通知を出す。無ければ既定 (通知の許可があれば出す)。許可が無ければ、オンでも出せない */
   notify?: boolean;
+  /** 画面への配信が切れた・戻ったことを知らせる。無ければ既定 (知らせる) */
+  outage?: boolean;
 }
 
 export const ALERT_OFF: AlertSettings = { sound: false, speech: false };
@@ -44,6 +46,7 @@ export function parseAlertSettings(raw: string | null): AlertSettings {
     };
     if (Number.isInteger(o?.voice) && (o?.voice ?? -1) >= 0) s.voice = o?.voice;
     if (typeof o?.notify === "boolean") s.notify = o.notify;
+    if (typeof o?.outage === "boolean") s.outage = o.outage;
     return s;
   } catch {
     return { ...ALERT_OFF };

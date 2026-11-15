@@ -816,7 +816,9 @@
 
 {#snippet statusBody()}
   <p class="menu-head">
-    {live.connected ? "受信に問題があります" : "配信が切れています"}
+    {live.connected
+      ? "受信に問題があります"
+      : "配信が切れています・再接続しています"}
   </p>
   <StatusList connected={live.connected} statuses={snap.statuses} />
 {/snippet}
@@ -983,7 +985,9 @@
               data-testid="trouble"
             >
               <Icon icon={TriangleAlert} size={1} />
-              {live.connected ? "受信に問題があります" : "配信が切れています"}
+              {live.connected
+                ? "受信に問題があります"
+                : "配信が切れています・再接続しています"}
             </button>
           {/snippet}
           {@render statusBody()}

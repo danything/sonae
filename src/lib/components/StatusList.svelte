@@ -24,7 +24,7 @@
   <div class="side-item static">
     <dt>画面への配信</dt>
     <dd class="side-sub" class:bad={!connected}>
-      {connected ? "接続中" : "切断"}
+      {connected ? "接続中" : "再接続しています"}
     </dd>
   </div>
   {#each statuses as s (s.id)}

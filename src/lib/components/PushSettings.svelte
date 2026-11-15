@@ -577,6 +577,25 @@
         >
       </div>
     {/if}
+    <label>
+      <input
+        type="checkbox"
+        role="switch"
+        checked={alerter.settings.outage !== false}
+        onchange={(e) =>
+          alerter.setSettings({
+            ...alerter.settings,
+            outage: e.currentTarget.checked,
+          })}
+        data-testid="alert-outage"
+      />
+      受信が切れたら知らせる
+    </label>
+    <p class="small muted">
+      画面への配信が 30 秒続けて切れたら、上でオンにしたもの
+      (通知・音・読み上げ)
+      で知らせます。戻ったら短く知らせます。切れている間も、自分でつなぎ直します。
+    </p>
 
     <h2 class="section-head">訓練・試験</h2>
     <label>

@@ -6,26 +6,12 @@
  * - 90 秒何も来なければ (heartbeat も含めて) 死んだとみなして張り直す
  */
 
+import { Backoff } from "#lib/backoff.ts";
 import type { SourceId, SourceStatus } from "#lib/model.ts";
 import { nowIso } from "#lib/server/time.ts";
 
-export class Backoff {
-  private attempt = 0;
-  constructor(
-    private readonly min = 1_000,
-    private readonly max = 30_000,
-    private readonly random: () => number = Math.random,
-  ) {}
-  /** 次に待つ時間 (ミリ秒) */
-  next(): number {
-    const cap = Math.min(this.max, this.min * 2 ** this.attempt);
-    this.attempt = Math.min(this.attempt + 1, 30);
-    return Math.round(this.random() * cap);
-  }
-  reset(): void {
-    this.attempt = 0;
-  }
-}
+// 間隔の決め方は画面の SSE の張り直しと同じ (`#lib/backoff.ts`)
+export { Backoff };
 
 /** 止める合図が来たら早く起きる sleep */
 export function sleep(ms: number, signal: AbortSignal): Promise<void> {

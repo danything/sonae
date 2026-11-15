@@ -58,10 +58,20 @@ export const OPENINGS = {
 export const SAMPLE =
   "そなえの読み上げです。この声で地震や津波の情報をお知らせします。";
 
-/** 合成しておく文 (冒頭の文と試しの文) */
+/**
+ * 画面への配信 (SSE) が切れた・戻ったときに読む文。切れている間はサーバーに音を取りに行けないので、
+ * 画面は読み上げがオンになったときに前もって取っておく (`alerter.svelte.ts`)
+ */
+export const CONNECTION = {
+  down: "そなえの受信が切れました。再接続しています。",
+  back: "そなえの受信が戻りました。",
+} as const;
+
+/** 合成しておく文 (冒頭の文と試しの文と、受信が切れた・戻ったときの文) */
 export const FIXED_TEXTS: readonly string[] = [
   ...Object.values(OPENINGS),
   SAMPLE,
+  ...Object.values(CONNECTION),
 ];
 const FIXED = new Set(FIXED_TEXTS);
 export const isFixed = (text: string) => FIXED.has(text);
