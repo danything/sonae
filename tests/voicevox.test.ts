@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { OPENINGS, SAMPLE } from "#lib/readout.ts";
 import type { Reading } from "#lib/server/readings.ts";
-import { serveSpeech, Voicevox } from "#lib/server/voicevox.ts";
+import { serveSpeech, Voicevox, wavSeconds } from "#lib/server/voicevox.ts";
 import { DEFAULT_SPEAKER } from "#lib/voices.ts";
 
 import { eew, NOW } from "./events.ts";
@@ -245,5 +245,50 @@ describe("VOICEVOX", () => {
     const r = await serveSpeech(v, { text: SAMPLE, voice: 903 });
     expect(r.headers.get("x-voice")).toBe("21");
     expect(v.voicesInUse()).toEqual([21, 52, 901, 902]);
+  });
+});
+
+describe("wavSeconds", () => {
+  /** 24000 Hz・16 bit・モノラル (VOICEVOX の既定) の WAV。音は `samples` 個 */
+  const wav = (samples: number, extra = new Uint8Array()) => {
+    const data = samples * 2;
+    const b = new Uint8Array(44 + extra.byteLength + data);
+    const v = new DataView(b.buffer);
+    const put = (at: number, s: string) =>
+      b.set(new TextEncoder().encode(s), at);
+    put(0, "RIFF");
+    v.setUint32(4, b.byteLength - 8, true);
+    put(8, "WAVE");
+    put(12, "fmt ");
+    v.setUint32(16, 16, true);
+    v.setUint16(20, 1, true);
+    v.setUint16(22, 1, true);
+    v.setUint32(24, 24000, true);
+    v.setUint32(28, 48000, true);
+    v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true);
+    b.set(extra, 36);
+    put(36 + extra.byteLength, "data");
+    v.setUint32(40 + extra.byteLength, data, true);
+    return b;
+  };
+
+  test("data の大きさと 1 秒あたりのバイト数から秒数を出す", () => {
+    expect(wavSeconds(wav(24000))).toBe(1);
+    expect(wavSeconds(wav(36000))).toBe(1.5);
+  });
+
+  test("fmt と data の間にほかのチャンクがあっても読む", () => {
+    const list = new Uint8Array(12);
+    list.set(new TextEncoder().encode("LIST"), 0);
+    new DataView(list.buffer).setUint32(4, 4, true);
+    expect(wavSeconds(wav(12000, list))).toBe(0.5);
+  });
+
+  test("WAV でなければ undefined", () => {
+    expect(
+      wavSeconds(new TextEncoder().encode("21:こんにちは")),
+    ).toBeUndefined();
+    expect(wavSeconds(new Uint8Array())).toBeUndefined();
   });
 });

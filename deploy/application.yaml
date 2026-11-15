@@ -58,6 +58,18 @@ spec:
         secrets:
           name: sonae-secrets
 
+        # 読み上げは急ぐので、VOICEVOX はノードの論理 CPU の全部 (44) を使う (cpuThreads: 0)。CPU の limits は付けず、
+        # requests の 2 で denpa の録画やエンコードと取り合っても負けないようにする。
+        # Ryzen 5 5600X (6 コア 12 スレッド) で測ると、論理の数 (12) は物理の数 (6) より遅くならなかった (長い文で 5.9 秒と 6.5 秒)
+        voicevox:
+          cpuThreads: 0
+          resources:
+            requests:
+              cpu: "2"
+              memory: 1Gi
+            limits:
+              memory: 3Gi
+
         networkPolicy:
           # 外向きを DNS と公開のインターネットと VOICEVOX だけにする。この家の DNS は kube-system の kube-dns
           egress:
