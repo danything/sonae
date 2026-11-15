@@ -1336,7 +1336,7 @@
   .controls {
     position: absolute;
     right: var(--so-space-3);
-    bottom: calc(var(--map-bottom, 0px) + var(--so-space-2) + 1.4rem);
+    bottom: calc(var(--map-bottom, 0px) + var(--so-space-2) + 0.9375rem);
     z-index: 1;
     display: flex;
     flex-direction: column-reverse;
@@ -1553,22 +1553,22 @@
   }
   /*
    * 地図の右下の短い出典 (いつも見える。国土地理院の出典の記載の決まり)。押すと「出典と注意」の窓。
-   * 写真の上でも読めるよう操作の層と同じ面 (--so-float) に載せ、小さく。スマホの形では下のタブと dock の上
-   * (`--map-bottom` は置く側が決める)
+   * 地図の隅にぴったり付けた、余白の無い薄い帯にする (よくある地図の出典の形)。地図を覆わないよう小さく薄く、
+   * 写真の上でも読めるよう地の色を半分透かして敷く。スマホの形では下のタブと dock の上 (`--map-bottom`)
    */
   .map-credit {
     position: absolute;
-    right: var(--so-space-2);
-    bottom: calc(var(--map-bottom, 0px) + var(--so-space-2));
+    right: 0;
+    bottom: var(--map-bottom, 0px);
     z-index: 1;
-    max-width: min(24rem, calc(100% - 2 * var(--so-space-2)));
-    padding: 0 var(--so-space-2);
-    border-radius: var(--so-item-radius);
-    background: var(--so-float);
-    box-shadow: var(--so-shadow-pop);
-    color: var(--so-fg);
-    font-size: var(--so-text-2xs);
-    line-height: 1.8;
+    max-width: 100%;
+    padding: 0 0.3rem;
+    /* 地図の角の丸みに合わせる (下のタブの上に浮くスマホの形では丸めない) */
+    border-bottom-right-radius: var(--map-credit-radius, var(--map-radius, 0));
+    background: color-mix(in srgb, var(--so-bg) 65%, transparent);
+    color: var(--so-muted);
+    font-size: 0.625rem;
+    line-height: 1.5;
     text-align: right;
     text-decoration: none;
   }
@@ -1576,7 +1576,7 @@
   .map-credit::after {
     content: "";
     position: absolute;
-    inset: -0.75rem -0.25rem -0.5rem;
+    inset: -0.75rem 0 0;
   }
   .map-credit:hover {
     text-decoration: underline;
