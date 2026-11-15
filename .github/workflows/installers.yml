@@ -14,6 +14,11 @@ on:
       - install.ps1
       - compose.prod.yml
       - .bun-version
+      - Dockerfile
+      # 誰を通すか (インストーラが書く TRUSTED_NETWORKS の既定と組みで確かめる)
+      - src/hooks.server.ts
+      - src/lib/server/trust.ts
+      - src/lib/server/address.ts
       - .github/bundle.sh
       - .github/workflows/installers.yml
       - .github/workflows/release.yml
@@ -85,18 +90,31 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+      # このコミットの sonae を組んで使う (main の latest には、まだこの変更が入っていない)
+      - name: Build the image
+        run: docker build -t sonae:ci .
       - name: install.sh end to end
         env:
           SONAE_VERSION: main
           SONAE_COMPOSE_FILE: ${{ github.workspace }}/compose.prod.yml
+          SONAE_IMAGE: sonae:ci
         run: |
           set -euo pipefail
           bash install.sh --no-open
           curl -fsS http://localhost:3030/health; echo
           # ランナーの 80 / 443 は空いているので genkan が入り、http://sonae.localhost で開ける
           curl -fsS --resolve sonae.localhost:80:127.0.0.1 http://sonae.localhost/health; echo
-          # OIDC が無いので画面は 503 (ログインの既定は変えていない)
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3030/)" = 503
+          # 誰を通すか (TRUSTED_NETWORKS)。localhost は Docker の中継で送信元が Docker のゲートウェイに見えるので通さない。
+          # genkan 越し (このマシンのブラウザは genkan のゲートウェイから来たように見える) と、LAN の IP では開ける
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3030/)" = 403
+          test "$(curl -s -o /dev/null -w '%{http_code}' --resolve sonae.localhost:80:127.0.0.1 http://sonae.localhost/)" = 200
+          lan=$(ip route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
+          test "$(curl -s -o /dev/null -w '%{http_code}' "http://$lan:3030/")" = 200
+          # genkan の前で X-Forwarded-For を偽っても、外の接続元は名乗れない (genkan が右に本当の相手を足す)。知らない名前も通さない
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Forwarded-For: 192.168.1.5' http://localhost:3030/)" = 403
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example.com' "http://$lan:3030/")" = 403
+          grep -q '^TRUSTED_NETWORKS=192.168.0.0/16,10.0.0.0/8,' ~/sonae/sonae.env
+          grep -q 'TRUSTED_PROXIES:' ~/sonae/compose.override.yml
           # VAPID の鍵ができ、sonae が Web Push を有効にした
           key=$(grep '^VAPID_PRIVATE_JWK=' ~/sonae/sonae.env)
           test "$(stat -c %a ~/sonae/sonae.env)" = 600
@@ -141,7 +159,10 @@ jobs:
           & curl.exe -fsS http://127.0.0.1:3030/health
           if ($LASTEXITCODE -ne 0) { throw 'health' }
           $code = & curl.exe -s -o NUL -w '%{http_code}' http://127.0.0.1:3030/
-          if ($code -ne '503') { throw "expected 503 without OIDC, got $code" }
+          if ($code -ne '200') { throw "expected 200 from the loopback (TRUSTED_NETWORKS), got $code" }
+          # IP の直書きでなく、知らない名前で来たら通さない (DNS リバインディング除け)
+          $code = & curl.exe -s -o NUL -w '%{http_code}' -H 'Host: evil.example.com' http://127.0.0.1:3030/
+          if ($code -ne '403') { throw "expected 403 for an unknown host name, got $code" }
           $envFile = "$env:ProgramData\sonae\sonae.env"
           $key = (Select-String -LiteralPath $envFile -Pattern '^VAPID_PRIVATE_JWK=').Line
           if (-not $key) { throw 'no VAPID key' }
@@ -175,7 +196,9 @@ jobs:
           export SONAE_SERVER_TARBALL
           sudo -E bash install.sh --no-open
           curl -fsS http://127.0.0.1:3030/health; echo
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3030/)" = 503
+          # この Mac のブラウザ (ループバック) は TRUSTED_NETWORKS でログインなしで開ける。知らない名前では通さない
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3030/)" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example.com' http://127.0.0.1:3030/)" = 403
           env_file="/Library/Application Support/sonae/data/sonae.env"
           key=$(sudo grep '^VAPID_PRIVATE_JWK=' "$env_file")
           test -n "$key"

@@ -78,8 +78,28 @@ Linux の genkan は、[danything/genkan](https://github.com/danything/genkan) �
 
 ## ログイン
 
-**ログイン (OIDC) の 3 つ (`OIDC_ISSUER`・`OIDC_CLIENT_ID`・`OIDC_CLIENT_SECRET`) が揃うまで、画面は開きません**
-(「ログインの設定 (OIDC) がまだです」と出て、`/health` だけ答える)。インストーラはここを決めないので、`sonae.env` に書いてから流し直します。
+**家の LAN (と、そのマシンのブラウザ) からは、ログインなしで開けます。** インストーラが `sonae.env` に `TRUSTED_NETWORKS` を書くためです (無いときだけ)。
+
+| OS           | 書く `TRUSTED_NETWORKS`                                                 | 開き方                                                                                      |
+| ------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Linux        | `192.168.0.0/16,10.0.0.0/8` と、genkan で開くなら genkan のゲートウェイ | <http://sonae.localhost> (genkan) か `http://<IP>:3030`。`http://localhost:3030` は通らない |
+| Mac・Windows | `127.0.0.0/8,::1/128,192.168.0.0/16,10.0.0.0/8`                         | <http://localhost:3030> か `http://<名前>:3030`                                             |
+
+> [!WARNING]
+> **このネットワークの中の誰でも、設定を変えられます** (読み上げの声・通知の条件・Web Push の購読。ログインしていないので、全員が「家のネットワーク」という 1 人の利用者になる)。
+> 家の LAN に知らない人がいるなら、`TRUSTED_NETWORKS` を消して OIDC だけにします。`0.0.0.0/0` (全部) にはしないでください。インターネットに向けて開くのと同じです。
+
+- **http の LAN の IP (`http://192.168.x.x:3030`) で開くと、Web Push は使えません。** ブラウザが安全な文脈 (https か localhost) でしか通知の登録を許さないためです。
+  その端末で通知を受けるなら、そのマシンのブラウザで localhost (Linux は sonae.localhost) か、https の前段を置いて開きます
+- **アドレスに加えて、名前も見ます** (DNS リバインディング除け。悪いサイトが自分の名前を LAN の sonae の IP に向け直しても通さない)。
+  ログインなしで通すのは、IP の直書き・`localhost`・ドットの無い名前 (`nas:3030`)・家の中だけの名前 (`.localhost`・`.local`・`.lan`・`.home.arpa`・`.internal`) と、`ALLOWED_HOSTS` に書いた名前 (カンマ区切り。`.example.com` でその下も) だけです。
+  自分のドメインや Tailscale の名前 (`.tail1234.ts.net`) で開くなら `ALLOWED_HOSTS` に書きます
+- **Docker のネットワーク (`172.16.0.0/12`) は入れません。** 前段 (genkan など) 越しの人が全員当たってしまうためです。前段の後ろに置くなら、前段のアドレスを `TRUSTED_PROXIES` に書きます
+  (直の相手がそこのときだけ `X-Forwarded-For` を読む)。genkan に登録したときは、install.sh が `compose.override.yml` に書きます
+- 断ったときは 403 と理由 (接続元のアドレス) を返します。LAN が別の範囲 (`172.16.0.0/12` など) なら、その範囲を足します
+
+**家の外からも開くなら、ログイン (OIDC) を足します。** 3 つ (`OIDC_ISSUER`・`OIDC_CLIENT_ID`・`OIDC_CLIENT_SECRET`) が揃うと、信頼するネットワークの外の人はログインして開きます (中の人はログインなしのまま)。
+`TRUSTED_NETWORKS` も OIDC も無ければ、画面は開かず `/health` だけ答えます (Helm chart の既定はこれで、OIDC だけ)。
 
 1. IdP にクライアントを作り、リダイレクト URI `<開く URL>/auth/callback` を登録する (Entra ID なら [entra.md](entra.md))。
    ロール `admin` (`OIDC_ROLE` で替えられる) を持つ人だけが開ける

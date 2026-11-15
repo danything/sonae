@@ -417,6 +417,12 @@ VOICEVOX が止まっている・つながらないときは、画面が端末�
   通すロールは `OIDC_ROLE` (**既定は `admin`**。まずは持ち主 1 人)。家族と共有するときはロールを足して `OIDC_ROLE` を替えるだけで、コードの変更は要らない。
   リダイレクト URI・環境変数の表・家族と共有する手順は [entra.md](entra.md)。
 - issuer・client id・secret の 3 つが揃わないと、画面は開かない (`/health` だけ答える)。手元の開発だけ、`AUTH_DISABLED=1` でログインを飛ばせる (本番の `NODE_ENV=production` では効かない)。
+- **信頼するネットワーク (`TRUSTED_NETWORKS`) の中からは、ログインなしで通す** (`src/lib/server/trust.ts`。denpa と同じ考え方)。1 行で入れたセルフホストの 1 台目が、IdP を用意しなくても開けるように。
+  - 書いていなければ誰も通さない (いままでどおり)。本番 (家の Talos のクラスタ) と chart の既定は書かず、OIDC だけ。インストーラ (install.sh・install.ps1) は家の LAN とそのマシンのブラウザを書く ([install.md の「ログイン」](install.md#ログイン))
+  - **アドレスに加えて名前も見る** (DNS リバインディング除け)。通すのは IP の直書き・localhost・ドットの無い名前・家の中だけの名前 (`.localhost`・`.local`・`.lan`・`.home.arpa`・`.internal`)・`ALLOWED_HOSTS` だけ
+  - 接続元は、直の相手が前段 (`TRUSTED_PROXIES`) のときだけ `X-Forwarded-For` を右から読む。adapter-bun の `ADDRESS_HEADER` を設定していたら、信頼するネットワークは使わない (誰でも名乗れるため)
+  - 通した人は全員 1 人の利用者 (`trusted-network`、「家のネットワーク」) として扱う。**その中の誰でも、読み上げの声・通知の条件・Web Push の購読を変えられる**
+  - OIDC と一緒に使える (外の人はログイン、中の人はログインなし)。OIDC が無いとき、外の人には 403 と接続元を返す
 - **セッションは DB に持ち、180 日で、使うたびに延ばす。** 何度もログインさせない。**ID は Cookie にだけ生の値を置き、DB には SHA-256 (16 進) を持つ** (DB が漏れても、そのままでは成りすませない)。Web Push は購読してあればセッションが切れても届く。
 - ログイン無しで開けるのは `/auth/login`・`/auth/callback`・`/health`・Service Worker と Web アプリのマニフェストだけ。`/auth/logout` は POST だけ。
 
