@@ -19,7 +19,7 @@ $head = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($wav), 0, 4)
 if ($head -ne 'RIFF') { throw "not a WAV: $head" }
 # sonae retries the connection every 60 seconds. The log line is "[voicevox] tsunagarimashita" in Japanese
 $log = "$env:ProgramData\sonae\logs\sonae.log"
-$connected = '\[voicevox\] ' + [regex]::Unescape('つながりました')
+$connected = '\[voicevox\] ' + (-join [char[]](0x3064, 0x306a, 0x304c, 0x308a, 0x307e, 0x3057, 0x305f))
 for ($i = 0; $i -lt 60; $i++) {
     if (Select-String -LiteralPath $log -Pattern $connected -Quiet -Encoding UTF8) { return }
     Start-Sleep -Seconds 3
