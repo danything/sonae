@@ -567,6 +567,16 @@ mac_main() {
   # --- 揃えてから止める (取ってこられなかったら、動いているものに触らない) ---
   mac_payload "$ref"
   mac_voicevox
+  # 置き場と sonae.env (VAPID の鍵は取ってきた bun で作る) も、止める前に済ませる
+  mkdir -p "$PREFIX"
+  chown root:wheel "$PREFIX"
+  chmod 755 "$PREFIX"
+  mac_data_dir
+  envfile="$DATA/sonae.env"
+  env_template "$envfile"
+  printf '%s\n' "$VAPID_JS" > vapid.mjs
+  ensure_vapid "$envfile" "$work/new/server/bun" vapid.mjs
+  chmod 600 "$envfile"
   mac_stop "system/$SERVER_LABEL"
   [ "$vv_new" = no ] || mac_stop "system/$VOICEVOX_LABEL"
   mkdir -p "$PREFIX" "$LOGS"
@@ -582,13 +592,6 @@ mac_main() {
     chown -R root:wheel "$PREFIX/$part"
     rm -rf "${PREFIX:?}/$part.old"
   done
-
-  mac_data_dir
-  envfile="$DATA/sonae.env"
-  env_template "$envfile"
-  printf '%s\n' "$VAPID_JS" > vapid.mjs
-  ensure_vapid "$envfile" "$PREFIX/server/bun" vapid.mjs
-  chmod 600 "$envfile"
 
   # VOICEVOX は入れ替えたときと、載っていないときだけ起こし直す (モデルを読むのに時間が掛かる)
   if ! launchctl print "system/$VOICEVOX_LABEL" >/dev/null 2>&1; then mac_register_voicevox; fi

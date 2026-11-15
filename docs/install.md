@@ -38,7 +38,7 @@ irm https://raw.githubusercontent.com/danything/sonae/main/install.ps1 | iex   #
 - **入口は [genkan](https://github.com/danything/genkan)** (Linux。ホスト名でコンテナに振り分けるリバースプロキシ)。
   動いていればそれを使い、無ければ 80 と 443 が空いているときだけ `~/genkan` に入れて <http://sonae.localhost> で開きます。
   `*.localhost` はブラウザが安全な文脈として扱うので、そのマシンのブラウザなら Web Push も使えます。LAN のほかの機器からは `http://<IP>:3030`
-- ポートは **3030** (denpa などがよく使う 3000 と重ねない)。VOICEVOX のエンジンは外に出しません (Linux は compose のネットワークの中だけ、Mac と Windows はループバックの 50121。VOICEVOX のアプリの 50021 とも重ねない)
+- ポートは **3030** (denpa などがよく使う 3000 と重ねない)。どの OS でも LAN に開きます (Linux は Docker が公開するので ufw などのファイアウォールを素通りし、Windows はプライベートとドメインのネットワークだけ開ける)。ログイン (OIDC) を書くまでは `/health` しか答えません。VOICEVOX のエンジンは外に出しません (Linux は compose のネットワークの中だけ、Mac と Windows はループバックの 50121。VOICEVOX のアプリの 50021 とも重ねない)
 - イメージの `ghcr.io/danything/sonae` は amd64 だけなので、Linux は x86_64 だけです
 
 ### 置き場
@@ -90,7 +90,8 @@ Linux の genkan は、[danything/genkan](https://github.com/danything/genkan) �
 
 **手で書き足すのは `sonae.env` です。** インストーラは無いときだけ雛形を作り、あとは触りません (VAPID の鍵の行が無ければ足すだけ)。
 秘密 (VAPID の鍵・OIDC のクライアントシークレット) が入るので、本人だけ (Linux)・root だけ (Mac)・SYSTEM と管理者だけ (Windows) が読めるようにしてあります。
-1 行に `KEY=値` で、値は引用符で囲まずに書きます。
+1 行に `KEY=値` で、値は引用符で囲まずに書きます。**BOM の無い UTF-8** で保存します (Windows のメモ帳は「UTF-8」を選ぶ。「UTF-8 (BOM 付き)」だと 1 行目が読めない)。
+Windows は cmd が読むので、値に `"`・`&`・`^`・`%` を入れると崩れることがあります (OIDC のクライアントシークレットに入っていたら、作り直すのが確か)。
 
 置き場・ポート・VOICEVOX の宛先はインストーラが決めるので、書いても効きません (Linux は `compose.override.yml` で変えられる)。
 使える名前は [charts/sonae/values.yaml](../charts/sonae/values.yaml) のコメントと [push.md](push.md)・[cwa.md](cwa.md)・[entra.md](entra.md)。

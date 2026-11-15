@@ -211,8 +211,11 @@ function Get-Voicevox([string]$Work) {
         Say "VOICEVOX $version は入っています"
         return $false
     }
-    $drive = Get-PSDrive -Name ([IO.Path]::GetPathRoot($Work).Substring(0, 1))
-    if ($drive.Free -lt 6GB) { throw "VOICEVOX を開くのに 6 GB ほど要ります ($([math]::Round($drive.Free / 1GB, 1)) GB しか空いていません)" }
+    # 一時フォルダ (取ってきて開く) と Program Files (置く。別のドライブならそちらにも写す) の両方に空きが要る
+    foreach ($path in $Work, $env:ProgramFiles) {
+        $drive = Get-PSDrive -Name ([IO.Path]::GetPathRoot($path).Substring(0, 1))
+        if ($drive.Free -lt 6GB) { throw "VOICEVOX を置くのに $($drive.Name): に 6 GB ほど要ります ($([math]::Round($drive.Free / 1GB, 1)) GB しか空いていません)" }
+    }
     Say "VOICEVOX のエンジン $version を取ってきます (2 GB ほど。数分かかります)"
     $engine = Join-Path $Work 'engine.zip'
     $out = [IO.File]::Create($engine)
@@ -332,6 +335,10 @@ function Install-Sonae([string]$Ref) {
         # --- 揃えてから止める (取ってこられなかったら、動いているものに触らない) ---
         Get-Server $Ref $work
         $voicevoxNew = Get-Voicevox $work
+        # 置き場と sonae.env (VAPID の鍵は取ってきた bun で作る) も、止める前に済ませる (失敗しても、動いているものに触らない)
+        Set-Owned $Data @($System, $Administrators) $Administrators
+        New-Item -ItemType Directory -Force -Path $Logs | Out-Null
+        $envFile = Initialize-Env "$work\new\server\bun.exe" $work
         Stop-Server
         if ($voicevoxNew) { Stop-Voicevox }
         New-Item -ItemType Directory -Force -Path $Prefix | Out-Null
@@ -350,9 +357,6 @@ function Install-Sonae([string]$Ref) {
             }
             if (Test-Path -LiteralPath $old) { Remove-Item -Recurse -Force -LiteralPath $old }
         }
-        Set-Owned $Data @($System, $Administrators) $Administrators
-        New-Item -ItemType Directory -Force -Path $Logs | Out-Null
-        $envFile = Initialize-Env "$Prefix\server\bun.exe" $work
     } finally {
         Remove-Item -Recurse -Force -LiteralPath $work -ErrorAction SilentlyContinue
     }
