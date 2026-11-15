@@ -17,6 +17,7 @@ import {
   ALERT_OFF,
   alertFor,
   type AlertSettings,
+  autoplayAllowed,
   parseAlertPrefs,
   parseAlertSettings,
 } from "./alert.ts";
@@ -33,33 +34,13 @@ const SENT_MAX = 200;
 /** 音の後に読み上げるまでの間 (ミリ秒。音と声を重ねない) */
 const SPEAK_AFTER_MS = 750;
 
-/**
- * 操作の前でも音を出せるか。Firefox は `navigator.getAutoplayPolicy` で分かる。無いブラウザは、
- * 作った AudioContext がすぐ動くか (自動再生を許していなければ suspended で作られる) で見る。
- * 分からなければ出せないとみなす (「音を出す」を出す側に倒す。鳴らすのに失敗したときも出る)
- */
-function autoplayAllowed(): boolean {
-  const nav = navigator as Navigator & {
-    getAutoplayPolicy?: (type: "mediaelement") => string;
-  };
-  try {
-    if (nav.getAutoplayPolicy)
-      return nav.getAutoplayPolicy("mediaelement") === "allowed";
-    if (typeof AudioContext === "undefined") return false;
-    const ctx = new AudioContext();
-    const running = ctx.state === "running";
-    void ctx.close();
-    return running;
-  } catch {
-    return false;
-  }
-}
-
 class Alerter {
   settings = $state<AlertSettings>({ ...ALERT_OFF });
   prefs = $state<PushPrefs>({ ...DEFAULT_PREFS });
   /** 人がページを操作した (ブラウザが音を出させる) */
   activated = $state(false);
+  /** 開いたときから自動再生を許している (操作の前でも `<audio>` を鳴らせる) */
+  autoplay = $state(false);
   /** 操作の後でも、ブラウザが音を止めた */
   failed = $state(false);
   /** サーバーの VOICEVOX (選べる声)。読めるまでは無い */
@@ -116,7 +97,18 @@ class Alerter {
   get blocked(): boolean {
     return (
       (this.settings.sound || (this.settings.speech && this.canSpeak)) &&
-      (!this.activated || this.failed)
+      (!this.ready || this.failed)
+    );
+  }
+
+  /**
+   * 鳴らせる状態か。自動再生を許していても、端末の読み上げ (speechSynthesis) は操作の前だと断られることが
+   * あり、断られても分からないので、読み上げがオンで VOICEVOX が使えないときは操作を待つ
+   */
+  private get ready(): boolean {
+    return (
+      this.activated ||
+      (this.autoplay && (!this.settings.speech || this.voicevox))
     );
   }
 
@@ -125,8 +117,8 @@ class Alerter {
     this.settings = parseAlertSettings(readPref("alert"));
     this.prefs = parseAlertPrefs(readPref("alert.prefs"));
     // 自動再生を許している (アプリとして入れた・サイトの設定で許した) ブラウザでは、押さなくても鳴らせる
-    this.activated =
-      (navigator.userActivation?.hasBeenActive ?? false) || autoplayAllowed();
+    this.activated = navigator.userActivation?.hasBeenActive ?? false;
+    this.autoplay = autoplayAllowed(navigator, globalThis.AudioContext);
     void this.loadSpeech();
     const onGesture = () => this.unlock();
     const events = ["pointerup", "keydown", "touchend"] as const;
