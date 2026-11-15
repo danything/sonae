@@ -1,8 +1,11 @@
 /**
  * 画面の「いまの姿」。最初は load で受けたものを入れ、SSE (`/api/stream`) の差分で更新する。
- * 切れたら EventSource が自分で張り直し、`Last-Event-ID` から埋め直してもらう。
+ * 切れたら自分で張り直し (EventSource の張り直しには任せない。止まったままになる道があるため)、
+ * 最後に受けた番号 (`?after=`) から埋め直してもらう (docs/design.md の 2.3)。
  */
 
+import { Backoff } from "./backoff.ts";
+import { isStale, STABLE_MS } from "./connection.ts";
 import type {
   Advisory,
   Eew,
@@ -206,38 +209,129 @@ export class Live {
   connect(
     onResync: () => void = () => {},
     onEvent: (e: SonaeEvent) => void = () => {},
+    onHealth: (connected: boolean) => void = () => {},
   ): () => void {
-    const es = new EventSource(`/api/stream?after=${this.lastSeq}`);
-    this.source = es;
-    const on = (type: SonaeEvent["type"]) =>
-      es.addEventListener(type, (m) => {
-        const seq = Number((m as MessageEvent).lastEventId);
-        const e = {
-          seq,
-          type,
-          data: JSON.parse((m as MessageEvent).data),
-        } as SonaeEvent;
-        if (this.apply(e)) onEvent(e);
+    const backoff = new Backoff();
+    let stopped = false;
+    let lastSeen = Date.now();
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let stable: ReturnType<typeof setTimeout> | undefined;
+
+    const down = () => {
+      this.connected = false;
+      clearTimeout(stable);
+      this.source?.close();
+      this.source = undefined;
+      onHealth(false);
+    };
+    /** 間を空けて張り直す (もう待っていれば、そのまま待つ) */
+    const schedule = () => {
+      if (stopped || retry !== undefined) return;
+      retry = setTimeout(open, backoff.next());
+    };
+    /** すぐ張り直す (オンラインに戻った・画面に戻った・何も届かない) */
+    const reconnect = () => {
+      if (stopped) return;
+      backoff.reset();
+      down();
+      open();
+    };
+
+    // 張り直すたびに、最後に受けた番号の後から読む (切れていた間のものはサーバーが埋め直す。多すぎれば resync)
+    const open = () => {
+      clearTimeout(retry);
+      retry = undefined;
+      if (stopped) return;
+      this.source?.close();
+      lastSeen = Date.now();
+      const es = new EventSource(`/api/stream?after=${this.lastSeq}`);
+      this.source = es;
+      const seen = () => {
+        if (this.source === es) lastSeen = Date.now();
+      };
+      const on = (type: SonaeEvent["type"]) =>
+        es.addEventListener(type, (m) => {
+          seen();
+          const seq = Number((m as MessageEvent).lastEventId);
+          const e = {
+            seq,
+            type,
+            data: JSON.parse((m as MessageEvent).data),
+          } as SonaeEvent;
+          if (this.apply(e)) onEvent(e);
+        });
+      on("eew");
+      on("quake");
+      on("tsunami");
+      on("advisory");
+      on("volcano");
+      on("foreign");
+      on("longperiod");
+      on("warning");
+      on("weather");
+      es.addEventListener("status", (m) => {
+        seen();
+        this.statuses = JSON.parse((m as MessageEvent).data) as SourceStatus[];
       });
-    on("eew");
-    on("quake");
-    on("tsunami");
-    on("advisory");
-    on("volcano");
-    on("foreign");
-    on("longperiod");
-    on("warning");
-    on("weather");
-    es.addEventListener("status", (m) => {
-      this.statuses = JSON.parse((m as MessageEvent).data) as SourceStatus[];
-    });
-    es.addEventListener("resync", () => onResync());
-    es.addEventListener("open", () => (this.connected = true));
-    es.addEventListener("error", () => (this.connected = false));
+      es.addEventListener("resync", () => {
+        seen();
+        onResync();
+      });
+      es.addEventListener("open", () => {
+        if (this.source !== es) return;
+        seen();
+        this.connected = true;
+        onHealth(true);
+        clearTimeout(stable);
+        stable = setTimeout(() => backoff.reset(), STABLE_MS);
+      });
+      // EventSource は、サーバーが 200 の text/event-stream 以外 (502・503・ログインが切れた 401 など) を
+      // 返すと張り直さずに止まる (CLOSED)。止まり方を見分けず、いつも閉じて自分で間を空けて張り直す
+      es.addEventListener("error", () => {
+        if (this.source !== es) return;
+        down();
+        schedule();
+      });
+    };
+
+    const onOnline = () => {
+      if (!this.connected) reconnect();
+    };
+    const onOffline = () => {
+      down();
+      schedule();
+    };
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      // スリープから戻ったときなど、つながっているように見えて何も届かない接続を張り直す
+      if (!this.connected || isStale(lastSeen, Date.now())) reconnect();
+    };
+    // 戻る・進むの控え (bfcache) から戻ったとき、EventSource は閉じられている
+    const onShow = (e: PageTransitionEvent) => {
+      if (e.persisted) reconnect();
+    };
+    window.addEventListener("online", onOnline);
+    window.addEventListener("offline", onOffline);
+    window.addEventListener("pageshow", onShow);
+    document.addEventListener("visibilitychange", onVisible);
+
+    open();
     const tick = setInterval(() => (this.now = Date.now()), 10_000);
+    const watch = setInterval(() => {
+      if (this.connected && isStale(lastSeen, Date.now())) reconnect();
+      onHealth(this.connected);
+    }, 5_000);
     return () => {
+      stopped = true;
       clearInterval(tick);
-      es.close();
+      clearInterval(watch);
+      clearTimeout(retry);
+      clearTimeout(stable);
+      window.removeEventListener("online", onOnline);
+      window.removeEventListener("offline", onOffline);
+      window.removeEventListener("pageshow", onShow);
+      document.removeEventListener("visibilitychange", onVisible);
+      this.source?.close();
       this.source = undefined;
     };
   }

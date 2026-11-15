@@ -20,7 +20,14 @@
   // 開いているときの音と読み上げ (端末ごとのオン/オフ。既定はオフ)。
   // start は設定を読んで書くので、読んだ値を追わない (追うと書くたびに effect が走り直して止まらない)
   $effect(() => untrack(() => alerter.start()));
-  $effect(() => live.connect(resync, (e) => alerter.handle(e)));
+  // 切れたら張り直し、切れたままなら知らせる (docs/design.md の 2.3)
+  $effect(() =>
+    live.connect(
+      resync,
+      (e) => alerter.handle(e),
+      (ok) => alerter.connection(ok),
+    ),
+  );
 </script>
 
 <svelte:head>

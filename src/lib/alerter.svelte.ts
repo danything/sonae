@@ -29,6 +29,12 @@ import {
   planAlert,
 } from "./alert.ts";
 import { chimeWav } from "./chime.ts";
+import {
+  CONNECTION_TAG,
+  connectionNotification,
+  type OutageSignal,
+  OutageWatch,
+} from "./connection.ts";
 import type { SonaeEvent } from "./model.ts";
 import { contentOf, type Notice, type Sent } from "./notify.ts";
 import { readPref, writePref } from "./prefs.ts";
@@ -38,7 +44,7 @@ import {
   normalizePrefs,
   type PushPrefs,
 } from "./push.ts";
-import { readoutOf, SAMPLE } from "./readout.ts";
+import { CONNECTION, readoutOf, SAMPLE } from "./readout.ts";
 import { creditOf, type SpeechInfo, type Voice } from "./voices.ts";
 
 /** 控えを持つ数の上限 (長く開いたままでも増え続けない) */
@@ -71,6 +77,10 @@ class Alerter {
   private voiceAudio: HTMLAudioElement | undefined;
   private url: string | undefined;
   private readonly sent = new Map<string, Sent>();
+  /** 受信が切れた・戻ったを知らせるかの判定 (start で作り直す) */
+  private outage = new OutageWatch(Date.now());
+  /** 前もって取った、受信が切れた・戻ったときの文の音 (声と文ごと) */
+  private readonly kept = new Map<string, Blob>();
   /** 鳴らした回数。無音で動かしている間に本当に鳴らしたら、その音を止めない */
   private rings = 0;
   /** 読み上げの回数。新しい読み上げが始まったら、前のものを止める */
@@ -144,6 +154,7 @@ class Alerter {
     this.activated = navigator.userActivation?.hasBeenActive ?? false;
     this.autoplay = autoplayAllowed(navigator, globalThis.AudioContext);
     this.permission = permissionNow();
+    this.outage = new OutageWatch(Date.now());
     void this.loadSpeech();
     const onGesture = () => this.unlock();
     const events = ["pointerup", "keydown", "touchend"] as const;
@@ -184,6 +195,87 @@ class Alerter {
       if (res.ok) this.speech = (await res.json()) as SpeechInfo;
     } catch {
       // 読めなければ端末の読み上げで読む
+    }
+    void this.keepConnectionVoice();
+  }
+
+  /**
+   * 受信が切れた・戻ったときの文の音を、前もって取っておく (切れている間はサーバーに取りに行けない)。
+   * 読み上げがオンで VOICEVOX が使えるときだけ。声を替えたら取り直す
+   */
+  private async keepConnectionVoice(): Promise<void> {
+    if (!this.settings.speech || !this.voicevox) return;
+    const voice = this.voiceId;
+    for (const text of Object.values(CONNECTION)) {
+      const key = `${voice}\n${text}`;
+      if (this.kept.has(key)) continue;
+      try {
+        const res = await fetch("/api/speech", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text, voice }),
+        });
+        if (res.ok) this.kept.set(key, await res.blob());
+      } catch {
+        // 取れなければ、切れたときは端末の読み上げで読む
+      }
+    }
+  }
+
+  /**
+   * 画面への配信 (SSE) がつながっているか。`live.connect` がときどきと、変わったときに呼ぶ。
+   * 切れたまま 30 秒続いたら「受信が切れました」、その後に戻ったら「受信が戻りました」を知らせる
+   * (`#lib/connection.ts` の OutageWatch)。スイッチ (`outage`) を切っていれば知らせない
+   */
+  connection(connected: boolean): void {
+    const signal = this.outage.update(connected, Date.now());
+    if (!signal || this.settings.outage === false) return;
+    // 同じ画面のタブが幾つあっても 1 つだけが知らせる (タブごとに見ているので、少し長めに持つ)
+    void this.once(`connection:${signal}`, () => this.announce(signal), 60_000);
+  }
+
+  /**
+   * 受信が切れた・戻ったことを知らせる。切れたときは、事象と同じくチャイム・OS の通知・読み上げ
+   * (オンにしているものだけ)。戻ったときは短く、読み上げと、切れたときの通知の音なしの置き換えだけ
+   */
+  private async announce(signal: OutageSignal): Promise<void> {
+    const { sound, speech } = this.settings;
+    const down = signal === "down";
+    const text = down ? CONNECTION.down : CONNECTION.back;
+    const reads = speech && this.canSpeak;
+    this.rings++;
+    const chimed = down && sound ? await this.chime() : false;
+    const notified = this.notifying
+      ? await this.showConnection(signal, chimed)
+      : false;
+    if (!reads) return;
+    const blob = this.kept.get(`${this.voiceId}\n${text}`) ?? null;
+    const pending = new Map([[text, Promise.resolve(blob)]]);
+    const go = () => void this.speak([text], pending);
+    if (chimed || notified) setTimeout(go, SPEAK_AFTER_MS);
+    else go();
+  }
+
+  /** 受信が切れた・戻ったときの OS の通知。戻ったときは、切れたときの通知が残っていれば置き換えるだけ */
+  private async showConnection(
+    signal: OutageSignal,
+    chimed: boolean,
+  ): Promise<boolean> {
+    try {
+      const reg = await this.registration();
+      if (!reg) return false;
+      const shape = connectionNotification(signal, chimed);
+      if (signal === "back") {
+        const shown = await reg.getNotifications({ tag: CONNECTION_TAG });
+        if (shown.length === 0) return false;
+      }
+      await reg.showNotification(
+        shape.title,
+        shape.options as NotificationOptions,
+      );
+      return !shape.options.silent;
+    } catch {
+      return false;
     }
   }
 
@@ -313,7 +405,11 @@ class Alerter {
   }
 
   /** ほかのタブが同じものを鳴らしていたら鳴らさない (Web Locks が無ければ、いつも鳴らす) */
-  private async once(key: string, run: () => unknown): Promise<void> {
+  private async once(
+    key: string,
+    run: () => unknown,
+    holdMs = 5000,
+  ): Promise<void> {
     const locks =
       typeof navigator !== "undefined" ? navigator.locks : undefined;
     // 鳴らせないタブはロックを取らない (操作済みのほかのタブが鳴らせるように)。自分でも鳴らしてはみる
@@ -329,7 +425,7 @@ class Alerter {
         if (!lock) return;
         run();
         // 同じ SSE のイベントがほかのタブに届くまで持っておく
-        await new Promise((r) => setTimeout(r, 5000));
+        await new Promise((r) => setTimeout(r, holdMs));
       },
     );
   }
