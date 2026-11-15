@@ -42,6 +42,14 @@ describe("マニフェストの地の色", () => {
     expect(strip(light)).toEqual(strip(dark));
   });
 
+  test("app.html の描く前のスクリプトも同じ置き換えをする", () => {
+    const html = read("src/app.html");
+    expect(html).toContain("/manifest(-light)?\\.webmanifest$/");
+    expect(html).toContain(
+      'dark ? "manifest.webmanifest" : "manifest-light.webmanifest"',
+    );
+  });
+
   test("テーマで読むマニフェストを替える (行き来しても崩れない)", () => {
     const l = manifestHref("/manifest.webmanifest", false);
     expect(l).toBe("/manifest-light.webmanifest");
