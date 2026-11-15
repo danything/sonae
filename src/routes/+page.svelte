@@ -248,7 +248,16 @@
       row: (x: T) => RowData,
     ) {
       if (!shownKind(kind)) return;
-      for (const x of list) items.push({ at: at(x) ?? "", row: () => row(x) });
+      // 行の鍵には種類を付ける。種類が違えば同じ id があり、同じ日に並ぶと鍵がぶつかって画面ごと落ちる
+      // (地震と、その地震の津波は、どちらも id が地震識別番号)
+      for (const x of list)
+        items.push({
+          at: at(x) ?? "",
+          row: () => {
+            const r = row(x);
+            return { ...r, key: `${kind}:${r.key}` };
+          },
+        });
     }
     add("quake", quakes, quakeTime, quakeRow);
     add("tsunami", tsunamis, (t) => t.issuedAt, tsunamiRow);
