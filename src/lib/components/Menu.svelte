@@ -81,6 +81,7 @@
     class: className = "",
     testid,
     onclosed,
+    focusOnOpen = true,
   }: {
     open?: boolean;
     /** 引き金。渡される属性を `<button>` に広げる */
@@ -108,6 +109,11 @@
      * 閉じた瞬間に替えると、引っ込む間に替わった中身が一瞬見える (⚙ の選択肢の並びから閉じたとき)
      */
     onclosed?: (() => void) | undefined;
+    /**
+     * 開いたときに中へフォーカスを移すか。マウスを乗せただけで開くメニュー (地図のハザードマップ) は false にし、
+     * 打っている欄などからフォーカスを取らない (↓ で中へ入れる)
+     */
+    focusOnOpen?: boolean;
   } = $props();
 
   const uid = $props.id();
@@ -187,7 +193,7 @@
         place();
         const list = items();
         // 届くまでにキーボードで中へ入っていたら動かさない
-        if (!element.contains(document.activeElement)) {
+        if (focusOnOpen && !element.contains(document.activeElement)) {
           const target = byPointer ? element : fromEnd ? list.at(-1) : list[0];
           (target ?? element).focus({ preventScroll: true });
         }

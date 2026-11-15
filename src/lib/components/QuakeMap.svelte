@@ -651,6 +651,43 @@
   const creditText = $derived(
     mapCredit({ hazard: covered ? (chosenHazard?.credit ?? "") : "", grus }),
   );
+  /**
+   * 選択肢をどう開いたか。マウスを乗せて開いた ("hover") ときは、外れたら少し待って閉じ、フォーカスは動かさない
+   * (乗せただけで、打っている欄からフォーカスを取らない)。押して・キーで開いたときは今までどおり
+   */
+  let hazardBy = $state<"" | "hover" | "press">("");
+  let hazardTimer: ReturnType<typeof setTimeout> | undefined;
+  /** 外れてから閉じるまで (ミリ秒)。選択肢へ指を動かす間に閉じないように */
+  const HAZARD_CLOSE_MS = 300;
+  const canHover = () =>
+    typeof matchMedia === "function" && matchMedia("(hover: hover)").matches;
+  function hazardEnter(event: PointerEvent): void {
+    if (event.pointerType !== "mouse" || !canHover() || !map) return;
+    clearTimeout(hazardTimer);
+    if (hazardMenu) return;
+    hazardBy = "hover";
+    hazardMenu = true;
+  }
+  function hazardLeave(event: PointerEvent): void {
+    if (event.pointerType !== "mouse" || hazardBy !== "hover") return;
+    clearTimeout(hazardTimer);
+    hazardTimer = setTimeout(() => {
+      if (hazardBy === "hover") hazardMenu = false;
+    }, HAZARD_CLOSE_MS);
+  }
+  /** 乗せて開いている間に押したら、閉じずに開いたままにする (外れても閉じない) */
+  function hazardClick(event: MouseEvent): void {
+    clearTimeout(hazardTimer);
+    if (hazardBy === "hover" && hazardMenu) {
+      // popovertarget の開け閉めを止める (押したら閉じてしまうため)
+      event.preventDefault();
+      hazardBy = "press";
+      return;
+    }
+    hazardBy = "press";
+  }
+  $effect(() => () => clearTimeout(hazardTimer));
+
   function pickHazard(id: HazardId): void {
     hazard = id;
     hazardMenu = false;
@@ -960,7 +997,7 @@
   }
 
   /**
-   * 範囲へ寄せるときの余白 (px)。上は左上のハザードマップの選択と右上の現在地のボタン、
+   * 範囲へ寄せるときの余白 (px)。下は右下のハザードマップの選択と現在地のボタンと隅の出典、
    * スマホの形の下は浮いている下のタブと dock の分を空ける
    */
   function focusPadding(): {
@@ -971,8 +1008,8 @@
   } {
     const phone = document.documentElement.hasAttribute("data-phone");
     const h = container?.clientHeight ?? 0;
-    const top = 64;
-    const bottom = phone ? 150 : 24;
+    const top = 24;
+    const bottom = phone ? 210 : 90;
     // 地図が低すぎて余白が収まらないときは、余白を詰める (cameraForBounds が寄せ先を返さなくなる)
     const k = h > 0 ? Math.min(1, (h * 0.6) / (top + bottom)) : 1;
     return {
@@ -1112,33 +1149,77 @@
       role="region"
       aria-label="地図"
     ></div>
-    <!-- 地図の上に置く操作は、ハザードマップの選択と現在地のボタンだけ (docs/design.md の 6.2) -->
-    <div class="hazard">
-      <Menu bind:open={hazardMenu} align="start" class="hazard-menu">
-        {#snippet trigger(props)}
-          <button
-            {...props}
-            type="button"
-            class="map-pill"
-            data-on={hazard !== "none" ? "" : undefined}
-            disabled={!map}
-            data-testid="hazard"
+    <!--
+      地図の上に置く操作は、ハザードマップの選択と現在地のボタンだけ (docs/design.md の 6.2)。
+      どちらも右下に、隅の出典の上にまとめる。並びは下から、操作の 1 行・凡例・知らせ (column-reverse)
+    -->
+    <div class="controls" data-testid="map-controls">
+      <div class="control-row">
+        <!-- マウスを乗せただけで選択肢を開く ((hover: hover) の端末だけ)。外れたら少し待って閉じる -->
+        <div
+          class="hazard"
+          role="presentation"
+          onpointerenter={hazardEnter}
+          onpointerleave={hazardLeave}
+        >
+          <Menu
+            bind:open={hazardMenu}
+            side="top"
+            align="end"
+            class="hazard-menu"
+            focusOnOpen={hazardBy !== "hover"}
+            onclosed={() => (hazardBy = "")}
           >
-            ハザードマップ: {chosenHazard?.label ?? "なし"}
-          </button>
-        {/snippet}
-        <p class="menu-head">ハザードマップ</p>
-        {#each [{ id: "none" as const, label: "なし" }, ...HAZARDS] as h (h.id)}
-          <button
-            type="button"
-            role="menuitemradio"
-            class="menu-item"
-            aria-checked={hazard === h.id}
-            onclick={() => pickHazard(h.id)}
-            data-testid="hazard-{h.id}">{h.label}</button
-          >
-        {/each}
-      </Menu>
+            {#snippet trigger(props)}
+              <button
+                {...props}
+                type="button"
+                class="map-pill"
+                data-on={hazard !== "none" ? "" : undefined}
+                disabled={!map}
+                data-testid="hazard"
+                onclick={hazardClick}
+              >
+                ハザードマップ: {chosenHazard?.label ?? "なし"}
+              </button>
+            {/snippet}
+            <p class="menu-head">ハザードマップ</p>
+            {#each [{ id: "none" as const, label: "なし" }, ...HAZARDS] as h (h.id)}
+              <button
+                type="button"
+                role="menuitemradio"
+                class="menu-item"
+                aria-checked={hazard === h.id}
+                onclick={() => pickHazard(h.id)}
+                data-testid="hazard-{h.id}">{h.label}</button
+              >
+            {/each}
+          </Menu>
+        </div>
+        <button
+          type="button"
+          class="locate-button"
+          aria-pressed={paused ? "mixed" : locating !== "off"}
+          aria-label={paused
+            ? "現在地の表示はオンです (押すと位置を探します)"
+            : locating === "off"
+              ? "現在地を表示"
+              : locating === "waiting"
+                ? "現在地を探しています (押すとやめる)"
+                : "現在地の表示をやめる"}
+          title={paused
+            ? "現在地の表示はオンです。押すと位置を探します"
+            : locating === "off"
+              ? "現在地を表示"
+              : "現在地の表示をやめる"}
+          onclick={toggleLocate}
+          disabled={!map}
+          data-locating={paused ? "paused" : locating}
+          data-testid="locate"
+        >
+          <Icon icon={locating === "on" ? LocateFixed : Locate} />
+        </button>
+      </div>
       {#if chosenHazard}
         <!-- 公式の凡例 (ハザードマップポータルサイトの画像)。活断層は凡例の代わりに国土地理院の説明へのリンク -->
         <figure class="legend" data-testid="hazard-legend">
@@ -1178,38 +1259,13 @@
           {/if}
         </figure>
       {/if}
-    </div>
-    <a class="map-credit" href={aboutHref} data-testid="map-credit"
-      >{creditText}</a
-    >
-    <div class="locate">
-      <button
-        type="button"
-        class="locate-button"
-        aria-pressed={paused ? "mixed" : locating !== "off"}
-        aria-label={paused
-          ? "現在地の表示はオンです (押すと位置を探します)"
-          : locating === "off"
-            ? "現在地を表示"
-            : locating === "waiting"
-              ? "現在地を探しています (押すとやめる)"
-              : "現在地の表示をやめる"}
-        title={paused
-          ? "現在地の表示はオンです。押すと位置を探します"
-          : locating === "off"
-            ? "現在地を表示"
-            : "現在地の表示をやめる"}
-        onclick={toggleLocate}
-        disabled={!map}
-        data-locating={paused ? "paused" : locating}
-        data-testid="locate"
-      >
-        <Icon icon={locating === "on" ? LocateFixed : Locate} />
-      </button>
       {#if locateNote}
         <p class="locate-note small" role="status">{locateNote}</p>
       {/if}
     </div>
+    <a class="map-credit" href={aboutHref} data-testid="map-credit"
+      >{creditText}</a
+    >
     <!--
       地図のメニュー (右クリック・長押し)。押した所に目に見えない引き金を置き、ほかのメニューと同じ Menu で開く
       (外を押すと閉じる・Esc で閉じる・↑↓で動く)
@@ -1272,17 +1328,31 @@
    * 現在地のボタン。地図 (動く中身) の上に重なるので操作の層 (面と影) に乗せる。
    * オンは並びの外の切り替えなので、主の色のアイコンと短い下線 (denpa の 6 章「ボタン」)
    */
-  .locate {
+  /*
+   * 地図の上の操作 (ハザードマップの選択と現在地のボタン) は右下にまとめる。隅の出典 (1 行) のすぐ上で、
+   * スマホの形では下のタブと dock の上 (`--map-bottom`)。並びは下から操作の 1 行・凡例・知らせ
+   */
+  .controls {
     position: absolute;
-    top: calc(var(--map-top, 0px) + var(--so-space-3));
     right: var(--so-space-3);
+    bottom: calc(var(--map-bottom, 0px) + var(--so-space-2) + 1.4rem);
     z-index: 1;
     display: flex;
-    flex-direction: column;
+    flex-direction: column-reverse;
     align-items: flex-end;
     gap: var(--so-space-2);
     max-width: min(18rem, calc(100% - 2 * var(--so-space-3)));
+    /* 上の帯 (音が止まっているとき) と、上の余白にかからない高さまで */
+    max-height: calc(
+      100% - var(--map-top, 0px) - var(--map-bottom, 0px) - 3 *
+        var(--so-space-3)
+    );
     pointer-events: none;
+  }
+  .control-row {
+    display: flex;
+    align-items: center;
+    gap: var(--so-space-2);
   }
   .locate-button {
     position: relative;
@@ -1325,18 +1395,10 @@
     :global(svg) {
     opacity: 0.45;
   }
-  /* ハザードマップの選択 (左上) と、選んだものの公式の凡例 */
+  /* ハザードマップの選択 (右下の 1 行の左)。選択肢は上へ開く */
   .hazard {
-    position: absolute;
-    top: calc(var(--map-top, 0px) + var(--so-space-3));
-    left: var(--so-space-3);
-    z-index: 1;
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--so-space-2);
-    max-width: min(17rem, calc(100% - 5rem));
-    pointer-events: none;
+    min-width: 0;
   }
   /* メニューは最前面に出るが、DOM ではこの箱の子なので、押せるように戻す */
   .hazard :global(.menu) {
@@ -1450,13 +1512,14 @@
     border: 0;
     opacity: 0;
   }
-  /* メニューの操作の結果の知らせ。地図の下の真ん中 (スマホの形は下のタブと dock の上) に、操作の層と同じ面で */
+  /*
+   * メニューの操作の結果の知らせ。地図の上の真ん中に、操作の層と同じ面で
+   * (下は右下の操作・出典とスマホの形の下のタブと dock があるので、空いている上に出す)
+   */
   .place-note {
     position: absolute;
     left: 50%;
-    bottom: calc(
-      var(--map-bottom, 0px) + var(--so-space-6) + var(--so-space-3)
-    );
+    top: calc(var(--map-top, 0px) + var(--so-space-3));
     z-index: 1;
     max-width: min(24rem, calc(100% - 2 * var(--so-space-3)));
     margin: 0;
