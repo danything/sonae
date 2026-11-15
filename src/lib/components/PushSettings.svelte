@@ -304,6 +304,17 @@
   aria-labelledby="push-title"
   onclose={() => (open = false)}
 >
+  <!--
+    枠の外を押したら閉じる。dialog が画面いっぱいに広がっているので、closedby="any" だけでは
+    外を押しても dialog の中を押した扱いになり閉じない (「出典と注意」の窓と同じ作り)
+  -->
+  <button
+    type="button"
+    class="modal-backdrop"
+    tabindex="-1"
+    aria-label="閉じる"
+    onclick={() => dialog?.close()}
+  ></button>
   <article class="modal-box stack">
     <h1 id="push-title">通知</h1>
     <p class="small muted">
