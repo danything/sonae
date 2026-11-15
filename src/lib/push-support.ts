@@ -82,3 +82,27 @@ export function pushBlockText(block: PushBlock, userAgent: string): string {
  */
 export const registerFailedText = (err: unknown): string =>
   `登録できませんでした (${err instanceof Error ? `${err.name}: ${err.message}` : String(err)})。このブラウザの配信サービスにつながらないことがあります。ほかのブラウザ (Chrome・Firefox・Safari) で試してください。${OPEN_NOTE}`;
+
+/** 許可を聞いてから、これより早く「拒否」が返ったら、ブラウザが窓を出さずに断ったとみなす (人が押せる速さではない) */
+export const QUIET_DENY_MS = 400;
+
+/**
+ * 通知の許可が無いときの文。ブラウザが許可の窓を出さずに断ることがある
+ * (前に閉じた・拒否した、Edge の「通知の要求を静かにする」、Android の Edge など)。
+ * そのときは、何が起きたかと、サイトの設定で許す道筋を出す
+ */
+export function permissionDeniedText(
+  userAgent: string,
+  opts: { quiet?: boolean; asked?: boolean } = {},
+): string {
+  const how = isAndroidEdge(userAgent)
+    ? "アドレスバーの鍵の印 (または「…」→「設定」→「プライバシーとセキュリティ」→「サイトのアクセス許可」→「通知」) で、このサイトの通知を「許可」にしてから、もう一度押してください。"
+    : /\bEdg\//.test(userAgent)
+      ? "アドレスバーの鍵の印 → 「このサイトのアクセス許可」→「通知」を「許可」にしてから、もう一度押してください。Edge の設定の「通知の要求を静かにする」がオンだと、窓の代わりにアドレスバーにベルの印が出るだけのことがあります。"
+      : "アドレスバーの鍵の印 (サイトの設定) で、このサイトの通知を「許可」にしてから、もう一度押してください。";
+  const what =
+    opts.asked && opts.quiet
+      ? "ブラウザが許可の窓を出さずに、通知を断りました (前に閉じたり拒否したりしたサイトや、ブラウザの設定で、窓が出ないことがあります)。"
+      : "通知が許可されていません。";
+  return `${what}${how}`;
+}
