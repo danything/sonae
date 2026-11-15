@@ -11,22 +11,21 @@
   import { goto } from "$app/navigation";
 
   import { alerter } from "#lib/alerter.svelte.ts";
-  import { byPrefecture, type Cities, cityAt, homeOf } from "#lib/home.ts";
+  import { byPrefecture, type Cities, homeOf } from "#lib/home.ts";
   import { INTENSITIES, intensityLabel } from "#lib/model.ts";
   import {
-    base64UrlToBytes,
-    DEFAULT_PREFS,
-    normalizePrefs,
-    type PushPrefs,
-  } from "#lib/push.ts";
+    homeAt,
+    loadCities as readCities,
+    prefsSettled,
+    type PushInfo,
+    pushSupported,
+    queuePrefs,
+    readPushState,
+    sendPrefs,
+  } from "#lib/push-client.ts";
+  import { DEFAULT_PREFS, normalizePrefs, type PushPrefs } from "#lib/push.ts";
   import { voiceLabel } from "#lib/voices.ts";
 
-  interface Registered {
-    endpoint: string;
-    label: string;
-    prefs: PushPrefs;
-    createdAt: number;
-  }
   let {
     open = $bindable(false),
     training,
@@ -39,12 +38,8 @@
     trainingHref: string;
   } = $props();
 
-  type Info =
-    | { enabled: false }
-    | { enabled: true; publicKey: string; subscriptions: Registered[] };
-
   let dialog = $state<HTMLDialogElement>();
-  let info = $state<Info>();
+  let info = $state<PushInfo>();
   let supported = $state(true);
   let endpoint = $state<string>();
   let prefs = $state<PushPrefs>({ ...DEFAULT_PREFS });
@@ -82,7 +77,8 @@
   /** 条件は、このブラウザが Web Push に登録してあればその条件、無ければ端末に覚えた条件 */
   async function load(): Promise<void> {
     // 閉じて開き直したとき、送っている途中の条件より古い条件をサーバーから読まないよう、送り終わるのを待つ
-    await saving;
+    // (地図のメニューから住んでいる地域を送っている途中も同じ)
+    await prefsSettled();
     message = "";
     prefsMessage = "";
     notifyMessage = "";
@@ -90,19 +86,17 @@
     prefs = normalizePrefs(alerter.prefs);
     pref = prefs.home?.code.slice(0, 2) ?? "";
     if (Object.keys(cities).length === 0) void loadCities();
-    supported =
-      "serviceWorker" in navigator &&
-      "PushManager" in window &&
-      "Notification" in window;
-    const res = await fetch("/api/push");
-    if (!res.ok) {
-      message = `Web Push の登録を読めませんでした (${res.status})`;
+    supported = pushSupported();
+    let state: Awaited<ReturnType<typeof readPushState>>;
+    try {
+      state = await readPushState();
+    } catch (err) {
+      message = String(err instanceof Error ? err.message : err);
       return;
     }
-    info = (await res.json()) as Info;
+    info = state.info;
+    endpoint = state.endpoint;
     if (!info.enabled || !supported) return;
-    const sub = await (await registration()).pushManager.getSubscription();
-    endpoint = sub?.endpoint;
     const mine = info.subscriptions.find((s) => s.endpoint === endpoint);
     if (mine) {
       prefs = normalizePrefs(mine.prefs);
@@ -112,23 +106,17 @@
 
   /**
    * 条件を変えたらすぐ端末に覚え、Web Push に登録してあればサーバーにも送る (保存のボタンは無い。押し忘れると覚えないため)。
-   * 続けて変えたときに前の送信と追い越さないよう、送るのは 1 つずつ順に
+   * 続けて変えたときに前の送信と追い越さないよう、送るのは 1 つずつ順に (`queuePrefs`。地図のメニューと同じ列)
    */
-  let saving: Promise<void> = Promise.resolve();
-  /** 送っている途中の数。結果は最後の 1 つが終わったときだけ出す (途中の「保存しました」で終わったと思わせない) */
-  let pending = 0;
   function savePrefs(note = ""): void {
     alerter.setPrefs(prefs);
     if (!registered) {
       prefsMessage = `${note}保存しました`;
       return;
     }
-    pending++;
     prefsMessage = `${note}保存しています…`;
-    saving = saving.then(async () => {
-      const result = await save();
-      pending--;
-      if (pending === 0) prefsMessage = `${note}${result}`;
+    void queuePrefs(save).then((result) => {
+      if (result !== null) prefsMessage = `${note}${result}`;
     });
   }
 
@@ -157,19 +145,9 @@
   /** 住んでいる地域の候補 (市町村等の表) と、地震情報／細分区域の名前 (地図と同じファイル) */
   async function loadCities(): Promise<void> {
     try {
-      const [table, quake] = await Promise.all([
-        fetch("/areas/cities.json").then((r) => r.json() as Promise<Cities>),
-        fetch("/areas/quake-areas.geojson").then(
-          (r) =>
-            r.json() as Promise<{
-              features: { properties: { code: string; name: string } }[];
-            }>,
-        ),
-      ]);
-      quakeNames = new Map(
-        quake.features.map((f) => [f.properties.code, f.properties.name]),
-      );
-      cities = table;
+      const t = await readCities();
+      quakeNames = t.quakeNames;
+      cities = t.cities;
     } catch {
       // 候補が出ないだけ
     }
@@ -192,18 +170,12 @@
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
-          const fc = (await (
-            await fetch("/areas/warning-areas.geojson")
-          ).json()) as { features: Parameters<typeof cityAt>[2] };
-          const code = cityAt(
-            pos.coords.latitude,
-            pos.coords.longitude,
-            fc.features,
-          );
-          if (code && cities[code]) {
-            pref = code.slice(0, 2);
-            setHome(code);
-            savePrefs(`${cities[code]?.[1]} を選びました。`);
+          // 地図のメニューの「ここを住んでいる地域にする」と同じ探し方
+          const home = await homeAt(pos.coords.latitude, pos.coords.longitude);
+          if (home) {
+            pref = home.code.slice(0, 2);
+            prefs.home = home;
+            savePrefs(`${home.name} を選びました。`);
           } else {
             message =
               "いまの位置が入る市町村が見つかりませんでした。一覧から選んでください。";
@@ -234,23 +206,6 @@
     } else if (!open && dialog.open) dialog.close();
   });
 
-  /** 公開鍵が替わっていたら、購読を作り直す (古い鍵の購読には送れない) */
-  async function subscribe(key: string): Promise<PushSubscription> {
-    const pm = (await registration()).pushManager;
-    const want = base64UrlToBytes(key);
-    const cur = await pm.getSubscription();
-    if (cur) {
-      const have = cur.options.applicationServerKey;
-      const same =
-        have !== null &&
-        new Uint8Array(have).length === want.length &&
-        new Uint8Array(have).every((b, i) => b === want[i]);
-      if (same) return cur;
-      await cur.unsubscribe();
-    }
-    return pm.subscribe({ userVisibleOnly: true, applicationServerKey: want });
-  }
-
   /** 「このブラウザで受ける」。登録して条件を送り、読み直す。結果は下の message に出す */
   async function register(): Promise<void> {
     message = "";
@@ -267,26 +222,7 @@
     if (!info?.enabled) return "";
     busy = true;
     try {
-      const granted = (await Notification.requestPermission()) === "granted";
-      alerter.refreshPermission();
-      if (!granted)
-        return "通知が許可されていません。ブラウザのサイトの設定で許可してください。";
-      const sub = await subscribe(info.publicKey);
-      alerter.setPrefs(prefs);
-      const res = await fetch("/api/push", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          subscription: sub.toJSON(),
-          prefs,
-          label: navigator.userAgent,
-        }),
-      });
-      return res.ok
-        ? "保存しました"
-        : `保存できませんでした (${res.status}): ${await res.text()}`;
-    } catch (err) {
-      return `登録できませんでした: ${err}`;
+      return await sendPrefs(info.publicKey, $state.snapshot(prefs));
     } finally {
       busy = false;
     }

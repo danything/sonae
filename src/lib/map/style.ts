@@ -409,6 +409,10 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
     note: "地図の右上のボタンを押している間だけ、白い縁の青い点と、位置の誤差の淡い円を出します。位置は端末の中で使うだけで、サーバーには送りません",
   },
   {
+    label: "住んでいる地域",
+    note: "「通知」で選んだ住んでいる地域 (市町村) を、黒い縁の上に水色の破線で縁取ります。地図を右クリック (スマホは長押し) して「ここを住んでいる地域にする」でも選べます",
+  },
+  {
     label: "活断層",
     note: "都市圏活断層図。地形の分類で塗った全面の図なので、いつもは重ねず、地図の左上のハザードマップで「活断層」を選んだときだけ出します。大きく寄せたとき (ズーム 11 以上) だけ出ます",
   },
@@ -475,6 +479,14 @@ export type OfficeTable = Record<
 >;
 
 /** 選んだ府県予報区の市町村等だけを縁取る filter (選んでいなければ何も描かない) */
+/** 住んでいる地域の市町村等だけを縁取る filter (決まっていなければ何も描かない) */
+export function homeFilter(code: string | null | undefined): Expr {
+  return ["==", ["get", "code"], code ?? ""];
+}
+
+/** 住んでいる地域の縁取りの色 (写真の上で読める水色。警報・注意報の段の色と取り違えない) */
+export const HOME_COLOR = "#3cd7ff";
+
 export function officeFilter(
   table: OfficeTable,
   office: string | null | undefined,
@@ -910,6 +922,27 @@ export function baseStyle(
         },
       },
       ...roadLayers(),
+      // 住んでいる地域 (通知の条件) の市町村等の縁取り。黒い縁の上に水色の破線 (府県予報区の白い縁取りと見分ける)
+      {
+        id: "home-casing",
+        type: "line",
+        source: "warning-areas",
+        filter: homeFilter(null),
+        layout: { "line-join": "round" },
+        paint: { "line-color": "rgba(0,0,0,0.65)", "line-width": 5 },
+      },
+      {
+        id: "home-line",
+        type: "line",
+        source: "warning-areas",
+        filter: homeFilter(null),
+        layout: { "line-join": "round" },
+        paint: {
+          "line-color": HOME_COLOR,
+          "line-width": 2.5,
+          "line-dasharray": [2, 1],
+        },
+      },
       {
         id: "hypocenters",
         type: "circle",

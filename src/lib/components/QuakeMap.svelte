@@ -8,6 +8,7 @@
   import Locate from "~icons/lucide/locate";
   import LocateFixed from "~icons/lucide/locate-fixed";
 
+  import { alerter } from "#lib/alerter.svelte.ts";
   import Icon from "#lib/components/Icon.svelte";
   import Menu from "#lib/components/Menu.svelte";
   import {
@@ -24,6 +25,7 @@
     LOCATE_PREF,
     readLocate,
   } from "#lib/map/locate.ts";
+  import { coordLabel, coordText, longPressOk } from "#lib/map/press.ts";
   import {
     baseStyle,
     eewFill,
@@ -32,6 +34,7 @@
     type HazardId,
     HAZARDS,
     hazardVisibility,
+    homeFilter,
     hypocenterFeatures,
     intensityFill,
     intensityLabels,
@@ -69,6 +72,7 @@
   } from "#lib/model.ts";
   import { mapCredit, showsGrus } from "#lib/notice.ts";
   import { readPref, removePref, writePref } from "#lib/prefs.ts";
+  import { homeAt, saveHome } from "#lib/push-client.ts";
 
   /**
    * 地図 (docs/map.md)。下地は国土地理院のシームレス空中写真。その上に層をいつも全部重ねる (オン・オフは無い)。
@@ -214,7 +218,9 @@
             zoom = created.getZoom();
           }
         });
+        // 地図のメニューを開いている間 (長押しの指を離したときの click も) は吹き出しを出さない
         created.on("click", "shelters", (e) => {
+          if (placeMenu) return;
           const f = e.features?.[0];
           if (f) openShelter(f.properties as Record<string, unknown>, e.lngLat);
         });
@@ -228,6 +234,7 @@
         created.on("click", "warning-fill", (e) => {
           if (
             !created ||
+            placeMenu ||
             created.queryRenderedFeatures(e.point, { layers: ["shelters"] })
               .length > 0
           )
@@ -249,6 +256,19 @@
         });
         created.on("mouseleave", "warning-fill", () => {
           if (created) created.getCanvas().style.cursor = "";
+        });
+        // 指の長押しで、その場所のメニュー。長押しは MapLibre が数え (指 1 本で、クリックの許す幅より動かず
+        // 500 ミリ秒。2 本指や動かしたら取りやめ。iPhone の Safari のように contextmenu を出さない端末でも)、
+        // 作った contextmenu を送ってくる (isTrusted でない)。マウスの右クリックは下の DOM の contextmenu で受ける
+        created.on("contextmenu", (e) => {
+          if (e.originalEvent.isTrusted) return;
+          if (!pressStill(e.point.x, e.point.y)) return;
+          openPlace(e.point.x, e.point.y, e.lngLat.lat, e.lngLat.lng);
+        });
+        // 地図が動いたらメニューを閉じる (押した所から離れるため)
+        created.on("movestart", () => {
+          pressMoved = true;
+          placeMenu = false;
         });
         map = created;
         // 手元 (vite dev) で画面を撮るときに、地図を動かせるようにする (本番の束には入らない)
@@ -640,6 +660,117 @@
     if (covered) warningPopup?.remove();
   });
 
+  // ---- 住んでいる地域 (通知の条件) の縁取り ----
+  $effect(() => {
+    if (!map) return;
+    const f = homeFilter(alerter.prefs.home?.code) as never;
+    map.setFilter("home-casing", f);
+    map.setFilter("home-line", f);
+  });
+
+  // ---- 地図のメニュー (右クリック・スマホは長押し。docs/map.md の「地図のメニュー」) ----
+  /** メニューを出した所 (地図の箱の中の px) と、その緯度・経度 */
+  let place = $state<{ x: number; y: number; lat: number; lon: number }>();
+  let placeMenu = $state(false);
+  /** メニューの操作の結果の知らせ (地図の下に少しの間だけ出す) */
+  let placeNote = $state("");
+  let noteTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function openPlace(x: number, y: number, lat: number, lon: number): void {
+    place = { x, y, lat, lon };
+    // 開いている吹き出しは閉じる (重なって読みにくい)
+    shelterPopup?.remove();
+    warningPopup?.remove();
+    placeMenu = true;
+  }
+
+  function showNote(text: string): void {
+    placeNote = text;
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(() => (placeNote = ""), 8000);
+  }
+
+  /** 押した所が入る市町村等を、住んでいる地域にする (通知の窓の「現在地から選ぶ」と同じ探し方と覚え方) */
+  async function setHomeHere(): Promise<void> {
+    const at = place;
+    if (!at) return;
+    showNote("市町村を探しています…");
+    try {
+      const home = await homeAt(at.lat, at.lon);
+      if (!home) {
+        showNote(
+          "ここが入る市町村が見つかりませんでした (海の上や日本の外です)。住んでいる地域は変えていません",
+        );
+        return;
+      }
+      showNote(await saveHome(home));
+    } catch (err) {
+      showNote(`住んでいる地域を決められませんでした: ${err}`);
+    }
+  }
+
+  async function copyCoords(): Promise<void> {
+    const at = place;
+    if (!at) return;
+    const text = coordText(at.lat, at.lon);
+    try {
+      await navigator.clipboard.writeText(text);
+      showNote(`緯度・経度を写しました (${text})`);
+    } catch {
+      showNote(`写せませんでした。緯度・経度は ${text} です`);
+    }
+  }
+
+  /** メニューを閉じたら、地図にフォーカスを戻す (目に見えない引き金に残さない) */
+  function placeClosed(): void {
+    if (container?.contains(document.activeElement) === false)
+      map?.getCanvas().focus({ preventScroll: true });
+  }
+
+  // 長押しの間に地図が動いていないかを、念のため自分でも見る (MapLibre の長押しは指の動きだけを見る)。
+  // 指を置いた所と、置いてから地図が動いたか (慣性で流れている間など)
+  let pressAt: { x: number; y: number } | undefined;
+  let pressMoved = false;
+  const pressStill = (x: number, y: number) =>
+    pressAt !== undefined &&
+    longPressOk({
+      dx: x - pressAt.x,
+      dy: y - pressAt.y,
+      touches: 1,
+      mapMoved: pressMoved,
+    });
+
+  $effect(() => {
+    const el = container;
+    if (!el) return;
+    const onstart = (e: TouchEvent) => {
+      const t = e.touches[0];
+      const r = el.getBoundingClientRect();
+      pressAt =
+        e.touches.length === 1 && t
+          ? { x: t.clientX - r.left, y: t.clientY - r.top }
+          : undefined;
+      pressMoved = false;
+    };
+    // マウスの右クリック。指の長押しの contextmenu (Android) は MapLibre が止めて自分で送るので、ここでは見ない
+    const oncontext = (e: MouseEvent) => {
+      if ((e as PointerEvent).pointerType === "touch" || !map) return;
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      const at = map.unproject([x, y]);
+      openPlace(x, y, at.lat, at.lng);
+    };
+    el.addEventListener("touchstart", onstart, { passive: true });
+    el.addEventListener("contextmenu", oncontext);
+    return () => {
+      clearTimeout(noteTimer);
+      el.removeEventListener("touchstart", onstart);
+      el.removeEventListener("contextmenu", oncontext);
+    };
+  });
+
   // ---- 指定緊急避難場所・指定避難所 (寄せたときだけ、見ている範囲のタイルを読む) ----
   /** 読んだタイル (層とタイルの組) の中身。同じタイルは読み直さない */
   const shelterCache = new Map<string, Promise<unknown[]>>();
@@ -1017,6 +1148,55 @@
         <p class="locate-note small" role="status">{locateNote}</p>
       {/if}
     </div>
+    <!--
+      地図のメニュー (右クリック・長押し)。押した所に目に見えない引き金を置き、ほかのメニューと同じ Menu で開く
+      (外を押すと閉じる・Esc で閉じる・↑↓で動く)
+    -->
+    <div
+      class="place-anchor"
+      style:left="{place?.x ?? 0}px"
+      style:top="{place?.y ?? 0}px"
+    >
+      <Menu
+        bind:open={placeMenu}
+        align="start"
+        class="place-menu"
+        testid="place-menu"
+        onclosed={placeClosed}
+      >
+        {#snippet trigger(props)}
+          <button
+            {...props}
+            type="button"
+            class="place-trigger"
+            tabindex="-1"
+            aria-label="この場所のメニュー"
+          ></button>
+        {/snippet}
+        {#if place}
+          <p class="menu-head">{coordLabel(place.lat, place.lon)}</p>
+        {/if}
+        <button
+          type="button"
+          role="menuitem"
+          class="menu-item"
+          onclick={() => void setHomeHere()}
+          data-testid="place-home">ここを住んでいる地域にする</button
+        >
+        <button
+          type="button"
+          role="menuitem"
+          class="menu-item"
+          onclick={() => void copyCoords()}
+          data-testid="place-copy">緯度・経度を写す</button
+        >
+      </Menu>
+    </div>
+    {#if placeNote}
+      <p class="place-note small" role="status" data-testid="place-note">
+        {placeNote}
+      </p>
+    {/if}
   </div>
 {/if}
 
@@ -1187,6 +1367,43 @@
     .legend {
       max-width: 12rem;
     }
+  }
+  /* 地図のメニューの引き金。押した所に置く大きさの無い点 (メニューはここから右下へ出る) */
+  .place-anchor {
+    position: absolute;
+    width: 0;
+    height: 0;
+    pointer-events: none;
+  }
+  /* メニューは最前面に出るが、DOM ではこの点の子なので、押せるように戻す */
+  .place-anchor :global(.menu) {
+    pointer-events: auto;
+  }
+  .place-trigger {
+    display: block;
+    width: 0;
+    height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+  }
+  /* メニューの操作の結果の知らせ。地図の下の真ん中 (スマホの形は下のタブと dock の上) に、操作の層と同じ面で */
+  .place-note {
+    position: absolute;
+    left: 50%;
+    bottom: calc(
+      var(--map-bottom, 0px) + var(--so-space-6) + var(--so-space-3)
+    );
+    z-index: 1;
+    max-width: min(24rem, calc(100% - 2 * var(--so-space-3)));
+    margin: 0;
+    padding: var(--so-space-2) var(--so-space-3);
+    border-radius: var(--so-item-radius);
+    background: var(--so-pop);
+    box-shadow: var(--so-shadow-pop);
+    color: var(--so-fg);
+    translate: -50% 0;
   }
   .locate-note {
     margin: 0;
