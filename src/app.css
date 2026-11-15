@@ -998,7 +998,9 @@ dialog[open] > .modal-box {
 }
 /*
  * 窓の下の段 (「閉じる」と操作)。中身が長くて窓の中を巻いても、いつも窓の下端に貼り付けて見せる
- * (denpa の番組の詳細と同じ)。箱の左右と下の余白まで広げて地を塗り、巻いた中身がその裏を通る
+ * (denpa の番組の詳細と同じ)。箱の左右と下の余白まで広げ、巻いた中身がその裏を通る。
+ * 段は薄く (上下の余白は小さく)、面と影は中身が裏に入っているときだけ出す (denpa の「浮かせ方」)。
+ * 面は操作の層と同じ半透明の `--so-float`。巻き切って裏に何も無いときは平らに戻す
  */
 .modal-foot {
   position: sticky;
@@ -1007,11 +1009,30 @@ dialog[open] > .modal-box {
   display: flex;
   align-items: flex-end;
   gap: var(--so-space-2);
-  margin: var(--so-space-5) calc(-1 * var(--so-space-5))
+  margin: var(--so-space-4) calc(-1 * var(--so-space-5))
     calc(-1 * var(--modal-pad-bottom, var(--so-space-5)));
-  padding: var(--so-space-3) var(--so-space-5)
-    var(--modal-pad-bottom, var(--so-space-5));
-  background: var(--so-surface);
+  padding: var(--so-space-2) var(--so-space-5)
+    var(--modal-foot-pad-bottom, var(--so-space-3));
+  background: var(--so-float);
+  box-shadow: 0 -0.25rem 0.75rem rgb(0 0 0 / 0.12);
+}
+/* 箱の巻き取りに合わせて、巻き切ったら面と影を消す。対応していないブラウザは、いつも浮いた形 */
+@supports (animation-timeline: scroll()) {
+  .modal-foot {
+    background: transparent;
+    box-shadow: none;
+    /* 巻き切りの 0.5rem 手前までだけ面を出す (割合ではなく距離で切る)。その先は animation が外れて平らに戻る */
+    animation: modal-foot-surface linear backwards;
+    animation-range: 0% calc(100% - 0.5rem);
+    animation-timeline: scroll(nearest block);
+  }
+}
+@keyframes modal-foot-surface {
+  from,
+  to {
+    background: var(--so-float);
+    box-shadow: 0 -0.25rem 0.75rem rgb(0 0 0 / 0.12);
+  }
 }
 @media (max-width: 639.98px) {
   .modal-box {
@@ -1020,6 +1041,9 @@ dialog[open] > .modal-box {
     max-height: calc(100% - 2.5rem);
     border-radius: var(--so-radius-lg) var(--so-radius-lg) 0 0;
     --modal-pad-bottom: calc(var(--so-space-5) + env(safe-area-inset-bottom));
+    --modal-foot-pad-bottom: calc(
+      var(--so-space-3) + env(safe-area-inset-bottom)
+    );
     padding-bottom: var(--modal-pad-bottom);
   }
   dialog:has(> article.modal-box) {
@@ -1042,5 +1066,12 @@ dialog[open] > .modal-box {
   *::before,
   *::after {
     animation: none !important;
+  }
+}
+/* 動きを減らす設定では巻き取りの動き (animation) が止まるので、「閉じる」の段はいつも浮いた形にする */
+@media (prefers-reduced-motion: reduce) {
+  .modal-foot {
+    background: var(--so-float);
+    box-shadow: 0 -0.25rem 0.75rem rgb(0 0 0 / 0.12);
   }
 }
