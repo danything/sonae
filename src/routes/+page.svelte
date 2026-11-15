@@ -13,6 +13,7 @@
   import TriangleAlert from "~icons/lucide/triangle-alert";
   import VolumeX from "~icons/lucide/volume-x";
 
+  import { mutedText } from "#lib/alert.ts";
   import { alerter } from "#lib/alerter.svelte.ts";
   import AboutDialog from "#lib/components/AboutDialog.svelte";
   import Calendar from "#lib/components/Calendar.svelte";
@@ -748,20 +749,6 @@
   </a>
 {/snippet}
 
-{#snippet soundButton(cls: string)}
-  <!-- 音か読み上げがオンなのに、ブラウザが音を止めている (最初の操作の前)。押すと鳴らせるようになる -->
-  <button
-    type="button"
-    class="ghost {cls} sound-blocked"
-    onclick={() => alerter.unlock()}
-    title="ブラウザが音を止めています。押すと、受けたときに音と読み上げで知らせます"
-    data-testid="sound-blocked"
-  >
-    <Icon icon={VolumeX} size={1} />
-    音を出す
-  </button>
-{/snippet}
-
 {#snippet themeItems()}
   <p class="menu-head">テーマ</p>
   {#each THEMES as t (t.mode)}
@@ -985,9 +972,6 @@
       <SearchField bind:value={query} />
     </div>
     <nav class="actions" aria-label="メニュー">
-      {#if alerter.blocked}
-        {@render soundButton("small")}
-      {/if}
       {#if trouble}
         <!-- 受信に問題があるときだけの注意の印。押すと情報源ごとの受信をメニューの箱で出す -->
         <Menu bind:open={statusMenu} align="end" class="status-menu">
@@ -1030,6 +1014,33 @@
       </Menu>
     </nav>
   </header>
+
+  {#if alerter.blocked}
+    {@const m = mutedText(
+      {
+        sound: alerter.settings.sound,
+        speech: alerter.settings.speech && alerter.canSpeak,
+      },
+      alerter.notifying,
+    )}
+    <!--
+      音か読み上げがオンなのに、ブラウザが音を止めている (最初の操作の前・再生を断られた)。
+      画面の上の端の帯で、何が止まっていて何は届くかを言う。帯のどこを押しても鳴らせるようになる
+    -->
+    <button
+      type="button"
+      class="mute-band"
+      onclick={() => alerter.unlock()}
+      data-testid="sound-blocked"
+    >
+      <Icon icon={VolumeX} size={1.25} />
+      <span class="mute-text">
+        <span class="mute-head">{m.head}</span>
+        <span class="mute-body">{m.body}</span>
+      </span>
+      <span class="mute-action">音を出す</span>
+    </button>
+  {/if}
 
   <main class="stage">
     <div class="list-col">
@@ -1169,9 +1180,6 @@
       </a>
     {:else}
       <span class="dock-quake muted small">まだ地震の情報はありません</span>
-    {/if}
-    {#if alerter.blocked}
-      {@render soundButton("small dock-sound")}
     {/if}
     {#if trouble}
       <!-- 受信に問題があるときだけの注意の印。押すと情報源ごとの受信 -->
@@ -1326,10 +1334,91 @@
     align-items: center;
     gap: var(--so-space-1);
   }
-  .sound-blocked {
-    gap: var(--so-space-1);
+  /*
+   * ブラウザが音を止めている間の帯 (広い形はヘッダーのすぐ下、スマホの形は画面の上の端)。
+   * 中身に重ねず押し下げるので、地図や一覧を隠さない。淡い面に注意の色のアイコンと見出しで、地は塗らない
+   * (塗るのは緊急地震速報 (警報) の帯だけ。design.md の 6.2)。右の「音を出す」は主のボタンと同じく操作の層に浮かせる。
+   * 帯のどこを押しても鳴らせるようになる
+   */
+  .mute-band {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--so-space-3);
+    width: auto;
+    margin: 0 var(--so-space-3) var(--so-space-3);
+    padding: var(--so-space-2) var(--so-space-2) var(--so-space-2)
+      var(--so-space-4);
+    border: 0;
+    border-radius: var(--so-item-radius);
+    background: var(--so-subtle);
+    box-shadow: none;
+    color: var(--so-fg);
+    font-size: var(--so-text-base);
+    font-weight: var(--so-weight);
+    line-height: 1.4;
+    text-align: start;
+    /* 出るときに一度だけ、上から滑り込む (transform と opacity だけ) */
+    animation: mute-enter var(--so-duration-enter) var(--so-ease-spring) both;
+  }
+  .mute-band > :global(svg) {
+    flex-shrink: 0;
     color: var(--so-warn-text);
+    /* 決めた回数だけ脈打って止まる (常時は回さない。動きを減らす設定では止まる) */
+    animation: mute-pulse 0.9s ease-in-out 3;
+  }
+  .mute-text {
+    display: flex;
+    flex: 1 1 0%;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--so-space-2);
+    min-width: 0;
+  }
+  .mute-head {
+    color: var(--so-warn-text);
+    font-weight: var(--so-weight-bold);
+  }
+  .mute-body {
+    font-size: var(--so-text-sm);
+  }
+  .mute-action {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    min-height: var(--so-btn-h-sm);
+    padding: 0 var(--so-space-4);
+    border-radius: var(--so-radius-full);
+    background: var(--so-btn-solid);
+    box-shadow: var(--so-btn-lift);
+    color: var(--so-btn-solid-text);
+    font-size: var(--so-text-sm);
+    font-weight: var(--so-weight-bold);
     white-space: nowrap;
+    transition:
+      background-color var(--so-duration) var(--so-ease),
+      scale var(--so-duration-move) var(--so-ease-spring);
+  }
+  @media (hover: hover) {
+    .mute-band:hover .mute-action {
+      background: var(--so-btn-solid-hover);
+    }
+  }
+  .mute-band:active .mute-action {
+    scale: 0.97;
+    transition: scale var(--so-duration) var(--so-ease);
+  }
+  @keyframes mute-enter {
+    from {
+      opacity: 0;
+      transform: translateY(-0.5rem);
+    }
+  }
+  @keyframes mute-pulse {
+    50% {
+      opacity: 0.55;
+      transform: scale(1.15);
+    }
   }
   /* 受信に問題があるときだけの注意の印 (押すと情報源ごとの受信) */
   .trouble {
@@ -1448,6 +1537,13 @@
   :global(:where(html[data-phone])) .navbar,
   :global(:where(html[data-phone])) .list-bar {
     display: none;
+  }
+  /* スマホの形の帯は画面の上の端いっぱい (ノッチの下から)。地図と一覧はその下から始まる */
+  :global(:where(html[data-phone])) .mute-band {
+    margin: 0;
+    padding-top: calc(env(safe-area-inset-top) + var(--so-space-2));
+    padding-inline: var(--so-space-3) var(--so-space-2);
+    border-radius: 0;
   }
   /* 列の箱は作らず、一覧をこれまでどおり地図の上に重ねる */
   :global(:where(html[data-phone])) .list-col {

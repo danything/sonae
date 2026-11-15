@@ -3,12 +3,16 @@ import { describe, expect, test } from "bun:test";
 import {
   alertFor,
   autoplayAllowed,
+  mutedText,
+  notifyOn,
+  pageNotification,
   parseAlertPrefs,
   parseAlertSettings,
+  planAlert,
 } from "#lib/alert.ts";
 import { chimeWav } from "#lib/chime.ts";
-import type { Sent } from "#lib/notify.ts";
-import { DEFAULT_PREFS } from "#lib/push.ts";
+import { payloadOf, type Sent } from "#lib/notify.ts";
+import { DEFAULT_PREFS, isShown, quiet, toNotification } from "#lib/push.ts";
 import { digestOf, noticeOf, plan } from "#lib/server/notify.ts";
 
 import { eew, NOW, prefs, quake, tsunami } from "./events.ts";
@@ -121,6 +125,92 @@ describe("開いているときに鳴らすか", () => {
       }
       expect(rang).toBe(pushed);
     }
+  });
+
+  test("鳴らさない続報も、通知を置き換えるために返す", () => {
+    const sent = new Map<string, Sent>();
+    const p = prefs();
+    expect(planAlert(quake(), NOW, p, sent)?.renotify).toBe(true);
+    expect(planAlert(quake(), NOW, p, sent)).toBeNull(); // 同じ中身
+    const next = planAlert(quake({ magnitude: 5.3 }), NOW, p, sent);
+    expect(next?.renotify).toBe(false);
+    expect(next?.notice.tag).toBe("quake:20261114090000");
+  });
+});
+
+describe("開いているときの OS の通知", () => {
+  test("許可があり、スイッチを切っていなければ出す (既定はオン)", () => {
+    const off = { sound: false, speech: false };
+    expect(notifyOn(off, "granted")).toBe(true);
+    expect(notifyOn({ ...off, notify: true }, "granted")).toBe(true);
+    expect(notifyOn({ ...off, notify: false }, "granted")).toBe(false);
+    // 許可が無ければ、オンでも出さない (許可は「通知」の窓の操作でだけ聞く)
+    expect(notifyOn({ ...off, notify: true }, "default")).toBe(false);
+    expect(notifyOn(off, "denied")).toBe(false);
+    expect(notifyOn(off, "unsupported")).toBe(false);
+  });
+
+  test("スイッチの値を覚える。読めない値は既定のまま", () => {
+    expect(parseAlertSettings('{"notify":false}')).toEqual({
+      sound: false,
+      speech: false,
+      notify: false,
+    });
+    expect(parseAlertSettings('{"notify":"no"}')).toEqual({
+      sound: false,
+      speech: false,
+    });
+  });
+
+  test("中身・tag・押したときの URL・残すかは Web Push と同じ", () => {
+    const n = alertFor(
+      tsunami({
+        areas: [{ name: "岩手県", grade: "warning", kindName: "津波警報" }],
+      }),
+      NOW,
+      prefs(),
+      new Map(),
+    );
+    if (!n) throw new Error("鳴らすはず");
+    const page = pageNotification(n, true, false);
+    const push = toNotification(
+      JSON.parse(JSON.stringify(payloadOf(n, true))) as unknown,
+    );
+    expect(page).toEqual(push);
+    expect(page.options.requireInteraction).toBe(true);
+    // チャイムを鳴らしたときだけ、OS の通知音を止める
+    expect(pageNotification(n, true, true).options.silent).toBe(true);
+    // 画面が先に出したら、後から届いた Web Push は鳴らさずに置き換える
+    const one = {
+      tag: page.options.tag,
+      title: page.title,
+      body: page.options.body,
+    };
+    expect(isShown(push, [one])).toBe(true);
+    expect(quiet(push).options).toMatchObject({
+      renotify: false,
+      silent: true,
+      tag: page.options.tag,
+    });
+    // 中身が変わった (重さが上がった) 続報は鳴らす
+    expect(isShown(push, [{ ...one, body: "前の本文" }])).toBe(false);
+    expect(isShown(push, [])).toBe(false);
+  });
+});
+
+describe("音が止まっている間の帯", () => {
+  test("何が止まっていて、通知は出るかを言う", () => {
+    expect(mutedText({ sound: true, speech: true }, false)).toEqual({
+      head: "音と読み上げが止まっています",
+      body: "押すと、警報を音と読み上げで知らせます",
+    });
+    expect(mutedText({ sound: false, speech: true }, true)).toEqual({
+      head: "読み上げが止まっています",
+      body: "通知は出ます。読み上げも聞くなら押してください",
+    });
+    expect(mutedText({ sound: true, speech: false }, true).body).toBe(
+      "通知は出ます。音も聞くなら押してください",
+    );
   });
 });
 

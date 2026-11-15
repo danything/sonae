@@ -10,13 +10,14 @@ import {
   type Plan,
   type Sent,
 } from "#lib/notify.ts";
-import type { PushPayload, PushPrefs } from "#lib/push.ts";
+import type { PushPrefs } from "#lib/push.ts";
 
 export {
   matches,
   type Notice,
   noticeFor,
   noticeOf,
+  payloadOf,
   type Plan,
   type Sent,
 } from "#lib/notify.ts";
@@ -41,15 +42,3 @@ export const plan = (
  */
 export const topicOf = (tag: string) =>
   new Bun.CryptoHasher("sha256").update(tag).digest("hex").slice(0, 32);
-
-export function payloadOf(n: Notice, renotify: boolean): PushPayload {
-  return {
-    title: n.title,
-    body: n.body,
-    tag: n.tag,
-    url: n.url,
-    renotify,
-    sticky: n.sticky,
-    timestamp: n.at,
-  };
-}

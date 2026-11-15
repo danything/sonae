@@ -62,6 +62,8 @@
   let message = $state("");
   /** 条件を覚えたかどうか (条件のすぐ下に出す。Web Push の登録の知らせは下の message) */
   let prefsMessage = $state("");
+  /** 開いているときの通知のスイッチの知らせ (許可されなかったとき) */
+  let notifyMessage = $state("");
 
   const others = $derived(
     info?.enabled
@@ -83,6 +85,8 @@
     await saving;
     message = "";
     prefsMessage = "";
+    notifyMessage = "";
+    alerter.refreshPermission();
     prefs = normalizePrefs(alerter.prefs);
     pref = prefs.home?.code.slice(0, 2) ?? "";
     if (Object.keys(cities).length === 0) void loadCities();
@@ -136,6 +140,18 @@
   function setSpeech(on: boolean): void {
     alerter.setSettings({ ...alerter.settings, speech: on });
     if (on) alerter.preview();
+  }
+
+  /** 開いているときの OS の通知。オンにするとき、まだ聞いていなければ許可を聞く (このスイッチの操作の中で) */
+  async function setNotify(input: HTMLInputElement): Promise<void> {
+    const want = input.checked;
+    const p = await alerter.setNotify(want);
+    // 許可されなかったときはスイッチを戻す (値が変わらないので、Svelte は書き直さない)
+    input.checked = alerter.notifying;
+    notifyMessage =
+      want && p !== "granted"
+        ? "通知が許可されていません。ブラウザのサイトの設定で許可してください。"
+        : "";
   }
 
   /** 住んでいる地域の候補 (市町村等の表) と、地震情報／細分区域の名前 (地図と同じファイル) */
@@ -251,7 +267,9 @@
     if (!info?.enabled) return "";
     busy = true;
     try {
-      if ((await Notification.requestPermission()) !== "granted")
+      const granted = (await Notification.requestPermission()) === "granted";
+      alerter.refreshPermission();
+      if (!granted)
         return "通知が許可されていません。ブラウザのサイトの設定で許可してください。";
       const sub = await subscribe(info.publicKey);
       alerter.setPrefs(prefs);
@@ -467,11 +485,41 @@
 
     <h2 class="section-head">開いているとき</h2>
     <p class="small muted">
-      sonae
-      を開いている間に条件に合う情報を受けたら、短い音と読み上げで知らせます。ブラウザは、ふつうは画面を一度押すまで音を出させません。sonae
+      sonae を開いている間に条件に合う情報を受けたら、OS
+      の通知と、短い音と読み上げで知らせます。OS
+      の通知は、通知を許可していれば画面を押す前でも OS
+      の通知音で鳴ります。音と読み上げは、ふつうは画面を一度押すまでブラウザが止めます。sonae
       をアプリとして入れる (Chrome・Edge) か、サイトの設定で自動再生を許す
       (Firefox・Safari・Edge) と、開いただけで鳴らせることがあります。
     </p>
+    <label>
+      <input
+        type="checkbox"
+        role="switch"
+        checked={alerter.notifying}
+        disabled={alerter.permission === "denied" ||
+          alerter.permission === "unsupported"}
+        onchange={(e) => void setNotify(e.currentTarget)}
+        data-testid="alert-notify"
+      />
+      OS の通知を出す
+    </label>
+    {#if alerter.permission === "unsupported"}
+      <p class="small muted">このブラウザは通知に対応していません。</p>
+    {:else if alerter.permission === "denied"}
+      <p class="small muted">
+        通知が許可されていません。ブラウザのサイトの設定で許可すると出せます。
+      </p>
+    {:else if alerter.permission === "default"}
+      <p class="small muted">オンにすると、通知の許可を聞きます。</p>
+    {:else if alerter.notifying && alerter.settings.sound}
+      <p class="small muted">
+        音を鳴らせたときは、通知を音なしで出します (2 つの音を重ねない)。
+      </p>
+    {/if}
+    {#if notifyMessage}
+      <p class="small" role="status">{notifyMessage}</p>
+    {/if}
     <label>
       <input
         type="checkbox"

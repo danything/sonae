@@ -1,6 +1,10 @@
 /**
- * 開いているときの音と読み上げ (docs/design.md の 2.4)。SSE で受けたイベントを、Web Push と同じ判定
- * (`#lib/notify.ts` の noticeOf・decide) にかけ、鳴らすときだけ短い音 (`<audio>`) と読み上げをする。
+ * 開いているときの通知・音・読み上げ (docs/design.md の 2.4)。SSE で受けたイベントを、Web Push と同じ判定
+ * (`#lib/notify.ts` の noticeOf・decide) にかけ、鳴らすときだけ OS の通知と短い音 (`<audio>`) と読み上げをする。
+ *
+ * - OS の通知 (`showNotification`) は、通知の許可があれば操作の前でも OS の通知音で鳴る。中身は Web Push と
+ *   同じ (`pageNotification`)。同じ事象が Web Push でも届くときは、後から出すほうが鳴らさない (`isShown`)。
+ *   チャイムが鳴ったときは、通知を音なし (`silent`) で出して 2 つの音を重ねない。
  *
  * - 読み上げの原稿は `#lib/readout.ts` で作る。声はサーバーが VOICEVOX で合成したもの (`/api/speech`) を
  *   文ごとに取って順に鳴らす。VOICEVOX が止まっている・取れない文は、端末の読み上げ (`speechSynthesis`) で読む。
@@ -8,31 +12,44 @@
  *   条件は Web Push のダイアログと同じもの (`PushPrefs`)。
  * - ブラウザは、人がページを一度操作するまで音を出させない (自動再生の制限)。最初の操作で `<audio>` と
  *   読み上げを一度だけ無音で動かして、後から鳴らせるようにする。鳴らせない間は `blocked` が立ち、
- *   画面 (ヘッダー・dock) に「音を出す」を出す。
+ *   画面の上の端に帯 (押すと鳴らせるようになる) を出す。
  * - 同じ事象の続報で何度も鳴らさない (控えはメモリに持つ。読み直したら忘れる)。
  *   タブを幾つも開いていても 1 つだけが鳴らす (Web Locks)。
  */
 
 import {
   ALERT_OFF,
-  alertFor,
   type AlertSettings,
   autoplayAllowed,
+  notifyOn,
+  pageNotification,
   parseAlertPrefs,
   parseAlertSettings,
+  type Permission,
+  planAlert,
 } from "./alert.ts";
 import { chimeWav } from "./chime.ts";
 import type { SonaeEvent } from "./model.ts";
 import { contentOf, type Notice, type Sent } from "./notify.ts";
 import { readPref, writePref } from "./prefs.ts";
-import { DEFAULT_PREFS, normalizePrefs, type PushPrefs } from "./push.ts";
+import {
+  DEFAULT_PREFS,
+  isShown,
+  normalizePrefs,
+  type PushPrefs,
+} from "./push.ts";
 import { readoutOf, SAMPLE } from "./readout.ts";
 import { creditOf, type SpeechInfo, type Voice } from "./voices.ts";
 
 /** 控えを持つ数の上限 (長く開いたままでも増え続けない) */
 const SENT_MAX = 200;
-/** 音の後に読み上げるまでの間 (ミリ秒。音と声を重ねない) */
+/** 音 (チャイムか OS の通知音) の後に読み上げるまでの間 (ミリ秒。音と声を重ねない) */
 const SPEAK_AFTER_MS = 750;
+/** チャイムが鳴り始めるのを待つ長さ。過ぎたら鳴らなかったとみなし、通知を OS の通知音で出す */
+const CHIME_WAIT_MS = 300;
+
+const permissionNow = (): Permission =>
+  typeof Notification === "undefined" ? "unsupported" : Notification.permission;
 
 class Alerter {
   settings = $state<AlertSettings>({ ...ALERT_OFF });
@@ -45,6 +62,8 @@ class Alerter {
   failed = $state(false);
   /** サーバーの VOICEVOX (選べる声)。読めるまでは無い */
   speech = $state<SpeechInfo>();
+  /** 通知の許可 (ブラウザのサイトの設定で変わることがあるので、見えるようになったときに読み直す) */
+  permission = $state<Permission>("unsupported");
   readonly speechSupported =
     typeof window !== "undefined" && "speechSynthesis" in window;
 
@@ -93,6 +112,11 @@ class Alerter {
     return [...new Set(voices.map(creditOf))];
   }
 
+  /** 開いているときに OS の通知を出す (許可があり、スイッチを切っていない) */
+  get notifying(): boolean {
+    return notifyOn(this.settings, this.permission);
+  }
+
   /** 音か読み上げがオンなのに、いまは鳴らせない */
   get blocked(): boolean {
     return (
@@ -119,15 +143,23 @@ class Alerter {
     // 自動再生を許している (アプリとして入れた・サイトの設定で許した) ブラウザでは、押さなくても鳴らせる
     this.activated = navigator.userActivation?.hasBeenActive ?? false;
     this.autoplay = autoplayAllowed(navigator, globalThis.AudioContext);
+    this.permission = permissionNow();
     void this.loadSpeech();
     const onGesture = () => this.unlock();
     const events = ["pointerup", "keydown", "touchend"] as const;
     for (const t of events)
       window.addEventListener(t, onGesture, { capture: true, passive: true });
+    // 通知の許可はサイトの設定で変わる。画面に戻ったときに読み直す
+    const onVisible = () => {
+      if (document.visibilityState === "visible")
+        this.permission = permissionNow();
+    };
+    document.addEventListener("visibilitychange", onVisible);
     // VOICEVOX が後からつながったときのために、ときどき読み直す
     const timer = setInterval(() => void this.loadSpeech(), 5 * 60_000);
     return () => {
       clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
       for (const t of events)
         window.removeEventListener(t, onGesture, { capture: true });
       this.audio?.pause();
@@ -168,16 +200,42 @@ class Alerter {
     writePref("alert.prefs", JSON.stringify(this.prefs));
   }
 
+  /**
+   * 開いているときの通知のスイッチ。オンにするとき、まだ許可を聞いていなければ聞く
+   * (人がスイッチを押した操作の中で呼ぶ。許可は操作の中でしか求めない)
+   */
+  async setNotify(on: boolean): Promise<Permission> {
+    this.setSettings({ ...this.settings, notify: on });
+    if (on && this.permission === "default")
+      this.permission = await Notification.requestPermission().catch(() =>
+        permissionNow(),
+      );
+    return this.permission;
+  }
+
+  /** 通知の許可を読み直す (Web Push の登録で許可を求めた後など) */
+  refreshPermission(): void {
+    this.permission = permissionNow();
+  }
+
   /** SSE で受けたイベント (live が新しいと判定したものだけ) */
   handle(e: SonaeEvent): void {
     // オフの間も控えは付ける (オンにした直後に、前から続いている事象の続報で鳴らさない)
-    const n = alertFor(e, Date.now(), this.prefs, this.sent);
+    const p = planAlert(e, Date.now(), this.prefs, this.sent);
     if (this.sent.size > SENT_MAX) {
       const oldest = this.sent.keys().next().value;
       if (oldest !== undefined) this.sent.delete(oldest);
     }
-    if (n && (this.settings.sound || this.settings.speech))
-      void this.once(`${n.tag}\n${contentOf(n)}`, () => this.ring(n));
+    if (!p) return;
+    const n = p.notice;
+    const notify = this.notifying;
+    if (!p.renotify) {
+      // 鳴らさない続報 (取消・解除・震源が決まった) は、この画面が出した通知が残っていれば置き換えるだけ
+      if (notify) void this.replace(n);
+      return;
+    }
+    if (notify || this.settings.sound || this.settings.speech)
+      void this.once(`${n.tag}\n${contentOf(n)}`, () => this.ring(n, notify));
   }
 
   /** 試しに鳴らす (ダイアログのボタン。押した操作の中なので、鳴らせるようにもなる) */
@@ -185,7 +243,7 @@ class Alerter {
     // 音は ring がこの操作の中で鳴らすので、無音で動かすのは読み上げだけにする
     // (無音の再生を止める pause で、鳴らした音が切れないように)
     this.unlock(false);
-    this.ring(null);
+    void this.ring(null, false);
   }
 
   /** 選んだ声で試しの文だけを読む (「試しに聞く」) */
@@ -255,11 +313,15 @@ class Alerter {
   }
 
   /** ほかのタブが同じものを鳴らしていたら鳴らさない (Web Locks が無ければ、いつも鳴らす) */
-  private async once(key: string, run: () => void): Promise<void> {
+  private async once(key: string, run: () => unknown): Promise<void> {
     const locks =
       typeof navigator !== "undefined" ? navigator.locks : undefined;
     // 鳴らせないタブはロックを取らない (操作済みのほかのタブが鳴らせるように)。自分でも鳴らしてはみる
-    if (!locks || this.blocked) return run();
+    // (通知は、同じ中身がもう出ていれば出さないので、2 つのタブが出しても 2 度は鳴らない)
+    if (!locks || this.blocked) {
+      run();
+      return;
+    }
     await locks.request(
       `sonae.alert:${key}`,
       { ifAvailable: true },
@@ -272,29 +334,107 @@ class Alerter {
     );
   }
 
-  /** 音を鳴らし、原稿を読む (`n` が無ければ試しの文) */
-  private ring(n: Notice | null): void {
+  /**
+   * 音を鳴らし、OS の通知を出し、原稿を読む (`n` が無ければ試しの文で、通知は出さない)。
+   * チャイムが鳴れば通知は音なしで出し (2 つの音を重ねない)、鳴らなければ OS の通知音に任せる。
+   * どちらかの音が鳴ったら、少しおいてから読む
+   */
+  private async ring(n: Notice | null, notify: boolean): Promise<void> {
     const { sound, speech } = this.settings;
-    this.rings++;
-    if (sound) {
-      const a = this.element();
-      a.muted = false;
-      a.currentTime = 0;
-      a.play()
-        .then(() => (this.failed = false))
-        .catch((err: unknown) => {
-          if (err instanceof DOMException && err.name === "NotAllowedError")
-            this.failed = true;
-        });
-    }
-    if (!speech || !this.canSpeak) return;
-    const parts = n ? readoutOf(n) : [SAMPLE];
-    if (parts.length === 0) return;
+    const reads = speech && this.canSpeak;
+    const parts = reads ? (n ? readoutOf(n) : [SAMPLE]) : [];
     // 音を合わせて待つ間に、最初の文を取りに行っておく
-    const pending = this.fetchAll(parts);
+    const pending = parts.length > 0 ? this.fetchAll(parts) : undefined;
+    this.rings++;
+    // play はこの同期の中で呼ぶ (「試しに鳴らす」の操作の中で鳴らすため)
+    const chime = sound ? this.chime() : Promise.resolve(false);
+    const chimed = notify ? await chime : false;
+    const notified = n && notify ? await this.show(n, chimed) : false;
+    if (!pending) return;
     const go = () => void this.speak(parts, pending);
-    if (sound) setTimeout(go, SPEAK_AFTER_MS);
+    if (sound || notified) setTimeout(go, SPEAK_AFTER_MS);
     else go();
+  }
+
+  /** チャイムを鳴らす。鳴り始めたら true (待ちすぎたら false) */
+  private chime(): Promise<boolean> {
+    const a = this.element();
+    a.muted = false;
+    a.currentTime = 0;
+    const played = a
+      .play()
+      .then(() => {
+        this.failed = false;
+        return true;
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "NotAllowedError")
+          this.failed = true;
+        return false;
+      });
+    return Promise.race([
+      played,
+      new Promise<boolean>((r) => setTimeout(() => r(false), CHIME_WAIT_MS)),
+    ]);
+  }
+
+  /** Service Worker の登録 (まだ無ければ無い。通知はこれで出す) */
+  private async registration(): Promise<ServiceWorkerRegistration | undefined> {
+    if (!("serviceWorker" in navigator)) return undefined;
+    return navigator.serviceWorker.getRegistration().catch(() => undefined);
+  }
+
+  /**
+   * OS の通知を出す。同じ事象の同じ中身がもう出ていれば (Web Push が先に届いた・ほかのタブが出した)
+   * 出さない。OS の通知音で鳴らしたら true
+   */
+  private async show(n: Notice, chimed: boolean): Promise<boolean> {
+    try {
+      const reg = await this.registration();
+      if (!reg) return false;
+      // チャイムが鳴ったら音なしで出す。音なしで鳴らし直す (renotify) ことは無いので、renotify は付けない
+      // (silent と renotify を一緒に付けると投げるブラウザがあっても、通知を落とさないように)
+      const shape = pageNotification(n, !chimed, chimed);
+      if (
+        isShown(shape, await reg.getNotifications({ tag: shape.options.tag }))
+      )
+        return false;
+      try {
+        // renotify・silent は DOM の型に無いことがあるので、自分で書いた形で渡す
+        await reg.showNotification(
+          shape.title,
+          shape.options as NotificationOptions,
+        );
+        return !chimed;
+      } catch {
+        // 音なしの形を受け付けないブラウザでは、通知音つきで出し直す (出さないよりよい)
+        const plain = pageNotification(n, true, false);
+        await reg.showNotification(
+          plain.title,
+          plain.options as NotificationOptions,
+        );
+        return true;
+      }
+    } catch {
+      return false;
+    }
+  }
+
+  /** 鳴らさない続報で、この事象の通知が出ていれば置き換える (取消・解除を残った通知に映す) */
+  private async replace(n: Notice): Promise<void> {
+    try {
+      const reg = await this.registration();
+      if (!reg) return;
+      const shape = pageNotification(n, false, true);
+      const shown = await reg.getNotifications({ tag: shape.options.tag });
+      if (shown.length === 0 || isShown(shape, shown)) return;
+      await reg.showNotification(
+        shape.title,
+        shape.options as NotificationOptions,
+      );
+    } catch {
+      // 置き換えられなくても、前の通知が残るだけ
+    }
   }
 
   /** 文ごとの音を取りに行く (同じ文は 1 回)。VOICEVOX が無ければ空 */
