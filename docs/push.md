@@ -5,7 +5,7 @@
 ## 鍵が無いとき
 
 VAPID の鍵 (`VAPID_PRIVATE_JWK`) が無ければ、**Web Push だけを切って普通に動く**。
-ヘッダーの「通知」(スマホの形は「その他」の「通知」)を開くと「鍵が入っていない」と出て、登録は受けない。受信・画面・SSE は変わらない。
+ヘッダーの「通知」(スマホの形は下のタブの「通知」)を開くと「鍵が入っていない」と出て、登録は受けない。受信・画面・SSE は変わらない。
 起動の記録に `[push] VAPID の鍵 (VAPID_PRIVATE_JWK) が無いので、Web Push は切ってあります` と出る。
 
 ## 環境変数
@@ -52,7 +52,7 @@ Helm chart (`charts/sonae`) はもう `vapid-private-jwk` を `optional: true` �
    kubectl -n sonae logs deploy/sonae | grep '\[push\]'
    ```
 
-4. <https://s.doany.io> を開き、ヘッダーの「通知」(スマホの形は「その他」の「通知」)→「このブラウザで受ける」→「試しに送る」で届くか見る。
+4. <https://s.doany.io> を開き、ヘッダーの「通知」(スマホの形は下のタブの「通知」)→「このブラウザで受ける」→「試しに送る」で届くか見る。
    iPhone・iPad は、Safari の共有ボタンから「ホーム画面に追加」した sonae (iOS 16.4 以降) で開いてからにする。
 
 手元で試すときは、`compose.override.yml` に `VAPID_PRIVATE_JWK` と `VAPID_SUBJECT` (`mailto:...`。手元の

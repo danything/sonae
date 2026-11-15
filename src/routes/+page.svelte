@@ -4,6 +4,8 @@
   import { page } from "$app/state";
   import { tick } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
+  import Activity from "~icons/lucide/activity";
+  import Bell from "~icons/lucide/bell";
   import CalendarDays from "~icons/lucide/calendar-days";
   import Ellipsis from "~icons/lucide/ellipsis";
   import ExternalLink from "~icons/lucide/external-link";
@@ -110,7 +112,7 @@
    * - 広い形 (1000px から): 上に全幅のヘッダー (左にロゴ、真ん中に地名で絞る欄、右に字だけのナビ)。
    *   その下は 地図 | 一覧の列 の 2 列。列は右の 1 本だけにして地図を広く取る (denpa の観る画面の右の列と同じ置き方)。
    *   列の上に種類で絞るチップと日付のカレンダー (メニュー) の 1 行、その下に一覧か、選んだときは詳しい内容
-   * - スマホの形: ヘッダーを出さず、地図を画面いっぱいに。一覧は地図の上に重ねる面で、下のタブ (地図・一覧・その他) で切り替える。
+   * - スマホの形: ヘッダーを出さず、地図を画面いっぱいに。一覧は地図の上に重ねる面で、下のタブ (地図・一覧・通知・強震モニタ・その他) で切り替える。
    *   下のタブのすぐ上に操作の 1 行 (dock。種類で絞るチップか、地図に出している地震)。一覧を下へ読むと、下のタブと dock は引っ込む
    *
    * 一覧は全部の種類を新しい順に 1 本に並べる。チップで全部か 1 つの種類を出し、端末に覚える。
@@ -1251,6 +1253,33 @@
       <Icon icon={List} />
       <span>一覧</span>
     </button>
+    <!--
+      よく使うものはタブに出す (docs/ui.md の「スマホの形」)。通知は条件を見直し・試しに送る入口、
+      強震モニタは揺れたときにすぐ開きたい外のページ (新しいタブ)。タブに出したものは「その他」に入れない
+    -->
+    {#if user}
+      <button
+        type="button"
+        class="tab"
+        aria-haspopup="dialog"
+        onclick={() => (pushOpen = true)}
+        data-testid="tab-push"
+      >
+        <Icon icon={Bell} />
+        <span>通知</span>
+      </button>
+    {/if}
+    <a
+      class="tab"
+      href={KMONI_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="強震モニタ (防災科研のページを新しいタブで開く)"
+      data-testid="tab-kmoni"
+    >
+      <Icon icon={Activity} />
+      <span>強震モニタ</span>
+    </a>
     <div class="tab-more">
       <Menu bind:open={moreMenu} side="top" align="end" nav>
         {#snippet trigger(props)}
@@ -1261,14 +1290,6 @@
         {/snippet}
         {#if user}<p class="menu-head">{user.name}</p>{/if}
         <a class="menu-item" href={aboutHref}>出典と注意</a>
-        {#if user}
-          <button
-            type="button"
-            class="menu-item"
-            onclick={() => (pushOpen = true)}>通知</button
-          >
-        {/if}
-        {@render kmoniItem()}
         <div class="menu-gap"></div>
         {@render themeItems()}
         {@render accountItems()}
@@ -1695,6 +1716,7 @@
     box-shadow: none;
     color: inherit;
     font-size: var(--so-text-2xs);
+    text-decoration: none;
     font-weight: var(--so-weight);
     line-height: 1.2;
     white-space: nowrap;
