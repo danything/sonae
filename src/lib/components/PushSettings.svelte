@@ -79,6 +79,8 @@
 
   /** 条件は、このブラウザが Web Push に登録してあればその条件、無ければ端末に覚えた条件 */
   async function load(): Promise<void> {
+    // 閉じて開き直したとき、送っている途中の条件より古い条件をサーバーから読まないよう、送り終わるのを待つ
+    await saving;
     message = "";
     prefsMessage = "";
     prefs = normalizePrefs(alerter.prefs);
@@ -109,18 +111,20 @@
    * 続けて変えたときに前の送信と追い越さないよう、送るのは 1 つずつ順に
    */
   let saving: Promise<void> = Promise.resolve();
-  function savePrefs(): void {
+  /** 送っている途中の数。結果は最後の 1 つが終わったときだけ出す (途中の「保存しました」で終わったと思わせない) */
+  let pending = 0;
+  function savePrefs(note = ""): void {
     alerter.setPrefs(prefs);
     if (!registered) {
-      prefsMessage = "保存しました";
+      prefsMessage = `${note}保存しました`;
       return;
     }
-    prefsMessage = "保存しています…";
+    pending++;
+    prefsMessage = `${note}保存しています…`;
     saving = saving.then(async () => {
-      await save(false);
-      // 送れたかどうかは save が message に書く。条件のすぐ下に移して出す
-      prefsMessage = message;
-      message = "";
+      const result = await save();
+      pending--;
+      if (pending === 0) prefsMessage = `${note}${result}`;
     });
   }
 
@@ -183,8 +187,7 @@
           if (code && cities[code]) {
             pref = code.slice(0, 2);
             setHome(code);
-            savePrefs();
-            message = `${cities[code]?.[1]} を選びました。`;
+            savePrefs(`${cities[code]?.[1]} を選びました。`);
           } else {
             message =
               "いまの位置が入る市町村が見つかりませんでした。一覧から選んでください。";
@@ -232,17 +235,24 @@
     return pm.subscribe({ userVisibleOnly: true, applicationServerKey: want });
   }
 
-  /** `reload` を外すと、送った後に条件を読み直さない (読み直すと、送っている間に変えた条件が戻るため) */
-  async function save(reload = true): Promise<void> {
-    if (!info?.enabled) return;
-    busy = true;
+  /** 「このブラウザで受ける」。登録して条件を送り、読み直す。結果は下の message に出す */
+  async function register(): Promise<void> {
     message = "";
+    const result = await save();
+    await load();
+    message = result;
+  }
+
+  /**
+   * 条件をサーバーに送り、結果の文を返す (画面には書かない。どこに出すかは呼ぶ側が決める)。
+   * 送った後に条件を読み直さないのは、送っている間に変えた条件が戻るため
+   */
+  async function save(): Promise<string> {
+    if (!info?.enabled) return "";
+    busy = true;
     try {
-      if ((await Notification.requestPermission()) !== "granted") {
-        message =
-          "通知が許可されていません。ブラウザのサイトの設定で許可してください。";
-        return;
-      }
+      if ((await Notification.requestPermission()) !== "granted")
+        return "通知が許可されていません。ブラウザのサイトの設定で許可してください。";
       const sub = await subscribe(info.publicKey);
       alerter.setPrefs(prefs);
       const res = await fetch("/api/push", {
@@ -254,12 +264,11 @@
           label: navigator.userAgent,
         }),
       });
-      message = res.ok
+      return res.ok
         ? "保存しました"
         : `保存できませんでした (${res.status}): ${await res.text()}`;
-      if (reload) await load();
     } catch (err) {
-      message = `登録できませんでした: ${err}`;
+      return `登録できませんでした: ${err}`;
     } finally {
       busy = false;
     }
@@ -324,7 +333,7 @@
       の両方に使います。訓練・試験は知らせません。
     </p>
     <!-- 条件は変えたらすぐ覚える (change はここまで上がってくる) -->
-    <div class="stack" onchange={savePrefs}>
+    <div class="stack" onchange={() => savePrefs()}>
       <label>
         緊急地震速報
         <select bind:value={prefs.eew}>
@@ -550,7 +559,7 @@
     {:else}
       <p class="small muted">
         {registered
-          ? "このブラウザは登録済みです。条件を保存すると、Web Push にも使います。"
+          ? "このブラウザは登録済みです。上の条件を変えると、Web Push にもそのまま使います。"
           : "登録すると、上の条件でこのブラウザに通知を送ります。"}
       </p>
       <div class="cluster">
@@ -565,7 +574,7 @@
             disabled={busy}>解除</button
           >
         {:else}
-          <button type="button" onclick={() => save()} disabled={busy}
+          <button type="button" onclick={register} disabled={busy}
             >このブラウザで受ける</button
           >
         {/if}
