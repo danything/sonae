@@ -58,6 +58,7 @@
     type Volcano,
     type WeatherWarning,
   } from "#lib/model.ts";
+  import { mapCredit, showsGrus } from "#lib/notice.ts";
   import { readPref, writePref } from "#lib/prefs.ts";
 
   /**
@@ -78,6 +79,7 @@
     office = null,
     officeHref,
     onoffice,
+    aboutHref = "/?about=1",
     shown = true,
   }: {
     /** いまの気象警報・注意報 (市町村等を段の色で塗る。押すと吹き出し) */
@@ -103,7 +105,12 @@
     foreignQuake?: ForeignQuake | null;
     /** 地図が見えているか (スマホの形で一覧の面が上にある間は false) */
     shown?: boolean;
+    /** 隅の出典を押したときに開く「出典と注意」の窓のリンク */
+    aboutHref?: string;
   } = $props();
+
+  /** 見ている範囲が GRUS 画像の範囲 (沖ノ鳥島のあたり) にかかるか (隅の出典に足す) */
+  let grus = $state(false);
 
   /** pmtiles の読み方は MapLibre に 1 度だけ足す (地図を作り直しても足し直さない) */
   let pmtilesAdded = false;
@@ -174,7 +181,8 @@
           untrack(() => hazard),
         ) as never,
         bounds: JAPAN_BOUNDS,
-        attributionControl: { compact: true },
+        // MapLibre の (i) は押すまで出典が見えないので出さず、隅の短い出典をいつも出す (docs/map.md)
+        attributionControl: false,
         // 回すと読みにくいだけなので、北を上に固定する
         dragRotate: false,
         pitchWithRotate: false,
@@ -186,7 +194,15 @@
         created.addImage("shelter", shelterIcon(), { pixelRatio: 2 });
         for (const l of anno as { id: string }[])
           if (!created.getLayer(l.id)) created.addLayer(l as never, "shelters");
-        created.on("moveend", () => void loadShelters());
+        created.on("moveend", () => {
+          void loadShelters();
+          // GRUS 画像の範囲を映しているときは、隅の出典に足す
+          if (created)
+            grus = showsGrus(
+              created.getBounds().toArray().flat() as never,
+              created.getZoom(),
+            );
+        });
         created.on("click", "shelters", (e) => {
           const f = e.features?.[0];
           if (f) openShelter(f.properties as Record<string, unknown>, e.lngLat);
@@ -227,10 +243,10 @@
         // 手元 (vite dev) で画面を撮るときに、地図を動かせるようにする (本番の束には入らない)
         if (import.meta.env.DEV)
           (window as unknown as { sonaeMap?: MapLibreMap }).sonaeMap = created;
-        // 出典は (i) に畳んでおく (開くと地図の下を覆う)。同じ出典は画面の下の注意文の下にもいつも出している
-        container
-          ?.querySelector(".maplibregl-ctrl-attrib")
-          ?.classList.remove("maplibregl-compact-show");
+        grus = showsGrus(
+          created.getBounds().toArray().flat() as never,
+          created.getZoom(),
+        );
       });
     })().catch((err: unknown) => {
       console.warn(`地図を開けませんでした: ${err}`);
@@ -530,6 +546,8 @@
     hazard = readHazard(readPref("map.hazard"));
   });
   const chosenHazard = $derived(HAZARDS.find((h) => h.id === hazard));
+  /** 地図の隅にいつも出す短い出典 (映している層に合わせる) */
+  const creditText = $derived(mapCredit({ hazard: hazard !== "none", grus }));
   function pickHazard(id: HazardId): void {
     hazard = id;
     hazardMenu = false;
@@ -864,6 +882,9 @@
         </figure>
       {/if}
     </div>
+    <a class="map-credit" href={aboutHref} data-testid="map-credit"
+      >{creditText}</a
+    >
     <div class="locate">
       <button
         type="button"
@@ -1073,16 +1094,31 @@
     height: 100%;
     justify-content: center;
   }
-  /* 地図の右下の出典。スマホの形では下のタブと dock の上に出す (`--map-bottom` は置く側が決める) */
-  .map :global(.maplibregl-ctrl-bottom-right) {
-    bottom: var(--map-bottom, 0px);
-  }
   /*
-   * 出典の (i) は MapLibre の <details> と <summary>。詳しい内容の折り畳み (Blades の accordion) の
-   * `details summary::after` (開閉の矢印) が (i) に重なるので、ここでは外す
+   * 地図の右下の短い出典 (いつも見える。国土地理院の出典の記載の決まり)。押すと「出典と注意」の窓。
+   * 写真の上でも読めるよう操作の層と同じ面 (--so-float) に載せ、小さく。スマホの形では下のタブと dock の上
+   * (`--map-bottom` は置く側が決める)
    */
-  .map :global(.maplibregl-ctrl-attrib-button::after) {
-    content: none;
+  .map-credit {
+    position: absolute;
+    right: var(--so-space-2);
+    bottom: calc(var(--map-bottom, 0px) + var(--so-space-2));
+    z-index: 1;
+    max-width: calc(100% - 2 * var(--so-space-2));
+    padding: 0 var(--so-space-2);
+    border-radius: var(--so-radius-full);
+    background: var(--so-float);
+    box-shadow: var(--so-shadow-pop);
+    color: var(--so-fg);
+    font-size: var(--so-text-2xs);
+    line-height: 1.8;
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .map-credit:hover {
+    text-decoration: underline;
   }
   /* 地図の上のラベル (MapLibre が DOM に置くので :global) */
   .map :global(.int-label) {

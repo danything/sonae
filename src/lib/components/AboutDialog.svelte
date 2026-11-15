@@ -64,9 +64,16 @@
         </li>
       </ul>
       <h2>出典</h2>
-      <ul class="small">
-        {#each CREDITS as c (c)}
-          <li>{c}</li>
+      <ul class="small" data-testid="credits">
+        {#each CREDITS as c (c.label)}
+          <li>
+            <span class="bold">{c.label}:</span>
+            {#each c.parts as p, i (i)}{#if typeof p === "string"}{p}{:else}<a
+                  href={p.href}
+                  target="_blank"
+                  rel="noopener">{p.text}</a
+                >{/if}{/each}
+          </li>
         {/each}
         {#if alerter.credits.length > 0}
           <li data-testid="voice-credit">
@@ -133,8 +140,14 @@
         </li>
         <li>
           <a
-            href="https://maps.gsi.go.jp/development/ichiran.html"
-            rel="noopener">地理院タイル一覧</a
+            href="https://www.gsi.go.jp/kikakuchousei/kikakuchousei40182.html"
+            rel="noopener">国土地理院コンテンツ利用規約</a
+          >
+        </li>
+        <li>
+          <a
+            href="https://disaportal.gsi.go.jp/hazardmap/copyright/copyright.html"
+            rel="noopener">ハザードマップポータルサイトの利用規約</a
           >
         </li>
       </ul>
