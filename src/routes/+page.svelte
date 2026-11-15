@@ -94,7 +94,8 @@
     matches,
     newestFirst,
     OFFICE_PREFIX,
-    readHidden,
+    pickOnly,
+    readOnly,
     readView,
     selectHref,
     UNSELECT,
@@ -110,7 +111,7 @@
    * - スマホの形: ヘッダーを出さず、地図を画面いっぱいに。一覧は地図の上に重ねる面で、下のタブ (地図・一覧・その他) で切り替える。
    *   下のタブのすぐ上に操作の 1 行 (dock。種類で絞るチップか、地図に出している地震)。一覧を下へ読むと、下のタブと dock は引っ込む
    *
-   * 一覧は全部の種類を新しい順に 1 本に並べる。チップは種類ごとに出す・隠すを切り替え、端末に覚える。
+   * 一覧は全部の種類を新しい順に 1 本に並べる。チップで全部か 1 つの種類を出し、端末に覚える。
    * いま出ている緊急地震速報・大津波警報・津波警報・気象の特別警報は、チップにかかわらず一覧の先頭に出す
    *
    * 何を見ているかは URL の query に持つ (`#lib/view.ts`)。行を押すと `?q=<id>` などに替わり、そのリンクを送れば同じ所が開く
@@ -212,20 +213,25 @@
 
   const quakeTime = (q: Quake) => q.originTime ?? q.updatedAt;
 
-  // ---- 種類で絞るチップ (隠す種類を端末に覚える。既定は全部出す) ----
-  let hidden = $state<Kind[]>([]);
+  // ---- 種類で絞るチップ (全部か 1 つの種類。端末に覚える。既定は全部出す) ----
+  /** 出している 1 つの種類 (null は全部) */
+  let only = $state<Kind | null>(null);
   $effect.pre(() => {
-    hidden = readHidden(readPref("list.hidden"));
-    // 前の地図の層のオン・オフ (層はいつも全部出すので読まない)
+    only = readOnly(readPref("list.only"));
+    // 前の形 (隠す種類の配列) と、前の地図の層のオン・オフ (層はいつも全部出す) は読まずに消す
+    removePref("list.hidden");
     removePref("map.layers");
   });
-  const shownKind = (k: Kind) => !hidden.includes(k);
-  function toggleKind(k: Kind) {
-    hidden = shownKind(k) ? [...hidden, k] : hidden.filter((x) => x !== k);
-    writePref("list.hidden", JSON.stringify(hidden));
+  const shownKind = (k: Kind) => only === null || only === k;
+  /** チップを押した (null は「すべて」) */
+  function pickKind(k: Kind | null) {
+    only = pickOnly(only, k);
+    if (only) writePref("list.only", only);
+    else removePref("list.only");
     // 詳しい内容を見ているときは、絞った一覧へ戻る
     if (v.selected) void goto(backHref, { reset: false });
   }
+  const allCount = $derived(KINDS.reduce((n, k) => n + counts[k], 0));
 
   /**
    * 一覧の 1 本の並び。種類をまたいで時刻の新しい順に並べ、日付の見出しで束ねる。
@@ -827,14 +833,26 @@
 {/snippet}
 
 {#snippet kindChips(where: string)}
-  <!-- 種類で絞るチップ。押すたびにその種類を出す・隠す (並びの中なので、出している印は幅いっぱいの下線と太字) -->
+  <!--
+    種類で絞るチップ。「すべて」か 1 つの種類を出す。押すとその種類だけにし、出している種類をもう一度押すと全部に戻す
+    (並びの中なので、出している印は幅いっぱいの下線と太字。✕ は置かず、全部へは先頭の「すべて」で戻る)
+  -->
   <div class="chips {where}" role="group" aria-label="出す種類">
+    <button
+      type="button"
+      class="chip"
+      aria-pressed={only === null}
+      onclick={() => pickKind(null)}
+      data-testid="filter-all"
+    >
+      すべて <span class="num">{allCount}</span>
+    </button>
     {#each KINDS as k (k)}
       <button
         type="button"
         class="chip"
-        aria-pressed={shownKind(k)}
-        onclick={() => toggleKind(k)}
+        aria-pressed={only === k}
+        onclick={() => pickKind(k)}
         data-testid="filter-{k}"
       >
         {KIND_LABEL[k]} <span class="num">{counts[k]}</span>
@@ -1088,7 +1106,7 @@
             </ol>
           {:else}
             <div class="empty-state">
-              {#if query.trim() !== "" || hidden.length > 0}
+              {#if query.trim() !== "" || only !== null}
                 <p class="bold">当てはまるものはありません</p>
               {:else}
                 <p class="bold">まだ情報を受けていません</p>
