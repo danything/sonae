@@ -104,15 +104,14 @@ jobs:
           curl -fsS http://localhost:3030/health; echo
           # ランナーの 80 / 443 は空いているので genkan が入り、http://sonae.localhost で開ける
           curl -fsS --resolve sonae.localhost:80:127.0.0.1 http://sonae.localhost/health; echo
-          # 誰を通すか (TRUSTED_NETWORKS)。localhost は Docker の中継で送信元が Docker のゲートウェイに見えるので通さない。
-          # genkan 越し (このマシンのブラウザは genkan のゲートウェイから来たように見える) と、LAN の IP では開ける
-          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3030/)" = 403
-          test "$(curl -s -o /dev/null -w '%{http_code}' --resolve sonae.localhost:80:127.0.0.1 http://sonae.localhost/)" = 200
+          # 誰を通すか (TRUSTED_NETWORKS)。genkan 越し (このマシンのブラウザは genkan のゲートウェイから来たように見える) と、
+          # LAN の IP では開ける。知らない名前では通さない (X-Forwarded-For を読む条件は tests/trust.test.ts で見る)
+          code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
           lan=$(ip route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
-          test "$(curl -s -o /dev/null -w '%{http_code}' "http://$lan:3030/")" = 200
-          # genkan の前で X-Forwarded-For を偽っても、外の接続元は名乗れない (genkan が右に本当の相手を足す)。知らない名前も通さない
-          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'X-Forwarded-For: 192.168.1.5' http://localhost:3030/)" = 403
-          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: evil.example.com' "http://$lan:3030/")" = 403
+          echo "genkan $(code --resolve sonae.localhost:80:127.0.0.1 http://sonae.localhost/) lan $(code "http://$lan:3030/") evil $(code -H 'Host: evil.example.com' "http://$lan:3030/")"
+          test "$(code --resolve sonae.localhost:80:127.0.0.1 http://sonae.localhost/)" = 200
+          test "$(code "http://$lan:3030/")" = 200
+          test "$(code -H 'Host: evil.example.com' "http://$lan:3030/")" = 403
           grep -q '^TRUSTED_NETWORKS=192.168.0.0/16,10.0.0.0/8,' ~/sonae/sonae.env
           grep -q 'TRUSTED_PROXIES:' ~/sonae/compose.override.yml
           # VAPID の鍵ができ、sonae が Web Push を有効にした
