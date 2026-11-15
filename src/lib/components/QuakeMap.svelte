@@ -288,7 +288,11 @@
     if (!office || offices || officesLoading) return;
     officesLoading = true;
     fetch("/areas/offices.json")
-      .then((r) => (r.ok ? (r.json() as Promise<OfficeTable>) : {}))
+      .then((r) => {
+        // 読めなかったときは空の表を持たず、次に選んだときに読み直す
+        if (!r.ok) throw new Error(`offices.json: ${r.status}`);
+        return r.json() as Promise<OfficeTable>;
+      })
       .then((t) => (offices = t))
       .catch(() => {
         // 次に選んだときに読み直す
