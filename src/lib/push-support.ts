@@ -88,8 +88,9 @@ export const QUIET_DENY_MS = 400;
 
 /**
  * 通知の許可が無いときの文。ブラウザが許可の窓を出さずに断ることがある
- * (前に閉じた・拒否した、Edge の「通知の要求を静かにする」、Android の Edge など)。
- * そのときは、何が起きたかと、サイトの設定で許す道筋を出す
+ * (前に閉じた・拒否した、Edge の「通知の要求を静かにする」など)。
+ * そのときは、何が起きたかと、サイトの設定で許す道筋を出す。Android の Edge だけは許す設定が無いので、
+ * 対応していないことと Chrome を出す (許可が取れればここは呼ばれないので、Edge が直れば普通に登録できる)
  */
 export function permissionDeniedText(
   userAgent: string,
