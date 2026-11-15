@@ -158,21 +158,28 @@ const reported = new Set<string>();
  * ログインなしで通すと、Cookie の SameSite の守りが効かない。LAN の人が悪いサイトを開くと、そのサイトが
  * `http://192.168.x.x:3030/api/...` へ送らせた要求も、接続元は LAN・名前は IP の直書きなので通ってしまう。
  * SvelteKit の CSRF の守りはフォームの形の本文しか見ず、`text/plain` で JSON を送る `fetch` (事前の確認が要らない) は通る。
- * そこで、状態を変える要求 (GET・HEAD・OPTIONS 以外) は、ブラウザが付ける `Sec-Fetch-Site` と `Origin` が同じオリジンでなければ断る。
+ * そこで、状態を変える要求 (GET・HEAD・OPTIONS 以外) は、ブラウザが付ける `Sec-Fetch-Site` (無ければ `Origin`) が同じオリジンでなければ断る。
  * どちらも無い (ブラウザでない道具) ときは通す (ほかのサイトから送らせることはできない)
  */
 export function crossSiteWrite(request: Request, origin: string): boolean {
   if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return false;
+  // Sec-Fetch-Site はブラウザが付け、ページのスクリプトからは変えられないので、あればそれだけで決める
+  // (前段が TLS を終えて `url.origin` が http になっていても、同じオリジンの書き込みを断らないように)。
+  // Origin と比べるのは、Sec-Fetch-Site を付けない古いブラウザのときだけ
   const site = request.headers.get("sec-fetch-site");
-  if (site !== null && site !== "same-origin" && site !== "none") return true;
+  if (site !== null) return site !== "same-origin" && site !== "none";
   const from = request.headers.get("origin");
   return from !== null && from !== origin;
 }
 
 /** 信頼するネットワークの中から知らない名前で来たとき、ログに理由を 1 度だけ出す */
 export function reportForeignHost(address: string, host: string): void {
-  if (reported.has(host) || reported.size >= 64) return;
+  if (reported.has(host) || reported.size > 64) return;
   reported.add(host);
+  if (reported.size > 64) {
+    console.warn("[auth] 知らない名前が多いので、これより後は知らせません");
+    return;
+  }
   console.warn(
     `[auth] 信頼するネットワーク (${address}) から、知らない名前「${host || "(名前なし)"}」で来たので、ログインなしでは通しません。この名前で開くなら ALLOWED_HOSTS に足してください (docs/install.md)`,
   );

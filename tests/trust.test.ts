@@ -297,6 +297,18 @@ describe("ほかのサイトから送らせた書き込み (ログインなし�
     ).toBe(false);
     // ブラウザでない道具 (Origin も Sec-Fetch-Site も付けない) は、ほかのサイトから送らせることができない
     expect(crossSiteWrite(req("POST", {}), origin)).toBe(false);
+    // 前段が TLS を終えて url.origin が http のままでも、ブラウザが same-origin と言えば通す (Origin の scheme は違う)
+    expect(
+      crossSiteWrite(
+        req("POST", {
+          origin: "https://sonae.example.com",
+          "sec-fetch-site": "same-origin",
+        }),
+        "http://sonae.example.com",
+      ),
+    ).toBe(false);
+    // Sec-Fetch-Site の無い古いブラウザは Origin で決める
+    expect(crossSiteWrite(req("POST", { origin }), origin)).toBe(false);
   });
 
   test("ほかのサイトからの書き込みは断る", () => {
