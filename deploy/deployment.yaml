@@ -29,7 +29,7 @@ spec:
       terminationGracePeriodSeconds: 15
       containers:
         - name: sonae
-          image: ghcr.io/danything/sonae:0c83f60dd6aead75169684c1f2e3d6acafc8628d
+          image: ghcr.io/danything/sonae:0a688d0f221759c932279ecc5fde89ca32d990eb
           ports:
             - containerPort: 3000
           startupProbe:
