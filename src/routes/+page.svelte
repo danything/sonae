@@ -78,6 +78,7 @@
   } from "#lib/model.ts";
   import { KMONI_URL, NOTICE, SHORT_CREDIT } from "#lib/notice.ts";
   import { PHONE_FORM } from "#lib/phone-form.ts";
+  import type { Place } from "#lib/places.ts";
   import {
     applyTheme,
     readPref,
@@ -576,6 +577,18 @@
   // ---- スマホの形: 地図と一覧の切り替え (選んだもので開いたときは一覧) ----
   // svelte-ignore state_referenced_locally
   let tab = $state<"map" | "list">(v.selected ? "list" : "map");
+
+  /** 検索の欄で選んだ場所 (地図をそこへ寄せて印を置く。`n` は同じ場所を選び直したときも寄せ直すため) */
+  let found = $state<{ place: Place; n: number } | null>(null);
+  function pickPlace(place: Place): void {
+    found = { place, n: (found?.n ?? 0) + 1 };
+    // スマホの形は地図のタブへ移る
+    if (phone.current) tab = "map";
+  }
+  // 欄を空にしたら、選んだ場所の印も消す
+  $effect(() => {
+    if (query.trim() === "") found = null;
+  });
   let listBox = $state<HTMLElement>();
   /** 一覧を下へ読んでいる間は、下のタブと dock を引っ込める (動きは CSS) */
   let retract = $state(false);
@@ -971,7 +984,7 @@
       <span>sonae</span>
     </a>
     <div class="header-search">
-      <SearchField bind:value={query} />
+      <SearchField bind:value={query} onplace={pickPlace} />
     </div>
     <nav class="actions" aria-label="メニュー">
       {#if trouble}
@@ -1077,7 +1090,7 @@
         tabindex="-1"
       >
         <div class="phone-search">
-          <SearchField bind:value={query} />
+          <SearchField bind:value={query} onplace={pickPlace} />
         </div>
 
         {#if v.selected}
@@ -1159,6 +1172,7 @@
         onoffice={() => (tab = "list")}
         {aboutHref}
         shown={!phone.current || tab === "map"}
+        {found}
       />
     </div>
   </main>

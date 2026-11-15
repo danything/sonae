@@ -71,6 +71,7 @@
     type WeatherWarning,
   } from "#lib/model.ts";
   import { mapCredit, showsGrus } from "#lib/notice.ts";
+  import type { Place } from "#lib/places.ts";
   import { readPref, removePref, writePref } from "#lib/prefs.ts";
   import { homeAt, saveHome } from "#lib/push-client.ts";
 
@@ -94,6 +95,7 @@
     onoffice,
     aboutHref = "/?about=1",
     shown = true,
+    found = null,
   }: {
     /** いまの気象警報・注意報 (市町村等を段の色で塗る。押すと吹き出し) */
     warnings?: WeatherWarning[];
@@ -118,6 +120,8 @@
     foreignQuake?: ForeignQuake | null;
     /** 地図が見えているか (スマホの形で一覧の面が上にある間は false) */
     shown?: boolean;
+    /** 検索の欄で選んだ場所 (寄せて印を置く。`n` が替わるたびに寄せる) */
+    found?: { place: Place; n: number } | null;
     /** 隅の出典を押したときに開く「出典と注意」の窓のリンク */
     aboutHref?: string;
   } = $props();
@@ -291,6 +295,9 @@
       warningSig = "";
       markedSig = "";
       volcanoSig = "";
+      foundMarker?.remove();
+      foundMarker = undefined;
+      foundN = 0;
       for (const m of [...markers, ...volcanoMarkers]) m.remove();
       markers = [];
       volcanoMarkers = [];
@@ -976,10 +983,55 @@
     };
   }
 
+  // ---- 検索の欄で選んだ場所 (寄せて小さい印を置く。docs/map.md の「場所の検索」) ----
+  let foundMarker: Marker | undefined;
+  let foundN = 0;
+  $effect(() => {
+    if (!map || !MarkerClass) return;
+    if (!found) {
+      foundMarker?.remove();
+      foundMarker = undefined;
+      return;
+    }
+    if (found.n === foundN) return;
+    foundN = found.n;
+    const p = found.place;
+    // スマホの形で地図のタブへ移るのと同時なので、地図の箱の大きさを測り直してから寄せる
+    map.resize();
+    if (p.bounds) {
+      // 市町村は外枠が収まるように (寄せすぎない)
+      const cam = map.cameraForBounds(
+        [
+          [p.bounds[0], p.bounds[1]],
+          [p.bounds[2], p.bounds[3]],
+        ],
+        { padding: focusPadding() },
+      );
+      map.jumpTo(
+        cam
+          ? { ...cam, zoom: Math.min(cam.zoom ?? 11, 13) }
+          : { center: p.at, zoom: 11 },
+      );
+    } else {
+      // 住所は街区の代表の点なので、家のまわりが分かるくらいまで
+      map.jumpTo({ center: p.at, zoom: Math.max(map.getZoom(), 16) });
+    }
+    foundJumpedAt = Date.now();
+    foundMarker?.remove();
+    const el = document.createElement("div");
+    el.className = "found-mark";
+    el.title = p.label;
+    el.setAttribute("aria-label", `探した場所 ${p.label}`);
+    el.setAttribute("role", "img");
+    foundMarker = new MarkerClass({ element: el }).setLngLat(p.at).addTo(map);
+  });
+
   // 選んだ地震 (と、出ている緊急地震速報) の震央へ寄せる。飛ばさない。
   // 続報で中身が変わるたびに寄せ直すと、見ている所が勝手に動くので、寄せるのは選んだものが替わったときと、
   // 地図が見えたとき (スマホの形で地図のタブに移ったとき) に震央が画面の外にあるときだけ
   let focused = "";
+  /** 検索の欄で選んだ場所へ寄せた直後か (地図のタブへ移ったときに、震央へ寄せ直さない) */
+  let foundJumpedAt = 0;
   let wasShown = false;
   $effect(() => {
     if (!map) return;
@@ -1013,6 +1065,11 @@
             : `quake:${quake?.id ?? ""}`;
     const appeared = shown && !wasShown;
     wasShown = shown;
+    // 検索の欄で場所を選んで地図のタブへ移ったときは、そちらを見せる (震央へ戻さない)
+    if (appeared && Date.now() - foundJumpedAt < 2000) {
+      foundJumpedAt = 0;
+      return;
+    }
     if (office && !eew && !vm && !fq) {
       if (!ob) return;
       const away =
@@ -1472,6 +1529,15 @@
     line-height: 1.6;
     text-align: center;
     box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  }
+  /* 検索の欄で選んだ場所の印。白い縁の橙の丸 (現在地の青い点・震央の × と色と形で見分ける) */
+  .map :global(.found-mark) {
+    width: 1.1rem;
+    height: 1.1rem;
+    border: 3px solid #fff;
+    border-radius: 50%;
+    background: #e8590c;
+    box-shadow: 0 1px 3px rgb(0 0 0 / 0.6);
   }
   /* 震央の × */
   .map :global(.epicenter) {
