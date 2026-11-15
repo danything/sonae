@@ -34,7 +34,8 @@ sonae:
   # Web Push の連絡先 (VAPID の subject。mailto: か https:)。空なら publicUrl。
   # 秘密鍵は下の `secrets` の Secret から読む (docs/push.md)
   vapidSubject: ""
-  # 既定の声 (VOICEVOX のスタイルの id。docs/design.md の 2.4)。空ならアプリの既定 (剣崎雌雄)
+  # まだ画面で声を選んでいないときの声 (VOICEVOX のスタイルの id。docs/design.md の 2.4)。空ならアプリの既定 (剣崎雌雄)。
+  # 画面で選んだ声はサーバーの DB に持ち、この家の全部の端末で同じになる
   voicevoxSpeaker: ""
   # 追加の環境変数。そのまま container.env に入る
   extraEnv: []
@@ -74,7 +75,7 @@ voicevox:
   # エンジン自身の既定 (0 か未指定) は論理 CPU の半分 (VOICEVOX ENGINE 0.26 の cpu_execution.py) で、
   # 全部にはならないので、chart はエンジンに 0 を渡さない
   cpuThreads: 0
-  # メモリはモデルを読んだ声の数で増える (3 人を読んで 1.9 GiB)。sonae が前もって合成する声は既定の声のほか 3 つまで。
+  # メモリはモデルを読んだ声の数で増える (3 人を読んで 1.9 GiB)。sonae が合成するのは、画面で選んである声 1 つだけ。
   # **CPU の limits は付けない** (絞ると合成が遅くなる)。requests.cpu は、ほかの Pod と取り合ったときの取り分
   resources:
     requests:

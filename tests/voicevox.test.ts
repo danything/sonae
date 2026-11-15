@@ -1,8 +1,15 @@
 import { describe, expect, test } from "bun:test";
 
 import { OPENINGS, SAMPLE } from "#lib/readout.ts";
+import { openDb } from "#lib/server/db.ts";
 import type { Reading } from "#lib/server/readings.ts";
-import { serveSpeech, Voicevox, wavSeconds } from "#lib/server/voicevox.ts";
+import { readSetting, voiceStore, writeSetting } from "#lib/server/settings.ts";
+import {
+  changeVoice,
+  serveSpeech,
+  Voicevox,
+  wavSeconds,
+} from "#lib/server/voicevox.ts";
 import { DEFAULT_SPEAKER } from "#lib/voices.ts";
 
 import { eew, NOW } from "./events.ts";
@@ -159,46 +166,19 @@ describe("VOICEVOX", () => {
       "21:強い揺れに警戒が必要な地域は、宮崎県南部平野部です。",
       "21:震源は日向灘です。",
     ]);
-    const r = await serveSpeech(v, { text: "震源は日向灘です。" });
+    const r = await serveSpeech(v, "震源は日向灘です。");
     expect(r.status).toBe(200);
     expect(await text(r)).toBe("21:震源は日向灘です。");
     // 同じ文は合成し直さない (持っている音を返す)
     expect(e.synth.length).toBe(before + 2);
-    expect((await serveSpeech(v, { text: "勝手な文です。" })).status).toBe(404);
-  });
-
-  test("選んだ声の冒頭がまだ無いときは、既定の声の冒頭を返し、選んだ声を後ろで合成する。試しの文は選んだ声を待つ", async () => {
-    const e = fakeEngine();
-    const v = new Voicevox({
-      url: "http://vv:50021",
-      fetch: e.f,
-      now: () => NOW,
-    });
-    await v.check();
-    await settle(v);
-    const r = await serveSpeech(v, { text: OPENINGS.eewWarning, voice: 52 });
-    expect(r.headers.get("x-voice")).toBe("21");
-    await settle(v);
-    expect(v.isCached(52, OPENINGS.eewWarning)).toBe(true);
-    const again = await serveSpeech(v, {
-      text: OPENINGS.eewWarning,
-      voice: 52,
-    });
-    expect(again.headers.get("x-voice")).toBe("52");
-    // 使われている声には、事象の文も合成しておく
-    expect(v.voicesInUse()).toEqual([21, 52]);
-    const sample = await serveSpeech(v, { text: SAMPLE, voice: 52 });
-    expect(sample.headers.get("x-voice")).toBe("52");
-    // 規約で外した声は選べない (既定の声で読む)
-    const other = await serveSpeech(v, { text: SAMPLE, voice: 13 });
-    expect(other.headers.get("x-voice")).toBe("21");
+    expect((await serveSpeech(v, "勝手な文です。")).status).toBe(404);
   });
 
   test("つながらないときは 503 (画面は端末の読み上げで読む)", async () => {
     const e = fakeEngine({ down: true });
     const v = new Voicevox({ url: "http://vv:50021", fetch: e.f });
     expect(await v.check()).toBe(false);
-    expect((await serveSpeech(v, { text: SAMPLE })).status).toBe(503);
+    expect((await serveSpeech(v, SAMPLE)).status).toBe(503);
     expect(v.info().available).toBe(false);
   });
 
@@ -228,23 +208,160 @@ describe("VOICEVOX", () => {
     expect(v.isCached(21, OPENINGS.eewWarning)).toBe(true);
   });
 
-  test("使われている声は既定の声のほか 3 つまで。4 つ目は既定の声で読む", async () => {
+  test("声を替えると覚え、新しい声で決まった文をすぐ合成し直し、知らせる。前の声の決まった文は捨てられる", async () => {
+    const e = fakeEngine();
+    const saved: [number, string][] = [];
+    const v = new Voicevox({
+      url: "http://vv:50021",
+      fetch: e.f,
+      now: () => NOW,
+      maxBytes: 400,
+      store: { load: () => undefined, save: (id, by) => saved.push([id, by]) },
+    });
+    const heard: number[] = [];
+    v.onVoice((id) => heard.push(id));
+    await v.check();
+    await settle(v);
+    expect(v.info().voice).toBe(21);
+    expect(v.setVoice(52, "sub-1")).toBe(true);
+    expect(saved).toEqual([[52, "sub-1"]]);
+    expect(heard).toEqual([52]);
+    expect(v.info().voice).toBe(52);
+    await settle(v);
+    expect(v.isCached(52, OPENINGS.eewWarning)).toBe(true);
+    // 上限を超えたので、前の声 (21) の決まった文から捨てた
+    expect(v.isCached(21, OPENINGS.eewWarning)).toBe(false);
+    // 同じ声を選び直しても、合成も知らせもしない
+    const before = e.synth.length;
+    expect(v.setVoice(52, "sub-2")).toBe(true);
+    await settle(v);
+    expect(e.synth.length).toBe(before);
+    expect(heard).toEqual([52]);
+    // 規約で外した声・エンジンに無い声は選べない
+    expect(v.setVoice(13, "sub-1")).toBe(false);
+    expect(v.setVoice(999, "sub-1")).toBe(false);
+    expect(v.info().voice).toBe(52);
+  });
+
+  test("事象の文は選んである声 1 つだけで合成し、音も選んである声で返す (端末は声を送らない)", async () => {
     const e = fakeEngine();
     const v = new Voicevox({
       url: "http://vv:50021",
       fetch: e.f,
       now: () => NOW,
+      store: { load: () => 52, save: () => {} },
     });
     await v.check();
-    for (const id of [52, 901, 902])
-      expect(
-        (await serveSpeech(v, { text: SAMPLE, voice: id })).headers.get(
-          "x-voice",
-        ),
-      ).toBe(String(id));
-    const r = await serveSpeech(v, { text: SAMPLE, voice: 903 });
-    expect(r.headers.get("x-voice")).toBe("21");
-    expect(v.voicesInUse()).toEqual([21, 52, 901, 902]);
+    await settle(v);
+    // 決まった文も、既定の声 (21) では合成しない
+    expect(e.synth.every((s) => s.startsWith("52:"))).toBe(true);
+    expect(v.isCached(21, OPENINGS.eewWarning)).toBe(false);
+    const before = e.synth.length;
+    v.handle(
+      eew({
+        kind: "warning",
+        hypocenter: { name: "日向灘" },
+        warnAreas: ["宮崎県南部平野部"],
+      }),
+    );
+    await settle(v);
+    expect(e.synth.slice(before)).toEqual([
+      "52:強い揺れに警戒が必要な地域は、宮崎県南部平野部です。",
+      "52:震源は日向灘です。",
+    ]);
+    const r = await serveSpeech(v, "震源は日向灘です。");
+    expect(r.headers.get("x-voice")).toBe("52");
+    const sample = await serveSpeech(v, SAMPLE);
+    expect(sample.headers.get("x-voice")).toBe("52");
+  });
+
+  test("覚えた声はつながって声の一覧を読むまで既定の声。読めたら知らせる。一覧から無くなったら既定の声", async () => {
+    const e = fakeEngine();
+    const heard: number[] = [];
+    const v = new Voicevox({
+      url: "http://vv:50021",
+      fetch: e.f,
+      now: () => NOW,
+      store: { load: () => 901, save: () => {} },
+    });
+    v.onVoice((id) => heard.push(id));
+    expect(v.speaker).toBe(21);
+    await v.check();
+    expect(v.speaker).toBe(901);
+    expect(heard).toEqual([901]);
+    const gone = new Voicevox({
+      url: "http://vv:50021",
+      fetch: e.f,
+      store: { load: () => 13, save: () => {} },
+    });
+    await gone.check();
+    expect(gone.speaker).toBe(21);
+  });
+});
+
+describe("声を替える (PUT /api/speech)", () => {
+  const put = (body: string, type = "application/json") =>
+    new Request("http://s.test/api/speech", {
+      method: "PUT",
+      headers: { "content-type": type },
+      body,
+    });
+
+  test("ログインした人なら替えられる。ログイン無し・JSON でない・選べない声は断る", async () => {
+    const e = fakeEngine();
+    const saved: [number, string][] = [];
+    const v = new Voicevox({
+      url: "http://vv:50021",
+      fetch: e.f,
+      now: () => NOW,
+      store: { load: () => undefined, save: (id, by) => saved.push([id, by]) },
+    });
+    await v.check();
+    const body = JSON.stringify({ voice: 52 });
+    expect((await changeVoice(v, undefined, put(body))).status).toBe(401);
+    // フォームの形 (別のオリジンからプリフライトなしで送れる) は受けない
+    expect(
+      (await changeVoice(v, "sub-1", put(body, "text/plain"))).status,
+    ).toBe(415);
+    expect((await changeVoice(undefined, "sub-1", put(body))).status).toBe(404);
+    expect((await changeVoice(v, "sub-1", put("{"))).status).toBe(400);
+    expect(
+      (await changeVoice(v, "sub-1", put(JSON.stringify({ voice: "52" }))))
+        .status,
+    ).toBe(400);
+    expect(
+      (await changeVoice(v, "sub-1", put(JSON.stringify({ voice: 13 }))))
+        .status,
+    ).toBe(400);
+    expect(saved).toEqual([]);
+    const ok = await changeVoice(v, "sub-1", put(body));
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as { voice: number }).voice).toBe(52);
+    expect(saved).toEqual([[52, "sub-1"]]);
+  });
+});
+
+describe("家の設定 (DB)", () => {
+  test("声を DB に覚え、読み直せる。読めない値は無いものとする", () => {
+    const d = openDb(":memory:");
+    const s = voiceStore(d);
+    expect(s.load()).toBeUndefined();
+    s.save(52, "sub-1");
+    expect(s.load()).toBe(52);
+    s.save(3, "sub-2");
+    expect(s.load()).toBe(3);
+    expect(readSetting(d, "voice")).toBe(3);
+    expect(
+      d
+        .query<{ updated_by: string }, []>(
+          "SELECT updated_by FROM settings WHERE key = 'voice'",
+        )
+        .get()?.updated_by,
+    ).toBe("sub-2");
+    writeSetting(d, "voice", "52", "sub-1");
+    expect(s.load()).toBeUndefined();
+    d.run("UPDATE settings SET value = '{' WHERE key = 'voice'");
+    expect(s.load()).toBeUndefined();
   });
 });
 

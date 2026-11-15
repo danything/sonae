@@ -41,6 +41,11 @@ export interface SseOptions {
   subscribe(fn: (e: SonaeEvent) => void): () => void;
   /** 定期に送る状況 (ping と一緒に) */
   status?(): string;
+  /**
+   * イベントのほかの知らせ (番号は付けない。埋め直しもしない)。生の配信に移ったときに呼び、
+   * `send` に枠を渡してもらう。やめる関数を返す (接続を閉じたときに呼ぶ)
+   */
+  notices?(send: (frame: string) => void): () => void;
   signal: AbortSignal;
   pingMs?: number;
 }
@@ -58,12 +63,14 @@ export function sseStream(o: SseOptions): Response {
       let closed = false;
       let timer: ReturnType<typeof setInterval> | undefined;
       let unsubscribe = () => {};
+      let unnotice = () => {};
       // 埋め直しで投げても購読を残さないよう、片付けは最初に決めておく
       cleanup = () => {
         if (closed) return;
         closed = true;
         clearInterval(timer);
         unsubscribe();
+        unnotice();
         o.signal.removeEventListener("abort", cleanup);
         try {
           controller.close();
@@ -108,6 +115,11 @@ export function sseStream(o: SseOptions): Response {
       }
       live = true;
       if (o.status) send(o.status());
+      if (o.notices && !closed) {
+        unnotice = o.notices(send);
+        // 最初の知らせを送る所で閉じていたら、ここで外す (片付けはもう済んでいる)
+        if (closed) unnotice();
+      }
       timer = setInterval(() => {
         send(": ping\n\n");
         if (o.status) send(o.status());

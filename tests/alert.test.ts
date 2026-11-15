@@ -25,13 +25,8 @@ describe("開いているときの音と読み上げの設定", () => {
       sound: false,
       speech: true,
     });
-    // 声は 0 以上の整数だけ覚える
+    // 声は端末に持たない (この家で 1 つ。サーバー)。前に覚えた voice は読まない
     expect(parseAlertSettings('{"speech":true,"voice":52}')).toEqual({
-      sound: false,
-      speech: true,
-      voice: 52,
-    });
-    expect(parseAlertSettings('{"speech":true,"voice":"52"}')).toEqual({
       sound: false,
       speech: true,
     });

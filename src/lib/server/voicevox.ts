@@ -1,17 +1,19 @@
 /**
  * VOICEVOX のエンジン (別のコンテナ) で読み上げの音を作る (docs/design.md の 2.4)。
  *
- * - 事象を受けたら、読み上げの原稿 (`#lib/readout.ts`) の変わる文を、使われている声ごとに合成して持つ。
+ * - 声はこの家で 1 つ (サーバーの DB に持つ。`settings.ts`)。選んでいなければ `VOICEVOX_SPEAKER` の既定の声。
+ * - 事象を受けたら、読み上げの原稿 (`#lib/readout.ts`) の変わる文を、選んである声 1 つで合成して持つ。
  *   画面は原稿を自分で作り、文ごとに `POST /api/speech` で音を取りに来る。
- * - 冒頭の決まった文は、起動したときと、つながり直したときに合成しておく (既定の声と、使われている声)。
- * - 合成した音はメモリに (声, 文) の組で持つ。決まった文は捨てず、ほかは古いものから上限まで捨てる。
+ * - 冒頭の決まった文は、起動したとき・つながり直したとき・声を替えたときに、選んである声で合成しておく。
+ * - 合成した音はメモリに (声, 文) の組で持つ。選んである声の決まった文は捨てず、ほかは古いものから上限まで捨てる。
  * - 合成は 1 つずつ順に頼む (エンジンは CPU で 1 つずつ合成する)。事象の文を、声の下ごしらえより先にする。
  * - 地名の読みはユーザー辞書 (`readings.ts`) で直す。エンジンは辞書をコンテナの中に持つので、
  *   つながるたびに足りない語を足す。
  * - 合成できる文は、決まった文と、受けた事象の原稿の文だけ (勝手な文をエンジンに読ませない)。
  */
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import type { Database } from "bun:sqlite";
+import { rmSync } from "node:fs";
 import { join } from "node:path";
 
 import type { SonaeEvent } from "#lib/model.ts";
@@ -21,7 +23,6 @@ import {
   isFixed,
   readoutCandidates,
   readoutOf,
-  SAMPLE,
 } from "#lib/readout.ts";
 import {
   ALLOWED_SPEAKERS,
@@ -31,16 +32,25 @@ import {
 } from "#lib/voices.ts";
 
 import { type Reading, READINGS } from "./readings.ts";
+import { voiceStore } from "./settings.ts";
+
+/** 選んである声の置き場 (DB の `settings`。`settings.ts`) */
+export interface VoiceStore {
+  load(): number | undefined;
+  /** `by` は替えた人 (IdP の sub) */
+  save(id: number, by: string): void;
+}
 
 export interface VoicevoxOptions {
   /** エンジンの URL (`http://voicevox:50021`) */
   url: string;
+  /** まだ声を選んでいないときの声 (`VOICEVOX_SPEAKER`) */
   defaultSpeaker?: number;
   fetch?: typeof fetch;
-  /** 使われている声を覚えるファイルを置く所。無ければ覚えない (テスト) */
-  dataDir?: string;
+  /** 選んである声の置き場。無ければメモリにだけ持つ (テスト) */
+  store?: VoiceStore;
   now?: () => number;
-  /** 音を持つ上限 (バイト)。決まった文は数えるが捨てない */
+  /** 音を持つ上限 (バイト)。選んである声の決まった文は数えるが捨てない */
   maxBytes?: number;
 }
 
@@ -48,12 +58,6 @@ export interface VoicevoxOptions {
 const SYNTH_TIMEOUT_MS = 30_000;
 /** つながりを確かめる間隔 */
 const CHECK_MS = 60_000;
-/** 使われなくなった声を下ごしらえから外すまで */
-const VOICE_TTL_MS = 30 * 24 * 60 * 60_000;
-/**
- * 前もって合成する声の数 (既定の声のほか)。声ごとにエンジンがモデルを読み、メモリを 0.5 GB ほど使う
- */
-const VOICES_MAX = 3;
 /**
  * 合成してよい文 (受けた事象の原稿) を覚える数。気象警報・注意報は 1 通で府県予報区の市町村等ごとの文
  * (多い府県で 2 百ほど、特別警報なら倍) を通すので、大雨の続く間に地震の文を押し出さないよう多めにする
@@ -67,6 +71,8 @@ interface Job {
 }
 
 const keyOf = (speaker: number, text: string) => `${speaker}\n${text}`;
+const speakerOfKey = (key: string) => Number(key.slice(0, key.indexOf("\n")));
+const textOfKey = (key: string) => key.slice(key.indexOf("\n") + 1);
 
 export class Voicevox {
   readonly url: string;
@@ -74,7 +80,10 @@ export class Voicevox {
   private readonly f: typeof fetch;
   private readonly now: () => number;
   private readonly maxBytes: number;
-  private readonly file: string | undefined;
+  private readonly voiceStore: VoiceStore | undefined;
+  /** 選んである声 (覚えた値のまま。選べるかは `speaker` で見る) */
+  private chosen: number | undefined;
+  private readonly voiceListeners = new Set<(id: number) => void>();
 
   available = false;
   voices: Voice[] = [];
@@ -91,8 +100,6 @@ export class Voicevox {
   private readonly background: Job[] = [];
   private working = false;
   private readonly allowed = new Set<string>(FIXED_TEXTS);
-  /** 使われている声 (スタイルの id → 最後に使われた時刻) */
-  private readonly inUse = new Map<number, number>();
 
   constructor(o: VoicevoxOptions) {
     this.url = o.url.replace(/\/+$/, "");
@@ -100,8 +107,23 @@ export class Voicevox {
     this.f = o.fetch ?? fetch;
     this.now = o.now ?? Date.now;
     this.maxBytes = o.maxBytes ?? 64 * 1024 * 1024;
-    this.file = o.dataDir ? join(o.dataDir, "voices.json") : undefined;
-    this.loadInUse();
+    this.voiceStore = o.store;
+    try {
+      this.chosen = o.store?.load();
+    } catch (err) {
+      console.warn(`[voicevox] 選んである声を読めませんでした: ${err}`);
+    }
+  }
+
+  /**
+   * いま読む声。選んである声がエンジンの選べる声に無ければ (つながる前・エンジンを替えて無くなった・
+   * 規約で外した) 既定の声
+   */
+  get speaker(): number {
+    const c = this.chosen;
+    return c !== undefined && this.voices.some((v) => v.id === c)
+      ? c
+      : this.defaultSpeaker;
   }
 
   /** 画面に渡す情報 */
@@ -109,8 +131,41 @@ export class Voicevox {
     return {
       available: this.available,
       defaultSpeaker: this.defaultSpeaker,
+      voice: this.speaker,
       voices: this.voices,
     };
+  }
+
+  /** 読む声が替わったら呼ぶ (開いている画面へ SSE で知らせる)。やめる関数を返す */
+  onVoice(fn: (id: number) => void): () => void {
+    this.voiceListeners.add(fn);
+    return () => this.voiceListeners.delete(fn);
+  }
+
+  /**
+   * この家の声を替える (`PUT /api/speech`)。選べない声なら false。替えたら覚え、新しい声で
+   * 決まった文をすぐ合成し直し、開いている画面に知らせる
+   */
+  setVoice(id: number, by: string): boolean {
+    if (!this.isVoice(id)) return false;
+    const before = this.speaker;
+    this.voiceStore?.save(id, by);
+    this.chosen = id;
+    if (this.speaker !== before) this.voiceChanged();
+    return true;
+  }
+
+  private voiceChanged(): void {
+    const s = this.speaker;
+    console.log(`[voicevox] 読む声を ${s} にしました`);
+    if (this.available) this.warm(s);
+    for (const fn of this.voiceListeners) {
+      try {
+        fn(s);
+      } catch (err) {
+        console.warn(`[voicevox] 声の知らせを配れませんでした: ${err}`);
+      }
+    }
   }
 
   /** 選べる声か (つながる前は既定の声だけ) */
@@ -126,50 +181,13 @@ export class Voicevox {
     return this.cache.has(keyOf(speaker, text));
   }
 
-  /** 使われている声。既定の声を先に、ほかは新しく使われた順 */
-  voicesInUse(): number[] {
-    const t = this.now();
-    const others = [...this.inUse]
-      .filter(([id, at]) => id !== this.defaultSpeaker && t - at < VOICE_TTL_MS)
-      .sort((a, b) => b[1] - a[1])
-      .map(([id]) => id)
-      .slice(0, VOICES_MAX);
-    return [this.defaultSpeaker, ...others];
-  }
-
-  /** この声で読める (既定の声か、使われている声に入っている) */
-  isActive(speaker: number): boolean {
-    return this.voicesInUse().includes(speaker);
-  }
-
-  /**
-   * 端末が声を選んだ (または、選んだ声で音を取りに来た)。覚えて、決まった文を下ごしらえする。
-   * 使われている声が既定の声のほかに `VOICES_MAX` あるときは、新しい声を足さない
-   * (エンジンは読んだモデルを手放さないので、声の数でメモリが増え続けないように)
-   */
-  use(speaker: number): void {
-    if (!this.isVoice(speaker)) return;
-    if (
-      speaker !== this.defaultSpeaker &&
-      !this.isActive(speaker) &&
-      this.voicesInUse().length > VOICES_MAX
-    )
-      return;
-    const first = !this.inUse.has(speaker);
-    const prev = this.inUse.get(speaker) ?? 0;
-    this.inUse.set(speaker, this.now());
-    // 書き込みは日に 1 回ほどで足りる
-    if (first || this.now() - prev > 60 * 60_000) this.saveInUse();
-    if (this.available) this.warm(speaker);
-  }
-
   /** 決まった文をこの声で合成しておく (後回しの列に入れる) */
   warm(speaker: number): void {
     for (const t of FIXED_TEXTS)
       void this.audio(speaker, t, false).catch(() => {});
   }
 
-  /** 受けた事象の原稿を、使われている声ごとに合成しておく */
+  /** 受けた事象の原稿を、選んである声 1 つで合成しておく */
   handle(e: SonaeEvent): void {
     const n = noticeOf(e, this.now());
     if (!n) return;
@@ -177,9 +195,9 @@ export class Voicevox {
     // 気象警報・注意報は住んでいる地域で文が変わるので、市町村等ごとの文も通す (合成は取りに来たときだけ)
     for (const p of readoutCandidates(n)) this.allow(p);
     if (!this.available) return;
-    for (const speaker of this.voicesInUse())
-      for (const p of parts)
-        if (!isFixed(p)) void this.audio(speaker, p, true).catch(() => {});
+    const speaker = this.speaker;
+    for (const p of parts)
+      if (!isFixed(p)) void this.audio(speaker, p, true).catch(() => {});
   }
 
   private allow(text: string): void {
@@ -259,9 +277,12 @@ export class Voicevox {
   private store(key: string, wav: Uint8Array<ArrayBuffer>): void {
     this.cache.set(key, wav);
     this.bytes += wav.byteLength;
+    // 選んである声の決まった文は捨てない。前の声の決まった文は、ほかと同じく古いものから捨てる
+    const keep = this.speaker;
     for (const [k, v] of this.cache) {
       if (this.bytes <= this.maxBytes) break;
-      if (k === key || isFixed(k.slice(k.indexOf("\n") + 1))) continue;
+      if (k === key || (speakerOfKey(k) === keep && isFixed(textOfKey(k))))
+        continue;
       this.cache.delete(k);
       this.bytes -= v.byteLength;
     }
@@ -386,16 +407,20 @@ export class Voicevox {
     try {
       await this.call("/version", {}, 5_000);
       const was = this.available;
+      const before = this.speaker;
       await this.loadVoices();
       const changed = await this.syncDictionary();
       if (changed > 0) this.clear();
       this.available = true;
+      const speaker = this.speaker;
       if (!was || changed > 0) {
         console.log(
-          `[voicevox] つながりました (選べる声 ${this.voices.length}、辞書に足した語 ${changed})`,
+          `[voicevox] つながりました (選べる声 ${this.voices.length}、辞書に足した語 ${changed}、読む声 ${speaker})`,
         );
-        for (const s of this.voicesInUse()) this.warm(s);
+        this.warm(speaker);
       }
+      // 声の一覧を読んで、選んである声が読めるようになった (または無くなった)
+      if (speaker !== before) this.voiceChanged();
       return true;
     } catch (err) {
       if (this.available) console.warn(`[voicevox] つながりません: ${err}`);
@@ -421,31 +446,6 @@ export class Voicevox {
     const timer = setInterval(() => void this.check(), CHECK_MS);
     return () => clearInterval(timer);
   }
-
-  private loadInUse(): void {
-    if (!this.file) return;
-    try {
-      const o = JSON.parse(readFileSync(this.file, "utf8")) as Record<
-        string,
-        number
-      >;
-      for (const [id, at] of Object.entries(o))
-        if (Number.isInteger(Number(id)) && typeof at === "number")
-          this.inUse.set(Number(id), at);
-    } catch {
-      // 初めて、または読めない (覚えていないだけ)
-    }
-  }
-
-  private saveInUse(): void {
-    if (!this.file) return;
-    try {
-      mkdirSync(join(this.file, ".."), { recursive: true });
-      writeFileSync(this.file, JSON.stringify(Object.fromEntries(this.inUse)));
-    } catch (err) {
-      console.warn(`[voicevox] 使われている声を覚えられませんでした: ${err}`);
-    }
-  }
 }
 
 /**
@@ -470,56 +470,45 @@ export function wavSeconds(wav: Uint8Array): number | undefined {
   return undefined;
 }
 
-/** 環境変数から作る。`VOICEVOX_URL` が空なら作らない (画面は端末の読み上げで読む) */
-export function voicevoxFromEnv(): Voicevox | undefined {
+/**
+ * 環境変数から作る。`VOICEVOX_URL` が空なら作らない (画面は端末の読み上げで読む)。
+ * 選んである声は DB (`d`) に持つ。`VOICEVOX_SPEAKER` は、まだ選んでいないときの既定の声
+ */
+export function voicevoxFromEnv(d: Database): Voicevox | undefined {
   const url = process.env.VOICEVOX_URL?.trim();
   if (!url) return undefined;
   const raw = process.env.VOICEVOX_SPEAKER?.trim();
   const sp = raw ? Number(raw) : Number.NaN;
+  // 前は端末ごとの声を「使われている声」としてファイルに覚えていた。もう読まないので消す
+  try {
+    rmSync(join(process.env.SONAE_DATA || "./data", "voices.json"), {
+      force: true,
+    });
+  } catch {
+    // 消せなくても読まないだけ
+  }
   return new Voicevox({
     url,
     defaultSpeaker: Number.isInteger(sp) && sp >= 0 ? sp : DEFAULT_SPEAKER,
-    dataDir: process.env.SONAE_DATA || "./data",
+    store: voiceStore(d),
   });
 }
 
-/** `POST /api/speech` の本文 */
-export interface SpeechRequest {
-  text: string;
-  /** 端末が選んだ声 (無ければ既定の声) */
-  voice?: number;
-}
-
 /**
- * 1 つの文の音を返す (`POST /api/speech`)。
+ * 1 つの文の音を、選んである声で返す (`POST /api/speech`。本文は `{ text }`)。
  * - 合成してよい文 (決まった文と、受けた事象の原稿) でなければ 404。
- * - 選んだ声の決まった文がまだ無い (初めて使う声) ときは、すぐ鳴らせる既定の声の音を返し、
- *   選んだ声は後ろで合成しておく (緊急地震速報の冒頭を待たせない)。どの声かは `x-voice` で返す。
- * - 使われている声がもう上限まであって、選んだ声を足せないときは、既定の声で読む。
- * - それ以外は、選んだ声で合成を待つ (受けたときに合成を始めているので、たいていは済んでいる)。
+ * - 受けたときと声を替えたときに合成を始めているので、たいていは済んでいる。まだなら合成を待つ。
+ *   どの声かは `x-voice` で返す。
  */
 export async function serveSpeech(
   v: Voicevox,
-  req: SpeechRequest,
+  text: string,
 ): Promise<Response> {
-  const text = req.text;
   if (!v.isAllowed(text))
     return new Response("この文は読み上げられません", { status: 404 });
   if (!v.available)
     return new Response("VOICEVOX につながりません", { status: 503 });
-  let chosen =
-    req.voice !== undefined && v.isVoice(req.voice)
-      ? req.voice
-      : v.defaultSpeaker;
-  v.use(chosen);
-  if (!v.isActive(chosen)) chosen = v.defaultSpeaker;
-  const speaker =
-    isFixed(text) &&
-    text !== SAMPLE &&
-    !v.isCached(chosen, text) &&
-    v.isCached(v.defaultSpeaker, text)
-      ? v.defaultSpeaker
-      : chosen;
+  const speaker = v.speaker;
   try {
     const wav = await v.audio(speaker, text, true);
     return new Response(wav, {
@@ -532,4 +521,40 @@ export async function serveSpeech(
   } catch (err) {
     return new Response(`合成できませんでした: ${err}`, { status: 502 });
   }
+}
+
+const plain = (status: number, text: string) =>
+  new Response(text, {
+    status,
+    headers: { "content-type": "text/plain; charset=utf-8" },
+  });
+
+/**
+ * この家の声を替える (`PUT /api/speech`。本文は `{ voice }`)。替えたら選べる声と読む声 (`SpeechInfo`) を返す。
+ * - ログインした人なら誰でも替えられる (通すロールは 1 つで、ログインした人はみな同じロールを持つ。2.6)。
+ *   `subject` が無ければ 401 (hooks の内側なので、ふつうは来ない)。
+ * - 本文は JSON だけ受ける (415)。ほかのサイトから JSON で送るにはプリフライトが要り、通らない
+ *   (フォームの形は SvelteKit が別のオリジンから受けない)。
+ * - VOICEVOX を使っていなければ 404、選べない声は 400。
+ */
+export async function changeVoice(
+  v: Voicevox | undefined,
+  subject: string | undefined,
+  request: Request,
+): Promise<Response> {
+  if (!subject) return plain(401, "login required");
+  const type = request.headers.get("content-type") ?? "";
+  if (!type.startsWith("application/json"))
+    return plain(415, "JSON の本文が要ります");
+  if (!v) return plain(404, "VOICEVOX は使っていません");
+  let id: unknown;
+  try {
+    id = ((await request.json()) as { voice?: unknown } | null)?.voice;
+  } catch {
+    return plain(400, "JSON の本文が要ります");
+  }
+  if (typeof id !== "number" || !Number.isInteger(id))
+    return plain(400, "voice が要ります");
+  if (!v.setVoice(id, subject)) return plain(400, "選べない声です");
+  return Response.json(v.info());
 }

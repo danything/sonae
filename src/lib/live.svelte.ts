@@ -205,11 +205,13 @@ export class Live {
    * `onResync`: 長く切れていて、埋め直しが上限を超えたときに呼ぶ (サーバーが `event: resync` を送る)。
    * 一覧を取り直す (load を走らせ直し、seed で入れ替える)。
    * `onEvent`: 新しく受けたイベントごとに呼ぶ (開いているときの音と読み上げ。`alerter.svelte.ts`)。
+   * `onVoice`: この家の読み上げの声 (つないだときと、替わったとき)。
    */
   connect(
     onResync: () => void = () => {},
     onEvent: (e: SonaeEvent) => void = () => {},
     onHealth: (connected: boolean) => void = () => {},
+    onVoice: (voice: number) => void = () => {},
   ): () => void {
     const backoff = new Backoff();
     let stopped = false;
@@ -272,6 +274,13 @@ export class Live {
       es.addEventListener("status", (m) => {
         seen();
         this.statuses = JSON.parse((m as MessageEvent).data) as SourceStatus[];
+      });
+      // この家の読み上げの声 (つないだときと、どこかの端末で替えたとき。docs/design.md の 2.4)
+      es.addEventListener("voice", (m) => {
+        seen();
+        const v = (JSON.parse((m as MessageEvent).data) as { voice?: unknown })
+          .voice;
+        if (typeof v === "number" && Number.isInteger(v)) onVoice(v);
       });
       es.addEventListener("resync", () => {
         seen();

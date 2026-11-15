@@ -8,8 +8,9 @@
  *
  * - 読み上げの原稿は `#lib/readout.ts` で作る。声はサーバーが VOICEVOX で合成したもの (`/api/speech`) を
  *   文ごとに取って順に鳴らす。VOICEVOX が止まっている・取れない文は、端末の読み上げ (`speechSynthesis`) で読む。
- * - 音・読み上げのオン/オフ、声、鳴らす条件は端末ごとに localStorage に持つ (既定は音も読み上げもオフ)。
- *   条件は Web Push のダイアログと同じもの (`PushPrefs`)。
+ * - 音・読み上げのオン/オフと鳴らす条件は端末ごとに localStorage に持つ (既定は音も読み上げもオフ)。
+ *   条件は Web Push のダイアログと同じもの (`PushPrefs`)。声はこの家で 1 つで、サーバーに持つ
+ *   (`PUT /api/speech`。替わったら SSE の `event: voice` で届く)。
  * - ブラウザは、人がページを一度操作するまで音を出させない (自動再生の制限)。最初の操作で `<audio>` と
  *   読み上げを一度だけ無音で動かして、後から鳴らせるようにする。鳴らせない間は `blocked` が立ち、
  *   画面の上の端に帯 (押すと鳴らせるようになる) を出す。
@@ -45,7 +46,7 @@ import {
   type PushPrefs,
 } from "./push.ts";
 import { CONNECTION, readoutOf, SAMPLE } from "./readout.ts";
-import { creditOf, type SpeechInfo, type Voice } from "./voices.ts";
+import { creditOf, type SpeechInfo } from "./voices.ts";
 
 /** 控えを持つ数の上限 (長く開いたままでも増え続けない) */
 const SENT_MAX = 200;
@@ -98,28 +99,16 @@ class Alerter {
     return this.voicevox || this.speechSupported;
   }
 
-  /** 選んでいる声 (無ければサーバーの既定の声) */
+  /** この家で読む声 (サーバーに 1 つ。全部の端末で同じ) */
   get voiceId(): number | undefined {
-    const chosen = this.settings.voice;
-    if (
-      chosen !== undefined &&
-      this.speech?.voices.some((v) => v.id === chosen)
-    )
-      return chosen;
-    return this.speech?.defaultSpeaker;
+    return this.speech?.voice;
   }
 
-  /**
-   * この端末で鳴る声のクレジット。選んだ声と、まだ選んだ声で合成できていないときに冒頭を読む既定の声。
-   * VOICEVOX で読み上げていないときは空
-   */
+  /** 読む声のクレジット。この端末で VOICEVOX で読み上げていないときは空 */
   get credits(): string[] {
     if (!this.settings.speech || !this.speech?.available) return [];
-    const ids = [this.voiceId, this.speech.defaultSpeaker];
-    const voices = ids
-      .map((id) => this.speech?.voices.find((v) => v.id === id))
-      .filter((v): v is Voice => v !== undefined);
-    return [...new Set(voices.map(creditOf))];
+    const v = this.speech.voices.find((x) => x.id === this.speech?.voice);
+    return v ? [creditOf(v)] : [];
   }
 
   /** 開いているときに OS の通知を出す (許可があり、スイッチを切っていない) */
@@ -148,7 +137,11 @@ class Alerter {
 
   /** 覚えた設定を読み、最初の操作を待つ。止めるときに呼ぶ関数を返す */
   start(): () => void {
-    this.settings = parseAlertSettings(readPref("alert"));
+    const raw = readPref("alert");
+    this.settings = parseAlertSettings(raw);
+    // 前は声を端末ごとに `voice` に持っていた。読まずに消す (読めた値だけで書き直す)
+    if (raw !== null && raw.includes('"voice"'))
+      writePref("alert", JSON.stringify(this.settings));
     this.prefs = parseAlertPrefs(readPref("alert.prefs"));
     // 自動再生を許している (アプリとして入れた・サイトの設定で許した) ブラウザでは、押さなくても鳴らせる
     this.activated = navigator.userActivation?.hasBeenActive ?? false;
@@ -182,16 +175,10 @@ class Alerter {
     };
   }
 
-  /**
-   * 選べる声を読む。読み上げがオンなら、選んだ声を伝える (サーバーがその声の冒頭の文を合成しておく)
-   */
+  /** 選べる声と、この家で読む声を読む */
   async loadSpeech(): Promise<void> {
-    const q =
-      this.settings.speech && this.settings.voice !== undefined
-        ? `?voice=${this.settings.voice}`
-        : "";
     try {
-      const res = await fetch(`/api/speech${q}`);
+      const res = await fetch("/api/speech");
       if (res.ok) this.speech = (await res.json()) as SpeechInfo;
     } catch {
       // 読めなければ端末の読み上げで読む
@@ -200,12 +187,49 @@ class Alerter {
   }
 
   /**
+   * この家の声を替える (サーバーに保存し、全部の端末に伝わる)。保存できたら null、できなければわけ
+   */
+  async saveVoice(voice: number): Promise<string | null> {
+    try {
+      const res = await fetch("/api/speech", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ voice }),
+      });
+      if (!res.ok)
+        return res.status === 401
+          ? "ログインが切れています。読み直してください"
+          : `保存できませんでした (${res.status})`;
+      this.speech = (await res.json()) as SpeechInfo;
+      void this.keepConnectionVoice();
+      return null;
+    } catch {
+      return "保存できませんでした (つながりません)";
+    }
+  }
+
+  /** ほかの端末 (または自分) が声を替えた (SSE の `event: voice`。つないだときにも来る) */
+  applyVoice(voice: number): void {
+    if (!this.speech || this.speech.voice === voice) return;
+    // 一覧に無い声なら (エンジンが替わったなど) 読み直す
+    if (!this.speech.voices.some((v) => v.id === voice)) {
+      void this.loadSpeech();
+      return;
+    }
+    this.speech = { ...this.speech, voice };
+    void this.keepConnectionVoice();
+  }
+
+  /**
    * 受信が切れた・戻ったときの文の音を、前もって取っておく (切れている間はサーバーに取りに行けない)。
-   * 読み上げがオンで VOICEVOX が使えるときだけ。声を替えたら取り直す
+   * 読み上げがオンで VOICEVOX が使えるときだけ。声が替わったら取り直す
    */
   private async keepConnectionVoice(): Promise<void> {
     if (!this.settings.speech || !this.voicevox) return;
     const voice = this.voiceId;
+    // 前の声の音は捨てる
+    for (const key of this.kept.keys())
+      if (!key.startsWith(`${voice}\n`)) this.kept.delete(key);
     for (const text of Object.values(CONNECTION)) {
       const key = `${voice}\n${text}`;
       if (this.kept.has(key)) continue;
@@ -213,9 +237,11 @@ class Alerter {
         const res = await fetch("/api/speech", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ text, voice }),
+          body: JSON.stringify({ text }),
         });
-        if (res.ok) this.kept.set(key, await res.blob());
+        // 取りに行く間に声が替わったら、前の声の音は持たない
+        if (!res.ok || res.headers.get("x-voice") !== String(voice)) continue;
+        this.kept.set(key, await res.blob());
       } catch {
         // 取れなければ、切れたときは端末の読み上げで読む
       }
@@ -280,11 +306,10 @@ class Alerter {
   }
 
   setSettings(next: AlertSettings): void {
-    const voiceChanged = next.voice !== this.settings.voice;
     const speechOn = next.speech && !this.settings.speech;
     this.settings = { ...next };
     writePref("alert", JSON.stringify(this.settings));
-    if (voiceChanged || speechOn) void this.loadSpeech();
+    if (speechOn) void this.loadSpeech();
   }
 
   setPrefs(next: PushPrefs): void {
@@ -537,7 +562,6 @@ class Alerter {
   private fetchAll(parts: string[]): Map<string, Promise<Blob | null>> {
     const out = new Map<string, Promise<Blob | null>>();
     if (!this.voicevox) return out;
-    const voice = this.voiceId;
     for (const text of parts) {
       if (out.has(text)) continue;
       out.set(
@@ -545,7 +569,7 @@ class Alerter {
         fetch("/api/speech", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ text, voice }),
+          body: JSON.stringify({ text }),
         })
           .then((r) => (r.ok ? r.blob() : null))
           .catch(() => null),
