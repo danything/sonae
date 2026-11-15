@@ -237,7 +237,7 @@ type QuakeReport = {
   - サーバーや途中 (Cloudflare・Gateway) が 200 の `text/event-stream` 以外 (入れ替え中の 502・503、ログインが切れた 401 など) を返すと、EventSource は張り直さずに CLOSED で止まる。
   - スリープから戻ったときなどに、TCP が死んでいるのに EventSource が気づかず、何も届かないままになる。`: ping` のコメント行は EventSource が画面に渡さないので、画面からは数えられない。
   - そこで、`error` が来たらいつも閉じて、自分で間を空けて張り直す (`#lib/backoff.ts` の Backoff。情報源の張り直しと同じく、1 秒から倍々・上限 30 秒・full jitter。60 秒続けてつながったら間隔を戻す)。張り直すたびに、そのとき最後に受けた番号を `?after=` に付けるので、切れていた間のものはサーバーが埋め直す (500 件を超えれば `resync` で一覧を取り直す。上の通り)。取りこぼさない。
-  - すぐ張り直すきっかけ: `online`、画面に戻ったとき (`visibilitychange` で、切れているか 75 秒何も届いていないとき)、戻る・進むの控え (bfcache) から戻ったとき (`pageshow`)。`offline` では閉じて待つ。
+  - すぐ張り直すきっかけ: `online`、画面に戻ったとき (`visibilitychange` で、切れているか 75 秒何も届いていないとき)、戻る・進むの控え (bfcache) から戻ったとき (`pageshow`)。`offline` では閉じて、間を空けた張り直しを続ける (`offline` の知らせは当てにならないことがあり、張り直しを止めると戻ったことに気づけない道ができるため。間隔は伸びて 30 秒で止まり、`online` で戻す)。
   - 心拍: サーバーが 30 秒ごとに送る `event: status` を心拍に使う。つながっているのに 75 秒 (`STALE_MS`。2 回半) 何も届かなければ、死んだとみなして張り直す (5 秒ごとに見る)。
   - 手元の Chromium で、`/api/stream` が 503 を返し続ける間も 20 秒に 6 回張り直し、戻すとつながり直すことを確かめた。
 - **切れたことを知らせる** (`src/lib/connection.ts` の OutageWatch と `alerter.svelte.ts` の `connection`。持ち主の声「接続が切れたとき音声で通知してほしい」)。
