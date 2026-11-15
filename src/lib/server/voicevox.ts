@@ -522,3 +522,39 @@ export async function serveSpeech(
     return new Response(`合成できませんでした: ${err}`, { status: 502 });
   }
 }
+
+const plain = (status: number, text: string) =>
+  new Response(text, {
+    status,
+    headers: { "content-type": "text/plain; charset=utf-8" },
+  });
+
+/**
+ * この家の声を替える (`PUT /api/speech`。本文は `{ voice }`)。替えたら選べる声と読む声 (`SpeechInfo`) を返す。
+ * - ログインした人なら誰でも替えられる (通すロールは 1 つで、ログインした人はみな同じロールを持つ。2.6)。
+ *   `subject` が無ければ 401 (hooks の内側なので、ふつうは来ない)。
+ * - 本文は JSON だけ受ける (415)。ほかのサイトから JSON で送るにはプリフライトが要り、通らない
+ *   (フォームの形は SvelteKit が別のオリジンから受けない)。
+ * - VOICEVOX を使っていなければ 404、選べない声は 400。
+ */
+export async function changeVoice(
+  v: Voicevox | undefined,
+  subject: string | undefined,
+  request: Request,
+): Promise<Response> {
+  if (!subject) return plain(401, "login required");
+  const type = request.headers.get("content-type") ?? "";
+  if (!type.startsWith("application/json"))
+    return plain(415, "JSON の本文が要ります");
+  if (!v) return plain(404, "VOICEVOX は使っていません");
+  let id: unknown;
+  try {
+    id = ((await request.json()) as { voice?: unknown } | null)?.voice;
+  } catch {
+    return plain(400, "JSON の本文が要ります");
+  }
+  if (typeof id !== "number" || !Number.isInteger(id))
+    return plain(400, "voice が要ります");
+  if (!v.setVoice(id, subject)) return plain(400, "選べない声です");
+  return Response.json(v.info());
+}

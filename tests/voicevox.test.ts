@@ -4,7 +4,12 @@ import { OPENINGS, SAMPLE } from "#lib/readout.ts";
 import { openDb } from "#lib/server/db.ts";
 import type { Reading } from "#lib/server/readings.ts";
 import { readSetting, voiceStore, writeSetting } from "#lib/server/settings.ts";
-import { serveSpeech, Voicevox, wavSeconds } from "#lib/server/voicevox.ts";
+import {
+  changeVoice,
+  serveSpeech,
+  Voicevox,
+  wavSeconds,
+} from "#lib/server/voicevox.ts";
 import { DEFAULT_SPEAKER } from "#lib/voices.ts";
 
 import { eew, NOW } from "./events.ts";
@@ -291,6 +296,48 @@ describe("VOICEVOX", () => {
     });
     await gone.check();
     expect(gone.speaker).toBe(21);
+  });
+});
+
+describe("声を替える (PUT /api/speech)", () => {
+  const put = (body: string, type = "application/json") =>
+    new Request("http://s.test/api/speech", {
+      method: "PUT",
+      headers: { "content-type": type },
+      body,
+    });
+
+  test("ログインした人なら替えられる。ログイン無し・JSON でない・選べない声は断る", async () => {
+    const e = fakeEngine();
+    const saved: [number, string][] = [];
+    const v = new Voicevox({
+      url: "http://vv:50021",
+      fetch: e.f,
+      now: () => NOW,
+      store: { load: () => undefined, save: (id, by) => saved.push([id, by]) },
+    });
+    await v.check();
+    const body = JSON.stringify({ voice: 52 });
+    expect((await changeVoice(v, undefined, put(body))).status).toBe(401);
+    // フォームの形 (別のオリジンからプリフライトなしで送れる) は受けない
+    expect(
+      (await changeVoice(v, "sub-1", put(body, "text/plain"))).status,
+    ).toBe(415);
+    expect((await changeVoice(undefined, "sub-1", put(body))).status).toBe(404);
+    expect((await changeVoice(v, "sub-1", put("{"))).status).toBe(400);
+    expect(
+      (await changeVoice(v, "sub-1", put(JSON.stringify({ voice: "52" }))))
+        .status,
+    ).toBe(400);
+    expect(
+      (await changeVoice(v, "sub-1", put(JSON.stringify({ voice: 13 }))))
+        .status,
+    ).toBe(400);
+    expect(saved).toEqual([]);
+    const ok = await changeVoice(v, "sub-1", put(body));
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as { voice: number }).voice).toBe(52);
+    expect(saved).toEqual([[52, "sub-1"]]);
   });
 });
 

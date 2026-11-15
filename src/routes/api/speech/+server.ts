@@ -1,7 +1,7 @@
 import { error, json } from "@sveltejs/kit";
 
 import { app } from "#lib/server/receiver.ts";
-import { serveSpeech } from "#lib/server/voicevox.ts";
+import { changeVoice, serveSpeech } from "#lib/server/voicevox.ts";
 import { DEFAULT_SPEAKER, type SpeechInfo } from "#lib/voices.ts";
 
 import type { RequestHandler } from "./$types";
@@ -36,25 +36,9 @@ async function body(request: Request): Promise<Record<string, unknown>> {
   error(400, "JSON の本文が要ります");
 }
 
-/**
- * この家の声を替える。`{ voice }` (VOICEVOX のスタイルの id)。ログインした人なら誰でも替えられる
- * (通すロールは 1 つで、ログインした人はみな同じロールを持つ。2.6)。
- * 本文は JSON だけ受ける (ほかのサイトから JSON で送るにはプリフライトが要り、通らない。
- * フォームの形はそもそも SvelteKit が別のオリジンから受けない)
- */
-export const PUT: RequestHandler = async ({ locals, request }) => {
-  if (!locals.user) error(401, "login required");
-  const type = request.headers.get("content-type") ?? "";
-  if (!type.startsWith("application/json")) error(415, "JSON の本文が要ります");
-  const v = app().voice;
-  if (!v) error(404, "VOICEVOX は使っていません");
-  const b = await body(request);
-  const id = b.voice;
-  if (typeof id !== "number" || !Number.isInteger(id))
-    error(400, "voice が要ります");
-  if (!v.setVoice(id, locals.user.subject)) error(400, "選べない声です");
-  return json(v.info());
-};
+/** この家の声を替える。`{ voice }`。ログインした人なら誰でも (`changeVoice`) */
+export const PUT: RequestHandler = ({ locals, request }) =>
+  changeVoice(app().voice, locals.user?.subject, request);
 
 /** 1 つの文の音 (WAV)。`{ text }`。声はこの家で選んである声 */
 export const POST: RequestHandler = async ({ request }) => {
