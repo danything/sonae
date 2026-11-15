@@ -72,6 +72,7 @@ const PUBLIC = new Set([
   "/auth/callback",
   "/service-worker.js",
   "/manifest.webmanifest",
+  "/manifest-light.webmanifest",
 ]);
 
 /**

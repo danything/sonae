@@ -83,6 +83,7 @@ describe("ログイン無しで開けるところ", () => {
     "/auth/callback",
     "/service-worker.js",
     "/manifest.webmanifest",
+    "/manifest-light.webmanifest",
   ]) {
     test(`${path} は Cookie が無くても通す`, async () => {
       const r = await run(path, { accept: HTML });
