@@ -46,11 +46,17 @@ test("出典のリンクはどれも https", () => {
 });
 
 test("地図の隅の短い出典: 映している層に合わせる", () => {
-  expect(mapCredit({ hazard: false, grus: false })).toBe(
+  expect(mapCredit({ hazard: "", grus: false })).toBe(
     "出典: 国土地理院・気象庁 ほか",
   );
-  expect(mapCredit({ hazard: true, grus: true })).toBe(
+  expect(
+    mapCredit({ hazard: "ハザードマップポータルサイト", grus: true }),
+  ).toBe(
     "出典: 国土地理院・気象庁・ハザードマップポータルサイト・GRUS画像（© Axelspace） ほか",
+  );
+  // 活断層図は、選んで映しているときだけ足す
+  expect(mapCredit({ hazard: "都市圏活断層図", grus: false })).toBe(
+    "出典: 国土地理院・気象庁・都市圏活断層図 ほか",
   );
 });
 

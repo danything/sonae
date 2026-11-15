@@ -50,11 +50,18 @@ export const GSI_VECTOR_ATTRIBUTION = `<a href="https://github.com/gsi-cyberjapa
 /** 地図の字と印に使う端末の字体 (字体のファイルは外から読まない。tools/gsi/build.ts と同じ) */
 export const TEXT_FONT_CSS = '"Noto Sans JP", sans-serif';
 
-/** ハザードマップ (重ねるハザードマップのラスタータイル)。選ぶのは 1 つだけ (色がぶつかるため) */
-export type HazardId = "none" | "flood" | "landslide" | "tsunami";
+/**
+ * ハザードマップ (重ねるラスタータイル)。選ぶのは 1 つだけ (色がぶつかるため)。
+ * ハザードマップポータルサイトの 3 つと、地理院タイルの都市圏活断層図 (地形の分類で塗った全面の図なので、
+ * いつも重ねると写真が見づらい。選んだときだけ出す)
+ */
+export type HazardId = "none" | "flood" | "landslide" | "tsunami" | "faults";
 const DISAPORTAL = "https://disaportaldata.gsi.go.jp/raster";
 const LEGEND = "https://disaportal.gsi.go.jp/hazardmap/copyright/img";
 export const HAZARD_ATTRIBUTION = `<a href="https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html" target="_blank" rel="noopener">ハザードマップポータルサイト</a>`;
+/** 国土地理院の「活断層図（都市圏活断層図）について」(各図の調査者がある) */
+export const GSI_AFM_ABOUT =
+  "https://www.gsi.go.jp/bousaichiri/active_fault.html";
 
 export interface Hazard {
   id: Exclude<HazardId, "none">;
@@ -62,18 +69,42 @@ export interface Hazard {
   label: string;
   /** 凡例の上に出す、何の想定か */
   title: string;
-  /** タイルの層 (土砂災害は 3 つを重ねる) */
-  layers: string[];
-  /** 公式の凡例の画像 */
+  /** タイルの層 (土砂災害は 3 つを重ねる)。地図の層の名前は `hazard-<id>` */
+  layers: { id: string; tiles: string }[];
+  /** タイルのあるズーム */
+  minzoom: number;
+  maxzoom: number;
+  /** 写真の上に重ねるときの不透明度 */
+  opacity: number;
+  /** MapLibre の出典 (タイルの 1 つ目に付ける) */
+  attribution: string;
+  /** 地図の隅の短い出典に足す名前 (`#lib/notice.ts` の `mapCredit`) */
+  credit: string;
+  /** 公式の凡例の画像 (無ければ出さない) */
   legends: { src: string; alt: string; name?: string }[];
+  /** 凡例の代わり・下に出す説明 (リンクは href) */
+  about?: (string | { text: string; href: string })[];
 }
+
+const portal = (layer: string) => ({
+  id: layer,
+  tiles: `${DISAPORTAL}/${layer}/{z}/{x}/{y}.png`,
+});
+const PORTAL = {
+  minzoom: 2,
+  maxzoom: 17,
+  opacity: 0.75,
+  attribution: HAZARD_ATTRIBUTION,
+  credit: "ハザードマップポータルサイト",
+};
 
 export const HAZARDS: Hazard[] = [
   {
     id: "flood",
     label: "洪水",
     title: "洪水浸水想定区域 (想定最大規模)",
-    layers: ["01_flood_l2_shinsuishin_data"],
+    ...PORTAL,
+    layers: [portal("01_flood_l2_shinsuishin_data")],
     legends: [
       {
         src: `${LEGEND}/shinsui_legend3.png`,
@@ -85,10 +116,11 @@ export const HAZARDS: Hazard[] = [
     id: "landslide",
     label: "土砂災害",
     title: "土砂災害警戒区域 (土石流・急傾斜地の崩壊・地すべり)",
+    ...PORTAL,
     layers: [
-      "05_dosekiryukeikaikuiki",
-      "05_kyukeishakeikaikuiki",
-      "05_jisuberikeikaikuiki",
+      portal("05_dosekiryukeikaikuiki"),
+      portal("05_kyukeishakeikaikuiki"),
+      portal("05_jisuberikeikaikuiki"),
     ],
     legends: [
       {
@@ -112,7 +144,8 @@ export const HAZARDS: Hazard[] = [
     id: "tsunami",
     label: "津波",
     title: "津波浸水想定",
-    layers: ["04_tsunami_newlegend_data"],
+    ...PORTAL,
+    layers: [portal("04_tsunami_newlegend_data")],
     legends: [
       {
         src: `${LEGEND}/shinsui_legend3.png`,
@@ -120,13 +153,70 @@ export const HAZARDS: Hazard[] = [
       },
     ],
   },
+  {
+    id: "faults",
+    label: "活断層",
+    title: "活断層図 (都市圏活断層図)",
+    layers: [{ id: "afm", tiles: `${GSI}/afm/{z}/{x}/{y}.png` }],
+    // タイルはズーム 11 からしか無い。引いているときは読みに行かない
+    minzoom: 11,
+    maxzoom: 16,
+    // 地形の分類で塗った全面の図なので、写真が透けて見えるよう少し透かす
+    opacity: 0.7,
+    attribution: `<a href="${TILES}#afm" target="_blank" rel="noopener">国土地理院 (都市圏活断層図)</a>`,
+    credit: "都市圏活断層図",
+    legends: [],
+    about: [
+      "大きく寄せたとき (ズーム 11 以上) だけ出ます。図の見方と、図ごとの調査者は国土地理院の「",
+      { text: "活断層図（都市圏活断層図）について", href: GSI_AFM_ABOUT },
+      "」にあります。",
+    ],
+  },
 ];
 
 /** ハザードマップの層ごとに出すかどうか (選んだものだけ。なしなら全部隠す) */
 export function hazardVisibility(id: HazardId): Record<string, boolean> {
   return Object.fromEntries(
-    HAZARDS.flatMap((h) => h.layers.map((l) => [`hazard-${l}`, h.id === id])),
+    HAZARDS.flatMap((h) =>
+      h.layers.map((l) => [`hazard-${l.id}`, h.id === id]),
+    ),
   );
+}
+
+/**
+ * ハザードマップを重ねている間に隠す層。面で塗る色がハザードマップの色とぶつかって見分けられないため。
+ * 気象警報・注意報の塗りと、一覧で選んだ府県予報区の縁取り・震度の塗り (震度は地域の上の数字のラベルで残る)・
+ * 緊急地震速報の地域の塗り (縁取りの `eew-line` は残す)
+ */
+export const HIDDEN_UNDER_HAZARD = [
+  "warning-fill",
+  "warning-focus-casing",
+  "warning-focus",
+  "quake-fill",
+  "eew-fill",
+] as const;
+/** ハザードマップを重ねている間だけ出す層 (いま出ている特別警報の市町村等の縁取り) */
+export const SHOWN_UNDER_HAZARD = [
+  "warning-special-casing",
+  "warning-special",
+] as const;
+
+/** ハザードマップを選んでいるかで、重ねる層の出し入れを決める (隠す層・代わりに出す層) */
+export function overlayVisibility(id: HazardId): Record<string, boolean> {
+  const on = id !== "none";
+  return {
+    ...Object.fromEntries(HIDDEN_UNDER_HAZARD.map((l) => [l, !on])),
+    ...Object.fromEntries(SHOWN_UNDER_HAZARD.map((l) => [l, on])),
+  };
+}
+
+/**
+ * いま特別警報 (レベル 5) が出ている市町村等だけを描く filter。ハザードマップを重ねている間、
+ * 塗る代わりに縁取りで残す (数十年に一度の重大な災害のおそれなので隠さない)
+ */
+export function specialWarningFilter(levels: Map<string, WarningLevel>): Expr {
+  const codes = [...levels].filter(([, l]) => l === 5).map(([c]) => c);
+  return ["in", ["get", "code"], ["literal", codes]];
 }
 
 /** 端末に覚えた選択を読む。知らない値は「なし」 */
@@ -300,7 +390,9 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   },
   {
     label: "ハザードマップ",
-    note: "地図の左上で、なし・洪水 (想定最大規模の浸水)・土砂災害 (警戒区域)・津波 (浸水想定) から 1 つを選べます。色の意味は選んだときに出る公式の凡例のとおりです。想定の無い川や地域は塗られていないので、色が無くても安全とは限りません",
+    note:
+      "地図の左上で、なし・洪水 (想定最大規模の浸水)・土砂災害 (警戒区域)・津波 (浸水想定)・活断層から 1 つを選べます。色の意味は選んだときに出る公式の凡例のとおりです。想定の無い川や地域は塗られていないので、色が無くても安全とは限りません。" +
+      "選んでいる間は、色がぶつからないよう、気象警報・注意報の塗りと縁取り・震度の塗り (数字のラベルは残ります)・緊急地震速報の地域の塗りを隠します。いま出ている特別警報の市町村等は白い縁の黒い線で縁取り、緊急地震速報の地域は赤い縁取りで、津波の警報・注意報の線もそのまま残します。「なし」に戻すと元に戻ります",
   },
   {
     label: "現在地",
@@ -308,7 +400,7 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   },
   {
     label: "活断層",
-    note: "都市圏活断層図。大きく寄せたとき (ズーム 11 以上) だけ出ます",
+    note: "都市圏活断層図。地形の分類で塗った全面の図なので、いつもは重ねず、地図の左上のハザードマップで「活断層」を選んだときだけ出します。大きく寄せたとき (ズーム 11 以上) だけ出ます",
   },
 ];
 
@@ -604,6 +696,10 @@ export function baseStyle(
   hazard: HazardId = "none",
 ): Record<string, unknown> {
   const hazardShown = hazardVisibility(hazard);
+  const overlay = overlayVisibility(hazard);
+  const vis = (id: string) => ({
+    visibility: overlay[id] === false ? "none" : "visible",
+  });
   return {
     version: 8,
     // 字体 (glyphs) の URL は書かない。MapLibre は端末の字体で字を描く (外から字体を読まない。docs/map.md)
@@ -617,14 +713,14 @@ export function baseStyle(
       ...Object.fromEntries(
         HAZARDS.flatMap((h) =>
           h.layers.map((l, i) => [
-            `hazard-${l}`,
+            `hazard-${l.id}`,
             {
               type: "raster",
-              tiles: [`${DISAPORTAL}/${l}/{z}/{x}/{y}.png`],
+              tiles: [l.tiles],
               tileSize: 256,
-              minzoom: 2,
-              maxzoom: 17,
-              ...(i === 0 ? { attribution: HAZARD_ATTRIBUTION } : {}),
+              minzoom: h.minzoom,
+              maxzoom: h.maxzoom,
+              ...(i === 0 ? { attribution: h.attribution } : {}),
             },
           ]),
         ),
@@ -641,14 +737,6 @@ export function baseStyle(
         minzoom: 2,
         maxzoom: 18,
         attribution: PHOTO_ATTRIBUTION,
-      },
-      faults: {
-        type: "raster",
-        tiles: [`${GSI}/afm/{z}/{x}/{y}.png`],
-        tileSize: 256,
-        minzoom: 11,
-        maxzoom: 16,
-        attribution: `<a href="${TILES}#afm" target="_blank" rel="noopener">国土地理院 (都市圏活断層図)</a>`,
       },
       "quake-areas": {
         type: "geojson",
@@ -717,40 +805,35 @@ export function baseStyle(
       // ハザードマップ (選んだものだけ。写真のすぐ上に、透かして重ねる)
       ...HAZARDS.flatMap((h) =>
         h.layers.map((l) => ({
-          id: `hazard-${l}`,
+          id: `hazard-${l.id}`,
           type: "raster",
-          source: `hazard-${l}`,
-          paint: { "raster-opacity": 0.75 },
+          source: `hazard-${l.id}`,
+          paint: { "raster-opacity": h.opacity },
           layout: {
-            visibility: hazardShown[`hazard-${l}`] ? "visible" : "none",
+            visibility: hazardShown[`hazard-${l.id}`] ? "visible" : "none",
           },
         })),
       ),
-      // 活断層はいつも重ねる。タイルはズーム 11 からしか無いので、引いているときは読みに行かない
-      {
-        id: "faults",
-        type: "raster",
-        source: "faults",
-        // 都市圏活断層図は地形の分類で塗った地図なので、写真が見えるよう透かす
-        paint: { "raster-opacity": 0.45 },
-      },
-      // 気象警報・注意報は震度の下に塗る (地震のときは震度を見せる)
+      // 気象警報・注意報は震度の下に塗る (地震のときは震度を見せる)。ハザードマップを重ねている間は隠す
       {
         id: "warning-fill",
         type: "fill",
         source: "warning-areas",
+        layout: vis("warning-fill"),
         paint: { "fill-color": TRANSPARENT, "fill-opacity": 0.6 },
       },
       {
         id: "quake-fill",
         type: "fill",
         source: "quake-areas",
+        layout: vis("quake-fill"),
         paint: { "fill-color": TRANSPARENT, "fill-opacity": 0.75 },
       },
       {
         id: "eew-fill",
         type: "fill",
         source: "quake-areas",
+        layout: vis("eew-fill"),
         paint: { "fill-color": TRANSPARENT, "fill-opacity": 0.35 },
       },
       {
@@ -785,7 +868,7 @@ export function baseStyle(
         type: "line",
         source: "warning-areas",
         filter: officeFilter({}, null),
-        layout: { "line-join": "round" },
+        layout: { "line-join": "round", ...vis("warning-focus-casing") },
         paint: { "line-color": "rgba(0,0,0,0.6)", "line-width": 4 },
       },
       {
@@ -793,8 +876,28 @@ export function baseStyle(
         type: "line",
         source: "warning-areas",
         filter: officeFilter({}, null),
-        layout: { "line-join": "round" },
+        layout: { "line-join": "round", ...vis("warning-focus") },
         paint: { "line-color": "#fff", "line-width": 1.75 },
+      },
+      // ハザードマップを重ねている間、いま出ている特別警報の市町村等は塗らずに縁取る (白い縁の上に特別警報の色の太い線)
+      {
+        id: "warning-special-casing",
+        type: "line",
+        source: "warning-areas",
+        filter: specialWarningFilter(new Map()),
+        layout: { "line-join": "round", ...vis("warning-special-casing") },
+        paint: { "line-color": "#fff", "line-width": 6 },
+      },
+      {
+        id: "warning-special",
+        type: "line",
+        source: "warning-areas",
+        filter: specialWarningFilter(new Map()),
+        layout: { "line-join": "round", ...vis("warning-special") },
+        paint: {
+          "line-color": WARNING_COLORS[5]?.bg ?? "#000",
+          "line-width": 3,
+        },
       },
       ...roadLayers(),
       {
