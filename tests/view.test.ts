@@ -9,7 +9,8 @@ import {
   legacyRedirect,
   matches,
   newestFirst,
-  readHidden,
+  pickOnly,
+  readOnly,
   readView,
   selectHref,
   viewHref,
@@ -60,15 +61,25 @@ describe("リンク (viewHref・selectHref)", () => {
   });
 });
 
-describe("一覧で隠す種類 (readHidden)", () => {
-  test("既定は全部出す。知らない種類と壊れた値は捨てる", () => {
-    expect(readHidden(null)).toEqual([]);
-    expect(readHidden("{壊れた")).toEqual([]);
-    expect(readHidden('{"foreign":true}')).toEqual([]);
-    expect(readHidden('["foreign","nope","info"]')).toEqual([
-      "foreign",
-      "info",
-    ]);
+describe("一覧で出す 1 つの種類 (readOnly・pickOnly)", () => {
+  test("既定は全部 (null)。知らない種類と壊れた値も全部", () => {
+    expect(readOnly(null)).toBeNull();
+    expect(readOnly("{壊れた")).toBeNull();
+    expect(readOnly("nope")).toBeNull();
+    // 前の形 (隠す種類の配列) は読まない
+    expect(readOnly('["foreign"]')).toBeNull();
+    expect(readOnly("weather")).toBe("weather");
+  });
+
+  test("全部のときに押すとその種類だけ、もう一度押すと全部、別のを押すと切り替え", () => {
+    expect(pickOnly(null, "quake")).toBe("quake");
+    expect(pickOnly("quake", "quake")).toBeNull();
+    expect(pickOnly("quake", "weather")).toBe("weather");
+  });
+
+  test("「すべて」を押すといつも全部", () => {
+    expect(pickOnly("weather", null)).toBeNull();
+    expect(pickOnly(null, null)).toBeNull();
   });
 });
 

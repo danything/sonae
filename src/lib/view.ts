@@ -1,6 +1,6 @@
 /**
  * 1 つの画面の「いま何を見ているか」。どれも URL の query に持つので、リンクを送ればそのまま開ける
- * (docs/ui.md の「URL」)。一覧は全部の種類を 1 本に並べ、どの種類を出すかは端末に覚える (`readHidden`)。
+ * (docs/ui.md の「URL」)。一覧は全部の種類を 1 本に並べ、どの種類を出すか (全部か 1 つ) は端末に覚える (`readOnly`)。
  * 前の一覧の種類 `k` は読まず、リンクを作るときに外す。
  *
  * - `q` / `t` / `e` / `v` / `w` / `i` / `f` … 選んだ地震 (id)・津波 (id)・緊急地震速報 (地震の識別番号)・火山の報 (id)・
@@ -100,17 +100,21 @@ export const selectHref = (params: Params, kind: Kind, id: string) =>
   viewHref(params, { [SELECT_KEYS[kind]]: id });
 
 /**
- * 一覧で隠している種類 (端末に覚えた JSON の配列)。既定は全部出す。知らない種類と壊れた値は捨てる。
- * 出すほうではなく隠すほうを覚えるので、後から足した種類は初めから出る
+ * 一覧で出す 1 つの種類 (端末に覚えた種類の名前)。null は全部出す (既定)。知らない種類と壊れた値も全部
  */
-export function readHidden(raw: string | null): Kind[] {
-  if (!raw) return [];
-  try {
-    const v: unknown = JSON.parse(raw);
-    return Array.isArray(v) ? KINDS.filter((k) => v.includes(k)) : [];
-  } catch {
-    return [];
-  }
+export function readOnly(raw: string | null): Kind | null {
+  return KINDS.find((k) => k === raw) ?? null;
+}
+
+/**
+ * チップを押した後の、出す種類。全部か別の種類を出しているときはその種類だけにし、
+ * 出している種類をもう一度押すと全部に戻す。null (「すべて」) を押すと全部
+ */
+export function pickOnly(
+  current: Kind | null,
+  pressed: Kind | null,
+): Kind | null {
+  return pressed === current ? null : pressed;
 }
 
 /**
