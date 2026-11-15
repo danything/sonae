@@ -1,0 +1,15 @@
+apiVersion: v2
+name: sonae
+description: 地震・津波・気象の情報を自分のサーバーで受けて、ブラウザと Web Push で知らせる sonae と、読み上げの VOICEVOX のエンジンの一式
+type: application
+# chart 自体のバージョン。リリースのときは CI (release.yml) がリリースのバージョンで上書きしてパッケージにする
+version: 0.1.0
+# 中に入るアプリのバージョン。これも CI がリリースのバージョンで上書きする
+appVersion: "0.1.0"
+home: https://github.com/danything/sonae
+sources:
+  - https://github.com/danything/sonae
+keywords:
+  - earthquake
+  - tsunami
+  - web-push

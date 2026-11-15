@@ -21,7 +21,7 @@
    ```
 
 4. main にマージすると Argo CD が反映し、Pod が作り直されると `CWA_API_KEY` が入って受信が始まる
-   (`deploy/deployment.yaml` で `optional: true` で読んでいる)。状態の欄に「中央氣象署 (台湾)」が出れば動いている。
+   (Helm chart の `charts/sonae` が `optional: true` で読んでいる)。状態の欄に「中央氣象署 (台湾)」が出れば動いている。
 5. 手元で試すときは `compose.override.yml` の `environment` に `CWA_API_KEY=...` を書く。
 
 登録のページの文言は 2026-11-14 には読めなかった (下調べのときにページの本文を取れなかった)。上の手順のボタンの名前は、

@@ -1,0 +1,29 @@
+{{- if not .Values.persistence.existingClaim }}
+# 状態ディレクトリ (SONAE_DATA=/data)。SQLite (WAL) の DB。スナップショットから自分で立ち直る
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sonae-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sonae.labels" . | nindent 4 }}
+  annotations:
+    {{- if .Values.persistence.protectFromPruning }}
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+    {{- end }}
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- with .Values.persistence.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+  {{- with .Values.persistence.dataSourceRef }}
+  # 作るときに中身を埋める (VolSync の populator など)。PVC の spec は作ったあと変えられないので、今ある PVC には効かない
+  dataSourceRef:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}

@@ -20,7 +20,7 @@ VAPID の鍵 (`VAPID_PRIVATE_JWK`) が無ければ、**Web Push だけを切っ�
 ## 鍵を作って入れる (持ち主がする)
 
 鍵はリポジトリに平文で置かない。SOPS で暗号化した `deploy/secrets.sops.yaml` の `sonae-secrets` に入れる。
-`deploy/deployment.yaml` はもう `vapid-private-jwk` を `optional: true` で読む形になっているので、マニフェストは直さなくてよい。
+Helm chart (`charts/sonae`) はもう `vapid-private-jwk` を `optional: true` で読む形になっているので、マニフェストは直さなくてよい。
 
 1. 鍵を作る (ホストに何も入れず、Bun のコンテナの中で WebCrypto を使う。出た 1 行が秘密鍵):
 

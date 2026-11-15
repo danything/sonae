@@ -10,8 +10,57 @@
 - 地震・津波・火山 (噴火速報・噴火警報) の情報を気象庁 (防災情報 XML)・P2P地震情報・Wolfx Project から、海外の地震を USGS・EMSC・GeoNet・中央氣象署 (台湾、授権碼があるとき) から、太平洋の津波の参考情報を PTWC (米国) と気象庁ホームページ (国際津波関連情報) から受け、画面には必ず出典と「公式の情報を優先してください」という注意文を出す。気象庁の情報は加工して出しているので、その旨も書く。
 
 開いている画面では、条件に合う情報を短い音と読み上げで知らせる。読み上げの声は、sonae と一緒に動かす [VOICEVOX](https://voicevox.hiroshiba.jp/) のエンジンで作る (既定の声は「VOICEVOX:剣崎雌雄」。端末ごとに選べる)。
-VOICEVOX は公式のイメージを別のコンテナで動かし (理由は [docs/design.md の 2.4](docs/design.md))、`docker compose up` でも `deploy/` でも sonae と一緒に起きる。
+VOICEVOX は公式のイメージを別のコンテナで動かし (理由は [docs/design.md の 2.4](docs/design.md))、`docker compose up` でも Helm chart でも sonae と一緒に起きる。
 VOICEVOX が止まっているときは、ブラウザの読み上げで同じ文を読む。
+
+## Kubernetes に立てる (Helm chart)
+
+sonae は、使う人が自分のサーバーに立てて使う (セルフホスト。[docs/design.md の 1 章](docs/design.md))。Kubernetes には Helm chart で入れる。
+chart はリリースのたびに `oci://ghcr.io/danything/charts/sonae` に出る。中身は sonae・VOICEVOX のエンジン・Service・HTTPRoute か Ingress・PVC・NetworkPolicy で、値の意味は [charts/sonae/values.yaml](charts/sonae/values.yaml) のコメントに書いてある。
+
+1. OIDC の IdP にクライアントを作り、リダイレクト URI `https://<ホスト名>/auth/callback` を登録する (Entra ID なら [docs/entra.md](docs/entra.md))。ロール `admin` (`sonae.oidc.role` で替えられる) を持つ人だけが開ける。
+2. 秘密を Secret に入れる。chart は Secret を作らない。
+
+   ```sh
+   kubectl create namespace sonae
+   kubectl -n sonae create secret generic sonae-secrets \
+     --from-literal=oidc-client-secret=<クライアントシークレット>
+   # 任意: Web Push の VAPID の秘密鍵 (docs/push.md) と、台湾の中央氣象署の授権碼 (docs/cwa.md)
+   #   --from-file=vapid-private-jwk=vapid.jwk --from-literal=cwa-api-key=<授権碼>
+   ```
+
+3. 値を書いて入れる。
+
+   ```yaml
+   # my-values.yaml
+   sonae:
+     oidc:
+       issuer: https://login.microsoftonline.com/<テナントの ID>/v2.0
+       clientId: <クライアントの ID>
+   secrets:
+     name: sonae-secrets
+   httpRoute:
+     enabled: true
+     parentRefs:
+       - name: <Gateway の名前>
+         namespace: <Gateway の名前空間>
+     hostnames:
+       - sonae.example.com
+   ```
+
+   ```sh
+   helm install sonae oci://ghcr.io/danything/charts/sonae -n sonae -f my-values.yaml
+   ```
+
+- 公開の URL (`PUBLIC_URL`・`ORIGIN`) は、書かなければ `httpRoute.hostnames` か `ingress.hosts` の先頭に `https://` を付けたもの。違うときは `sonae.publicUrl` に書く。
+- OIDC の 3 つ (issuer・client id・Secret の `oidc-client-secret`) が揃わないと、画面は開かず `/health` だけ答える。
+- VAPID の鍵が無ければ Web Push を切って動く。授権碼が無ければ中央氣象署の受信だけを切って動く。
+- 既定の `image.tag` は `latest` (main に入るたびに動く)。固定するなら `ghcr.io/danything/sonae` のコミットの sha のタグを書く。
+- Ingress を使うなら `ingress.enabled: true` と `ingress.hosts`。SSE (`/api/stream`) が切れないよう、前段の読み込みのタイムアウトを長くする。
+- PVC は既定で Argo CD に消させない注釈が付く (`persistence.protectFromPruning`)。
+- 外向きを絞る NetworkPolicy (`networkPolicy.egress.enabled`) は既定で出さない。DNS の Pod のラベルがクラスタで違うため。
+
+このリポジトリ自身の本番 (家の Talos のクラスタ) も同じ chart で出している。値は [deploy/application.yaml](deploy/application.yaml) の `helm.valuesObject`。
 
 ## 開発
 

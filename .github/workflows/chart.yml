@@ -1,0 +1,67 @@
+name: Chart
+
+# Helm chart (charts/sonae) を lint して、値の組ごとに描けるかを確かめる。
+# 描く組は、chart の既定値・この家の本番の値 (deploy/application.yaml の helm.valuesObject)・Ingress と VOICEVOX 無しの 3 つ
+on:
+  pull_request:
+    paths:
+      - "charts/**"
+      - "deploy/application.yaml"
+      - ".github/workflows/chart.yml"
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+      - "deploy/application.yaml"
+      - ".github/workflows/chart.yml"
+
+concurrency:
+  group: chart-${{ github.ref }}
+  cancel-in-progress: true
+
+# 読むだけなので、トークンにはこれだけ渡す
+permissions:
+  contents: read
+
+jobs:
+  chart:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # ランナーに入っている Helm のバージョンに頼らず、決めたものを入れる (Renovate が上げる)
+      - uses: azure/setup-helm@v5
+        with:
+          version: v4.3.2
+
+      - run: helm lint charts/sonae
+
+      - name: Render with the chart defaults
+        run: helm template sonae charts/sonae -n sonae > /dev/null
+
+      # deploy/application.yaml の helm.valuesObject を取り出して、同じ値で描く。
+      # 取り出しは yq (ランナーに入っている mikefarah/yq)
+      - name: Render with the production values
+        run: |
+          set -eu
+          yq '.spec.source.helm.valuesObject' deploy/application.yaml > "$RUNNER_TEMP/home.yaml"
+          helm lint charts/sonae -f "$RUNNER_TEMP/home.yaml"
+          helm template sonae charts/sonae -n sonae -f "$RUNNER_TEMP/home.yaml" > "$RUNNER_TEMP/home-rendered.yaml"
+          # 素のマニフェストのころと同じ名前のリソースが出ること (Argo CD が同じ名前のものを引き取るため。
+          # 名前が変わると PVC を作り直してデータが消える)
+          for want in Deployment/sonae Deployment/voicevox Service/sonae Service/voicevox \
+            PersistentVolumeClaim/sonae-data HTTPRoute/sonae NetworkPolicy/sonae-egress NetworkPolicy/voicevox; do
+            got=$(yq -N "select(.kind + \"/\" + .metadata.name == \"$want\") | .kind" "$RUNNER_TEMP/home-rendered.yaml")
+            if [ -z "$got" ]; then
+              echo "$want が描かれていません" >&2
+              exit 1
+            fi
+          done
+
+      - name: Render with Ingress and without VOICEVOX
+        run: |
+          helm template sonae charts/sonae -n sonae \
+            --set ingress.enabled=true --set 'ingress.hosts[0]=sonae.example.com' \
+            --set voicevox.enabled=false --set networkPolicy.egress.enabled=true \
+            --set sonae.oidc.issuer=https://idp.example.com --set sonae.oidc.clientId=sonae \
+            --set secrets.name=sonae-secrets > /dev/null

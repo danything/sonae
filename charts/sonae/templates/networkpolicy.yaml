@@ -1,0 +1,85 @@
+{{- if and .Values.voicevox.enabled .Values.networkPolicy.voicevox }}
+# VOICEVOX に入れるのは sonae の Pod からだけ。エンジンから外へは何も出さない (DNS も使わない)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: voicevox
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sonae.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: voicevox
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: sonae
+      ports:
+        - protocol: TCP
+          port: 50021
+  egress: []
+{{- end }}
+{{- if .Values.networkPolicy.egress.enabled }}
+---
+# sonae の外向きを、DNS と公開のインターネットと VOICEVOX だけにする (docs/design.md の 8)。
+# 外へ出るのは公開の宛先だけ (気象庁・P2P地震情報・Wolfx・USGS・EMSC・GeoNet・PTWC・気象庁ホームページ・
+# 中央氣象署・OIDC の IdP・Web Push の配信サービス)。地図のタイルはブラウザが直接取るので、ここは通らない。
+# クラスタの中と家の LAN には用が無いので、プライベートアドレスは閉じる。受ける側は絞らない
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sonae-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sonae.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app: sonae
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.egress.dns.namespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.egress.dns.podLabels | nindent 14 }}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    {{- if .Values.voicevox.enabled }}
+    # 読み上げの声を作る VOICEVOX (同じ名前空間の Pod)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: voicevox
+      ports:
+        - protocol: TCP
+          port: 50021
+    {{- end }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 100.64.0.0/10
+              - 169.254.0.0/16
+              - 127.0.0.0/8
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - fc00::/7
+              - fe80::/10
+              - ::1/128
+{{- end }}

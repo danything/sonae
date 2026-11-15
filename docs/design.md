@@ -19,6 +19,7 @@
 - 誰かが公開のサービスとして立て、知らない人に配ることはしない。コードは AGPL-3.0 で公開するが、配信のサービスは運営しない。
 - 情報源へは、立てたサーバーがそれぞれ直接つなぐ。どの情報源も、1 つのサーバーが家族の数人のために取る量で行儀 (2.1) を決めている。
 - 持ち主のサーバーのホスト名は `s.doany.io` (家のクラスタの Gateway の `doany`)。
+- Kubernetes には Helm chart (`charts/sonae`、`oci://ghcr.io/danything/charts/sonae`) で入れる。入れ方は README の「Kubernetes に立てる」。持ち主の本番も同じ chart で出す (8 章)。
 
 ### MVP
 
@@ -330,7 +331,7 @@ devDependencies に入れ、Vite がサーバーに束ねる。テスト (`tests
 
 #### 読み上げ (VOICEVOX)
 
-**読み上げの声は、sonae と一緒に動かす VOICEVOX のエンジンで作る。** `docker compose up` でも `deploy/` でも、sonae と VOICEVOX のコンテナが一緒に起き、sonae は `VOICEVOX_URL` (`http://voicevox:50021`) でつなぐ。
+**読み上げの声は、sonae と一緒に動かす VOICEVOX のエンジンで作る。** `docker compose up` でも Helm chart (`charts/sonae`) でも、sonae と VOICEVOX のコンテナが一緒に起き、sonae は `VOICEVOX_URL` (`http://voicevox:50021`) でつなぐ。
 VOICEVOX が止まっている・つながらないときは、画面が端末の読み上げ (`speechSynthesis`) で同じ原稿を読む。
 
 - **エンジンの選び方 (2026-11-14):** 日本語の自然さ、CPU だけでの速さ、地名の読みを直すユーザー辞書の API、公式の CPU 用の Docker イメージ、クレジットを出せば無料で使えること、の 5 つで比べ、VOICEVOX にした。
@@ -620,12 +621,15 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 
 ## 8. 家のクラスタへの載せ方
 
-ashi・xool と同じく、リポジトリの `deploy/` を Argo CD が同期する (gitops の ApplicationSet が `deploy/argocd.yaml` を探す)。
+**家の本番も、セルフホストの人と同じ Helm chart (`charts/sonae`) で出す。** denpa と同じ形で、gitops の ApplicationSet が `deploy/argocd.yaml` を探して `deploy/` を素のマニフェストとして同期し、その中の `deploy/application.yaml` (Argo CD の Application `sonae-chart`) が chart を展開する (App-of-Apps)。家の値は `application.yaml` の `helm.valuesObject` にインラインで持つ。
 
-- `deploy/`: `argocd.yaml`・`deployment.yaml` (レプリカ 1・Recreate・uid 1000・`/health` のプローブ (起きていることだけを見る。情報源の受信の状態は見ない)・`TZ=Asia/Tokyo`)・`service.yaml`・`httproute.yaml` (Cilium Gateway の `doany`、ホスト名 `s.doany.io`)・`pvc.yaml` (`local-path` 1Gi、`dataSourceRef` で VolSync から戻す)・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`networkpolicy.yaml` (外向きは DNS と公開のインターネットと、同じ名前空間の VOICEVOX だけ)・`voicevox.yaml` (読み上げの VOICEVOX のエンジン。公式のイメージ `voicevox/voicevox_engine:<バージョン>` (CPU 用) の Deployment・Service と、sonae の Pod からしか受けず外へ出ない NetworkPolicy。CPU の上限 4・メモリの上限 3Gi。PVC は持たない。イメージは Renovate が上げる)・`secrets.sops.yaml` (`OIDC_CLIENT_SECRET` (Main の共用のもの)・VolSync の restic。VAPID の秘密鍵 `vapid-private-jwk` と中央氣象署の授権碼 `cwa-api-key` は任意で、入れ方は docs/push.md と docs/cwa.md)。R2 にまだバックアップが無い最初の 1 回は、populator が空の PVC を作る (gitops の recovery/README.md の 6)。`.sops.yaml` はほかのリポジトリと同じ鍵。
-- 環境変数 (`deploy/deployment.yaml`): `PUBLIC_URL` と `ORIGIN` (adapter-bun) はどちらも `https://s.doany.io`。`CONNECTION_IDLE_TIMEOUT=255` (既定の 10 秒だと 30 秒ごとの `: ping` を待つ間に SSE が切れる)。`SHUTDOWN_TIMEOUT=5` (SSE は終わらないので長く待たない)。OIDC は docs/entra.md の表のとおり。`VOICEVOX_URL=http://voicevox:50021` (2.4 の「読み上げ」)。
-- 外向きの NetworkPolicy は ashi と同じ形 (kube-dns と、プライベートでないアドレス全部)。クラスタに既定で閉じるポリシーは無いので、これが無くても外へは出られる。家の LAN とクラスタの中を閉じるために置く。
-- イメージ: main にマージすると `docker-publish.yml` が `ghcr.io/danything/sonae:<sha>` を作り、`deploy/deployment.yaml` のタグを差し替える PR を作って自分でマージする (`deploy/` ができるまでは何もしない)。
+- chart (`charts/sonae`): sonae の Deployment (レプリカ 1・Recreate・uid 1000・`/health` のプローブ (起きていることだけを見る。情報源の受信の状態は見ない))・Service・HTTPRoute か Ingress・PVC `sonae-data`・VOICEVOX のエンジン (公式のイメージ `voicevox/voicevox_engine:<バージョン>` (CPU 用) の Deployment・Service。CPU の上限 4・メモリの上限 3Gi。PVC は持たない。イメージは Renovate が上げる)・NetworkPolicy (VOICEVOX は sonae の Pod からしか受けず外へ出ない。sonae の外向きは DNS と公開のインターネットと VOICEVOX だけ)。リソースの名前は素のマニフェストのころと同じにしてあり、変えない (PVC を作り直すとデータが消える)。
+- 家の値 (`deploy/application.yaml`): ホスト名 `s.doany.io` (Cilium Gateway の `doany`)、OIDC は docs/entra.md の表のとおり、Secret は `sonae-secrets`、PVC は `local-path` 1Gi で `dataSourceRef` で VolSync から戻す、外向きの NetworkPolicy を出す。
+- chart に入れないもの (`deploy/` に素のまま): `argocd.yaml`・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`secrets.sops.yaml` (`oidc-client-secret` (Main の共用のもの)・VolSync の restic。VAPID の秘密鍵 `vapid-private-jwk` と中央氣象署の授権碼 `cwa-api-key` は任意で、入れ方は docs/push.md と docs/cwa.md)。R2 にまだバックアップが無い最初の 1 回は、populator が空の PVC を作る (gitops の recovery/README.md の 6)。`.sops.yaml` はほかのリポジトリと同じ鍵。この家の Argo CD は Secret を同期しないので、chart は Secret を作らず、名前 (`secrets.name`) で指す。
+- 環境変数 (chart の `templates/deployment.yaml`): `PUBLIC_URL` と `ORIGIN` (adapter-bun) はどちらも `sonae.publicUrl` (家は `https://s.doany.io`)。`CONNECTION_IDLE_TIMEOUT=255` (既定の 10 秒だと 30 秒ごとの `: ping` を待つ間に SSE が切れる)。`SHUTDOWN_TIMEOUT=5` (SSE は終わらないので長く待たない)。`VOICEVOX_URL=http://voicevox:50021` (2.4 の「読み上げ」)。
+- 外向きの NetworkPolicy は ashi と同じ形 (kube-dns と、プライベートでないアドレス全部)。クラスタに既定で閉じるポリシーは無いので、これが無くても外へは出られる。家の LAN とクラスタの中を閉じるために置く。DNS の Pod のラベルはクラスタで違うので、chart の既定では出さない。
+- イメージ: main にマージすると `docker-publish.yml` が `ghcr.io/danything/sonae:<sha>` と `latest` を作り、`deploy/application.yaml` の `image.tag` を差し替える PR を作って自分でマージする。
+- chart: PR と main で `chart.yml` が `helm lint` と `helm template` (chart の既定値・家の値・Ingress と VOICEVOX 無し) を回す。リリースを作ると `release.yml` が chart を `oci://ghcr.io/danything/charts/sonae` に出す。
 - 実行のイメージは `oven/bun:<ver>-distroless` (シェル無し・uid 1000)。
 - 外への接続は気象庁・P2P・Wolfx・USGS (earthquake.usgs.gov)・PTWC (www.tsunami.gov)・EMSC (www.seismicportal.eu の WebSocket)・気象庁ホームページ (www.jma.go.jp の bosai の国際津波)・GeoNet (api.geonet.org.nz)・中央氣象署 (opendata.cwa.gov.tw、授権碼があるときだけ)・Entra ID・Web Push の配信サービス (FCM・Mozilla・Apple・WNS) だけ。気象庁のフィードは地震火山と気象 (随時) の 2 つを 1 日 1440 回ずつ条件付きで取る。地震火山はほとんどが 304 で、随時の `extra.xml` (約 100KB) はほぼ毎分変わるので 1 日 150MB ほど。電文 (警報・注意報は 1 通 10〜40KB、1 日に数百通) を足しても、帯域の上限 (10GB/日) には遠い。
 
