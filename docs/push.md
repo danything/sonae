@@ -97,7 +97,12 @@ Web Push を使えないブラウザでは、「通知」の Web Push の節に�
   - 文は「このブラウザ (Android の Edge) は…」と名前を添え、Android の Chrome で開く (アプリとして入れるときも Chrome から) ことを案内する。Edge が直って正しい宛先を返せば、そのまま登録できる
 - **登録が例外で止まった** (配信サービスにつながらない など): 例外の名前と、ほかのブラウザで試すことを出す
 - どれでも、開いている間の OS の通知・音・読み上げ (「開いているとき」) は Web Push と別なので使える、と添える。
-  Android の Edge で、開いている間の OS の通知 (`showNotification`) が出るかは実機で確かめていない
+- **Android の Edge は、サイトの通知そのものが使えない** (2026-11-15、Android 10・Edge 157 の実機で確かめた)。
+  `Notification.permission`・`permissions.query`・`pushManager.permissionState` がどれも `denied` で、
+  `requestPermission()` は窓を出さずに断る。Edge の設定にも、サイトの通知を許す項目が無い
+  (「サイトの設定」は「サイトのアクセス許可」と背景の音だけ、「通知」は Edge 自身のお知らせだけ)。
+  なので開いている間の OS の通知も出ない。許可が無いときの文は、設定の道筋ではなく「対応していない。Android の Chrome で開く。Edge のままでも開いている間の音と読み上げは使える」を出す
+  (`permissionDeniedText`)。「通知」の窓の下の「ブラウザの通知の状態」で、ブラウザが返す値をそのまま見られる
 
 ## 届かないとき
 
