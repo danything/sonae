@@ -1118,6 +1118,10 @@
         foreign={snap.foreignQuakes}
         foreignQuake={selForeign}
         warnings={snap.warnings}
+        office={selOffice?.office.code ?? null}
+        officeHref={(code) =>
+          selectHref(params, "weather", `${OFFICE_PREFIX}${code}`)}
+        onoffice={() => (tab = "list")}
         shown={!phone.current || tab === "map"}
       />
     </div>

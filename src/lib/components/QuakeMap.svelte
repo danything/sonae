@@ -12,8 +12,11 @@
   import Menu from "#lib/components/Menu.svelte";
   import {
     INTENSITY_COLORS,
+    jstFull,
+    kindText,
     VOLCANO_COLORS,
     volcanoKindText,
+    WARNING_COLORS,
   } from "#lib/format.ts";
   import {
     baseStyle,
@@ -29,6 +32,9 @@
     longPeriodLine,
     meFeatures,
     mergeShelters,
+    officeBounds,
+    officeFilter,
+    type OfficeTable,
     readHazard,
     SHELTER_DISASTERS,
     SHELTER_LAYERS,
@@ -42,6 +48,7 @@
   } from "#lib/map/style.ts";
   import {
     cityLevels,
+    cityWarnings,
     type Eew,
     type ForeignQuake,
     intensityLabel,
@@ -68,10 +75,19 @@
     foreign = [],
     foreignQuake = null,
     warnings = [],
+    office = null,
+    officeHref,
+    onoffice,
     shown = true,
   }: {
-    /** いまの気象警報・注意報 (市町村等を段の色で塗る) */
+    /** いまの気象警報・注意報 (市町村等を段の色で塗る。押すと吹き出し) */
     warnings?: WeatherWarning[];
+    /** 一覧で選んだ府県予報区のコード (その市町村等を縁取り、寄せる) */
+    office?: string | null;
+    /** 府県予報区の警報・注意報の詳しい内容のリンク (一覧の行と同じ `?w=office-<コード>`) */
+    officeHref?: (code: string) => string;
+    /** 吹き出しから詳しい内容を開いたとき (スマホの形で一覧のタブへ移る) */
+    onoffice?: () => void;
     quake: Quake | undefined;
     /** 地図に出している地震の長周期地震動 (無ければ枠を描かない) */
     longPeriod?: LongPeriod | null;
@@ -181,6 +197,32 @@
         created.on("mouseleave", "shelters", () => {
           if (created) created.getCanvas().style.cursor = "";
         });
+        // 塗った市町村等を押すと、出ている警報・注意報の吹き出し。上の層 (避難場所の印) を押したときはそちらだけ
+        created.on("click", "warning-fill", (e) => {
+          if (
+            !created ||
+            created.queryRenderedFeatures(e.point, { layers: ["shelters"] })
+              .length > 0
+          )
+            return;
+          const code = e.features?.[0]?.properties?.code;
+          if (typeof code === "string") openWarning(code, e.lngLat);
+        });
+        // 面は塗っていない所にもあるので、塗った所の上でだけ指の形にする
+        created.on("mousemove", "warning-fill", (e) => {
+          if (!created) return;
+          const code = e.features?.[0]?.properties?.code;
+          const over =
+            created.queryRenderedFeatures(e.point, { layers: ["shelters"] })
+              .length > 0;
+          created.getCanvas().style.cursor =
+            over || (typeof code === "string" && paintedCities.has(code))
+              ? "pointer"
+              : "";
+        });
+        created.on("mouseleave", "warning-fill", () => {
+          if (created) created.getCanvas().style.cursor = "";
+        });
         map = created;
         // 手元 (vite dev) で画面を撮るときに、地図を動かせるようにする (本番の束には入らない)
         if (import.meta.env.DEV)
@@ -221,16 +263,47 @@
 
   // 気象警報・注意報の色 (報が替わったときだけ塗り直す)
   let warningSig = "";
+  /** 塗っている市町村等 (指の形にするか決める) */
+  let paintedCities: ReadonlyMap<string, unknown> = new Map();
   $effect(() => {
     if (!map) return;
     const next = sig(warnings.map((w) => [w.id, w.reportedAt]));
     if (next === warningSig) return;
     warningSig = next;
+    const levels = cityLevels(warnings);
+    paintedCities = levels;
     map.setPaintProperty(
       "warning-fill",
       "fill-color",
-      warningFill(cityLevels(warnings)) as never,
+      warningFill(levels) as never,
     );
+    // 開いている吹き出しは前の報の中身なので閉じる
+    warningPopup?.remove();
+  });
+
+  // ---- 府県予報区の縁取り (一覧で選んだとき。表は選んだときに初めて読む) ----
+  let offices = $state<OfficeTable | null>(null);
+  let officesLoading = false;
+  $effect(() => {
+    if (!office || offices || officesLoading) return;
+    officesLoading = true;
+    fetch("/areas/offices.json")
+      .then((r) => {
+        // 読めなかったときは空の表を持たず、次に選んだときに読み直す
+        if (!r.ok) throw new Error(`offices.json: ${r.status}`);
+        return r.json() as Promise<OfficeTable>;
+      })
+      .then((t) => (offices = t))
+      .catch(() => {
+        // 次に選んだときに読み直す
+        officesLoading = false;
+      });
+  });
+  $effect(() => {
+    if (!map) return;
+    const f = officeFilter(offices ?? {}, office) as never;
+    map.setFilter("warning-focus-casing", f);
+    map.setFilter("warning-focus", f);
   });
 
   // 震度の色・津波の線・緊急地震速報の地域・震源の点
@@ -569,7 +642,63 @@
       "tiny muted",
     );
     shelterPopup?.remove();
+    warningPopup?.remove();
     shelterPopup = new PopupClass({ maxWidth: "18rem", closeButton: false })
+      .setLngLat(at)
+      .setDOMContent(box)
+      .addTo(map);
+  }
+
+  /**
+   * 押した市町村等の名前と、いま出ている警報・注意報 (重い順)、発表した府県予報区と時刻、詳しい内容へのリンク。
+   * 段のラベルは WarningLevel.svelte と同じ形と色。文は DOM で組み、HTML として読まない
+   */
+  let warningPopup: Popup | undefined;
+  function openWarning(code: string, at: LngLat): void {
+    if (!map || !PopupClass) return;
+    const c = cityWarnings(warnings, code);
+    if (!c) return;
+    const box = document.createElement("div");
+    box.className = "warning-pop";
+    box.dataset.testid = "warning-pop";
+    const name = document.createElement("p");
+    name.className = "bold";
+    name.textContent = c.name;
+    const list = document.createElement("ul");
+    list.className = "warning-kinds";
+    for (const k of c.kinds) {
+      const li = document.createElement("li");
+      const label = document.createElement("span");
+      const color = WARNING_COLORS[k.level];
+      label.className = "warning-label";
+      label.textContent = kindText(k.name);
+      if (color) {
+        label.style.background = color.bg;
+        label.style.color = color.fg;
+      }
+      li.append(label);
+      list.append(li);
+    }
+    const from = document.createElement("p");
+    from.className = "small muted";
+    from.textContent = `${c.office.name}・${jstFull(c.reportedAt)} 発表`;
+    box.append(name, list, from);
+    if (officeHref) {
+      const link = document.createElement("a");
+      link.className = "small";
+      link.href = officeHref(c.office.code);
+      link.textContent = `${c.office.name}の警報・注意報を見る`;
+      link.addEventListener("click", () => {
+        warningPopup?.remove();
+        onoffice?.();
+      });
+      const p = document.createElement("p");
+      p.append(link);
+      box.append(p);
+    }
+    shelterPopup?.remove();
+    warningPopup?.remove();
+    warningPopup = new PopupClass({ maxWidth: "18rem", closeButton: false })
       .setLngLat(at)
       .setDOMContent(box)
       .addTo(map);
@@ -587,6 +716,30 @@
     return outer;
   }
 
+  /**
+   * 範囲へ寄せるときの余白 (px)。上は左上のハザードマップの選択と右上の現在地のボタン、
+   * スマホの形の下は浮いている下のタブと dock の分を空ける
+   */
+  function focusPadding(): {
+    top: number;
+    bottom: number;
+    left: number;
+    right: number;
+  } {
+    const phone = document.documentElement.hasAttribute("data-phone");
+    const h = container?.clientHeight ?? 0;
+    const top = 64;
+    const bottom = phone ? 150 : 24;
+    // 地図が低すぎて余白が収まらないときは、余白を詰める (cameraForBounds が寄せ先を返さなくなる)
+    const k = h > 0 ? Math.min(1, (h * 0.6) / (top + bottom)) : 1;
+    return {
+      top: top * k,
+      bottom: bottom * k,
+      left: 24,
+      right: 24,
+    };
+  }
+
   // 選んだ地震 (と、出ている緊急地震速報) の震央へ寄せる。飛ばさない。
   // 続報で中身が変わるたびに寄せ直すと、見ている所が勝手に動くので、寄せるのは選んだものが替わったときと、
   // 地図が見えたとき (スマホの形で地図のタブに移ったとき) に震央が画面の外にあるときだけ
@@ -602,16 +755,44 @@
         : undefined;
     // 選んだ海外の地震は、日本から遠いことが多いので、寄せずに引いて見せる
     const fq = !eew && !vm ? foreignQuake : null;
+    // 選んだ府県予報区は、警報・注意報の出ている市町村等が画面に収まるように (表を読むまでは待つ)
+    const ob =
+      !eew && !vm && !fq && office && offices
+        ? officeBounds(
+            offices,
+            office,
+            warnings
+              .filter((w) => w.status === "normal" && w.office.code === office)
+              .flatMap((w) => w.areas.map((a) => a.code)),
+          )
+        : undefined;
     const key = eew
       ? `eew:${eew.eventId}`
       : vm
         ? `volcano:${volcano?.id}`
         : fq
           ? `foreign:${fq.id}`
-          : `quake:${quake?.id ?? ""}`;
-    const h = eew?.hypocenter ?? (vm || fq ? undefined : quake?.hypocenter);
+          : office
+            ? `office:${office}`
+            : `quake:${quake?.id ?? ""}`;
     const appeared = shown && !wasShown;
     wasShown = shown;
+    if (office && !eew && !vm && !fq) {
+      if (!ob) return;
+      const away =
+        appeared &&
+        !map
+          .getBounds()
+          .contains([(ob[0][0] + ob[1][0]) / 2, (ob[0][1] + ob[1][1]) / 2]);
+      if (key === focused && !away) return;
+      const cam = map.cameraForBounds(ob, { padding: focusPadding() });
+      if (!cam) return;
+      focused = key;
+      // 小さな市町村 1 つでも寄せすぎない (まわりが分かるように)
+      map.jumpTo({ ...cam, zoom: Math.min(cam.zoom ?? 9, 10) });
+      return;
+    }
+    const h = eew?.hypocenter ?? (vm || fq ? undefined : quake?.hypocenter);
     const at: [number, number] | undefined = vm
       ? vm.at
       : fq
@@ -837,8 +1018,34 @@
   .map :global(.maplibregl-popup-tip) {
     display: none;
   }
-  .map :global(.shelter-pop p) {
+  .map :global(.shelter-pop p),
+  .map :global(.warning-pop p) {
     margin: 0 0 var(--so-space-1);
+  }
+  .map :global(.warning-pop p:last-child) {
+    margin-bottom: 0;
+  }
+  /* 気象警報・注意報の吹き出しの種類の並び。ラベルは WarningLevel.svelte と同じ形 */
+  .map :global(.warning-kinds) {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--so-space-1);
+    margin: 0 0 var(--so-space-2);
+    padding: 0;
+    list-style: none;
+  }
+  .map :global(.warning-kinds li) {
+    margin: 0;
+    list-style: none;
+  }
+  .map :global(.warning-label) {
+    border-radius: var(--so-radius-sm);
+    padding: 0 var(--so-space-2);
+    font-size: var(--so-text-xs);
+    font-weight: var(--so-weight-bold);
+    line-height: 1.75;
+    white-space: nowrap;
   }
   @media (max-width: 639.98px) {
     /* 狭い画面では凡例を細くする (地図を隠しすぎない) */

@@ -280,7 +280,7 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   },
   {
     label: "気象警報・注意報",
-    note: "市町村等を段の色で塗ります。特別警報 黒・危険警報 紫・警報 赤・注意報 黄 (気象庁の配色)",
+    note: "市町村等を段の色で塗ります。特別警報 黒・危険警報 紫・警報 赤・注意報 黄 (気象庁の配色)。塗った所を押すと、市町村の名前と出ている警報・注意報が出ます。一覧で府県予報区の警報・注意報を選ぶと、その府県予報区の市町村等を白い線で縁取ります",
   },
   {
     label: "海外の地震",
@@ -364,6 +364,49 @@ export function warningFill(levels: Map<string, WarningLevel>): string | Expr {
     if (color) byCode.set(code, color);
   }
   return matchExpr(byCode, new Map(), TRANSPARENT);
+}
+
+/** 府県予報区ごとの市町村等と、その面の外枠 [西, 南, 東, 北] (`static/areas/offices.json`、tools/areas/offices.ts) */
+export type OfficeTable = Record<
+  string,
+  Record<string, [number, number, number, number]>
+>;
+
+/** 選んだ府県予報区の市町村等だけを縁取る filter (選んでいなければ何も描かない) */
+export function officeFilter(
+  table: OfficeTable,
+  office: string | null | undefined,
+): Expr {
+  const codes = office ? Object.keys(table[office] ?? {}) : [];
+  return ["in", ["get", "code"], ["literal", codes]];
+}
+
+/**
+ * 選んだ府県予報区へ寄せる範囲 [[西, 南], [東, 北]]。警報・注意報の出ている市町村等が画面に収まるようにし
+ * (東京都の伊豆諸島・小笠原のように離れた所まで含めて引きすぎない)、出ている所が表に無ければ府県予報区の全体
+ */
+export function officeBounds(
+  table: OfficeTable,
+  office: string,
+  warned: string[],
+): [[number, number], [number, number]] | undefined {
+  const cities = table[office];
+  if (!cities) return undefined;
+  const hit = warned.flatMap((c) => (cities[c] ? [cities[c]] : []));
+  const boxes = hit.length > 0 ? hit : Object.values(cities);
+  const first = boxes[0];
+  if (!first) return undefined;
+  let [w, s, e, n] = first;
+  for (const [bw, bs, be, bn] of boxes) {
+    w = Math.min(w, bw);
+    s = Math.min(s, bs);
+    e = Math.max(e, be);
+    n = Math.max(n, bn);
+  }
+  return [
+    [w, s],
+    [e, n],
+  ];
 }
 
 /** 緊急地震速報の警報の地域 (名前) を塗る式 */
@@ -735,6 +778,23 @@ export function baseStyle(
         source: "tsunami-areas",
         layout: { "line-cap": "round", "line-join": "round" },
         paint: { "line-color": TRANSPARENT, "line-width": 0 },
+      },
+      // 一覧で選んだ府県予報区の市町村等の縁取り (写真の上で読めるよう、黒い縁の上に白い線)
+      {
+        id: "warning-focus-casing",
+        type: "line",
+        source: "warning-areas",
+        filter: officeFilter({}, null),
+        layout: { "line-join": "round" },
+        paint: { "line-color": "rgba(0,0,0,0.6)", "line-width": 4 },
+      },
+      {
+        id: "warning-focus",
+        type: "line",
+        source: "warning-areas",
+        filter: officeFilter({}, null),
+        layout: { "line-join": "round" },
+        paint: { "line-color": "#fff", "line-width": 1.75 },
       },
       ...roadLayers(),
       {
