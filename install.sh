@@ -396,7 +396,7 @@ linux_main() {
   fi
   env_template "$envfile" "$trusted"
   # 鍵は sonae のイメージの bun で作る (ホストに何も入れない。イメージは上で引いてある)
-  image=$(sed -n 's/^ *image: \(ghcr.io\/danything\/sonae:.*\)$/\1/p' "$SONAE_DIR/compose.yml" | head -1)
+  image=${SONAE_IMAGE:-$(sed -n 's/^ *image: \(ghcr.io\/danything\/sonae:.*\)$/\1/p' "$SONAE_DIR/compose.yml" | head -1)}
   ensure_vapid "$envfile" docker run --rm --entrypoint /usr/local/bin/bun "$image" -e "$VAPID_JS"
   compose up -d --remove-orphans
   wait_and_open "${ip:-$(hostname)}" "$genkan"

@@ -152,6 +152,23 @@ export function checkTrusted(
 /** 知らない名前で来たことを知らせた名前 (同じ名前で何度来ても 1 度だけ。覚えるのは上限まで) */
 const reported = new Set<string>();
 
+/**
+ * **ほかのサイトから送らせた書き込みか** (信頼するネットワークで通した人だけに使う)。
+ *
+ * ログインなしで通すと、Cookie の SameSite の守りが効かない。LAN の人が悪いサイトを開くと、そのサイトが
+ * `http://192.168.x.x:3030/api/...` へ送らせた要求も、接続元は LAN・名前は IP の直書きなので通ってしまう。
+ * SvelteKit の CSRF の守りはフォームの形の本文しか見ず、`text/plain` で JSON を送る `fetch` (事前の確認が要らない) は通る。
+ * そこで、状態を変える要求 (GET・HEAD・OPTIONS 以外) は、ブラウザが付ける `Sec-Fetch-Site` と `Origin` が同じオリジンでなければ断る。
+ * どちらも無い (ブラウザでない道具) ときは通す (ほかのサイトから送らせることはできない)
+ */
+export function crossSiteWrite(request: Request, origin: string): boolean {
+  if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return false;
+  const site = request.headers.get("sec-fetch-site");
+  if (site !== null && site !== "same-origin" && site !== "none") return true;
+  const from = request.headers.get("origin");
+  return from !== null && from !== origin;
+}
+
 /** 信頼するネットワークの中から知らない名前で来たとき、ログに理由を 1 度だけ出す */
 export function reportForeignHost(address: string, host: string): void {
   if (reported.has(host) || reported.size >= 64) return;

@@ -423,6 +423,8 @@ VOICEVOX が止まっている・つながらないときは、画面が端末�
   - 接続元は、直の相手が前段 (`TRUSTED_PROXIES`) のときだけ `X-Forwarded-For` を右から読む。adapter-bun の `ADDRESS_HEADER` を設定していたら、信頼するネットワークは使わない (誰でも名乗れるため)
   - 通した人は全員 1 人の利用者 (`trusted-network`、「家のネットワーク」) として扱う。**その中の誰でも、読み上げの声・通知の条件・Web Push の購読を変えられる**
   - OIDC と一緒に使える (外の人はログイン、中の人はログインなし)。OIDC が無いとき、外の人には 403 と接続元を返す
+  - **ログインなしの経路では、ほかのサイトから送らせた書き込みを断る** (`crossSiteWrite`)。Cookie の SameSite が効かず、LAN の人が開いた悪いサイトが `http://<LAN の IP>:3030/api/...` へ送らせることができるため。
+    GET・HEAD・OPTIONS 以外は、`Sec-Fetch-Site` が same-origin (か none) で、`Origin` が自分のオリジンのときだけ通す (どちらも無い、ブラウザでない道具は通す)
 - **セッションは DB に持ち、180 日で、使うたびに延ばす。** 何度もログインさせない。**ID は Cookie にだけ生の値を置き、DB には SHA-256 (16 進) を持つ** (DB が漏れても、そのままでは成りすませない)。Web Push は購読してあればセッションが切れても届く。
 - ログイン無しで開けるのは `/auth/login`・`/auth/callback`・`/health`・Service Worker と Web アプリのマニフェストだけ。`/auth/logout` は POST だけ。
 

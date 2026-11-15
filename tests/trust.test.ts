@@ -8,6 +8,7 @@ import type { Handle } from "@sveltejs/kit/hooks";
 
 import {
   checkTrusted,
+  crossSiteWrite,
   knownHost,
   trustConfig,
   TRUSTED_USER,
@@ -212,12 +213,17 @@ afterEach(() => {
   }
 });
 
-async function run(path: string, peer: string, host: string) {
+async function run(
+  path: string,
+  peer: string,
+  host: string,
+  o: { method?: string; headers?: Record<string, string> } = {},
+) {
   const url = new URL(path, `http://${host}`);
-  const headers = new Headers({ host, accept: "text/html" });
+  const headers = new Headers({ host, accept: "text/html", ...o.headers });
   const event = {
     url,
-    request: new Request(url, { headers }),
+    request: new Request(url, { method: o.method ?? "GET", headers }),
     getClientAddress: () => peer,
     cookies: { get: () => undefined, set: () => {} },
     locals: {} as App.Locals,
@@ -271,5 +277,66 @@ describe("hooks: 信頼するネットワーク", () => {
     delete process.env.TRUSTED_NETWORKS;
     const r = await run("/", "127.0.0.1", "localhost:3030");
     expect(r.res?.status).toBe(503);
+  });
+});
+
+describe("ほかのサイトから送らせた書き込み (ログインなしの経路の CSRF)", () => {
+  const origin = "http://192.168.1.10:3030";
+  const req = (method: string, headers: Record<string, string>) =>
+    new Request(`${origin}/api/speech`, { method, headers });
+
+  test("同じオリジンからの書き込みと、読むだけの要求は通す", () => {
+    expect(
+      crossSiteWrite(
+        req("PUT", { origin, "sec-fetch-site": "same-origin" }),
+        origin,
+      ),
+    ).toBe(false);
+    expect(
+      crossSiteWrite(req("GET", { "sec-fetch-site": "cross-site" }), origin),
+    ).toBe(false);
+    // ブラウザでない道具 (Origin も Sec-Fetch-Site も付けない) は、ほかのサイトから送らせることができない
+    expect(crossSiteWrite(req("POST", {}), origin)).toBe(false);
+  });
+
+  test("ほかのサイトからの書き込みは断る", () => {
+    expect(
+      crossSiteWrite(
+        req("POST", { origin: "https://evil.example.com" }),
+        origin,
+      ),
+    ).toBe(true);
+    expect(
+      crossSiteWrite(req("PUT", { "sec-fetch-site": "cross-site" }), origin),
+    ).toBe(true);
+    expect(
+      crossSiteWrite(
+        req("DELETE", {
+          "sec-fetch-site": "same-site",
+          origin: "http://192.168.1.10:8080",
+        }),
+        origin,
+      ),
+    ).toBe(true);
+  });
+
+  test("hooks: 信頼するネットワークの中でも、ほかのサイトから送らせた書き込みは 403", async () => {
+    const evil = await run("/api/speech", "192.168.1.20", "192.168.1.10:3030", {
+      method: "PUT",
+      headers: {
+        origin: "https://evil.example.com",
+        "content-type": "text/plain",
+      },
+    });
+    expect(evil.resolved).toBe(false);
+    expect(evil.res?.status).toBe(403);
+    const same = await run("/api/speech", "192.168.1.20", "192.168.1.10:3030", {
+      method: "PUT",
+      headers: {
+        origin: "http://192.168.1.10:3030",
+        "sec-fetch-site": "same-origin",
+      },
+    });
+    expect(same.resolved).toBe(true);
   });
 });

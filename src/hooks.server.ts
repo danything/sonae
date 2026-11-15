@@ -6,6 +6,7 @@ import { startReceiving, startVoice } from "#lib/server/receiver.ts";
 import { COOKIE, find, SESSION_TTL } from "#lib/server/session.ts";
 import {
   checkTrusted,
+  crossSiteWrite,
   reportForeignHost,
   trustConfig,
   TRUSTED_USER,
@@ -91,6 +92,12 @@ export const handle: Handle = async ({ event, resolve }) => {
       trust,
     );
     if (r.ok) {
+      // ログインなしで通すので、ほかのサイトから送らせた書き込みはここで断る (Cookie の SameSite が効かないため)
+      if (crossSiteWrite(event.request, event.url.origin))
+        return new Response("ほかのサイトからの書き込みは受けません", {
+          status: 403,
+          headers: { "content-type": "text/plain; charset=utf-8" },
+        });
       event.locals.user = { ...TRUSTED_USER };
       return pass({ event, resolve });
     }
