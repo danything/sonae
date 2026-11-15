@@ -392,17 +392,29 @@ class Alerter {
     try {
       const reg = await this.registration();
       if (!reg) return false;
-      const shape = pageNotification(n, true, chimed);
+      // チャイムが鳴ったら音なしで出す。音なしで鳴らし直す (renotify) ことは無いので、renotify は付けない
+      // (silent と renotify を一緒に付けると投げるブラウザがあっても、通知を落とさないように)
+      const shape = pageNotification(n, !chimed, chimed);
       if (
         isShown(shape, await reg.getNotifications({ tag: shape.options.tag }))
       )
         return false;
-      // renotify・silent は DOM の型に無いことがあるので、自分で書いた形で渡す
-      await reg.showNotification(
-        shape.title,
-        shape.options as NotificationOptions,
-      );
-      return !chimed;
+      try {
+        // renotify・silent は DOM の型に無いことがあるので、自分で書いた形で渡す
+        await reg.showNotification(
+          shape.title,
+          shape.options as NotificationOptions,
+        );
+        return !chimed;
+      } catch {
+        // 音なしの形を受け付けないブラウザでは、通知音つきで出し直す (出さないよりよい)
+        const plain = pageNotification(n, true, false);
+        await reg.showNotification(
+          plain.title,
+          plain.options as NotificationOptions,
+        );
+        return true;
+      }
     } catch {
       return false;
     }
