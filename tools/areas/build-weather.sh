@@ -13,6 +13,7 @@
 # 出力 (static/areas/):
 #   - warning-areas.geojson … 市町村等の面 (code・name)。警報・注意報の段の色を塗る
 #   - cities.json           … 市町村等の名前・府県予報区・一次細分区域・地震の細分区域 (tools/areas/cities.ts)
+#   - offices.json          … 府県予報区ごとの市町村等と、その面の外枠 (tools/areas/offices.ts)
 set -eu
 SRC=${1:?zip を置いたディレクトリ}
 DIR=$(dirname "$0")
@@ -48,5 +49,8 @@ $MAPSHAPER -i "$WORK/quake/area.shp" encoding=utf8 name=quake \
   -o "$WORK/points.json" format=geojson precision=0.001 force
 
 bun "$DIR/cities.ts" "$(ls "$SRC"/jmaxml_*_Code.zip)" "$WORK/points.json" "$OUT/cities.json"
+
+# 府県予報区ごとの市町村等と面の外枠 (地図で選んだ府県予報区を縁取り、寄せる)
+bun "$DIR/offices.ts" "$OUT/warning-areas.geojson" "$OUT/cities.json" "$OUT/offices.json"
 
 ls -la "$OUT"

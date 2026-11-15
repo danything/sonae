@@ -732,6 +732,45 @@ export function cityLevels(ws: WeatherWarning[]): Map<string, WarningLevel> {
   return out;
 }
 
+/** 1 つの市町村等に、いま出ている警報・注意報 (地図の吹き出し) */
+export interface CityWarnings {
+  code: string;
+  name: string;
+  /** 発表した府県予報区 */
+  office: { code: string; name: string };
+  /** この市町村等の警報・注意報の入った報の、いちばん新しい発表の時刻 */
+  reportedAt: string;
+  /** 重い順 (段の高い順)。同じ段は種類のコードの順 (詳しい内容と同じ) */
+  kinds: WarningKind[];
+}
+
+/** 市町村等 (7 桁のコード) にいま出ている警報・注意報。出ていなければ null */
+export function cityWarnings(
+  ws: WeatherWarning[],
+  code: string,
+): CityWarnings | null {
+  let out: CityWarnings | null = null;
+  for (const w of ws) {
+    if (w.status !== "normal") continue;
+    const a = w.areas.find((x) => x.code === code);
+    if (!a || a.kinds.length === 0) continue;
+    out ??= {
+      code,
+      name: a.name,
+      office: w.office,
+      reportedAt: w.reportedAt,
+      kinds: [],
+    };
+    if (Date.parse(w.reportedAt) > Date.parse(out.reportedAt))
+      out.reportedAt = w.reportedAt;
+    for (const k of a.kinds)
+      if (!out.kinds.some((x) => x.code === k.code && x.name === k.name))
+        out.kinds.push(k);
+  }
+  out?.kinds.sort((a, b) => b.level - a.level || a.code.localeCompare(b.code));
+  return out;
+}
+
 /** 竜巻注意情報の有効期限が過ぎたか (期限の無いものは過ぎない) */
 export const isExpired = (i: Pick<WeatherInfo, "validUntil">, now: number) =>
   i.validUntil !== undefined && Date.parse(i.validUntil) < now;
