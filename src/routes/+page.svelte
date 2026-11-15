@@ -756,7 +756,8 @@
     );
     if (fresh.length === 0) return;
     for (const e of fresh) openedEews.add(`${e.eventId}:${e.kind}`);
-    const first = fresh[0];
+    // 幾つか同時に出たら、警報を先に開く (ほかは一覧の先頭に貼ってある)
+    const first = fresh.find((e) => e.kind === "warning") ?? fresh[0];
     if (first)
       untrack(() => autoOpen({ kind: "eew", id: first.eventId }, true));
   });
