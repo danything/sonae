@@ -99,6 +99,7 @@
     newestFirst,
     OFFICE_PREFIX,
     pickOnly,
+    pinFirst,
     readOnly,
     readView,
     selectHref,
@@ -576,12 +577,27 @@
   const backHref = $derived(viewHref(params, { ...UNSELECT }));
 
   // ---- 地図 ----
-  const mapQuake = $derived(selQuake ?? snap.quakes[0]);
-  const mapLongPeriod = $derived(
-    mapQuake === selQuake ? selLongPeriod : longPeriodOf(mapQuake),
-  );
+  // 地震 (震央の ×・震度の塗りと数字・長周期地震動の枠) は、選んだときだけ出す。何も選んでいないときに
+  // いちばん新しい地震を出すと、いま起きていることのように見えるため (持ち主の声「詳細開いてないときは
+  // 地震情報表示しなくていいかも」)。いま出ている緊急地震速報・津波・特別警報と気象の警報・注意報の塗りは、
+  // 選んでいなくても出す (docs/ui.md の「何も選んでいないときの地図」)
+  const mapQuake = $derived(selQuake ?? undefined);
+  const mapLongPeriod = $derived(selQuake ? selLongPeriod : null);
   const mapTsunamis = $derived(selTsunami ? [selTsunami] : activeTsunamis);
-  const mapEews = $derived(selEew ? [selEew] : liveEews);
+  /** 緊急地震速報は、出ている間はほかのものを選んでいても出す (選んだ前の報は、それに足す) */
+  const mapEews = $derived(
+    selEew && !liveEews.some((e) => e.eventId === selEew.eventId)
+      ? [selEew, ...liveEews]
+      : liveEews,
+  );
+  /** スマホの形の地図のタブで、何も選んでいないときに dock に出すもの (命に関わる、いま出ているもの) */
+  const dockPin = $derived(
+    pinFirst(
+      pinnedEews,
+      pinnedTsunamis,
+      specialOffices.map((o) => o.office),
+    ),
+  );
   const trainingHref = $derived(
     viewHref(params, { training: data.training ? null : "1" }),
   );
@@ -1297,7 +1313,7 @@
   <div
     class="dock"
     role="toolbar"
-    aria-label="出す種類と、地図に出している地震"
+    aria-label="出す種類と、地図に出しているもの"
   >
     {#if tab === "list"}
       {@render kindChips("scroll")}
@@ -1331,8 +1347,24 @@
           >{quakeName(mapQuake)}・{jst(quakeTime(mapQuake))}</span
         >
       </a>
+    {:else if dockPin}
+      <!-- 何も選んでいないが、命に関わるものが出ている (一覧の先頭にいつも貼るもののいちばん上)。押すとその詳しい内容へ -->
+      <a
+        class="dock-quake dock-selected"
+        class:eew-warning={dockPin.red}
+        class:eew-forecast={!dockPin.red}
+        href={selectHref(params, dockPin.kind, dockPin.id)}
+        onclick={() => (tab = "list")}
+        data-testid="dock-pin"
+      >
+        <Icon icon={TriangleAlert} size={1} />
+        <span class="truncate">{dockPin.label}</span>
+      </a>
     {:else}
-      <span class="dock-quake muted small">まだ地震の情報はありません</span>
+      <!-- 何も選んでいない。地図に地震は出さないので、選び方を言う (dock の高さは変えない) -->
+      <span class="dock-quake muted small" data-testid="dock-hint"
+        >一覧から選ぶと、地図とここに出ます</span
+      >
     {/if}
     {#if trouble}
       <!-- 受信に問題があるときだけの注意の印。押すと情報源ごとの受信 -->

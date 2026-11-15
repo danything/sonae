@@ -8,6 +8,15 @@
  * - `training=1` … 緊急地震速報の訓練・試験も出す
  * - `about=1` … 「出典と注意」を開く
  */
+import { placeName } from "./format.ts";
+import {
+  type Eew,
+  isTsunamiWarning,
+  type Tsunami,
+  tsunamiGradeLabel,
+  tsunamiTop,
+} from "./model.ts";
+
 export const KINDS = [
   "quake",
   "tsunami",
@@ -213,6 +222,61 @@ export function newestFirst<T>(
     .map((item, i) => ({ item, i, t: ms(item) }))
     .sort((a, b) => b.t - a.t || a.i - b.i)
     .map((x) => x.item);
+}
+
+/** 何も選んでいないときに、スマホの形の dock に 1 行で出すもの (いま出ている、命に関わるもの) */
+export interface Pin {
+  kind: Kind;
+  id: string;
+  label: string;
+  /** 緊急地震速報 (警報) だけは状態の赤で塗る (docs/design.md の 6.2) */
+  red: boolean;
+}
+
+/**
+ * 一覧の先頭にチップにかかわらずいつも貼るもの (緊急地震速報 (取消を除く)・大津波警報と津波警報・特別警報) の
+ * いちばん上の 1 つ。並びは一覧の先頭と同じ。無ければ null
+ */
+export function pinFirst(
+  eews: Eew[],
+  tsunamis: Tsunami[],
+  specials: { code: string; name: string }[],
+): Pin | null {
+  const e = eews.find((x) => !x.cancelled);
+  if (e)
+    return {
+      kind: "eew",
+      id: e.eventId,
+      label: [
+        e.kind === "warning"
+          ? "緊急地震速報 (警報) 強い揺れに警戒"
+          : "緊急地震速報 (予報)",
+        placeName(e.hypocenter),
+      ].join("・"),
+      red: e.kind === "warning",
+    };
+  const t = tsunamis.find(isTsunamiWarning);
+  if (t) {
+    const top = tsunamiTop(t);
+    const areas = t.areas.filter((a) => a.grade === top).map((a) => a.name);
+    return {
+      kind: "tsunami",
+      id: t.id,
+      label: [tsunamiGradeLabel(top), areas.join("、")]
+        .filter(Boolean)
+        .join("・"),
+      red: false,
+    };
+  }
+  const o = specials[0];
+  if (o)
+    return {
+      kind: "weather",
+      id: `${OFFICE_PREFIX}${o.code}`,
+      label: `${o.name}に特別警報`,
+      red: false,
+    };
+  return null;
 }
 
 /** 探す言葉に当たるか。空白で区切った言葉がどれも、どれかの字に入っていれば当たり */
