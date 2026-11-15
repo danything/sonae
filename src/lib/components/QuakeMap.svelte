@@ -899,7 +899,8 @@
   let shelterPopup: Popup | undefined;
 
   /**
-   * 吹き出しの形。隅の出典と右下の操作 (スマホの形はその下の dock と下のタブも) の側へは開かず、反対の向きに開く
+   * 吹き出しの形。隅の出典と右下の操作の側へは開かず、反対の向きに開く。スマホの形の dock と下のタブは
+   * 操作のすぐ下にあり、地図の下の端から操作の上の端までをまとめて空けるので、別に測らない (操作はいつもある)
    */
   let creditEl = $state<HTMLAnchorElement>();
   let controlsEl = $state<HTMLDivElement>();
