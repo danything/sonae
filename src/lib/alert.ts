@@ -7,6 +7,7 @@ import type { SonaeEvent } from "./model.ts";
 import {
   contentOf,
   decide,
+  hereNoticeFor,
   type Notice,
   noticeFor,
   noticeOf,
@@ -15,6 +16,7 @@ import {
 } from "./notify.ts";
 import {
   DEFAULT_PREFS,
+  type Home,
   normalizePrefs,
   type NotificationShape,
   type PushPrefs,
@@ -31,6 +33,8 @@ export interface AlertSettings {
   notify?: boolean;
   /** 画面への配信が切れた・戻ったことを知らせる。無ければ既定 (知らせる) */
   outage?: boolean;
+  /** 地図の現在地が入る市町村等の気象も知らせる。無ければ既定 (知らせる) */
+  here?: boolean;
 }
 
 export const ALERT_OFF: AlertSettings = { sound: false, speech: false };
@@ -45,6 +49,7 @@ export function parseAlertSettings(raw: string | null): AlertSettings {
     };
     if (typeof o?.notify === "boolean") s.notify = o.notify;
     if (typeof o?.outage === "boolean") s.outage = o.outage;
+    if (typeof o?.here === "boolean") s.here = o.here;
     return s;
   } catch {
     return { ...ALERT_OFF };
@@ -86,16 +91,69 @@ export function planAlert(
   prefs: PushPrefs,
   sent: Map<string, Sent>,
 ): AlertPlan | null {
+  return planAlerts(e, now, prefs, sent, null)[0] ?? null;
+}
+
+/**
+ * `planAlert` に、現在地の市町村等 (`here`) の気象の通知を足したもの。住んでいる地域と現在地の
+ * それぞれで知らせるかを決めて控える (tag が違うので控えも別)。現在地が住んでいる地域と同じなら、
+ * 住んでいる地域の通知だけ。記録的短時間大雨情報・竜巻注意情報は 1 つの報に地域が並ぶので、
+ * 住んでいる地域が対象なら現在地は足さない。鳴らすのを 1 度にまとめるのは `groupAlerts`
+ */
+export function planAlerts(
+  e: SonaeEvent,
+  now: number,
+  prefs: PushPrefs,
+  sent: Map<string, Sent>,
+  here: Home | null,
+): AlertPlan[] {
   const base = noticeOf(e, now);
+  if (!base) return [];
   // 気象は住んでいる地域で中身が変わる (Web Push と同じく、条件ごとに作る)
-  const n = base ? noticeFor(base, prefs) : null;
-  if (!n) return null;
-  const prev = sent.get(n.tag);
-  const digest = contentOf(n);
-  const p = decide(n, prefs, prev, digest);
-  if (!p.send) return null;
-  sent.set(n.tag, { level: Math.max(prev?.level ?? 0, n.level), digest });
-  return { notice: n, renotify: p.renotify };
+  const home = noticeFor(base, prefs);
+  const notices = home ? [home] : [];
+  if (
+    here &&
+    here.code !== prefs.home?.code &&
+    !(e.type === "weather" && home)
+  ) {
+    const h = hereNoticeFor(base, prefs, here);
+    if (h) notices.push(h);
+  }
+  const plans: AlertPlan[] = [];
+  for (const n of notices) {
+    const prev = sent.get(n.tag);
+    const digest = contentOf(n);
+    const p = decide(n, prefs, prev, digest);
+    if (!p.send) continue;
+    sent.set(n.tag, { level: Math.max(prev?.level ?? 0, n.level), digest });
+    plans.push({ notice: n, renotify: p.renotify });
+  }
+  return plans;
+}
+
+/** 1 つの報で鳴らすもの。鳴らすのは `ring` の 1 度で、`also` は音なしの通知と、読み上げに足す */
+export interface AlertGroup {
+  ring: Notice | null;
+  also: Notice[];
+  /** 鳴らさない続報 (出ている通知を置き換えるだけ) */
+  replace: Notice[];
+}
+
+/**
+ * 住んでいる地域と現在地の両方に当たった報を、1 度だけ鳴らす形にまとめる。重いほうを鳴らし、
+ * 同じ重さなら住んでいる地域 (先に並ぶほう) を鳴らす
+ */
+export function groupAlerts(plans: AlertPlan[]): AlertGroup {
+  const ringing = plans
+    .filter((p) => p.renotify)
+    .map((p) => p.notice)
+    .toSorted((a, b) => b.level - a.level);
+  return {
+    ring: ringing[0] ?? null,
+    also: ringing.slice(1),
+    replace: plans.filter((p) => !p.renotify).map((p) => p.notice),
+  };
 }
 
 /** 鳴らすかを決めて控える。鳴らすなら通知の中身を返す (Web Push が鳴らす所と同じ) */

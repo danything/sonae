@@ -34,7 +34,7 @@ import {
   type WeatherInfo,
   type WeatherWarning,
 } from "#lib/model.ts";
-import type { PushPayload, PushPrefs, TsunamiLevel } from "#lib/push.ts";
+import type { Home, PushPayload, PushPrefs, TsunamiLevel } from "#lib/push.ts";
 import { OFFICE_PREFIX, selectHref } from "#lib/view.ts";
 
 /** 押したときに開く所 (1 つの画面で、その件を選んだ URL。docs/ui.md) */
@@ -69,6 +69,8 @@ export interface Notice {
    * 読み上げはこれを読む (住んでいる地域の名前は端末ごとに違うので、電文の名前で読む)
    */
   area?: WarningArea;
+  /** 現在地の市町村等の気象の通知 (`hereNoticeFor`。開いている画面だけが作る)。読み上げで現在地と言う */
+  here?: boolean;
   event: SonaeEvent;
 }
 
@@ -438,6 +440,30 @@ export function noticeFor(n: Notice, prefs: PushPrefs): Notice | null {
   if (e.type === "warning") return warningFor(n, e.data, prefs);
   if (e.type === "weather") return weatherInfoFor(n, e.data, prefs);
   return n;
+}
+
+/**
+ * 現在地の市町村等の、気象の通知 (開いている画面だけが使う。docs/design.md の 2.4 の「現在地」)。
+ * 住んでいる地域の通知と同じ作り方で、地域の名前の前に「現在地の」を付け、`here` を立てる。
+ * 気象のほかの種類と、現在地が入らないどこかの特別警報 (住んでいる地域の側で言う) は null
+ */
+export function hereNoticeFor(
+  n: Notice,
+  prefs: PushPrefs,
+  here: Home,
+): Notice | null {
+  const e = n.event;
+  if (e.type !== "warning" && e.type !== "weather") return null;
+  const m = noticeFor(n, {
+    ...prefs,
+    home: { ...here, name: `現在地の${here.name}` },
+  });
+  if (!m || m.tag.startsWith("warning:special:")) return null;
+  // 同じ府県予報区のほかの市町村の特別警報を言う通知は、見出しが府県予報区の名前になるので、
+  // 現在地の通知と分かるように添える (現在地の状態は本文に「現在地の…」で入る)
+  if (m.special)
+    return { ...m, title: `${m.title} (現在地を含む地域)`, here: true };
+  return { ...m, here: true };
 }
 
 /**

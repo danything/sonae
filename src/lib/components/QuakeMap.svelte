@@ -74,7 +74,7 @@
   import { mapCredit, showsGrus } from "#lib/notice.ts";
   import type { Place } from "#lib/places.ts";
   import { readPref, removePref, writePref } from "#lib/prefs.ts";
-  import { homeAt, saveHome } from "#lib/push-client.ts";
+  import { homeAt, saveHome, trackHere } from "#lib/push-client.ts";
 
   /**
    * 地図 (docs/map.md)。下地は国土地理院のシームレス空中写真。その上に層をいつも全部重ねる (オン・オフは無い)。
@@ -506,7 +506,8 @@
     }
   });
 
-  // ---- 現在地 (押している間だけ watchPosition で追う。位置は端末の中で描くだけで、サーバーには送らない) ----
+  // ---- 現在地 (押している間だけ watchPosition で追う。位置は端末の中で描き、入る市町村等を開いているときの
+  // 気象の通知に使うだけで、サーバーには送らない) ----
   // オンにしたかどうかは端末に覚え、開いたときに位置の許可がもうあれば自動で始める (`#lib/map/locate.ts`)
   type Locating = "off" | "waiting" | "on";
   let locating = $state<Locating>("off");
@@ -615,6 +616,14 @@
       if (watchId !== undefined) navigator.geolocation.clearWatch(watchId);
     };
   });
+
+  // 現在地が入る市町村等を、開いているときの気象の通知に使う (端末の中だけ。緯度・経度は送らない)。
+  // 前の市町村等の中にいる間は面を引き直さない (`trackHere`)
+  $effect(() => {
+    void trackHere(me ? { lat: me.lat, lon: me.lon } : undefined);
+  });
+  // 地図が外れたら (位置も追わなくなる) 現在地の市町村等を空にする
+  $effect(() => () => void trackHere(undefined));
 
   // 現在地を描き、押して始めたときは最初に取れたときだけそこへ寄せる
   $effect(() => {
