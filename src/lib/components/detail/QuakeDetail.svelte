@@ -134,24 +134,25 @@
         </dl>
       {/if}
       {#if lgStations.length > 0}
-        <details>
-          <summary>観測点の長周期地震動階級 ({lp.stations.length} 点)</summary>
-          <dl class="ints">
-            {#each lgStations as g (g.lg)}
-              <dt><LgClass lg={g.lg} size="sm" /></dt>
-              <dd class="small">
-                {g.items
-                  .map((s) =>
-                    s.sva === undefined ? s.name : `${s.name} (${s.sva} cm/s)`,
-                  )
-                  .join("、")}
-              </dd>
-            {/each}
-          </dl>
-          <p class="tiny muted">
-            括弧は絶対速度応答スペクトルの最大値 (周期 1.6〜7.8 秒)
-          </p>
-        </details>
+        <!-- 畳まない (観測点の震度と同じ。スクロールすれば読める) -->
+        <h3 class="sub">
+          観測点の長周期地震動階級 ({lp.stations.length} 点)
+        </h3>
+        <dl class="ints">
+          {#each lgStations as g (g.lg)}
+            <dt><LgClass lg={g.lg} size="sm" /></dt>
+            <dd class="small">
+              {g.items
+                .map((s) =>
+                  s.sva === undefined ? s.name : `${s.name} (${s.sva} cm/s)`,
+                )
+                .join("、")}
+            </dd>
+          {/each}
+        </dl>
+        <p class="tiny muted">
+          括弧は絶対速度応答スペクトルの最大値 (周期 1.6〜7.8 秒)
+        </p>
       {/if}
       {#if lp.url}
         <p class="small lp-link">
@@ -218,12 +219,9 @@
   .ints dd {
     margin: 0;
   }
-  details {
-    margin: 0;
-    padding: 0;
-    border: 0;
-  }
-  summary {
+  .sub {
+    margin: var(--so-space-3) 0 0;
+    font-size: var(--so-text-base);
     font-weight: var(--so-weight-bold);
   }
   .reports {
