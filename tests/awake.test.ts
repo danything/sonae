@@ -76,17 +76,22 @@ describe("裏のタブを眠らせない", () => {
   });
 
   test("取る前に離しても投げない", async () => {
-    let reject: ((e: unknown) => void) | undefined;
+    let signal: AbortSignal | undefined;
     const locks: Locks = {
-      request: (() =>
-        new Promise((_, r) => {
-          reject = r;
+      // 渡さないまま、離されたら (abort) 断る
+      request: ((_: string, options: LockOptions) =>
+        new Promise((_, reject) => {
+          signal = options.signal;
+          options.signal?.addEventListener("abort", () =>
+            reject(new DOMException("aborted", "AbortError")),
+          );
         })) as Locks["request"],
     };
     const a = new KeepAwake(locks);
     a.set(true);
+    expect(signal?.aborted).toBe(false);
     a.set(false);
-    reject?.(new DOMException("aborted", "AbortError"));
+    expect(signal?.aborted).toBe(true);
     await tick();
     expect(a.on).toBe(false);
   });
