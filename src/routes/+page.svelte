@@ -585,6 +585,10 @@
     // スマホの形は地図のタブへ移る
     if (phone.current) tab = "map";
   }
+  // 欄を空にしたら、選んだ場所の印も消す
+  $effect(() => {
+    if (query.trim() === "") found = null;
+  });
   let listBox = $state<HTMLElement>();
   /** 一覧を下へ読んでいる間は、下のタブと dock を引っ込める (動きは CSS) */
   let retract = $state(false);

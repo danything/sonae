@@ -142,15 +142,23 @@ export function mergePlaces(
   limit = PLACE_LIMIT,
 ): Place[] {
   const seen = new Set(local.map((p) => normalize(p.label)));
-  const out = [...local];
+  const extra: Place[] = [];
   for (const p of remote) {
     const key = normalize(p.label);
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push(p);
+    extra.push(p);
   }
-  return out.slice(0, limit);
+  // 市町村が多く当たる語 (「中央」「大和」) でも住所・地名が全部落ちないよう、住所に REMOTE_MIN_SLOTS 枠は残す
+  const keep = Math.min(
+    local.length,
+    Math.max(limit - Math.min(extra.length, REMOTE_MIN_SLOTS), 0),
+  );
+  return [...local.slice(0, keep), ...extra].slice(0, limit);
 }
+
+/** 住所・地名の候補に、少なくとも残す枠 */
+export const REMOTE_MIN_SLOTS = 3;
 
 /** 国土地理院の住所検索の URL (打った文字だけを送る) */
 export const gsiSearchUrl = (query: string): string =>

@@ -996,6 +996,8 @@
     if (found.n === foundN) return;
     foundN = found.n;
     const p = found.place;
+    // スマホの形で地図のタブへ移るのと同時なので、地図の箱の大きさを測り直してから寄せる
+    map.resize();
     if (p.bounds) {
       // 市町村は外枠が収まるように (寄せすぎない)
       const cam = map.cameraForBounds(

@@ -94,6 +94,27 @@ test("並べ方: 手元の市町村が先、住所は後。市町村と同じ名
   expect(mergePlaces(local, remote, 1)).toHaveLength(1);
 });
 
+test("並べ方: 市町村が多く当たる語でも、住所・地名に 3 枠は残す", () => {
+  const many = localPlaces("区", cities, bounds);
+  expect(many).toHaveLength(8);
+  const remote: Place[] = [1, 2, 3, 4].map((i) => ({
+    id: `r${i}`,
+    kind: "address",
+    label: `住所${i}`,
+    at: [139, 35],
+  }));
+  const r = mergePlaces(many, remote);
+  expect(r).toHaveLength(8);
+  expect(r.filter((p) => p.kind === "city")).toHaveLength(5);
+  expect(r.filter((p) => p.kind === "address")).toHaveLength(3);
+  // 住所が 1 つなら、市町村は 7 つ
+  expect(
+    mergePlaces(many, remote.slice(0, 1)).filter((p) => p.kind === "city"),
+  ).toHaveLength(7);
+  // 住所が無ければ、市町村だけで 8 つ
+  expect(mergePlaces(many, [])).toHaveLength(8);
+});
+
 test("問い合わせの URL は打った文字だけ", () => {
   expect(gsiSearchUrl(" 霞が関1-3-1 ")).toBe(
     "https://msearch.gsi.go.jp/address-search/AddressSearch?q=%E9%9C%9E%E3%81%8C%E9%96%A21-3-1",

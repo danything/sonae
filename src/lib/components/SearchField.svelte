@@ -47,6 +47,11 @@
     });
     if (!res.ok) throw new Error(`${res.status}`);
     const places = parseGsi(await res.json());
+    // 持ちすぎない (古いものから捨てる)
+    if (remoteCache.size >= 50) {
+      const first = remoteCache.keys().next().value;
+      if (first !== undefined) remoteCache.delete(first);
+    }
     remoteCache.set(key, places);
     return places;
   }
@@ -161,7 +166,8 @@
   }
 
   function onkeydown(event: KeyboardEvent): void {
-    if (!onplace || event.isComposing) return;
+    // 変換を確定する Enter は選ばない (Safari は確定の Enter を isComposing でなく keyCode 229 で送る)
+    if (!onplace || event.isComposing || event.keyCode === 229) return;
     switch (event.key) {
       case "ArrowDown":
       case "ArrowUp": {
@@ -250,6 +256,7 @@
             class="place"
             data-kind={p.kind}
             onpointerdown={(event) => event.preventDefault()}
+            onmousedown={(event) => event.preventDefault()}
             onclick={() => choose(p)}
           >
             <span class="place-label">{p.label}</span>
