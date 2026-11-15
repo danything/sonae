@@ -1554,7 +1554,7 @@
   /*
    * 地図の右下の短い出典 (いつも見える。国土地理院の出典の記載の決まり)。押すと「出典と注意」の窓。
    * 地図の隅にぴったり付けた、余白の無い薄い帯にする (よくある地図の出典の形)。地図を覆わないよう小さく薄く、
-   * 写真の上でも読めるよう地の色を半分透かして敷く。スマホの形では下のタブと dock の上 (`--map-bottom`)
+   * 写真の上でも読めるよう地の色を 65% の濃さで敷く。スマホの形では下のタブと dock の上 (`--map-bottom`)
    */
   .map-credit {
     position: absolute;
@@ -1563,8 +1563,8 @@
     z-index: 1;
     max-width: 100%;
     padding: 0 0.3rem;
-    /* 地図の角の丸みに合わせる (下のタブの上に浮くスマホの形では丸めない) */
-    border-bottom-right-radius: var(--map-credit-radius, var(--map-radius, 0));
+    /* 地図の角の丸みに合わせる */
+    border-bottom-right-radius: var(--map-radius, 0);
     background: color-mix(in srgb, var(--so-bg) 65%, transparent);
     color: var(--so-muted);
     font-size: 0.625rem;
