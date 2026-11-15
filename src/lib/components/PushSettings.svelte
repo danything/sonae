@@ -23,7 +23,12 @@
     readPushState,
     sendPrefs,
   } from "#lib/push-client.ts";
-  import { type PushBlock, pushBlockText } from "#lib/push-support.ts";
+  import {
+    permissionDeniedText,
+    type PushBlock,
+    pushBlockText,
+    QUIET_DENY_MS,
+  } from "#lib/push-support.ts";
   import { DEFAULT_PREFS, normalizePrefs, type PushPrefs } from "#lib/push.ts";
   import { voiceLabel } from "#lib/voices.ts";
 
@@ -159,9 +164,13 @@
     const p = await alerter.setNotify(want);
     // 許可されなかったときはスイッチを戻す (値が変わらないので、Svelte は書き直さない)
     input.checked = alerter.notifying;
+    const ms = alerter.lastAskMs;
     notifyMessage =
       want && p !== "granted"
-        ? "通知が許可されていません。ブラウザのサイトの設定で許可してください。"
+        ? permissionDeniedText(navigator.userAgent, {
+            asked: ms !== undefined,
+            quiet: ms !== undefined && ms < QUIET_DENY_MS,
+          })
         : "";
   }
 
@@ -477,9 +486,11 @@
     </label>
     {#if alerter.permission === "unsupported"}
       <p class="small muted">このブラウザは通知に対応していません。</p>
-    {:else if alerter.permission === "denied"}
+    {:else if alerter.permission === "denied" && !notifyMessage}
       <p class="small muted">
-        通知が許可されていません。ブラウザのサイトの設定で許可すると出せます。
+        {permissionDeniedText(
+          typeof navigator === "undefined" ? "" : navigator.userAgent,
+        )}
       </p>
     {:else if alerter.permission === "default"}
       <p class="small muted">オンにすると、通知の許可を聞きます。</p>
