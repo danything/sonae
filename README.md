@@ -3,6 +3,33 @@
 地震・津波の情報を家のサーバーで受けて、ブラウザで見たり、Web Push で通知を受けたりするアプリ。
 いまは持ち主 1 人で使う (ログインで閉じる。Entra のアプリロールで絞り、既定は `admin`。家族と共有するときは family 用のロールに替える)。ホスト名は `s.doany.io`。
 
+<p align="center">
+  <img src="docs/images/demo-anim.avif" alt="緊急地震速報 (警報) を受けると、画面の上に赤い帯が出て、地図が震源と警報の地域を示し、OS の通知が出る。続いて地震の情報が来ると、地図が各地の震度で塗られる" width="720">
+</p>
+
+**音声つきの動画** (56 秒・1.9 MB): 試験用のデータで、緊急地震速報 → 地震の情報 → 津波注意報を受けたところ。チャイム → OS の通知 → 読み上げの流れと、地図・一覧・詳しい内容・吹き出しの動きが分かる。
+
+<!-- 音声つきの動画: docs/images/demo.mp4 をアップロードして、ここにリンクを貼る -->
+
+[docs/images/demo.mp4](https://raw.githubusercontent.com/danything/sonae/main/docs/images/demo.mp4) (落として開く)
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/map.webp" alt="地図と一覧" width="380"><br><sub><b>地図と一覧</b> — 各地の震度と津波注意報の海岸を地図に、全部の種類を新しい順に 1 本の一覧に</sub></td>
+    <td align="center"><img src="docs/images/detail.webp" alt="詳しい内容" width="380"><br><sub><b>詳しい内容</b> — 行を押すと、震源・M・各地域の震度</sub></td>
+    <td align="center"><img src="docs/images/notify.webp" alt="通知の窓" width="380"><br><sub><b>通知</b> — 知らせる条件・音と読み上げ・読み上げの声・Web Push</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/phone-map.webp" alt="スマホの地図" width="190"><br><sub><b>スマホ</b> — 地図が画面いっぱいに</sub></td>
+    <td align="center"><img src="docs/images/phone-list.webp" alt="スマホの一覧" width="190"><br><sub><b>スマホの一覧</b> — 地図の上に重ねる面</sub></td>
+    <td></td>
+  </tr>
+</table>
+
+動画と画面は、試験用のデータ (気象庁のサンプル電文を書き換えた作り物と、手で組んだ緊急地震速報) を入れて撮った。実際の地震ではない。
+読み上げの声は「VOICEVOX:剣崎雌雄」([利用規約](https://frontier.creatia.cc/fanclubs/413/posts/4507))。
+動画の OS の通知は、撮ったブラウザ (ヘッドレス) に出す場所が無いので、sonae が出そうとした通知と同じ見出しと本文を、画面の右下に通知の形で描いている。
+
 **まだ作っている途中です。** 作りは [docs/design.md](docs/design.md)、画面は [docs/ui.md](docs/ui.md)、地図の層と出典は [docs/map.md](docs/map.md) に書いてある。
 
 - 名前は「備え」から。地震を待つのではなく、来たときに慌てないためのもの。
