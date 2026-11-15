@@ -5,6 +5,9 @@ kind: PersistentVolumeClaim
 metadata:
   name: sonae-data
   namespace: sonae
+  annotations:
+    # Helm chart (charts/sonae) へ移すあいだ、deploy/ を読む Application に消させない (移したら chart が引き取る)
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   # 新しく作るときは VolSync が R2 の最新から中身を埋める (volsync.yaml の sonae-data-dst)。今ある PVC には効かない。
   # R2 にまだ何も無い最初の 1 回は、空のまま渡す

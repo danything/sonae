@@ -3,6 +3,9 @@ kind: Service
 metadata:
   name: sonae
   namespace: sonae
+  annotations:
+    # Helm chart (charts/sonae) へ移すあいだ、deploy/ を読む Application に消させない (移したら chart が引き取る)
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   selector:
     app: sonae
