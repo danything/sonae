@@ -23,8 +23,9 @@
 # **Web Push の VAPID の鍵は、無ければ作る** (docs/push.md と同じ作り方。P-256 の ECDSA の秘密鍵を JWK に)。
 # 作るのは一度だけで、上げ直しても替えない (替えると、どのブラウザの購読にも送れなくなる)。
 #
-# **ログイン (OIDC) はここでは決めない。** 3 つ (OIDC_ISSUER・OIDC_CLIENT_ID・OIDC_CLIENT_SECRET) が揃うまで、
-# 画面は開かず /health だけ答える (hooks.server.ts)。書き場所は sonae.env (docs/install.md の「ログイン」)。
+# **誰を通すか:** 家の LAN (と、このマシンのブラウザ) からはログインなしで開けるように、sonae.env に TRUSTED_NETWORKS を書く
+# (無いときだけ。Linux は 192.168.0.0/16・10.0.0.0/8 と genkan のゲートウェイ、Mac はそれにループバック)。
+# **その中の誰でも設定を変えられる。** 外からも開くなら OIDC を sonae.env に書く (docs/install.md の「ログイン」)。
 #
 # **入口は genkan** (Linux。https://github.com/danything/genkan。ホスト名でコンテナに振り分けるリバースプロキシ)。
 # 動いていればそれを使い、無ければ 80 と 443 が空いているときだけ ~/genkan に入れて、
@@ -42,6 +43,7 @@
 #
 # 環境変数: SONAE_VERSION (v1.2.3 のように。既定は最新のリリース。main などの git の ref も渡せる (イメージは latest))、
 # SONAE_HOME (Linux)、SONAE_COMPOSE_FILE (Linux: compose.prod.yml の代わりに置く手元のファイル。CI と開発用)、
+# SONAE_IMAGE (Linux: sonae のイメージの代わりに使う手元で組んだイメージ。CI と開発用)、
 # SONAE_SERVER_TARBALL (Mac: 手元で組んだ本体の tar.gz を絶対パスで。CI と開発用)、
 # SONAE_VAPID_SUBJECT (Web Push の連絡先。mailto:… か https://…。既定はこのリポジトリの URL)。
 # Mac で渡すときは sudo に -E を付ける (sudo は環境変数を落とす)
@@ -99,7 +101,8 @@ env_add() {
   printf '%s\n' "$2" >> "$1"
 }
 
-# sonae.env の雛形。**無いときだけ作り、あれば触らない** (手で書き足す場所)。本人だけが読めるように作る
+# sonae.env の雛形。**無いときだけ作り、あれば触らない** (手で書き足す場所)。本人だけが読めるように作る。
+# $2 はログインなしで通すネットワーク (TRUSTED_NETWORKS。docs/install.md の「ログイン」)
 env_template() {
   [ -f "$1" ] && return 0
   (
@@ -108,7 +111,14 @@ env_template() {
       '# sonae の環境変数 (docs/install.md の「環境変数を足す」)。install.sh は無いときだけ作り、あとは触らない' \
       '# (VAPID の鍵の行が無ければ足すだけ)。直したら install.sh を流し直す。秘密が入るので人に見せない' \
       '#' \
-      '# ログイン (OIDC)。3 つ揃うまで画面は開かない (docs/entra.md)。IdP には <開く URL>/auth/callback を登録する' \
+      '# 誰を通すか (docs/install.md の「ログイン」)。このネットワークの中からは、ログインなしで開ける。' \
+      '# **その中の誰でも、設定 (読み上げの声・通知の条件・Web Push の購読) を変えられる。** 家の LAN だけにし、0.0.0.0/0 にはしない。' \
+      '# 外から開くなら OIDC (下) を使う。http の LAN の IP (http://192.168.x.x:3030) で開くと、Web Push は使えない (localhost か https で開く)' \
+      "TRUSTED_NETWORKS=$2" \
+      '# このほかの名前 (自分のドメイン・Tailscale の名前) で、ログインなしで開くなら書く (IP・localhost・.local などは要らない)' \
+      '# ALLOWED_HOSTS=sonae.example.com' \
+      '#' \
+      '# ログイン (OIDC)。3 つ揃えば、上のネットワークの外からもログインして開ける (docs/entra.md)。IdP には <開く URL>/auth/callback を登録する' \
       '# OIDC_ISSUER=https://login.microsoftonline.com/<テナントの ID>/v2.0' \
       '# OIDC_CLIENT_ID=' \
       '# OIDC_CLIENT_SECRET=' \
@@ -143,9 +153,12 @@ ensure_vapid() {
 }
 
 say_login() {
+  networks=$(sed -n 's/^TRUSTED_NETWORKS=//p' "$1" | tail -n 1)
+  if [ -n "$networks" ]; then
+    say "ログインなしで開けるのは $networks の中からです。その中の誰でも設定を変えられます (変えるなら $1 の TRUSTED_NETWORKS)"
+  fi
   if ! env_has "$1" OIDC_CLIENT_SECRET; then
-    say "ログイン (OIDC) がまだなので、画面は「ログインの設定 (OIDC) がまだです」と出ます。"
-    say "  $1 に OIDC_ISSUER・OIDC_CLIENT_ID・OIDC_CLIENT_SECRET を書いて、もう一度流してください (docs/install.md の「ログイン」)"
+    say "外からも開くなら、$1 に OIDC_ISSUER・OIDC_CLIENT_ID・OIDC_CLIENT_SECRET を書いて、もう一度流してください (docs/install.md の「ログイン」)"
   fi
 }
 
@@ -222,8 +235,30 @@ genkan_override() {
     '      caddy: http://sonae.localhost' \
     '      caddy.@outside: not remote_ip private_ranges' \
     '      caddy.respond: "@outside 403"' \
-    '      caddy.reverse_proxy: "{{upstreams 3000}}"' \
-    '    networks: [default, genkan]' '' 'networks:' '  genkan:' '    external: true'
+    '      caddy.reverse_proxy: "{{upstreams 3000}}"'
+  genkan_env
+  printf '%s\n' '    networks: [default, genkan]' '' 'networks:' '  genkan:' '    external: true'
+}
+
+# genkan のネットワークの範囲とゲートウェイ ("172.20.0.0/16 172.20.0.1")。Docker が決めるので、ここで調べる。読めなければ空
+genkan_net() {
+  docker network inspect genkan -f '{{range .IPAM.Config}}{{.Subnet}} {{.Gateway}}{{println}}{{end}}' 2>/dev/null \
+    | grep -m1 '^[0-9.]*/[0-9]* [0-9.]*$' || true
+}
+
+# **genkan を前段として認める** (sonae の environment の断片)。genkan のネットワークを TRUSTED_PROXIES に書き、
+# genkan が付ける X-Forwarded-For から本当の接続元を読ませる。genkan のネットワークそのものは TRUSTED_NETWORKS に入れない
+# (入れると genkan 越しの人が全員当たる)。このマシンのブラウザ (http://sonae.localhost) はゲートウェイから来たように
+# 見えるので、TRUSTED_NETWORKS にはゲートウェイだけを足す (linux_main)
+genkan_env() {
+  net=$(genkan_net)
+  if [ -z "$net" ]; then
+    say "genkan のネットワークの範囲が読めず、TRUSTED_PROXIES を書けませんでした。genkan 越しにログインなしで開くなら、docs/install.md を見て compose.override.yml に足してください" >&2
+    return 0
+  fi
+  printf '%s\n' '    environment:' \
+    '      # genkan を前段として認める (X-Forwarded-For から本当の接続元を読む。docs/install.md の「ログイン」)' \
+    "      TRUSTED_PROXIES: ${net% *}"
 }
 
 # ~/sonae で docker compose。-f を付けないので compose.yml と compose.override.yml を Compose が自分で重ねる
@@ -245,7 +280,11 @@ place_compose() {
     mv "$SONAE_DIR/compose.yml" "$SONAE_DIR/compose.yml.bak"
     say "手を入れた $SONAE_DIR/compose.yml を compose.yml.bak に退避しました。変更は compose.override.yml に移してください"
   fi
-  sed "s#\(image: ghcr.io/danything/sonae\):latest#\1:$(image_tag "$ref")#" "$SONAE_DIR/compose.yml.new" > "$SONAE_DIR/.compose.yml.orig"
+  if [ -n "${SONAE_IMAGE:-}" ]; then
+    sed "s#image: ghcr.io/danything/sonae:latest#image: $SONAE_IMAGE#" "$SONAE_DIR/compose.yml.new" > "$SONAE_DIR/.compose.yml.orig"
+  else
+    sed "s#\(image: ghcr.io/danything/sonae\):latest#\1:$(image_tag "$ref")#" "$SONAE_DIR/compose.yml.new" > "$SONAE_DIR/.compose.yml.orig"
+  fi
   { echo "$MARK $ref。手を入れず、足すものは compose.override.yml に)"; cat "$SONAE_DIR/.compose.yml.orig"; } > "$SONAE_DIR/compose.yml"
   rm -f "$SONAE_DIR/compose.yml.new"
 }
@@ -278,6 +317,10 @@ place_override() {
   elif ! grep -q 'sonae.localhost' "$override" && genkan_running; then
     say "compose.override.yml には触りません。genkan の $GENKAN_URL で開くなら、次を足して流し直してください:"
     genkan_override
+  elif grep -q 'sonae.localhost' "$override" && ! grep -q 'TRUSTED_PROXIES' "$override" && genkan_running; then
+    # 前のバージョンが書いた登録。genkan 越しにログインなしで開くには、前段として認める行が要る
+    say "compose.override.yml には触りません。genkan 越しにログインなしで開くなら、sonae: の下に次を足して流し直してください:"
+    genkan_env
   fi
 }
 
@@ -286,7 +329,10 @@ wait_and_open() {
   say "sonae の応答を待ちます"
   for _ in $(seq 90); do
     if curl -fsS --max-time 5 -o /dev/null "$URL/health" 2>/dev/null; then
+      # localhost は Docker の中継を通り、送信元が Docker のゲートウェイに見える (TRUSTED_NETWORKS に入れない) ので、
+      # このマシンのブラウザでも LAN の IP で開く
       url=$URL
+      if printf '%s' "$1" | grep -Eq '^[0-9.]+$'; then url="http://$1:$PORT"; fi
       # genkan 越しにも答えれば、そちらを開く (Caddy がラベルを読むまで少し掛かる)
       if [ "$2" = yes ]; then
         for _ in $(seq 15); do
@@ -337,11 +383,20 @@ linux_main() {
   mkdir -p "$SONAE_DIR"
   place_compose "$ref"
   place_override
-  compose pull
+  # 手元で組んだイメージ (SONAE_IMAGE) はレジストリに無いので、引けなくても進む
+  if [ -n "${SONAE_IMAGE:-}" ]; then compose pull --ignore-pull-failures; else compose pull; fi
   envfile="$SONAE_DIR/sonae.env"
-  env_template "$envfile"
+  # ログインなしで通すのは LAN (192.168.0.0/16・10.0.0.0/8) と、genkan で開くならそのゲートウェイ (このマシンのブラウザ)。
+  # Docker のネットワーク (172.16.0.0/12) は入れない (前段越しの人が全員当たる)
+  trusted="192.168.0.0/16,10.0.0.0/8"
+  if [ "$genkan" = yes ]; then
+    gw=$(genkan_net)
+    gw=${gw#* }
+    [ -z "$gw" ] || trusted="$trusted,$gw"
+  fi
+  env_template "$envfile" "$trusted"
   # 鍵は sonae のイメージの bun で作る (ホストに何も入れない。イメージは上で引いてある)
-  image=$(sed -n 's/^ *image: \(ghcr.io\/danything\/sonae:.*\)$/\1/p' "$SONAE_DIR/compose.yml" | head -1)
+  image=${SONAE_IMAGE:-$(sed -n 's/^ *image: \(ghcr.io\/danything\/sonae:.*\)$/\1/p' "$SONAE_DIR/compose.yml" | head -1)}
   ensure_vapid "$envfile" docker run --rm --entrypoint /usr/local/bin/bun "$image" -e "$VAPID_JS"
   compose up -d --remove-orphans
   wait_and_open "${ip:-$(hostname)}" "$genkan"
@@ -573,7 +628,8 @@ mac_main() {
   chmod 755 "$PREFIX"
   mac_data_dir
   envfile="$DATA/sonae.env"
-  env_template "$envfile"
+  # この Mac のブラウザ (ループバック) と LAN。Mac の上でそのまま動かすので、前段は無い
+  env_template "$envfile" "127.0.0.0/8,::1/128,192.168.0.0/16,10.0.0.0/8"
   printf '%s\n' "$VAPID_JS" > vapid.mjs
   ensure_vapid "$envfile" "$work/new/server/bun" vapid.mjs
   chmod 600 "$envfile"
