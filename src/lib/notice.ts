@@ -23,6 +23,8 @@ const GSI_TILES = "https://maps.gsi.go.jp/development/ichiran.html";
 const GSI_SHELTERS = "https://www.gsi.go.jp/bousaichiri/hinanbasho.html";
 const GSI_AFM = "https://www.gsi.go.jp/bousaichiri/active_fault.html";
 const GSI_VECTOR = "https://github.com/gsi-cyberjapan/optimal_bvmap";
+const GSI_MAPS = "https://maps.gsi.go.jp/";
+const CSIS_GEOCODE = "https://geocode.csis.u-tokyo.ac.jp/";
 const DISAPORTAL =
   "https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html";
 
@@ -87,6 +89,16 @@ export const CREDITS: Credit[] = [
       "地理院タイル「活断層図（都市圏活断層図）」(国土地理院。地図の左上のハザードマップで「活断層」を選んだときに重ねます)。調査者は図ごとに異なり、国土地理院の「",
       { text: "活断層図（都市圏活断層図）について", href: GSI_AFM },
       "」の各図に明記されています (例: 岡田篤正・廣内大助・松多信尚・宮内崇裕(2017):1:25,000都市圏活断層図「中津川」，国土地理院．)",
+    ],
+  },
+  {
+    label: "場所の検索",
+    parts: [
+      "市町村は気象庁の予報区等 GIS データから作った手元の表で探します。住所・地名は国土地理院の「",
+      { text: "地理院地図", href: GSI_MAPS },
+      "」の住所検索 (住所は「",
+      { text: "CSISシンプルジオコーディング実験", href: CSIS_GEOCODE },
+      "（街区レベル位置参照情報）」による) に、ブラウザから直接問い合わせます。送るのは打った文字だけで、sonae のサーバーには送らず、残しません",
     ],
   },
   {
