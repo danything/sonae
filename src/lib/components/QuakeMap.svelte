@@ -1104,18 +1104,22 @@
     right: var(--so-space-2);
     bottom: calc(var(--map-bottom, 0px) + var(--so-space-2));
     z-index: 1;
-    max-width: calc(100% - 2 * var(--so-space-2));
+    max-width: min(24rem, calc(100% - 2 * var(--so-space-2)));
     padding: 0 var(--so-space-2);
-    border-radius: var(--so-radius-full);
+    border-radius: var(--so-item-radius);
     background: var(--so-float);
     box-shadow: var(--so-shadow-pop);
     color: var(--so-fg);
     font-size: var(--so-text-2xs);
     line-height: 1.8;
+    text-align: right;
     text-decoration: none;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  }
+  /* 字は小さいので、押せる所だけ指の大きさまで広げる (見た目は変えない) */
+  .map-credit::after {
+    content: "";
+    position: absolute;
+    inset: -0.75rem -0.25rem -0.5rem;
   }
   .map-credit:hover {
     text-decoration: underline;
