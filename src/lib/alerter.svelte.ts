@@ -8,6 +8,7 @@
  *
  * - 読み上げの原稿は `#lib/readout.ts` で作る。声はサーバーが VOICEVOX で合成したもの (`/api/speech`) を
  *   文ごとに取って順に鳴らす。VOICEVOX が止まっている・取れない文は、端末の読み上げ (`speechSynthesis`) で読む。
+ *   読み始めるときに `onread` を呼び、画面がその報の詳しい内容を開く (`#lib/auto-open.ts`)。
  * - 音・読み上げのオン/オフと鳴らす条件は端末ごとに localStorage に持つ (既定は音も読み上げもオフ)。
  *   条件は Web Push のダイアログと同じもの (`PushPrefs`)。声はこの家で 1 つで、サーバーに持つ
  *   (`PUT /api/speech`。替わったら SSE の `event: voice` で届く)。
@@ -73,6 +74,11 @@ class Alerter {
   permission = $state<Permission>("unsupported");
   readonly speechSupported =
     typeof window !== "undefined" && "speechSynthesis" in window;
+  /**
+   * 事象の原稿を読み始めるときに呼ぶ (画面がその報の詳しい内容を開く。docs/ui.md の「自動で開く」)。
+   * 試しの文と、受信が切れた・戻ったの文では呼ばない
+   */
+  onread: ((n: Notice) => void) | undefined;
 
   private audio: HTMLAudioElement | undefined;
   private voiceAudio: HTMLAudioElement | undefined;
@@ -479,7 +485,10 @@ class Alerter {
     const chimed = notify ? await chime : false;
     const notified = n && notify ? await this.show(n, chimed) : false;
     if (!pending) return;
-    const go = () => void this.speak(parts, pending);
+    const go = () => {
+      if (n) this.onread?.(n);
+      void this.speak(parts, pending);
+    };
     if (sound || notified) setTimeout(go, SPEAK_AFTER_MS);
     else go();
   }
