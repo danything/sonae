@@ -84,7 +84,7 @@ export const CREDITS: Credit[] = [
   {
     label: "活断層",
     parts: [
-      "地理院タイル「活断層図（都市圏活断層図）」(国土地理院)。調査者は図ごとに異なり、国土地理院の「",
+      "地理院タイル「活断層図（都市圏活断層図）」(国土地理院。地図の左上のハザードマップで「活断層」を選んだときに重ねます)。調査者は図ごとに異なり、国土地理院の「",
       { text: "活断層図（都市圏活断層図）について", href: GSI_AFM },
       "」の各図に明記されています (例: 岡田篤正・廣内大助・松多信尚・宮内崇裕(2017):1:25,000都市圏活断層図「中津川」，国土地理院．)",
     ],
@@ -152,11 +152,12 @@ export const SHORT_CREDIT = "出典: 気象庁ホームページ・国土地理�
 /**
  * 地図の隅に、いつも見えるように出す短い出典 (国土地理院の出典の記載
  * https://www.gsi.go.jp/LAW/2930-meizi.html の「表示されている間は、常に見えるように」)。
- * ハザードマップを重ねているときと、GRUS 画像の範囲 (沖ノ鳥島のあたり) を映しているときはそれも足す
+ * ハザードマップを重ねているとき (`hazard` はその出典の名前。ハザードマップポータルサイトか都市圏活断層図。
+ * 重ねていなければ空) と、GRUS 画像の範囲 (沖ノ鳥島のあたり) を映しているときはそれも足す
  */
-export function mapCredit(opts: { hazard: boolean; grus: boolean }): string {
+export function mapCredit(opts: { hazard: string; grus: boolean }): string {
   const parts = ["国土地理院", "気象庁"];
-  if (opts.hazard) parts.push("ハザードマップポータルサイト");
+  if (opts.hazard) parts.push(opts.hazard);
   if (opts.grus) parts.push("GRUS画像（© Axelspace）");
   return `出典: ${parts.join("・")} ほか`;
 }

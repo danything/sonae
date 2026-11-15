@@ -4,7 +4,10 @@ import {
   baseStyle,
   DEPTH_COLORS,
   eewFill,
+  hazardCovers,
+  HAZARDS,
   hazardVisibility,
+  HIDDEN_UNDER_HAZARD,
   hypocenterFeatures,
   intensityFill,
   intensityLabels,
@@ -13,7 +16,10 @@ import {
   matchExpr,
   meFeatures,
   mergeShelters,
+  overlayVisibility,
   readHazard,
+  SHOWN_UNDER_HAZARD,
+  specialWarningFilter,
   tilesIn,
   tsunamiPaint,
 } from "#lib/map/style.ts";
@@ -90,10 +96,18 @@ test("層はいつも全部出す。淡色地図の下地は無い", () => {
     sources: Record<string, unknown>;
     layers: { id: string; layout?: { visibility?: string } }[];
   };
+  // ハザードマップの層と、ハザードマップを重ねている間だけ出す層のほかは、いつも出す
+  const underHazard: string[] = [...SHOWN_UNDER_HAZARD];
   for (const l of style.layers)
     if (!l.id.startsWith("hazard-"))
-      expect(l.layout?.visibility).toBeUndefined();
-  expect(style.layers.map((l) => l.id)).toContain("faults");
+      expect(l.layout?.visibility ?? "visible").toBe(
+        underHazard.includes(l.id) ? "none" : "visible",
+      );
+  // 活断層図 (地形の分類で塗った全面の図) はいつもは重ねない
+  expect(style.layers.map((l) => l.id)).not.toContain("faults");
+  expect(
+    style.layers.find((l) => l.id === "hazard-afm")?.layout?.visibility,
+  ).toBe("none");
   expect(Object.keys(style.sources)).not.toContain("pale");
   expect(MAP_LEGEND.map((l) => l.label)).toContain("長周期地震動階級");
 });
@@ -117,6 +131,71 @@ test("ハザードマップ: 選んだものだけ出す。既定と知らない
   // 字体は外から読まない。記号は自分で配る
   expect(style.glyphs).toBeUndefined();
   expect(style.sprite).toBe("https://s.example/map/gsi/sprite/std");
+});
+
+test("ハザードマップ: 活断層を選べ、地理院タイルの afm をズーム 11〜16 で読む", () => {
+  expect(readHazard("faults")).toBe("faults");
+  const shown = hazardVisibility("faults");
+  expect(Object.entries(shown).filter(([, on]) => on)).toEqual([
+    ["hazard-afm", true],
+  ]);
+  const style = baseStyle("", "faults") as {
+    sources: Record<
+      string,
+      { tiles?: string[]; minzoom?: number; maxzoom?: number }
+    >;
+  };
+  const afm = style.sources["hazard-afm"];
+  expect(afm?.tiles).toEqual([
+    "https://cyberjapandata.gsi.go.jp/xyz/afm/{z}/{x}/{y}.png",
+  ]);
+  expect([afm?.minzoom, afm?.maxzoom]).toEqual([11, 16]);
+  // 凡例の画像は無く、国土地理院の説明へのリンクを出す
+  const faults = HAZARDS.find((h) => h.id === "faults");
+  expect(faults?.legends).toEqual([]);
+  expect(faults?.about?.some((p) => typeof p !== "string")).toBe(true);
+  expect(faults?.credit).toBe("都市圏活断層図");
+});
+
+test("図が重ならないズーム (活断層の 11 未満) では隠さない", () => {
+  expect(hazardCovers("faults", 10.9)).toBe(false);
+  expect(hazardCovers("faults", 11)).toBe(true);
+  expect(hazardCovers("flood", 5)).toBe(true);
+  expect(hazardCovers("none", 15)).toBe(false);
+  expect(overlayVisibility("faults", 5)["warning-fill"]).toBe(true);
+  expect(overlayVisibility("faults", 5)["warning-special"]).toBe(false);
+  expect(overlayVisibility("faults", 12)["warning-fill"]).toBe(false);
+});
+
+test("ハザードマップを重ねている間は、面で塗る色を隠し、特別警報は縁取りで残す", () => {
+  const none = overlayVisibility("none");
+  for (const l of HIDDEN_UNDER_HAZARD) expect(none[l]).toBe(true);
+  for (const l of SHOWN_UNDER_HAZARD) expect(none[l]).toBe(false);
+  for (const id of ["flood", "landslide", "tsunami", "faults"] as const) {
+    const on = overlayVisibility(id);
+    for (const l of HIDDEN_UNDER_HAZARD) expect(on[l]).toBe(false);
+    for (const l of SHOWN_UNDER_HAZARD) expect(on[l]).toBe(true);
+  }
+  // 命に関わるいま出ているもの (緊急地震速報の縁取り・津波の線) は隠す層に入れない
+  const hidden: string[] = [...HIDDEN_UNDER_HAZARD];
+  for (const keep of ["eew-line", "tsunami", "longperiod-line"])
+    expect(hidden).not.toContain(keep);
+  const style = baseStyle("", "flood") as {
+    layers: { id: string; layout?: { visibility?: string } }[];
+  };
+  const vis = (id: string) =>
+    style.layers.find((l) => l.id === id)?.layout?.visibility;
+  expect(vis("warning-fill")).toBe("none");
+  expect(vis("warning-special")).toBe("visible");
+  // 特別警報 (レベル 5) の市町村等だけを縁取る
+  expect(
+    specialWarningFilter(
+      new Map([
+        ["0110000", 5],
+        ["0120000", 3],
+      ]),
+    ),
+  ).toEqual(["in", ["get", "code"], ["literal", ["0110000"]]]);
 });
 
 test("避難場所: 見ている範囲のズーム 10 のタイル。多すぎたら読まない", () => {

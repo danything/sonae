@@ -28,6 +28,7 @@
     baseStyle,
     eewFill,
     foreignFeatures,
+    hazardCovers,
     type HazardId,
     HAZARDS,
     hazardVisibility,
@@ -41,11 +42,13 @@
     officeBounds,
     officeFilter,
     type OfficeTable,
+    overlayVisibility,
     readHazard,
     SHELTER_DISASTERS,
     SHELTER_LAYERS,
     SHELTER_MIN_ZOOM,
     SHELTER_TILE_ZOOM,
+    specialWarningFilter,
     TEXT_FONT_CSS,
     tilesIn,
     tsunamiPaint,
@@ -203,11 +206,13 @@
         created.on("moveend", () => {
           void loadShelters();
           // GRUS 画像の範囲を映しているときは、隅の出典に足す
-          if (created)
+          if (created) {
             grus = showsGrus(
               created.getBounds().toArray().flat() as never,
               created.getZoom(),
             );
+            zoom = created.getZoom();
+          }
         });
         created.on("click", "shelters", (e) => {
           const f = e.features?.[0];
@@ -253,6 +258,7 @@
           created.getBounds().toArray().flat() as never,
           created.getZoom(),
         );
+        zoom = created.getZoom();
       });
     })().catch((err: unknown) => {
       console.warn(`地図を開けませんでした: ${err}`);
@@ -299,6 +305,10 @@
       "fill-color",
       warningFill(levels) as never,
     );
+    // ハザードマップを重ねている間に出す、特別警報の市町村等の縁取り
+    const special = specialWarningFilter(levels) as never;
+    map.setFilter("warning-special-casing", special);
+    map.setFilter("warning-special", special);
     // 開いている吹き出しは前の報の中身なので閉じる
     warningPopup?.remove();
   });
@@ -598,15 +608,22 @@
     }
   });
 
-  // ---- ハザードマップ (なし・洪水・土砂災害・津波から 1 つ。色がぶつかるので重ねない。端末に覚える) ----
+  // ---- ハザードマップ (なし・洪水・土砂災害・津波・活断層から 1 つ。色がぶつかるので重ねない。端末に覚える) ----
+  // 選んでいる間は、面で塗る警報・注意報や震度の色を隠す (`overlayVisibility`。特別警報は縁取りで残す)
   let hazard = $state<HazardId>("none");
   let hazardMenu = $state(false);
   $effect.pre(() => {
     hazard = readHazard(readPref("map.hazard"));
   });
   const chosenHazard = $derived(HAZARDS.find((h) => h.id === hazard));
+  /** いまのズーム (動き終わったときに写す)。活断層はズーム 11 からしかタイルが無い */
+  let zoom = $state(0);
+  /** 選んだハザードマップが、いまのズームで地図に重なっているか */
+  const covered = $derived(hazardCovers(hazard, zoom));
   /** 地図の隅にいつも出す短い出典 (映している層に合わせる) */
-  const creditText = $derived(mapCredit({ hazard: hazard !== "none", grus }));
+  const creditText = $derived(
+    mapCredit({ hazard: covered ? (chosenHazard?.credit ?? "") : "", grus }),
+  );
   function pickHazard(id: HazardId): void {
     hazard = id;
     hazardMenu = false;
@@ -614,8 +631,13 @@
   }
   $effect(() => {
     if (!map) return;
-    for (const [layer, on] of Object.entries(hazardVisibility(hazard)))
+    for (const [layer, on] of Object.entries({
+      ...hazardVisibility(hazard),
+      ...overlayVisibility(hazard, zoom),
+    }))
       map.setLayoutProperty(layer, "visibility", on ? "visible" : "none");
+    // 塗りを隠している間は、塗った所の吹き出しも出さない
+    if (covered) warningPopup?.remove();
   });
 
   // ---- 指定緊急避難場所・指定避難所 (寄せたときだけ、見ている範囲のタイルを読む) ----
@@ -732,7 +754,8 @@
    */
   let warningPopup: Popup | undefined;
   function openWarning(code: string, at: LngLat): void {
-    if (!map || !PopupClass) return;
+    // ハザードマップを重ねている間は塗りを隠しているので、吹き出しも出さない
+    if (!map || !PopupClass || covered) return;
     const c = cityWarnings(warnings, code);
     if (!c) return;
     const box = document.createElement("div");
@@ -924,20 +947,42 @@
         {/each}
       </Menu>
       {#if chosenHazard}
-        <!-- 公式の凡例 (ハザードマップポータルサイトの画像) -->
+        <!-- 公式の凡例 (ハザードマップポータルサイトの画像)。活断層は凡例の代わりに国土地理院の説明へのリンク -->
         <figure class="legend" data-testid="hazard-legend">
           <figcaption class="small bold">{chosenHazard.title}</figcaption>
           {#each chosenHazard.legends as l (l.src)}
             {#if l.name}<p class="tiny">{l.name}</p>{/if}
             <img src={l.src} alt={l.alt} loading="lazy" />
           {/each}
-          <p class="tiny muted">
-            出典: <a
-              href="https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html"
-              target="_blank"
-              rel="noopener">ハザードマップポータルサイト</a
-            >。想定の無い川や地域は塗られていません。色が無くても安全とは限りません。
-          </p>
+          {#if chosenHazard.about}
+            <p class="tiny">
+              {#each chosenHazard.about as part, i (i)}{#if typeof part === "string"}{part}{:else}<a
+                    href={part.href}
+                    target="_blank"
+                    rel="noopener">{part.text}</a
+                  >{/if}{/each}
+            </p>
+          {/if}
+          {#if chosenHazard.legends.length > 0}
+            <p class="tiny muted">
+              出典: <a
+                href="https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html"
+                target="_blank"
+                rel="noopener">ハザードマップポータルサイト</a
+              >。想定の無い川や地域は塗られていません。色が無くても安全とは限りません。
+            </p>
+          {/if}
+          <!-- 隠している層があることと、戻し方。図が重ならないズーム (活断層の 11 未満) では隠さない -->
+          {#if covered}
+            <p class="tiny muted" data-testid="hazard-hidden">
+              色がぶつからないよう、警報・注意報と震度の塗りを隠しています
+              (特別警報・緊急地震速報は縁取りで出します)。「なし」に戻すと元に戻ります。
+            </p>
+          {:else}
+            <p class="tiny muted" data-testid="hazard-hidden">
+              寄せて図が重なると、色がぶつからないよう、警報・注意報と震度の塗りを隠します。
+            </p>
+          {/if}
         </figure>
       {/if}
     </div>
