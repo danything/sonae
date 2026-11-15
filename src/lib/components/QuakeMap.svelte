@@ -678,7 +678,8 @@
   /** 乗せて開いている間に押したら、閉じずに開いたままにする (外れても閉じない) */
   function hazardClick(event: MouseEvent): void {
     clearTimeout(hazardTimer);
-    if (hazardBy === "hover" && hazardMenu) {
+    // マウスで押したときだけ (Enter・スペースの click は detail が 0。キーボードでは今までどおり開け閉めする)
+    if (hazardBy === "hover" && hazardMenu && event.detail > 0) {
       // popovertarget の開け閉めを止める (押したら閉じてしまうため)
       event.preventDefault();
       hazardBy = "press";
