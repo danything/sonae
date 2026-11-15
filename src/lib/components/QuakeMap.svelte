@@ -19,6 +19,12 @@
     WARNING_COLORS,
   } from "#lib/format.ts";
   import {
+    autoLocate,
+    type GeoPermission,
+    LOCATE_PREF,
+    readLocate,
+  } from "#lib/map/locate.ts";
+  import {
     baseStyle,
     eewFill,
     foreignFeatures,
@@ -59,7 +65,7 @@
     type WeatherWarning,
   } from "#lib/model.ts";
   import { mapCredit, showsGrus } from "#lib/notice.ts";
-  import { readPref, writePref } from "#lib/prefs.ts";
+  import { readPref, removePref, writePref } from "#lib/prefs.ts";
 
   /**
    * 地図 (docs/map.md)。下地は国土地理院のシームレス空中写真。その上に層をいつも全部重ねる (オン・オフは無い)。
@@ -463,13 +469,18 @@
   });
 
   // ---- 現在地 (押している間だけ watchPosition で追う。位置は端末の中で描くだけで、サーバーには送らない) ----
+  // オンにしたかどうかは端末に覚え、開いたときに位置の許可がもうあれば自動で始める (`#lib/map/locate.ts`)
   type Locating = "off" | "waiting" | "on";
   let locating = $state<Locating>("off");
+  /** オンを覚えているか。許可を待っていて追っていない間も true (ボタンはオンの見た目で、押すと始める) */
+  let remembered = $state(false);
+  /** オンを覚えているのに、まだ追っていない (開いたときに許可が無かった) */
+  const paused = $derived(remembered && locating === "off");
   /** 位置を取れないわけ (無ければ空)。ボタンの下に出す */
   let locateNote = $state("");
   let me = $state<{ lon: number; lat: number; accuracy: number }>();
   let watchId: number | undefined;
-  /** 今回オンにしてから、もう寄せたか (寄せるのは最初の 1 回だけ) */
+  /** 今回始めてから、もう寄せたか (寄せるのは押して始めたときの最初の 1 回だけ。自動で始めたときは寄せない) */
   let panned = false;
 
   function stopLocating(): void {
@@ -479,18 +490,21 @@
     me = undefined;
   }
 
-  function toggleLocate(): void {
-    locateNote = "";
-    if (locating !== "off") {
-      stopLocating();
-      return;
-    }
+  function rememberLocate(on: boolean): void {
+    remembered = on;
+    if (on) writePref(LOCATE_PREF, "on");
+    else removePref(LOCATE_PREF);
+  }
+
+  /** 追い始める。`pan` は押して始めたとき (最初に取れた所へ寄せる) */
+  function startLocating(pan: boolean): void {
     if (!("geolocation" in navigator)) {
       locateNote = "このブラウザは位置を取れません";
+      rememberLocate(false);
       return;
     }
     locating = "waiting";
-    panned = false;
+    panned = !pan;
     watchId = navigator.geolocation.watchPosition(
       (pos) => {
         locating = "on";
@@ -501,9 +515,10 @@
         };
       },
       (err) => {
-        // 許可されなかったときは追うのをやめる。一時的に取れないだけなら追い続ける
+        // 許可されなかったときは追うのをやめ、覚えたオンも消す。一時的に取れないだけなら追い続ける
         if (err.code === err.PERMISSION_DENIED) {
           stopLocating();
+          rememberLocate(false);
           locateNote =
             "位置の利用が許可されていません。ブラウザのサイトの設定で許可すると使えます";
         } else if (locating === "waiting") {
@@ -515,11 +530,55 @@
     );
   }
 
-  $effect(() => () => {
-    if (watchId !== undefined) navigator.geolocation.clearWatch(watchId);
+  function toggleLocate(): void {
+    locateNote = "";
+    if (locating !== "off") {
+      stopLocating();
+      rememberLocate(false);
+      return;
+    }
+    // 覚えたオンで待っているときに押しても、ここで始める (許可の窓は押したこの操作の中で出る)
+    rememberLocate(true);
+    startLocating(true);
+  }
+
+  // 開いたとき: オンを覚えていて、位置の許可がもうあるときだけ自動で始める (許可の窓をいきなり出さない)。
+  // 許可が変わったら (サイトの設定で変えたとき) 合わせる。拒まれたら覚えたオンを消す
+  $effect(() => {
+    remembered = readLocate(readPref(LOCATE_PREF));
+    let status: PermissionStatus | undefined;
+    let gone = false;
+    const apply = (p: GeoPermission) => {
+      const next = autoLocate(remembered, p);
+      if (next === "start" && locating === "off") startLocating(false);
+      else if (next === "forget") {
+        stopLocating();
+        rememberLocate(false);
+      }
+    };
+    void (async () => {
+      let p: GeoPermission = "unknown";
+      try {
+        status = await navigator.permissions.query({ name: "geolocation" });
+        p = status.state;
+      } catch {
+        // query が無い・geolocation を聞けないブラウザでは始めない (押せば始まる)
+      }
+      if (gone) return;
+      apply(p);
+      if (status) {
+        const s = status;
+        s.onchange = () => apply(s.state);
+      }
+    })();
+    return () => {
+      gone = true;
+      if (status) status.onchange = null;
+      if (watchId !== undefined) navigator.geolocation.clearWatch(watchId);
+    };
   });
 
-  // 現在地を描き、オンにして最初に取れたときだけそこへ寄せる
+  // 現在地を描き、押して始めたときは最初に取れたときだけそこへ寄せる
   $effect(() => {
     if (!map) return;
     const src = map.getSource("me");
@@ -889,16 +948,22 @@
       <button
         type="button"
         class="locate-button"
-        aria-pressed={locating !== "off"}
-        aria-label={locating === "off"
-          ? "現在地を表示"
-          : locating === "waiting"
-            ? "現在地を探しています (押すとやめる)"
+        aria-pressed={paused ? "mixed" : locating !== "off"}
+        aria-label={paused
+          ? "現在地の表示はオンです (押すと位置を探します)"
+          : locating === "off"
+            ? "現在地を表示"
+            : locating === "waiting"
+              ? "現在地を探しています (押すとやめる)"
+              : "現在地の表示をやめる"}
+        title={paused
+          ? "現在地の表示はオンです。押すと位置を探します"
+          : locating === "off"
+            ? "現在地を表示"
             : "現在地の表示をやめる"}
-        title={locating === "off" ? "現在地を表示" : "現在地の表示をやめる"}
         onclick={toggleLocate}
         disabled={!map}
-        data-locating={locating}
+        data-locating={paused ? "paused" : locating}
         data-testid="locate"
       >
         <Icon icon={locating === "on" ? LocateFixed : Locate} />
@@ -951,10 +1016,10 @@
   .locate-button:active {
     scale: 0.97;
   }
-  .locate-button[aria-pressed="true"] {
+  .locate-button:is([aria-pressed="true"], [aria-pressed="mixed"]) {
     color: var(--so-primary-text);
   }
-  .locate-button[aria-pressed="true"]::after {
+  .locate-button:is([aria-pressed="true"], [aria-pressed="mixed"])::after {
     content: "";
     position: absolute;
     bottom: 0.45rem;
@@ -965,8 +1030,12 @@
     background: var(--pico-primary);
     translate: -50% 0;
   }
-  /* 探している間はアイコンを薄くする (時間で動き続けるものは足さない。docs/design.md の 6.3) */
-  .locate-button[data-locating="waiting"] :global(svg) {
+  /*
+   * 探している間と、オンを覚えていて許可を待っている間 (押すと始める) はアイコンを薄くする
+   * (時間で動き続けるものは足さない。docs/design.md の 6.3)。どちらも下線は残る (オン)
+   */
+  .locate-button:is([data-locating="waiting"], [data-locating="paused"])
+    :global(svg) {
     opacity: 0.45;
   }
   /* ハザードマップの選択 (左上) と、選んだものの公式の凡例 */
