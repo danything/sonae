@@ -137,6 +137,7 @@ describe("通知の許可が無いときの文", () => {
     const t = permissionDeniedText(EDGE_ANDROID, { asked: true, quiet: true });
     expect(t).toContain("許可の窓を出さずに");
     expect(t).toContain("サイトのアクセス許可");
+    expect(t).toContain("Microsoft Edge」→「通知」");
   });
 
   test("聞いて断られたとき・前から断っているときは、許可されていないとだけ書く", () => {
