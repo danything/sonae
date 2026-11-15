@@ -1,0 +1,191 @@
+name: Installers
+
+# **1 行で入れるインストーラ (install.sh・install.ps1) を、各 OS のランナーで通しで流す** (docs/install.md)。
+# Mac と Windows は、リリースと同じ組み方 (.github/bundle.sh) で組んだ本体の配布物を手元のファイルとして渡し、
+# VOICEVOX のエンジンは本物を VOICEVOX/voicevox_engine のリリースから取る (2 GB ほど)。
+# Linux は compose.prod.yml をこのコミットのものにして、本物のイメージ (sonae は latest) を引いて起こす。
+# どれも、答えるまで・VOICEVOX が既定の声で合成できるまで・上げ直し・外すまでを見る。
+#
+# 重いので、インストーラと配布物に関わるファイルを変えたときと、手で回したときだけ。
+on:
+  pull_request:
+    paths:
+      - install.sh
+      - install.ps1
+      - compose.prod.yml
+      - .bun-version
+      - .github/bundle.sh
+      - .github/workflows/installers.yml
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+concurrency:
+  group: installers-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Lint install.sh and bundle.sh
+        run: |
+          bash -n install.sh
+          bash -n .github/bundle.sh
+          shellcheck install.sh .github/bundle.sh
+
+      # 書き方は PowerShell 5.1 (Windows の既定) に合わせて見る (PSUseCompatibleSyntax)。
+      # 外す規則: Write-Host (画面に出す案内)、ShouldProcess (-WhatIf を持つモジュールではない)、
+      # BOM (irm | iex は UTF-8 で受け取るので要らない)
+      - name: Lint install.ps1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD/install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | Format-List | Out-String | Write-Host; throw "install.ps1: $($errors.Count) parse errors" }
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $found = Invoke-ScriptAnalyzer -Path install.ps1 -Severity Warning, Error `
+            -ExcludeRule PSAvoidUsingWriteHost, PSUseShouldProcessForStateChangingFunctions, PSUseBOMForUnicodeEncodedFile `
+            -Settings @{ Rules = @{ PSUseCompatibleSyntax = @{ Enable = $true; TargetVersions = @('5.1', '7.0') } } }
+          $found | Format-Table -AutoSize | Out-String -Width 200
+          if ($found) { throw "PSScriptAnalyzer: $($found.Count) findings" }
+
+  bundle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun i --frozen-lockfile
+      - run: bun run build
+      - name: Bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          for target in darwin-arm64 darwin-x64 windows-x64; do
+            bash .github/bundle.sh "$target" dev dist
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bundles
+          path: dist
+          retention-days: 3
+
+  install-linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: install.sh end to end
+        env:
+          SONAE_VERSION: main
+          SONAE_COMPOSE_FILE: ${{ github.workspace }}/compose.prod.yml
+        run: |
+          set -euo pipefail
+          bash install.sh --no-open
+          curl -fsS http://localhost:3030/health; echo
+          # ランナーの 80 / 443 は空いているので genkan が入り、http://sonae.localhost で開ける
+          curl -fsS --resolve sonae.localhost:80:127.0.0.1 http://sonae.localhost/health; echo
+          # OIDC が無いので画面は 503 (ログインの既定は変えていない)
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3030/)" = 503
+          # VAPID の鍵ができ、sonae が Web Push を有効にした
+          key=$(grep '^VAPID_PRIVATE_JWK=' ~/sonae/sonae.env)
+          test "$(stat -c %a ~/sonae/sonae.env)" = 600
+          for _ in $(seq 30); do
+            if (cd ~/sonae && docker compose logs sonae) | grep -q 'Web Push を送ります'; then break; fi
+            sleep 2
+          done
+          (cd ~/sonae && docker compose logs sonae) | grep -q 'Web Push を送ります'
+          # 上げ直し。手を入れた compose.override.yml にも、鍵にも触らない
+          echo '# 手で足した行' >> ~/sonae/compose.override.yml
+          cp ~/sonae/compose.override.yml "$RUNNER_TEMP/override"
+          bash install.sh --no-open
+          cmp ~/sonae/compose.override.yml "$RUNNER_TEMP/override"
+          test "$(grep '^VAPID_PRIVATE_JWK=' ~/sonae/sonae.env)" = "$key"
+          test "$(grep -c '^VAPID_PRIVATE_JWK=' ~/sonae/sonae.env)" = 1
+          test ! -e ~/sonae/compose.yml.bak
+          bash install.sh --uninstall
+          test -z "$(docker compose -p sonae ps -q)"
+          # 外しても設定と DB は残す
+          test -f ~/sonae/sonae.env
+          docker volume inspect sonae_sonae-data > /dev/null
+
+  install-windows:
+    needs: bundle
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: bundles
+          path: ${{ runner.temp }}\bundles
+      # Windows に最初から入っている PowerShell 5.1 で流す (irm | iex で流す人と同じ)。install.ps1 は UTF-8 として読んで渡す。
+      # このステップの中身は ASCII だけにする (5.1 は BOM の無いスクリプトを ANSI で読む)。上げ直しでは VOICEVOX を取り直さず、鍵も替えない
+      - name: install.ps1 end to end
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:SONAE_SERVER_ZIP = (Get-ChildItem "$env:RUNNER_TEMP\bundles\sonae-*-windows-x64.zip" | Select-Object -First 1).FullName
+          $installer = [scriptblock]::Create([IO.File]::ReadAllText("$PWD\install.ps1"))
+          & $installer -NoOpen
+          & curl.exe -fsS http://127.0.0.1:3030/health
+          if ($LASTEXITCODE -ne 0) { throw 'health' }
+          $code = & curl.exe -s -o NUL -w '%{http_code}' http://127.0.0.1:3030/
+          if ($code -ne '503') { throw "expected 503 without OIDC, got $code" }
+          $envFile = "$env:ProgramData\sonae\sonae.env"
+          $key = (Select-String -LiteralPath $envFile -Pattern '^VAPID_PRIVATE_JWK=').Line
+          if (-not $key) { throw 'no VAPID key' }
+          ./.github/check-voicevox.ps1
+          $log = "$env:ProgramData\sonae\logs\sonae.log"
+          if (-not (Select-String -LiteralPath $log -Pattern '\[push\] Web Push' -Quiet -Encoding UTF8)) { Get-Content $log -Encoding UTF8; throw 'Web Push is off' }
+          & $installer -NoOpen
+          if ((Select-String -LiteralPath $envFile -Pattern '^VAPID_PRIVATE_JWK=').Line -ne $key) { throw 'VAPID key changed' }
+          ./.github/check-voicevox.ps1
+          & $installer -Uninstall
+          if (Get-ScheduledTask -TaskName sonae -ErrorAction SilentlyContinue) { throw 'task left' }
+          if (Test-Path "$env:ProgramFiles\sonae") { throw 'Program Files left' }
+          if (-not (Test-Path "$env:ProgramData\sonae\sonae.db")) { throw 'DB removed' }
+          if (-not (Test-Path $envFile)) { throw 'sonae.env removed' }
+
+  install-macos:
+    needs: bundle
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: bundles
+          path: ${{ runner.temp }}/bundles
+      - name: install.sh end to end
+        run: |
+          set -euo pipefail
+          arch=$(uname -m | sed 's/x86_64/x64/')
+          SONAE_SERVER_TARBALL=$(ls "$RUNNER_TEMP"/bundles/sonae-*-darwin-"$arch".tar.gz)
+          export SONAE_SERVER_TARBALL
+          sudo -E bash install.sh --no-open
+          curl -fsS http://127.0.0.1:3030/health; echo
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3030/)" = 503
+          env_file="/Library/Application Support/sonae/data/sonae.env"
+          key=$(sudo grep '^VAPID_PRIVATE_JWK=' "$env_file")
+          test -n "$key"
+          bash .github/check-voicevox.sh
+          sudo grep -q 'Web Push を送ります' /Library/Logs/sonae/sonae.log
+          sudo -E bash install.sh --no-open
+          test "$(sudo grep '^VAPID_PRIVATE_JWK=' "$env_file")" = "$key"
+          bash .github/check-voicevox.sh
+          sudo bash install.sh --uninstall
+          if sudo launchctl print system/io.github.danything.sonae > /dev/null 2>&1; then exit 1; fi
+          test ! -e "/Library/Application Support/sonae/server"
+          sudo test -f "/Library/Application Support/sonae/data/sonae.db"
+          sudo test -f "$env_file"

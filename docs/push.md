@@ -19,6 +19,8 @@ VAPID の鍵 (`VAPID_PRIVATE_JWK`) が無ければ、**Web Push だけを切っ�
 
 ## 鍵を作って入れる (持ち主がする)
 
+1 行で入れたとき (install.sh・install.ps1) は、インストーラが同じ作り方で鍵を作って `sonae.env` に書く ([install.md の「Web Push の鍵」](install.md#web-push-の鍵))。ここに書くのは Helm chart で立てたときの手順。
+
 鍵はリポジトリに平文で置かない。SOPS で暗号化した `deploy/secrets.sops.yaml` の `sonae-secrets` に入れる。
 Helm chart (`charts/sonae`) はもう `vapid-private-jwk` を `optional: true` で読む形になっているので、マニフェストは直さなくてよい。
 
