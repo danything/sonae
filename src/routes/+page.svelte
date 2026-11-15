@@ -2,7 +2,7 @@
   import { browser } from "$app/env";
   import { goto } from "$app/navigation";
   import { page } from "$app/state";
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
   import Activity from "~icons/lucide/activity";
   import Bell from "~icons/lucide/bell";
@@ -17,6 +17,7 @@
 
   import { mutedText } from "#lib/alert.ts";
   import { alerter } from "#lib/alerter.svelte.ts";
+  import { isGrave, openHref, planOpen, targetOf } from "#lib/auto-open.ts";
   import AboutDialog from "#lib/components/AboutDialog.svelte";
   import Calendar from "#lib/components/Calendar.svelte";
   import AdvisoryDetail from "#lib/components/detail/AdvisoryDetail.svelte";
@@ -28,7 +29,6 @@
   import VolcanoDetail from "#lib/components/detail/VolcanoDetail.svelte";
   import WarningDetail from "#lib/components/detail/WarningDetail.svelte";
   import WeatherDetail from "#lib/components/detail/WeatherDetail.svelte";
-  import EewBanner from "#lib/components/EewBanner.svelte";
   import Grade from "#lib/components/Grade.svelte";
   import Icon from "#lib/components/Icon.svelte";
   import Intensity from "#lib/components/Intensity.svelte";
@@ -484,7 +484,8 @@
         Date.parse(a.reportedAt) > live.now - WEEK,
     ),
   );
-  const banners = $derived(browser ? activeEews(snap.eews, live.now) : []);
+  /** いま出ている緊急地震速報 (取消・最終報の後も 3 分は残る。訓練・試験は除く) */
+  const liveEews = $derived(browser ? activeEews(snap.eews, live.now) : []);
   /** 火山: 1 日以内の噴火速報と、いま噴火警報 (レベル 4・5 相当) が出ている火山 */
   const DAY = 24 * 60 * 60_000;
   const volcanoAlerts = $derived([
@@ -502,7 +503,7 @@
    * 一覧の先頭に出すもの。いま出ている緊急地震速報・大津波警報・津波警報・特別警報はチップにかかわらず出し
    * (身を守る動きにつなげるもの)、ほかの津波・噴火・お知らせはその種類を出しているときだけ
    */
-  const pinnedEews = $derived(banners.filter((e) => !e.cancelled));
+  const pinnedEews = $derived(liveEews.filter((e) => !e.cancelled));
   const pinnedTsunamis = $derived(activeTsunamis.filter(isTsunamiWarning));
   const otherTsunamis = $derived(
     shownKind("tsunami")
@@ -580,7 +581,7 @@
     mapQuake === selQuake ? selLongPeriod : longPeriodOf(mapQuake),
   );
   const mapTsunamis = $derived(selTsunami ? [selTsunami] : activeTsunamis);
-  const mapEews = $derived(selEew ? [selEew] : banners);
+  const mapEews = $derived(selEew ? [selEew] : liveEews);
   const trainingHref = $derived(
     viewHref(params, { training: data.training ? null : "1" }),
   );
@@ -690,6 +691,97 @@
   let dockMenu = $state(false);
   let statusMenu = $state(false);
 
+  // ---- 自動で開く (読み上げ始めた報と、出た緊急地震速報。docs/ui.md の「自動で開く」) ----
+  /**
+   * 自動で開いたもの。`href` は開いたリンク (いまの URL がこれと同じ間は、人がまだ動かしていない)、
+   * `back` と `pushed` は自動で開く前にいた所と、履歴を積んだか (続けて開いても、初めのものを持ち続ける)。
+   * `eew` は緊急地震速報を開いたときの識別番号 (出ている間が過ぎたら、元の所へ戻る)
+   */
+  let auto = $state<{
+    href: string;
+    back: string;
+    pushed: boolean;
+    eew?: string;
+  } | null>(null);
+  const here = $derived(`${page.url.pathname}${page.url.search}`);
+  const autoShown = $derived(auto !== null && auto.href === here);
+  /**
+   * いま移っている最中の自動で開くリンク。読み上げと緊急地震速報の両方が同じ報を続けて開こうとしたとき、
+   * URL が替わる前の 2 度目で履歴をもう 1 つ積まないよう、移っている間も自動で開いたものとして扱う
+   */
+  let opening: string | null = null;
+  function autoOpen(target: NonNullable<typeof v.selected>, grave: boolean) {
+    const own = autoShown || (auto !== null && opening === auto.href);
+    const plan = planOpen(target, grave, {
+      selected: v.selected,
+      auto: own,
+      holdingEew:
+        selEew !== null && pinnedEews.some((e) => e.eventId === selEew.eventId),
+      dialog: v.about || pushOpen,
+    });
+    if (!plan) return;
+    if (plan.closeDialog) pushOpen = false;
+    const href = openHref(params, target, plan.closeDialog);
+    if (opening === href) return;
+    const same =
+      v.selected?.kind === target.kind && v.selected.id === target.id;
+    if (!same) {
+      const prev = own ? auto : null;
+      auto = {
+        href,
+        back: prev?.back ?? here,
+        pushed: prev?.pushed ?? !plan.replace,
+        ...(target.kind === "eew" ? { eew: target.id } : {}),
+      };
+    } else if (auto?.href === here) {
+      // もう開いているものの上の窓を閉じただけ。自動で開いたものなら、URL が替わるので控えも合わせる。
+      // 人が自分で開いていたものなら控えない (出ている間が過ぎても、窓を開き直して戻ったりしない)
+      auto = { ...auto, href };
+    }
+    // 地図は選んだものが替わったので、いつもの決まりでその報へ寄る (スマホの形でもタブは替えない。
+    // 地図のタブなら地図が寄って dock にその報が出て、一覧のタブなら詳しい内容が出る)
+    opening = href;
+    void goto(href, { reset: false, replace: plan.replace }).finally(() => {
+      if (opening === href) opening = null;
+    });
+  }
+  // 読み上げ始めた報 (読み上げがオンのときだけ呼ばれる)
+  $effect(() => {
+    alerter.onread = (n) => {
+      const target = targetOf(n.url);
+      if (target) autoOpen(target, isGrave(n));
+    };
+    return () => {
+      alerter.onread = undefined;
+    };
+  });
+  /** 開いた緊急地震速報 (識別番号と警報か予報か。予報から警報に上がったら、もう一度開く) */
+  const openedEews = new Set<string>();
+  // 出た緊急地震速報は、読み上げがオフでも開く (命に関わるので、人がほかのものを見ていても切り替える)
+  $effect(() => {
+    const fresh = pinnedEews.filter(
+      (e) => !openedEews.has(`${e.eventId}:${e.kind}`),
+    );
+    if (fresh.length === 0) return;
+    for (const e of fresh) openedEews.add(`${e.eventId}:${e.kind}`);
+    // 幾つか同時に出たら、警報を先に開く (ほかは一覧の先頭に貼ってある)
+    const first = fresh.find((e) => e.kind === "warning") ?? fresh[0];
+    if (first)
+      untrack(() => autoOpen({ kind: "eew", id: first.eventId }, true));
+  });
+  // 自動で開いた緊急地震速報が出ている間 (取消・最終報の後 3 分) を過ぎたら、人が動かしていなければ元の所へ戻る
+  $effect(() => {
+    const a = auto;
+    if (!a?.eew || !autoShown) return;
+    const id = a.eew;
+    if (liveEews.some((e) => e.eventId === id)) return;
+    untrack(() => {
+      auto = null;
+      if (a.pushed) history.back();
+      else void goto(a.back, { reset: false, replace: true });
+    });
+  });
+
   /** `/` か Ctrl+K で、見えている絞り込みの欄へ */
   function searchShortcut(event: KeyboardEvent): void {
     if (event.defaultPrevented || event.isComposing) return;
@@ -735,6 +827,27 @@
                   : selForeign
                     ? `${selForeign.place} ${jst(selForeign.originTime)} - sonae`
                     : "sonae",
+  );
+  /** 選んだ緊急地震速報が、いま出ているもの (取消・最終報の後 3 分まで) */
+  const selEewLive = $derived(
+    selEew !== null && liveEews.some((e) => e.eventId === selEew.eventId),
+  );
+  /** スマホの形の地図のタブで、地震でないものを選んでいるときの dock の 1 行 */
+  const dockText = $derived(
+    selEew
+      ? [
+          selEew.cancelled
+            ? "緊急地震速報 (取消)"
+            : selEew.kind === "warning"
+              ? "緊急地震速報 (警報) 強い揺れに警戒"
+              : "緊急地震速報 (予報)",
+          selEew.cancelled ? "" : placeName(selEew.hypocenter),
+        ]
+          .filter(Boolean)
+          .join("・")
+      : title === "sonae"
+        ? "この情報はありません"
+        : title.replace(/ - sonae$/, ""),
   );
   const user = $derived(data.user);
 </script>
@@ -980,14 +1093,6 @@
 >
   <a class="skip" href="#list">一覧へ移動</a>
 
-  {#if banners.length > 0}
-    <div class="alerts">
-      {#each banners as eew (eew.eventId)}
-        <EewBanner {eew} />
-      {/each}
-    </div>
-  {/if}
-
   <!-- 広い形のヘッダー (スマホの形では出さない) -->
   <header class="navbar">
     <a class="logo" href="/" aria-label="sonae (地震の一覧へ)">
@@ -1111,7 +1216,7 @@
           {:else if selTsunami}
             <TsunamiDetail t={selTsunami} now={live.now} />
           {:else if selEew}
-            <EewDetail e={selEew} />
+            <EewDetail e={selEew} active={selEewLive} />
           {:else if selVolcano}
             <VolcanoDetail v={selVolcano} />
           {:else if selForeign}
@@ -1196,6 +1301,25 @@
   >
     {#if tab === "list"}
       {@render kindChips("scroll")}
+    {:else if v.selected && !selQuake}
+      <!--
+        地震でないものを選んでいる (自動で開いた緊急地震速報など)。地図はそれに寄っているので、dock にもそれを出す。
+        押すと一覧のタブの詳しい内容へ。いま出ている緊急地震速報 (警報) は状態の赤で塗る
+      -->
+      <button
+        type="button"
+        class="dock-quake dock-selected"
+        class:eew-warning={selEewLive &&
+          !selEew?.cancelled &&
+          selEew?.kind === "warning"}
+        class:eew-forecast={selEewLive &&
+          (selEew?.cancelled || selEew?.kind !== "warning")}
+        onclick={() => (tab = "list")}
+        data-testid="dock-selected"
+      >
+        {#if selEew}<Icon icon={TriangleAlert} size={1} />{/if}
+        <span class="truncate">{dockText}</span>
+      </button>
     {:else if mapQuake}
       <a
         class="dock-quake"
@@ -1319,9 +1443,6 @@
     height: 100%;
     overflow: hidden;
     background: var(--so-bg);
-  }
-  .alerts {
-    flex: none;
   }
   .skip {
     position: fixed;
@@ -1667,6 +1788,36 @@
     color: var(--so-fg);
     font-size: var(--so-text-sm);
     text-decoration: none;
+  }
+  /* 選んでいるもの (地震でないもの) の 1 行。字だけのボタン (平ら) */
+  .dock-selected {
+    width: auto;
+    min-height: calc(var(--dock-h) - 2 * var(--so-space-1));
+    margin: 0;
+    padding: 0 var(--so-space-3);
+    border: 0;
+    border-radius: var(--so-radius-full);
+    background: transparent;
+    box-shadow: none;
+    font-weight: var(--so-weight);
+    text-align: start;
+  }
+  /* いま出ている緊急地震速報 (警報) だけは状態の赤で塗る (docs/design.md の 6.2)。決めた回数だけ脈打って止まる */
+  .dock-selected.eew-warning {
+    background: var(--so-rec);
+    color: #fff;
+    font-weight: var(--so-weight-bold);
+    animation: dock-pulse 0.9s ease-in-out 3;
+  }
+  .dock-selected.eew-forecast {
+    color: var(--so-warn-text);
+    font-weight: var(--so-weight-bold);
+  }
+  @keyframes dock-pulse {
+    50% {
+      opacity: 0.7;
+      transform: scale(1.01);
+    }
   }
   .dock-more {
     flex-shrink: 0;
