@@ -91,15 +91,22 @@
           : "無い",
       ),
     ]);
+    // Service Worker が登録されていないと `ready` は終わらないので、待つのは 2 秒まで
+    // (待っている間も、ほかの行は出しておく)
+    diag = [...rows];
     rows.push([
       "pushManager.permissionState",
-      await q(async () =>
-        "serviceWorker" in navigator && "PushManager" in window
-          ? await (
-              await navigator.serviceWorker.ready
-            ).pushManager.permissionState({ userVisibleOnly: true })
-          : "無い",
-      ),
+      await q(async () => {
+        if (!("serviceWorker" in navigator && "PushManager" in window))
+          return "無い";
+        const reg = await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise<undefined>((r) => setTimeout(() => r(undefined), 2000)),
+        ]);
+        return reg
+          ? await reg.pushManager.permissionState({ userVisibleOnly: true })
+          : "Service Worker が用意できていない (2 秒待った)";
+      }),
     ]);
     rows.push([
       "アプリとして開いている",
