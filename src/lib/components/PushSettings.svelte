@@ -62,6 +62,59 @@
   let locating = $state(false);
   let busy = $state(false);
   let message = $state("");
+
+  /** 「ブラウザの通知の状態」に出す、ブラウザが答えている値 (開いたときに読む。サーバーには送らない) */
+  let diag = $state<[string, string][]>([]);
+  async function readDiag(): Promise<void> {
+    const rows: [string, string][] = [];
+    const q = async (f: () => Promise<string>): Promise<string> => {
+      try {
+        return await f();
+      } catch (err) {
+        return `読めない (${err instanceof Error ? err.name : String(err)})`;
+      }
+    };
+    rows.push(["安全な接続 (https)", String(window.isSecureContext)]);
+    rows.push([
+      "Notification.permission",
+      typeof Notification === "undefined" ? "無い" : Notification.permission,
+    ]);
+    rows.push([
+      "permissions.query(notifications)",
+      await q(async () =>
+        navigator.permissions
+          ? (
+              await navigator.permissions.query({
+                name: "notifications" as PermissionName,
+              })
+            ).state
+          : "無い",
+      ),
+    ]);
+    // Service Worker が登録されていないと `ready` は終わらないので、待つのは 2 秒まで
+    // (待っている間も、ほかの行は出しておく)
+    diag = [...rows];
+    rows.push([
+      "pushManager.permissionState",
+      await q(async () => {
+        if (!("serviceWorker" in navigator && "PushManager" in window))
+          return "無い";
+        const reg = await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise<undefined>((r) => setTimeout(() => r(undefined), 2000)),
+        ]);
+        return reg
+          ? await reg.pushManager.permissionState({ userVisibleOnly: true })
+          : "Service Worker が用意できていない (2 秒待った)";
+      }),
+    ]);
+    rows.push([
+      "アプリとして開いている",
+      String(matchMedia("(display-mode: standalone)").matches),
+    ]);
+    rows.push(["ブラウザ", navigator.userAgent]);
+    diag = rows;
+  }
   /** 条件を覚えたかどうか (条件のすぐ下に出す。Web Push の登録の知らせは下の message) */
   let prefsMessage = $state("");
   /** 開いているときの通知のスイッチの知らせ (許可されなかったとき) */
@@ -661,6 +714,16 @@
     {#if message}
       <p class="small" role="status">{message}</p>
     {/if}
+    <!-- 通知が出せないときに、ブラウザが答えている状態をそのまま見せる (設定の画面と食い違うときの手がかり) -->
+    <details ontoggle={(e) => e.currentTarget.open && void readDiag()}>
+      <summary class="small">ブラウザの通知の状態 (うまくいかないとき)</summary>
+      <dl class="diag tiny" data-testid="notify-diag">
+        {#each diag as [k, v] (k)}
+          <dt>{k}</dt>
+          <dd>{v}</dd>
+        {/each}
+      </dl>
+    </details>
     <div class="modal-foot">
       <button type="button" class="secondary" onclick={() => dialog?.close()}
         >閉じる</button
@@ -670,6 +733,17 @@
 </dialog>
 
 <style>
+  .diag {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--so-space-1) var(--so-space-3);
+    margin: var(--so-space-2) 0 0;
+    overflow-wrap: anywhere;
+  }
+  .diag dt,
+  .diag dd {
+    margin: 0;
+  }
   .home {
     margin: 0;
     padding: 0;
