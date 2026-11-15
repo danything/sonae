@@ -54,7 +54,12 @@ export class KeepAwake {
     this.abort = abort;
     this.locks
       .request(AWAKE_LOCK, { mode: "shared", signal: abort.signal }, () => held)
-      // 取る前に離した (abort)・Web Locks が使えない: 眠らせない手が無いだけで、知らせは続ける
-      .catch(() => {});
+      // 取る前に離した (abort)・Web Locks が使えない: 眠らせない手が無いだけで、知らせは続ける。
+      // 離したのでなければ、持っていないことにする (次の set(true) で取り直せるように)
+      .catch(() => {
+        if (this.abort !== abort) return;
+        this.abort = undefined;
+        this.release = undefined;
+      });
   }
 }

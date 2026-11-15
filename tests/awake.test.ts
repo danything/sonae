@@ -97,6 +97,23 @@ describe("裏のタブを眠らせない", () => {
   });
 });
 
+test("断られたら持っていないことにし、次は取り直す", async () => {
+  let calls = 0;
+  const locks: Locks = {
+    request: (() => {
+      calls++;
+      return Promise.reject(new DOMException("denied", "SecurityError"));
+    }) as Locks["request"],
+  };
+  const a = new KeepAwake(locks);
+  a.set(true);
+  await tick();
+  expect(a.on).toBe(false);
+  a.set(true);
+  await tick();
+  expect(calls).toBe(2);
+});
+
 describe("Edge の一言", () => {
   test("パソコンの Edge だけに添える", () => {
     const win =
