@@ -70,3 +70,29 @@ export function alertFor(
   sent.set(n.tag, { level: Math.max(prev?.level ?? 0, n.level), digest });
   return p.renotify ? n : null;
 }
+
+/**
+ * 操作の前でも音を出せるか。Firefox は `navigator.getAutoplayPolicy` で分かる。無いブラウザは、
+ * 作った AudioContext がすぐ動くか (自動再生を許していなければ suspended で作られる) で見る。
+ * 分からなければ出せないとみなす (「音を出す」を出す側に倒す。鳴らすのに失敗したときも出る)。
+ * テストで差し替えられるよう、navigator と AudioContext は引数で受ける
+ */
+export function autoplayAllowed(
+  nav: object | undefined,
+  Ctx: (new () => { state: string; close(): Promise<void> }) | undefined,
+): boolean {
+  try {
+    const policy = (
+      nav as
+        { getAutoplayPolicy?: (type: "mediaelement") => string } | undefined
+    )?.getAutoplayPolicy;
+    if (policy) return policy.call(nav, "mediaelement") === "allowed";
+    if (!Ctx) return false;
+    const ctx = new Ctx();
+    const running = ctx.state === "running";
+    void ctx.close().catch(() => {});
+    return running;
+  } catch {
+    return false;
+  }
+}

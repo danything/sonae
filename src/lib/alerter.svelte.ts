@@ -17,6 +17,7 @@ import {
   ALERT_OFF,
   alertFor,
   type AlertSettings,
+  autoplayAllowed,
   parseAlertPrefs,
   parseAlertSettings,
 } from "./alert.ts";
@@ -38,6 +39,8 @@ class Alerter {
   prefs = $state<PushPrefs>({ ...DEFAULT_PREFS });
   /** 人がページを操作した (ブラウザが音を出させる) */
   activated = $state(false);
+  /** 開いたときから自動再生を許している (操作の前でも `<audio>` を鳴らせる) */
+  autoplay = $state(false);
   /** 操作の後でも、ブラウザが音を止めた */
   failed = $state(false);
   /** サーバーの VOICEVOX (選べる声)。読めるまでは無い */
@@ -94,7 +97,18 @@ class Alerter {
   get blocked(): boolean {
     return (
       (this.settings.sound || (this.settings.speech && this.canSpeak)) &&
-      (!this.activated || this.failed)
+      (!this.ready || this.failed)
+    );
+  }
+
+  /**
+   * 鳴らせる状態か。自動再生を許していても、端末の読み上げ (speechSynthesis) は操作の前だと断られることが
+   * あり、断られても分からないので、読み上げがオンで VOICEVOX が使えないときは操作を待つ
+   */
+  private get ready(): boolean {
+    return (
+      this.activated ||
+      (this.autoplay && (!this.settings.speech || this.voicevox))
     );
   }
 
@@ -102,7 +116,9 @@ class Alerter {
   start(): () => void {
     this.settings = parseAlertSettings(readPref("alert"));
     this.prefs = parseAlertPrefs(readPref("alert.prefs"));
+    // 自動再生を許している (アプリとして入れた・サイトの設定で許した) ブラウザでは、押さなくても鳴らせる
     this.activated = navigator.userActivation?.hasBeenActive ?? false;
+    this.autoplay = autoplayAllowed(navigator, globalThis.AudioContext);
     void this.loadSpeech();
     const onGesture = () => this.unlock();
     const events = ["pointerup", "keydown", "touchend"] as const;

@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { alertFor, parseAlertPrefs, parseAlertSettings } from "#lib/alert.ts";
+import {
+  alertFor,
+  autoplayAllowed,
+  parseAlertPrefs,
+  parseAlertSettings,
+} from "#lib/alert.ts";
 import { chimeWav } from "#lib/chime.ts";
 import type { Sent } from "#lib/notify.ts";
 import { DEFAULT_PREFS } from "#lib/push.ts";
@@ -133,4 +138,66 @@ test("鳴らす音は 16 ビット・モノラルの WAV で、1 秒に収まる
   expect(seconds).toBeGreaterThan(0.3);
   expect(seconds).toBeLessThan(1);
   expect(v.getUint32(4, true)).toBe(wav.length - 8);
+});
+
+describe("操作の前でも音を出せるか", () => {
+  const ctx = (state: string) =>
+    class {
+      state = state;
+      close() {
+        return Promise.resolve();
+      }
+    };
+
+  test("getAutoplayPolicy があればそれで決める (AudioContext は作らない)", () => {
+    let made = false;
+    const Ctx = class {
+      state = "running";
+      constructor() {
+        made = true;
+      }
+      close() {
+        return Promise.resolve();
+      }
+    };
+    expect(autoplayAllowed({ getAutoplayPolicy: () => "allowed" }, Ctx)).toBe(
+      true,
+    );
+    expect(
+      autoplayAllowed({ getAutoplayPolicy: () => "allowed-muted" }, Ctx),
+    ).toBe(false);
+    expect(
+      autoplayAllowed({ getAutoplayPolicy: () => "disallowed" }, Ctx),
+    ).toBe(false);
+    expect(made).toBe(false);
+  });
+
+  test("無ければ、作った AudioContext が動いているかで見る", () => {
+    expect(autoplayAllowed({}, ctx("running"))).toBe(true);
+    expect(autoplayAllowed({}, ctx("suspended"))).toBe(false);
+  });
+
+  test("分からないときは出せないとみなす", () => {
+    expect(autoplayAllowed(undefined, undefined)).toBe(false);
+    const Throws = class {
+      state = "running";
+      constructor() {
+        throw new Error("no");
+      }
+      close() {
+        return Promise.resolve();
+      }
+    };
+    expect(autoplayAllowed({}, Throws)).toBe(false);
+    expect(
+      autoplayAllowed(
+        {
+          getAutoplayPolicy: () => {
+            throw new Error("no");
+          },
+        },
+        ctx("running"),
+      ),
+    ).toBe(false);
+  });
 });
