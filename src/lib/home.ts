@@ -17,6 +17,67 @@ export type CityRow = [
 ];
 export type Cities = Record<string, CityRow>;
 
+/**
+ * 都道府県の名前 (JIS の都道府県コード 01〜47 の順)。市町村等のコードの上 2 桁で引く。
+ * cities.json の 2 列目 (府県と市町村の名前) は、2 つに分けた市 (仙台市東部・横浜市北部・富山市平地など) では
+ * 「気象庁予報警報規程別表第四の二に示す「…」の区域」や「神奈川県横浜市のうち…」のような説明の文なので、
+ * そこから都道府県の名前を切り出さない
+ */
+const PREFECTURES = [
+  "北海道",
+  "青森県",
+  "岩手県",
+  "宮城県",
+  "秋田県",
+  "山形県",
+  "福島県",
+  "茨城県",
+  "栃木県",
+  "群馬県",
+  "埼玉県",
+  "千葉県",
+  "東京都",
+  "神奈川県",
+  "新潟県",
+  "富山県",
+  "石川県",
+  "福井県",
+  "山梨県",
+  "長野県",
+  "岐阜県",
+  "静岡県",
+  "愛知県",
+  "三重県",
+  "滋賀県",
+  "京都府",
+  "大阪府",
+  "兵庫県",
+  "奈良県",
+  "和歌山県",
+  "鳥取県",
+  "島根県",
+  "岡山県",
+  "広島県",
+  "山口県",
+  "徳島県",
+  "香川県",
+  "愛媛県",
+  "高知県",
+  "福岡県",
+  "佐賀県",
+  "長崎県",
+  "熊本県",
+  "大分県",
+  "宮崎県",
+  "鹿児島県",
+  "沖縄県",
+] as const;
+
+/** 市町村等のコードから都道府県の名前。知らないコードは空 */
+export function prefectureOf(code: string): string {
+  return PREFECTURES[Number(code.slice(0, 2)) - 1] ?? "";
+}
+
 /** 選んだ市町村等から、住んでいる地域を組む。地震情報／細分区域の名前は細分区域の面から引く */
 export function homeOf(
   code: string,
@@ -25,11 +86,12 @@ export function homeOf(
 ): Home | null {
   const row = cities[code];
   if (!row) return null;
-  const [, full, office, ichiji, , quake] = row;
+  const [name, , office, ichiji, , quake] = row;
   const quakeName = quake ? quakeNames.get(quake) : undefined;
   return {
     code,
-    name: full,
+    // 「宮城県仙台市東部」の形 (2 列目は分けた市では説明の文になるので使わない)
+    name: `${prefectureOf(code)}${name}`,
     quake: quake && quakeName ? { code: quake, name: quakeName } : null,
     office,
     ichiji,
@@ -47,12 +109,9 @@ export function byPrefecture(
   for (const code of Object.keys(cities).sort()) {
     const row = cities[code];
     if (!row) continue;
-    const [name, full] = row;
+    const [name] = row;
     const key = code.slice(0, 2);
-    const g = groups.get(key) ?? {
-      pref: full.endsWith(name) ? full.slice(0, full.length - name.length) : "",
-      cities: [],
-    };
+    const g = groups.get(key) ?? { pref: prefectureOf(code), cities: [] };
     g.cities.push({ code, name });
     groups.set(key, g);
   }
