@@ -329,12 +329,19 @@ class Alerter {
    */
   async setNotify(on: boolean): Promise<Permission> {
     this.setSettings({ ...this.settings, notify: on });
-    if (on && this.permission === "default")
+    this.lastAskMs = undefined;
+    if (on && this.permission === "default") {
+      const t0 = performance.now();
       this.permission = await Notification.requestPermission().catch(() =>
         permissionNow(),
       );
+      this.lastAskMs = performance.now() - t0;
+    }
     return this.permission;
   }
+
+  /** 直前の setNotify で許可を聞いたときに、答えが返るまでのミリ秒 (聞かなかったときは無し)。窓を出さずに断られたかを見る */
+  lastAskMs: number | undefined;
 
   /** 通知の許可を読み直す (Web Push の登録で許可を求めた後など) */
   refreshPermission(): void {

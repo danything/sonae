@@ -13,10 +13,12 @@ import { type Cities, cityAt, homeOf, planHomeSave } from "./home.ts";
 import { createQueue } from "./prefs-queue.ts";
 import {
   endpointBlock,
+  permissionDeniedText,
   type PushBlock,
   pushBlockOf,
   pushBlockText,
   type PushFeatures,
+  QUIET_DENY_MS,
   registerFailedText,
 } from "./push-support.ts";
 import { base64UrlToBytes, type Home, type PushPrefs } from "./push.ts";
@@ -106,10 +108,15 @@ export async function sendPrefs(
   prefs: PushPrefs,
 ): Promise<string> {
   try {
+    const asked = Notification.permission === "default";
+    const t0 = performance.now();
     const granted = (await Notification.requestPermission()) === "granted";
     alerter.refreshPermission();
     if (!granted)
-      return "通知が許可されていません。ブラウザのサイトの設定で許可してください。";
+      return permissionDeniedText(navigator.userAgent, {
+        asked,
+        quiet: performance.now() - t0 < QUIET_DENY_MS,
+      });
     const sub = await subscribe(publicKey);
     // 登録できても、届かない宛先を返すブラウザがある (Android の Edge は `permanently-removed.invalid`)。
     // サーバーに送っても断られるだけなので、ここで止めて、何ができないかと代わりの道を返す

@@ -1,8 +1,9 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import {
   endpointBlock,
   isAndroidEdge,
+  permissionDeniedText,
   pushBlockOf,
   pushBlockText,
   registerFailedText,
@@ -124,4 +125,35 @@ test("登録が例外で止まったときも、訳と代わりの道を言う",
   );
   expect(t).toContain("「開いているとき」");
   expect(registerFailedText("x")).toStartWith("登録できませんでした (x)");
+});
+
+describe("通知の許可が無いときの文", () => {
+  const EDGE_ANDROID =
+    "Mozilla/5.0 (Linux; Android 15; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36 EdgA/143.0.3650.97";
+  const EDGE_DESKTOP =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.3650.97";
+
+  test("窓を出さずに断られたら、そう書く", () => {
+    const t = permissionDeniedText(EDGE_ANDROID, { asked: true, quiet: true });
+    expect(t).toContain("許可の窓を出さずに");
+    expect(t).toContain("サイトのアクセス許可");
+  });
+
+  test("聞いて断られたとき・前から断っているときは、許可されていないとだけ書く", () => {
+    expect(
+      permissionDeniedText(EDGE_ANDROID, { asked: true, quiet: false }),
+    ).toStartWith("通知が許可されていません。");
+    expect(permissionDeniedText(EDGE_ANDROID)).toStartWith(
+      "通知が許可されていません。",
+    );
+  });
+
+  test("Edge (PC) は静かな通知の要求に触れ、ほかのブラウザは鍵の印の道筋", () => {
+    expect(permissionDeniedText(EDGE_DESKTOP)).toContain(
+      "通知の要求を静かにする",
+    );
+    expect(permissionDeniedText("Mozilla/5.0 Firefox/140.0")).toContain(
+      "鍵の印",
+    );
+  });
 });
