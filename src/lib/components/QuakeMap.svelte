@@ -948,7 +948,7 @@
       <button
         type="button"
         class="locate-button"
-        aria-pressed={locating !== "off" || paused}
+        aria-pressed={paused ? "mixed" : locating !== "off"}
         aria-label={paused
           ? "現在地の表示はオンです (押すと位置を探します)"
           : locating === "off"
@@ -1016,10 +1016,10 @@
   .locate-button:active {
     scale: 0.97;
   }
-  .locate-button[aria-pressed="true"] {
+  .locate-button:is([aria-pressed="true"], [aria-pressed="mixed"]) {
     color: var(--so-primary-text);
   }
-  .locate-button[aria-pressed="true"]::after {
+  .locate-button:is([aria-pressed="true"], [aria-pressed="mixed"])::after {
     content: "";
     position: absolute;
     bottom: 0.45rem;
