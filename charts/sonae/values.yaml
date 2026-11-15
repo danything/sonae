@@ -68,15 +68,19 @@ voicevox:
     repository: voicevox/voicevox_engine
     tag: 0.26.2
     pullPolicy: IfNotPresent
-  # ONNX Runtime のスレッドの数。resources.limits.cpu に合わせる (既定はノードのコアの数で、制限の下で詰まる)
-  cpuThreads: 4
-  # メモリはモデルを読んだ声の数で増える (3 人を読んで 1.9 GiB)。sonae が前もって合成する声は既定の声のほか 3 つまで
+  # 合成に使うスレッドの数 (VV_CPU_NUM_THREADS)。**0 ならマシンの全部を使う** (読み上げは急ぐので)。
+  # 0 のときは Downward API で resources.limits.cpu を渡す。limits.cpu が無ければ Kubernetes はノードの
+  # allocatable の CPU の数を渡すので、ノードの論理 CPU の全部になる。
+  # エンジン自身の既定 (0 か未指定) は論理 CPU の半分 (VOICEVOX ENGINE 0.26 の cpu_execution.py) で、
+  # 全部にはならないので、chart はエンジンに 0 を渡さない
+  cpuThreads: 0
+  # メモリはモデルを読んだ声の数で増える (3 人を読んで 1.9 GiB)。sonae が前もって合成する声は既定の声のほか 3 つまで。
+  # **CPU の limits は付けない** (絞ると合成が遅くなる)。requests.cpu は、ほかの Pod と取り合ったときの取り分
   resources:
     requests:
-      cpu: 250m
+      cpu: "2"
       memory: 1Gi
     limits:
-      cpu: "4"
       memory: 3Gi
   nodeSelector: {}
   tolerations: []
