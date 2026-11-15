@@ -25,6 +25,9 @@
   --pico-font-family-sans-serif:
     "BIZ UDPGothic", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   --pico-font-size: 16px;
+  /* 等幅 (キーの印など)。denpa の --dp-font-mono と同じ並び */
+  --pico-font-family-monospace:
+    ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
   --pico-line-height: 1.6;
   --pico-spacing: 1rem;
   --pico-typography-spacing-vertical: 0.75rem;
