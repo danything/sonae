@@ -9,7 +9,7 @@
 
 **音声つきの動画** (58 秒・2.2 MB): 試験用のデータで、緊急地震速報 → 地震の情報 → 津波注意報を受けたところ。チャイム → OS の通知 → 読み上げの流れと、読み上げ始めた報の詳しい内容が自動で開くようす、地図・一覧・吹き出しの動きが分かる。
 
-https://github.com/user-attachments/assets/ae573ddd-398a-4bd6-9a3d-08b5669f3957
+https://github.com/user-attachments/assets/24a0b5a8-9ba6-4722-bb65-c7baeda2827f
 
 [docs/images/demo.mp4](https://raw.githubusercontent.com/danything/sonae/main/docs/images/demo.mp4) (落として開く)
 
