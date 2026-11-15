@@ -33,6 +33,28 @@ const SENT_MAX = 200;
 /** 音の後に読み上げるまでの間 (ミリ秒。音と声を重ねない) */
 const SPEAK_AFTER_MS = 750;
 
+/**
+ * 操作の前でも音を出せるか。Firefox は `navigator.getAutoplayPolicy` で分かる。無いブラウザは、
+ * 作った AudioContext がすぐ動くか (自動再生を許していなければ suspended で作られる) で見る。
+ * 分からなければ出せないとみなす (「音を出す」を出す側に倒す。鳴らすのに失敗したときも出る)
+ */
+function autoplayAllowed(): boolean {
+  const nav = navigator as Navigator & {
+    getAutoplayPolicy?: (type: "mediaelement") => string;
+  };
+  try {
+    if (nav.getAutoplayPolicy)
+      return nav.getAutoplayPolicy("mediaelement") === "allowed";
+    if (typeof AudioContext === "undefined") return false;
+    const ctx = new AudioContext();
+    const running = ctx.state === "running";
+    void ctx.close();
+    return running;
+  } catch {
+    return false;
+  }
+}
+
 class Alerter {
   settings = $state<AlertSettings>({ ...ALERT_OFF });
   prefs = $state<PushPrefs>({ ...DEFAULT_PREFS });
@@ -102,7 +124,9 @@ class Alerter {
   start(): () => void {
     this.settings = parseAlertSettings(readPref("alert"));
     this.prefs = parseAlertPrefs(readPref("alert.prefs"));
-    this.activated = navigator.userActivation?.hasBeenActive ?? false;
+    // 自動再生を許している (アプリとして入れた・サイトの設定で許した) ブラウザでは、押さなくても鳴らせる
+    this.activated =
+      (navigator.userActivation?.hasBeenActive ?? false) || autoplayAllowed();
     void this.loadSpeech();
     const onGesture = () => this.unlock();
     const events = ["pointerup", "keydown", "touchend"] as const;
