@@ -1,0 +1,11 @@
+{{- if not (and .Values.sonae.oidc.issuer .Values.sonae.oidc.clientId .Values.secrets.name) }}
+**OIDC が揃っていません。** sonae.oidc.issuer・sonae.oidc.clientId・secrets.name (oidc-client-secret の入った Secret) を書くまで、
+画面は開かず /health だけ答えます (docs/entra.md)。
+{{- end }}
+{{- if not (include "sonae.publicUrl" .) }}
+**公開の URL がありません。** sonae.publicUrl か、httpRoute.hostnames・ingress.hosts を書いてください。
+ログインの戻り先を要求の Host から組むことになります。
+{{- end }}
+{{- with include "sonae.publicUrl" . }}
+sonae は {{ . }} で開きます。OIDC の IdP にはリダイレクト URI {{ . }}/auth/callback を登録してください。
+{{- end }}

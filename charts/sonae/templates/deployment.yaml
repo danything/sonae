@@ -1,0 +1,172 @@
+{{- $publicUrl := include "sonae.publicUrl" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sonae
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sonae.labels" . | nindent 4 }}
+  annotations:
+    # 参照している Secret が変わったら、Reloader が Pod を入れ替える (入っていなければ何もしない)
+    reloader.stakater.com/auto: "true"
+spec:
+  # **レプリカは 1 つ、入れ替えは Recreate** (docs/design.md の 2.1)。2 つ立つと情報源への接続が倍になり
+  # (Wolfx は 1 クライアント 1 接続)、Push も二重に出る。入れ替えの数秒は受けられないが、戻ったときに
+  # 履歴の API で埋める
+  replicas: 1
+  strategy:
+    type: Recreate
+  # selector は作ったあと変えられない。素のマニフェストのころの `app: sonae` のまま
+  selector:
+    matchLabels:
+      app: sonae
+  template:
+    metadata:
+      labels:
+        app: sonae
+    spec:
+      # イメージは uid 1000 で動く (distroless)。ボリュームをその group にそろえる
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+      # SHUTDOWN_TIMEOUT (5 秒) に余裕を足す
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: sonae
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 3000
+          # /health は起きていることだけを見る (情報源の受信の状態は見ない)
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 5
+            failureThreshold: 2
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 10
+            failureThreshold: 6
+          env:
+            {{- with $publicUrl }}
+            # 公開の URL。ログインの戻り先 (/auth/callback) はここから組む (要求の Host を信じない)
+            - name: PUBLIC_URL
+              value: {{ . | quote }}
+            # adapter-bun の ORIGIN。SvelteKit の url.origin と CSRF の判定がこれを使う
+            # (前段の後ろでも要求の Host・プロトコルに頼らない)
+            - name: ORIGIN
+              value: {{ . | quote }}
+            {{- end }}
+            - name: SONAE_DATA
+              value: /data
+            - name: TZ
+              value: {{ .Values.sonae.timezone | quote }}
+            # 何も流れない接続を切るまでの秒数 (adapter-bun、Bun.serve の idleTimeout)。既定の 10 秒だと
+            # 30 秒ごとの `: ping` を待つ間に SSE (/api/stream) が切れる。上限の 255 にする
+            - name: CONNECTION_IDLE_TIMEOUT
+              value: "255"
+            # 止めるとき、処理中の要求を待つ上限 (秒、adapter-bun)。SSE は終わらないので、長く待っても意味が無い
+            # (ブラウザは Last-Event-ID で張り直す)
+            - name: SHUTDOWN_TIMEOUT
+              value: "5"
+            {{- with .Values.sonae.oidc.issuer }}
+            - name: OIDC_ISSUER
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.sonae.oidc.clientId }}
+            - name: OIDC_CLIENT_ID
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.secrets.name }}
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.keys.oidcClientSecret }}
+            {{- end }}
+            {{- with .Values.sonae.oidc.role }}
+            # 通すのはこのロールを割り当てられた人だけ (docs/entra.md)
+            - name: OIDC_ROLE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.sonae.oidc.roleClaim }}
+            - name: OIDC_ROLE_CLAIM
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.sonae.oidc.scope }}
+            - name: OIDC_SCOPE
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.secrets.name }}
+            # Web Push の VAPID の秘密鍵 (JWK の JSON)。Secret に鍵が無ければ環境変数が入らず、Web Push を
+            # 切って普通に動く (optional)。作り方と入れ方は docs/push.md
+            - name: VAPID_PRIVATE_JWK
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.keys.vapidPrivateJwk }}
+                  optional: true
+            {{- end }}
+            {{- with .Values.sonae.vapidSubject }}
+            # VAPID の連絡先。書かなければ PUBLIC_URL
+            - name: VAPID_SUBJECT
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.secrets.name }}
+            # 台湾の中央氣象署 (CWA) のオープンデータの授権碼。Secret に無ければ環境変数が入らず、CWA の受信だけを
+            # 切って普通に動く (optional)。登録の手順と入れ方は docs/cwa.md
+            - name: CWA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.keys.cwaApiKey }}
+                  optional: true
+            {{- end }}
+            {{- if .Values.voicevox.enabled }}
+            # 読み上げの声を作る VOICEVOX (templates/voicevox.yaml)。止まっていると、画面は端末の読み上げで読む
+            - name: VOICEVOX_URL
+              value: http://voicevox:50021
+            {{- end }}
+            {{- with .Values.sonae.voicevoxSpeaker }}
+            - name: VOICEVOX_SPEAKER
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if not .Values.sonae.receive }}
+            - name: SONAE_RECEIVE
+              value: "off"
+            {{- end }}
+            {{- with .Values.sonae.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.sonae.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: sonae-data
+              mountPath: /data
+      {{- with .Values.sonae.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sonae.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.sonae.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        - name: sonae-data
+          persistentVolumeClaim:
+            claimName: {{ include "sonae.pvcName" . }}

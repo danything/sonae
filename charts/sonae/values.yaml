@@ -1,0 +1,132 @@
+# sonae の Helm chart の既定値。
+#
+# **ここは「誰の環境でも動く」値にしてある。** 自分の環境の値 (ホスト名・OIDC・入口・PVC) は別の values
+# ファイルで上書きする (このリポジトリ自身の本番は `deploy/application.yaml` の `helm.valuesObject`)。
+#
+# **OIDC を設定しないと画面は開かない** (`/health` だけ答える。docs/design.md の 2.6)。
+# 最低限、`sonae.publicUrl` (か入口のホスト名) と `sonae.oidc` と `secrets.name` を書く。
+
+image:
+  repository: ghcr.io/danything/sonae
+  # main に入るたびに `latest` と `<コミットの sha>` が出る。固定するなら sha のタグを書き、pullPolicy は IfNotPresent でよい
+  tag: latest
+  pullPolicy: Always
+
+sonae:
+  # 公開の URL (例 https://sonae.example.com)。ログインの戻り先 (`<publicUrl>/auth/callback`) と、
+  # adapter-bun の ORIGIN (CSRF の判定) に使う。空なら httpRoute.hostnames か ingress.hosts の先頭に https:// を付けたもの
+  publicUrl: ""
+  timezone: Asia/Tokyo
+  # 情報源 (気象庁・P2P地震情報・Wolfx など) につなぐ。false で SONAE_RECEIVE=off (画面だけ触りたいとき)
+  receive: true
+  # OIDC でのログイン (docs/entra.md)。issuer・clientId と、Secret の clientSecret の 3 つが揃わないと画面は開かない。
+  # clientSecret は下の `secrets` の Secret から読む
+  oidc:
+    # 例 https://login.microsoftonline.com/<テナントの ID>/v2.0
+    issuer: ""
+    clientId: ""
+    # 通すロール (id_token の roles か groups に入っている値)。空ならアプリの既定 (admin)
+    role: ""
+    # roles・groups のほかの claim でロールを見るときの claim の名前。空なら roles と groups
+    roleClaim: ""
+    # 空ならアプリの既定 (openid profile)。IdP によってはロールに別の scope が要る
+    scope: ""
+  # Web Push の連絡先 (VAPID の subject。mailto: か https:)。空なら publicUrl。
+  # 秘密鍵は下の `secrets` の Secret から読む (docs/push.md)
+  vapidSubject: ""
+  # 既定の声 (VOICEVOX のスタイルの id。docs/design.md の 2.4)。空ならアプリの既定 (剣崎雌雄)
+  voicevoxSpeaker: ""
+  # 追加の環境変数。そのまま container.env に入る
+  extraEnv: []
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# **秘密は chart の外で作った Secret の名前で渡す。** chart は Secret を作らない (値を values に書かせないため。
+# GitOps では SOPS などで別に持つ。このリポジトリ自身は SopsSecret `deploy/secrets.sops.yaml`)。
+# 作り方の例:
+#   kubectl -n sonae create secret generic sonae-secrets --from-literal=oidc-client-secret=…
+secrets:
+  # Secret の名前。空なら、どの秘密も渡さない (OIDC が揃わないので画面は開かない)
+  name: ""
+  # Secret の中のキーの名前
+  keys:
+    # OIDC のクライアントシークレット。**要る** (無いと Pod が起動しない)
+    oidcClientSecret: oidc-client-secret
+    # Web Push の VAPID の秘密鍵 (JWK の JSON)。任意。無ければ Web Push を切って動く (docs/push.md)
+    vapidPrivateJwk: vapid-private-jwk
+    # 台湾の中央氣象署 (CWA) のオープンデータの授権碼。任意。無ければ CWA の受信だけを切って動く (docs/cwa.md)
+    cwaApiKey: cwa-api-key
+
+# 読み上げの声を作る VOICEVOX のエンジン (docs/design.md の 2.4)。公式のイメージを別の Pod で動かす。
+# 止まっていても sonae は動き、画面は端末の読み上げで読む。false にすると出さない (VOICEVOX_URL も渡さない)
+voicevox:
+  enabled: true
+  image:
+    # バージョンだけのタグは CPU 用 (cpu-<バージョン> と同じダイジェスト)
+    repository: voicevox/voicevox_engine
+    tag: 0.26.2
+    pullPolicy: IfNotPresent
+  # ONNX Runtime のスレッドの数。resources.limits.cpu に合わせる (既定はノードのコアの数で、制限の下で詰まる)
+  cpuThreads: 4
+  # メモリはモデルを読んだ声の数で増える (3 人を読んで 1.9 GiB)。sonae が前もって合成する声は既定の声のほか 3 つまで
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: "4"
+      memory: 3Gi
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+networkPolicy:
+  # **VOICEVOX に届くのを sonae の Pod だけにし、VOICEVOX から外へは何も出さない** (DNS も使わない)。
+  # CNI が NetworkPolicy に対応していないと、出しても効かない
+  voicevox: true
+  # sonae の外向きを、DNS と公開のインターネット (プライベートでないアドレス) と VOICEVOX だけにする。
+  # 家の LAN とクラスタの中を閉じるためのもの。DNS の Pod のラベルはクラスタで違うので、既定は false
+  egress:
+    enabled: false
+    dns:
+      namespace: kube-system
+      podLabels:
+        k8s-app: kube-dns
+
+persistence:
+  # SQLite (WAL) の DB を置く。空ならクラスタの既定の StorageClass
+  storageClassName: ""
+  size: 1Gi
+  # 自分で作った PVC を使うときの名前。書いたら chart は PVC を作らない
+  existingClaim: ""
+  # 作るときに中身を埋める元 (例: VolSync の ReplicationDestination。
+  # {apiGroup: volsync.backube, kind: ReplicationDestination, name: sonae-data-dst})。今ある PVC には効かない
+  dataSourceRef: {}
+  # **PVC を Argo CD に消させない** (Prune=false,Delete=false)。消えると DB (Web Push の購読・セッション・履歴) が消える
+  # ので既定は true。false にすると、マニフェストから外れた時点でボリュームごと消える。後ろ盾のバックアップを用意してから
+  protectFromPruning: true
+
+service:
+  port: 3000
+
+# 入口。Gateway API の HTTPRoute か標準の Ingress のどちらか。**新しく組むなら httpRoute**
+httpRoute:
+  enabled: false
+  # 付け先の Gateway。省略できない (HTTPRoute は自分では待ち受けを持たない)
+  parentRefs: []
+  #  - name: my-gateway
+  #    namespace: gateway-system
+  #    sectionName: https
+  # 空なら ingress.hosts を使う
+  hostnames: []
+  annotations: {}
+ingress:
+  enabled: false
+  className: ""
+  hosts: []
+  # SSE (/api/stream) を使うので、前段の読み込みのタイムアウトを長くする (例 ingress-nginx なら
+  # nginx.ingress.kubernetes.io/proxy-read-timeout: "3600")
+  annotations: {}
+  tls: []

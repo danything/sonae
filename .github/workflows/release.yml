@@ -1,0 +1,69 @@
+name: Release
+
+# **リリースを作ったら、Helm chart を GHCR の OCI レジストリに出す** (README の `oci://ghcr.io/danything/charts/sonae`)。
+# denpa の release.yml の charts ジョブと同じ形。
+#
+# chart のバージョン (Chart.yaml の version) とアプリのバージョン (appVersion) は、リリースのタグの
+# バージョン (`v` を落とす。`v0.1.0` → `0.1.0`) で上書きしてパッケージにする。リポジトリの Chart.yaml は書き戻さない。
+# chart の既定の image.tag は `latest` (main に入るたびに動く) なので、chart のバージョンを上げなくても中身は動く。
+# 固定したい人は values で image.tag に sha のタグを書く。
+on:
+  release:
+    types: [published]
+  # 出し直したいときのために、手でも回せるようにしてある
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "出すタグ (v0.1.0 など)"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  charts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # リリースのタグそのものを見る
+          ref: ${{ github.event.inputs.ref || github.event.release.tag_name }}
+
+      - name: Decide chart version
+        id: ver
+        env:
+          TAG: ${{ github.event.release.tag_name || github.event.inputs.ref }}
+        run: |
+          set -eu
+          version="${TAG#v}"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "x.y.z の形式ではないので chart は出しません: $TAG"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: azure/setup-helm@v5
+        if: steps.ver.outputs.skip != 'true'
+        with:
+          version: v4.3.2
+
+      - name: Log in to GHCR (helm)
+        if: steps.ver.outputs.skip != 'true'
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$TOKEN" | helm registry login "$REGISTRY" --username "${{ github.actor }}" --password-stdin
+
+      - name: Package and push the chart
+        if: steps.ver.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -eu
+          helm lint charts/sonae
+          helm package charts/sonae --version "$VERSION" --app-version "$VERSION" --destination dist
+          helm push dist/sonae-"$VERSION".tgz "oci://${REGISTRY}/${{ github.repository_owner }}/charts"

@@ -4,6 +4,8 @@ sortImports = true
 ignorePatterns = [
   # SOPS が書くファイル (sops edit のたびにインデント 4 で書き直す)
   "deploy/*.sops.yaml",
+  # Helm のテンプレートは Go のテンプレートで、YAML として読めない
+  "charts/*/templates/",
   # 気象庁のサンプル電文などの写し。中身を変えない
   "tests/fixtures/**",
   # 気象庁の GIS データから tools/areas/build.sh で作るもの

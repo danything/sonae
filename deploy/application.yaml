@@ -1,0 +1,110 @@
+# **sonae は Helm chart (charts/sonae) から出す。**
+#
+# bootstrap の ApplicationSet (danything/gitops の bootstrap/argocd-repos.yaml) は `deploy/` を
+# 「素のマニフェストの置き場」として読むので、ここに Application を 1 つ置いて chart を指させる (App-of-Apps)。
+# ApplicationSet はこのファイルを素の YAML として同期し、この Application が chart を展開する。
+# bootstrap 側は触らずに済む。denpa (danything/denpa の deploy/application.yaml) と同じ形。
+#
+# chart に入れていないもの (この家の事情) はこの階層に素のまま残す:
+#   - secrets.sops.yaml … SopsSecret (Secret sonae-secrets と VolSync の Secret)。値は SOPS で暗号化してあり、この家の事情なので chart に持たない
+#   - volsync.yaml      … VolSync の ReplicationSource・ReplicationDestination (R2 への日次のバックアップと、PVC を作り直すときの戻し)
+#   - argocd.yaml       … bootstrap の ApplicationSet が読む、この置き場の設定
+#
+# **この家の値は下の `helm.valuesObject` にインラインで持つ。** 別ファイルにしないのは、
+# ApplicationSet が `deploy/*.yaml` を全部マニフェストとして読むため (値ファイルは
+# kind が無いので置けない)。chart の既定値 (charts/sonae/values.yaml) の上に重なる。
+# CI は image.tag の 1 行だけを書き換える (.github/workflows/docker-publish.yml)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: sonae-chart
+  namespace: argocd
+  annotations:
+    # **差分はクライアント側で出す。** サーバ側で出すと、PVC の dataSourceRef (作ったあとは変えられない欄) を
+    # 載せたまま適用を試してから比べるので、下の ignoreDifferences が効く前に毎回失敗する
+    # (`spec is immutable after creation`)。比べられないと自動の同期も止まる (denpa で 2026-11-10 に新しいイメージが入らなかった)
+    argocd.argoproj.io/compare-options: ServerSideDiff=false
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: sonae
+  source:
+    repoURL: https://github.com/danything/sonae.git
+    targetRevision: main
+    path: charts/sonae
+    helm:
+      releaseName: sonae
+      valuesObject:
+        image:
+          # main にマージするたびに CI が書き換える (そのコミットの sha)。手で触らない
+          tag: 0a688d0f221759c932279ecc5fde89ca32d990eb
+          pullPolicy: IfNotPresent
+
+        sonae:
+          publicUrl: https://s.doany.io
+          # Entra ID は doany.io の共用のアプリ登録 Main (docs/entra.md)。ID は秘密ではないので平文。
+          # リダイレクト URI https://s.doany.io/auth/callback は gitops の pulumi/entra.ts で Main に足してある
+          oidc:
+            issuer: https://login.microsoftonline.com/22ac977d-b140-4dc8-8150-90d645d3475b/v2.0
+            clientId: b0fa498f-7e6a-4fe1-a1c6-16fbbb6f397e
+            # 通すのはアプリロール admin を割り当てられた人だけ。家族と共有するときは family 用のロールに替える
+            role: admin
+
+        # 中身は SopsSecret (deploy/secrets.sops.yaml) が作る Secret。
+        # chart に作らせないのは、この Argo CD が Secret を同期しないため (denpa で chart の Secret が作られず、起動できなかった)
+        secrets:
+          name: sonae-secrets
+
+        networkPolicy:
+          # 外向きを DNS と公開のインターネットと VOICEVOX だけにする。この家の DNS は kube-system の kube-dns
+          egress:
+            enabled: true
+
+        persistence:
+          storageClassName: local-path
+          # **「git で消したものは消える」を優先する** という判断
+          # (danything/gitops の docs/decisions.md「PVC を守る仕掛けをやめた」)。後ろ盾は日次の restic (R2。deploy/volsync.yaml)
+          protectFromPruning: false
+          # 新しく作るときは VolSync が R2 の最新から中身を埋める (deploy/volsync.yaml の sonae-data-dst)。今ある PVC には効かない
+          dataSourceRef:
+            {
+              apiGroup: volsync.backube,
+              kind: ReplicationDestination,
+              name: sonae-data-dst,
+            }
+
+        # Cilium Gateway (danything/gitops の bootstrap/gateway/) に付ける。証明書は Gateway のリスナーが持ち、
+        # DNS は Cloudflare の *.doany.io のワイルドカード (プロキシ経由) で引ける
+        httpRoute:
+          enabled: true
+          parentRefs:
+            - name: doany
+              namespace: kube-system
+              sectionName: https
+          hostnames:
+            - s.doany.io
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # 名前空間は deploy/ を読む Application (sonae) が作ってある
+      - CreateNamespace=false
+      # 素のマニフェストで入っていた同名のリソースを chart 側が引き取る
+      - ServerSideApply=true
+      # 下の ignoreDifferences を「比べない」だけでなく「適用でも触らない」にする
+      - RespectIgnoreDifferences=true
+  # **PVC の volumeName は触らない。** chart は書かないが、PV に結び付いた PVC には入っていて、
+  # 一度でも Argo CD がその欄の持ち主になると (既存の PV に結んで作り直したとき)、server-side
+  # apply のたびに消しにいき、作成後は変えられない欄なので同期が毎回 PVC で落ちる (denpa で 2026-10-05 に起きた)
+  ignoreDifferences:
+    - group: ""
+      kind: PersistentVolumeClaim
+      jsonPointers:
+        - /spec/volumeName
+        # dataSourceRef (VolSync の populator) は作るときにしか書けない。今ある PVC には当てない
+        - /spec/dataSourceRef
+        - /spec/dataSource

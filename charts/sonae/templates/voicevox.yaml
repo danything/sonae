@@ -1,0 +1,85 @@
+{{- if .Values.voicevox.enabled }}
+# 読み上げの声を作る VOICEVOX のエンジン (docs/design.md の 2.4)。sonae のイメージには入れず、公式のイメージを
+# 別の Pod で動かす (ライセンス・イメージの大きさ・CPU とメモリを分けるため)。止まっても sonae は動く。
+# ユーザー辞書と合成した音は持たない (sonae がつながるたびに辞書を入れ、音は sonae のメモリに持つ)。PVC は要らない
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voicevox
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sonae.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  # selector は作ったあと変えられない。素のマニフェストのころの `app: voicevox` のまま
+  selector:
+    matchLabels:
+      app: voicevox
+  template:
+    metadata:
+      labels:
+        app: voicevox
+    spec:
+      # エンジンはサービスのアカウントのトークンを使わない
+      automountServiceAccountToken: false
+      containers:
+        - name: voicevox
+          image: "{{ .Values.voicevox.image.repository }}:{{ .Values.voicevox.image.tag }}"
+          imagePullPolicy: {{ .Values.voicevox.image.pullPolicy }}
+          ports:
+            - containerPort: 50021
+          env:
+            - name: VV_CPU_NUM_THREADS
+              value: {{ .Values.voicevox.cpuThreads | quote }}
+          {{- with .Values.voicevox.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: /version
+              port: 50021
+            periodSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /version
+              port: 50021
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /version
+              port: 50021
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 4
+      {{- with .Values.voicevox.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.voicevox.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.voicevox.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voicevox
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "sonae.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: voicevox
+  ports:
+    - name: http
+      port: 50021
+      targetPort: 50021
+{{- end }}
