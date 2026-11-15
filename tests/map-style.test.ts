@@ -4,6 +4,7 @@ import {
   baseStyle,
   DEPTH_COLORS,
   eewFill,
+  hazardCovers,
   HAZARDS,
   hazardVisibility,
   HIDDEN_UNDER_HAZARD,
@@ -154,6 +155,16 @@ test("ハザードマップ: 活断層を選べ、地理院タイルの afm を�
   expect(faults?.legends).toEqual([]);
   expect(faults?.about?.some((p) => typeof p !== "string")).toBe(true);
   expect(faults?.credit).toBe("都市圏活断層図");
+});
+
+test("図が重ならないズーム (活断層の 11 未満) では隠さない", () => {
+  expect(hazardCovers("faults", 10.9)).toBe(false);
+  expect(hazardCovers("faults", 11)).toBe(true);
+  expect(hazardCovers("flood", 5)).toBe(true);
+  expect(hazardCovers("none", 15)).toBe(false);
+  expect(overlayVisibility("faults", 5)["warning-fill"]).toBe(true);
+  expect(overlayVisibility("faults", 5)["warning-special"]).toBe(false);
+  expect(overlayVisibility("faults", 12)["warning-fill"]).toBe(false);
 });
 
 test("ハザードマップを重ねている間は、面で塗る色を隠し、特別警報は縁取りで残す", () => {

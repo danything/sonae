@@ -28,6 +28,7 @@
     baseStyle,
     eewFill,
     foreignFeatures,
+    hazardCovers,
     type HazardId,
     HAZARDS,
     hazardVisibility,
@@ -205,11 +206,13 @@
         created.on("moveend", () => {
           void loadShelters();
           // GRUS 画像の範囲を映しているときは、隅の出典に足す
-          if (created)
+          if (created) {
             grus = showsGrus(
               created.getBounds().toArray().flat() as never,
               created.getZoom(),
             );
+            zoom = created.getZoom();
+          }
         });
         created.on("click", "shelters", (e) => {
           const f = e.features?.[0];
@@ -255,6 +258,7 @@
           created.getBounds().toArray().flat() as never,
           created.getZoom(),
         );
+        zoom = created.getZoom();
       });
     })().catch((err: unknown) => {
       console.warn(`地図を開けませんでした: ${err}`);
@@ -612,9 +616,13 @@
     hazard = readHazard(readPref("map.hazard"));
   });
   const chosenHazard = $derived(HAZARDS.find((h) => h.id === hazard));
+  /** いまのズーム (動き終わったときに写す)。活断層はズーム 11 からしかタイルが無い */
+  let zoom = $state(0);
+  /** 選んだハザードマップが、いまのズームで地図に重なっているか */
+  const covered = $derived(hazardCovers(hazard, zoom));
   /** 地図の隅にいつも出す短い出典 (映している層に合わせる) */
   const creditText = $derived(
-    mapCredit({ hazard: chosenHazard?.credit ?? "", grus }),
+    mapCredit({ hazard: covered ? (chosenHazard?.credit ?? "") : "", grus }),
   );
   function pickHazard(id: HazardId): void {
     hazard = id;
@@ -625,11 +633,11 @@
     if (!map) return;
     for (const [layer, on] of Object.entries({
       ...hazardVisibility(hazard),
-      ...overlayVisibility(hazard),
+      ...overlayVisibility(hazard, zoom),
     }))
       map.setLayoutProperty(layer, "visibility", on ? "visible" : "none");
     // 塗りを隠している間は、塗った所の吹き出しも出さない
-    if (hazard !== "none") warningPopup?.remove();
+    if (covered) warningPopup?.remove();
   });
 
   // ---- 指定緊急避難場所・指定避難所 (寄せたときだけ、見ている範囲のタイルを読む) ----
@@ -747,7 +755,7 @@
   let warningPopup: Popup | undefined;
   function openWarning(code: string, at: LngLat): void {
     // ハザードマップを重ねている間は塗りを隠しているので、吹き出しも出さない
-    if (!map || !PopupClass || hazard !== "none") return;
+    if (!map || !PopupClass || covered) return;
     const c = cityWarnings(warnings, code);
     if (!c) return;
     const box = document.createElement("div");
@@ -964,11 +972,17 @@
               >。想定の無い川や地域は塗られていません。色が無くても安全とは限りません。
             </p>
           {/if}
-          <!-- 隠している層があることと、戻し方 -->
-          <p class="tiny muted" data-testid="hazard-hidden">
-            色がぶつからないよう、警報・注意報と震度の塗りを隠しています
-            (特別警報・緊急地震速報は縁取りで出します)。「なし」に戻すと元に戻ります。
-          </p>
+          <!-- 隠している層があることと、戻し方。図が重ならないズーム (活断層の 11 未満) では隠さない -->
+          {#if covered}
+            <p class="tiny muted" data-testid="hazard-hidden">
+              色がぶつからないよう、警報・注意報と震度の塗りを隠しています
+              (特別警報・緊急地震速報は縁取りで出します)。「なし」に戻すと元に戻ります。
+            </p>
+          {:else}
+            <p class="tiny muted" data-testid="hazard-hidden">
+              寄せて図が重なると、色がぶつからないよう、警報・注意報と震度の塗りを隠します。
+            </p>
+          {/if}
         </figure>
       {/if}
     </div>

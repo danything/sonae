@@ -201,9 +201,19 @@ export const SHOWN_UNDER_HAZARD = [
   "warning-special",
 ] as const;
 
-/** ハザードマップを選んでいるかで、重ねる層の出し入れを決める (隠す層・代わりに出す層) */
-export function overlayVisibility(id: HazardId): Record<string, boolean> {
-  const on = id !== "none";
+/** 選んだハザードマップが、いまのズームで地図に重なっているか (タイルのあるズームか) */
+export function hazardCovers(id: HazardId, zoom: number): boolean {
+  const h = HAZARDS.find((x) => x.id === id);
+  return h !== undefined && zoom >= h.minzoom;
+}
+
+/** ハザードマップが重なっているかで、重ねる層の出し入れを決める (隠す層・代わりに出す層) */
+export function overlayVisibility(
+  id: HazardId,
+  /** いまのズーム。ハザードマップのタイルが無いズーム (活断層はズーム 11 未満) では何も重ならないので隠さない */
+  zoom = Number.POSITIVE_INFINITY,
+): Record<string, boolean> {
+  const on = hazardCovers(id, zoom);
   return {
     ...Object.fromEntries(HIDDEN_UNDER_HAZARD.map((l) => [l, !on])),
     ...Object.fromEntries(SHOWN_UNDER_HAZARD.map((l) => [l, on])),
