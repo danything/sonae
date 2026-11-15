@@ -7,6 +7,8 @@ name: Installers
 # どれも、答えるまで・VOICEVOX が既定の声で合成できるまで・上げ直し・外すまでを見る。
 #
 # 重いので、インストーラと配布物に関わるファイルを変えたときと、手で回したときだけ。
+# 手で回すときに release (latest か v0.1.0) を渡すと、組まずに、使う人と同じくリリースの配布物とイメージで入れる
+# (gh workflow run installers.yml -f release=latest)。
 on:
   pull_request:
     paths:
@@ -22,7 +24,17 @@ on:
       - .github/bundle.sh
       - .github/workflows/installers.yml
       - .github/workflows/release.yml
+  # 手で回すときは、リリースの配布物とイメージで確かめられる (release に latest か v0.1.0 のようなタグ)。
+  # 空ならこのコミットから組んだもので (PR と同じ)
   workflow_dispatch:
+    inputs:
+      release:
+        description: "入れるリリース (latest か v0.1.0 の形。空ならこのコミットから組む)"
+        required: false
+        default: ""
+
+env:
+  RELEASE: ${{ inputs.release }}
 
 concurrency:
   group: installers-${{ github.ref }}
@@ -92,6 +104,7 @@ jobs:
       - uses: actions/checkout@v7
       # このコミットの sonae を組んで使う (main の latest には、まだこの変更が入っていない)
       - name: Build the image
+        if: env.RELEASE == ''
         run: docker build -t sonae:ci .
       - name: install.sh end to end
         env:
@@ -100,7 +113,13 @@ jobs:
           SONAE_IMAGE: sonae:ci
         run: |
           set -euo pipefail
+          # リリースで確かめるときは、リリースの compose.prod.yml とイメージ (バージョンのタグ) を使う
+          if [ -n "$RELEASE" ]; then
+            unset SONAE_COMPOSE_FILE SONAE_IMAGE
+            if [ "$RELEASE" = latest ]; then unset SONAE_VERSION; else export SONAE_VERSION="$RELEASE"; fi
+          fi
           bash install.sh --no-open
+          grep 'image: ghcr' ~/sonae/compose.yml || true
           curl -fsS http://localhost:3030/health; echo
           # ランナーの 80 / 443 は空いているので genkan が入り、http://sonae.localhost で開ける
           curl -fsS --resolve sonae.localhost:80:127.0.0.1 http://sonae.localhost/health; echo
@@ -152,7 +171,12 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          $env:SONAE_SERVER_ZIP = (Get-ChildItem "$env:RUNNER_TEMP\bundles\sonae-*-windows-x64.zip" | Select-Object -First 1).FullName
+          # Release mode: download the release bundle (latest, or the given tag) like a user does
+          if ($env:RELEASE) {
+              if ($env:RELEASE -ne 'latest') { $env:SONAE_VERSION = $env:RELEASE }
+          } else {
+              $env:SONAE_SERVER_ZIP = (Get-ChildItem "$env:RUNNER_TEMP\bundles\sonae-*-windows-x64.zip" | Select-Object -First 1).FullName
+          }
           $installer = [scriptblock]::Create([IO.File]::ReadAllText("$PWD\install.ps1"))
           & $installer -NoOpen
           & curl.exe -fsS http://127.0.0.1:3030/health
@@ -191,8 +215,13 @@ jobs:
         run: |
           set -euo pipefail
           arch=$(uname -m | sed 's/x86_64/x64/')
-          SONAE_SERVER_TARBALL=$(ls "$RUNNER_TEMP"/bundles/sonae-*-darwin-"$arch".tar.gz)
-          export SONAE_SERVER_TARBALL
+          # リリースで確かめるときは、使う人と同じくリリースの配布物を取らせる
+          if [ -n "$RELEASE" ]; then
+            if [ "$RELEASE" != latest ]; then export SONAE_VERSION="$RELEASE"; fi
+          else
+            SONAE_SERVER_TARBALL=$(ls "$RUNNER_TEMP"/bundles/sonae-*-darwin-"$arch".tar.gz)
+            export SONAE_SERVER_TARBALL
+          fi
           sudo -E bash install.sh --no-open
           curl -fsS http://127.0.0.1:3030/health; echo
           # この Mac のブラウザ (ループバック) は TRUSTED_NETWORKS でログインなしで開ける。知らない名前では通さない
