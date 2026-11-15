@@ -26,6 +26,7 @@
       resync,
       (e) => alerter.handle(e),
       (ok) => alerter.connection(ok),
+      (voice) => alerter.applyVoice(voice),
     ),
   );
 </script>

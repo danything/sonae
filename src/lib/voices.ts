@@ -61,11 +61,14 @@ export interface Voice {
 export interface SpeechInfo {
   /** VOICEVOX のエンジンにつながっている */
   available: boolean;
+  /** まだ選んでいないときの声 (`VOICEVOX_SPEAKER`) */
   defaultSpeaker: number;
+  /** この家で読む声 (サーバーに 1 つ。全部の端末で同じ) */
+  voice: number;
   voices: Voice[];
 }
 
-/** クレジット (「VOICEVOX:剣崎雌雄」)。出典と注意の窓に、使っている声ごとに出す */
+/** クレジット (「VOICEVOX:剣崎雌雄」)。出典と注意の窓に、読む声を出す */
 export const creditOf = (v: Pick<Voice, "name">) => `VOICEVOX:${v.name}`;
 
 /** 選択肢の表示 (「剣崎雌雄 (ノーマル)」) */

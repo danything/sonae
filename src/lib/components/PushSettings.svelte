@@ -59,6 +59,25 @@
   let prefsMessage = $state("");
   /** 開いているときの通知のスイッチの知らせ (許可されなかったとき) */
   let notifyMessage = $state("");
+  /** 声を保存したかどうか (声の選択のすぐ下に出す) */
+  let voiceMessage = $state("");
+  let voiceSaving = $state(false);
+
+  /**
+   * 声は選んだらすぐサーバーに保存する (この家の全部の端末で同じ声になる)。保存している間は、
+   * 選択と「試しに聞く」を止める (前の声で試しに聞かないように)
+   */
+  async function setVoice(select: HTMLSelectElement): Promise<void> {
+    voiceSaving = true;
+    voiceMessage = "保存しています…";
+    const failed = await alerter.saveVoice(Number(select.value));
+    voiceSaving = false;
+    voiceMessage =
+      failed ?? "保存しました。この家の全部の端末で、この声で読みます";
+    // 保存できなかったときは選択を戻す (値が変わらないので、Svelte は書き直さない)
+    if (failed && alerter.voiceId !== undefined)
+      select.value = String(alerter.voiceId);
+  }
 
   const others = $derived(
     info?.enabled
@@ -484,11 +503,9 @@
         声
         <select
           value={alerter.voiceId}
-          onchange={(e) =>
-            alerter.setSettings({
-              ...alerter.settings,
-              voice: Number(e.currentTarget.value),
-            })}
+          disabled={voiceSaving}
+          onchange={(e) => void setVoice(e.currentTarget)}
+          aria-describedby="voice-note"
           data-testid="alert-voice"
         >
           {#each alerter.speech.voices as v (v.id)}
@@ -496,10 +513,20 @@
           {/each}
         </select>
       </label>
+      <p class="small" id="voice-note">
+        声はこの家の全部の端末で同じになります
+        (サーバーに保存します)。読み上げのオン/オフは端末ごとです。
+      </p>
+      {#if voiceMessage}
+        <p class="small" role="status" data-testid="voice-status">
+          {voiceMessage}
+        </p>
+      {/if}
       <div class="cluster">
         <button
           type="button"
           class="secondary"
+          disabled={voiceSaving}
           onclick={() => alerter.previewVoice()}>試しに聞く</button
         >
       </div>

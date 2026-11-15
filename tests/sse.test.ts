@@ -116,3 +116,33 @@ test("上限ちょうどなら、resync は送らずに全部埋め直す", asyn
   expect(text).toContain("id: 4\n");
   ac.abort();
 });
+
+test("イベントのほかの知らせ (読み上げの声) を、つないだときと替わったときに送り、閉じたらやめる", async () => {
+  const ac = new AbortController();
+  const listeners = new Set<(id: number) => void>();
+  const frame = (id: number) =>
+    sseFrame({ event: "voice", data: { voice: id } });
+  const res = sseStream({
+    backlog: () => [],
+    latestSeq: () => 0,
+    subscribe: () => () => {},
+    notices: (send) => {
+      send(frame(21));
+      const fn = (id: number) => send(frame(id));
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
+    signal: ac.signal,
+  });
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("本文が無い");
+  expect(await readUntil(reader, "event: voice")).toContain(
+    'event: voice\ndata: {"voice":21}\n\n',
+  );
+  for (const fn of listeners) fn(52);
+  expect(await readUntil(reader, "event: voice")).toContain(
+    'data: {"voice":52}',
+  );
+  ac.abort();
+  expect(listeners.size).toBe(0);
+});

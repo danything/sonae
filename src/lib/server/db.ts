@@ -177,6 +177,16 @@ const MIGRATIONS: string[] = [
   CREATE INDEX weather_infos_series ON weather_infos (series, reported_at);
   CREATE INDEX weather_infos_reported ON weather_infos (reported_at);
   `,
+  `
+  -- この家 (1 つのサーバー) の設定。key ごとに JSON の値を 1 行。いまは読み上げの声 (voice) だけ (2.4)。
+  -- updated_by は変えた人 (IdP の sub)、時刻はミリ秒
+  CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_by TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  `,
 ];
 
 export function openDb(path: string): Database {

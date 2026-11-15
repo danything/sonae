@@ -26,8 +26,7 @@ export interface AlertSettings {
   sound: boolean;
   /** 読み上げる */
   speech: boolean;
-  /** 読み上げの声 (VOICEVOX のスタイルの id)。無ければサーバーの既定の声 */
-  voice?: number;
+  // 声は端末に持たない (この家で 1 つ。サーバーの DB。前の `voice` は読まない)
   /** OS の通知を出す。無ければ既定 (通知の許可があれば出す)。許可が無ければ、オンでも出せない */
   notify?: boolean;
   /** 画面への配信が切れた・戻ったことを知らせる。無ければ既定 (知らせる) */
@@ -44,7 +43,6 @@ export function parseAlertSettings(raw: string | null): AlertSettings {
       sound: o?.sound === true,
       speech: o?.speech === true,
     };
-    if (Number.isInteger(o?.voice) && (o?.voice ?? -1) >= 0) s.voice = o?.voice;
     if (typeof o?.notify === "boolean") s.notify = o.notify;
     if (typeof o?.outage === "boolean") s.outage = o.outage;
     return s;

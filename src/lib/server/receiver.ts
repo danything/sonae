@@ -49,7 +49,7 @@ export function app(): App {
       broker: new Broker(),
       sources: [],
       pusher: vapid ? new Pusher(d, vapid) : undefined,
-      voice: voicevoxFromEnv(),
+      voice: voicevoxFromEnv(d),
     };
   }
   return g.__sonae;
