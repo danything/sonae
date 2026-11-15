@@ -241,3 +241,30 @@ export function base64UrlToBytes(s: string): Uint8Array<ArrayBuffer> {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
+
+/**
+ * 受け付ける配信サービス。購読の endpoint はブラウザから来るので、任意の宛先へサーバーから
+ * POST させないよう、主なブラウザの配信サービスだけに絞る (Chrome・Edge は FCM、Firefox は
+ * Mozilla、Safari は Apple、旧 Edge は WNS)。画面も、登録する前に同じ決まりで見る
+ * (届かない宛先を返すブラウザに、黙って登録させない)
+ */
+export const PUSH_HOSTS = [
+  "fcm.googleapis.com",
+  "push.services.mozilla.com",
+  "push.apple.com",
+  "notify.windows.com",
+];
+
+/** 購読の endpoint が、受け付ける配信サービスの https の URL か */
+export function pushEndpointOk(endpoint: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.port !== "") return false;
+  return PUSH_HOSTS.some(
+    (h) => url.hostname === h || url.hostname.endsWith(`.${h}`),
+  );
+}

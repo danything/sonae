@@ -11,6 +11,14 @@
 import { alerter } from "./alerter.svelte.ts";
 import { type Cities, cityAt, homeOf, planHomeSave } from "./home.ts";
 import { createQueue } from "./prefs-queue.ts";
+import {
+  endpointBlock,
+  type PushBlock,
+  pushBlockOf,
+  pushBlockText,
+  type PushFeatures,
+  registerFailedText,
+} from "./push-support.ts";
 import { base64UrlToBytes, type Home, type PushPrefs } from "./push.ts";
 
 export interface Registered {
@@ -24,11 +32,30 @@ export type PushInfo =
   | { enabled: false }
   | { enabled: true; publicKey: string; subscriptions: Registered[] };
 
-/** ブラウザが Web Push を使えるか */
+/** このブラウザにある、Web Push に要る機能 */
+export const pushFeatures = (): PushFeatures => ({
+  serviceWorker: "serviceWorker" in navigator,
+  pushManager: "PushManager" in window,
+  notification: "Notification" in window,
+  standalone:
+    "standalone" in navigator
+      ? (navigator as { standalone?: boolean }).standalone === true
+      : undefined,
+});
+
+/** ブラウザが Web Push を使えそうか (機能がそろっているか) */
 export const pushSupported = (): boolean =>
-  "serviceWorker" in navigator &&
-  "PushManager" in window &&
-  "Notification" in window;
+  pushBlockOf(pushFeatures()) === null;
+
+/**
+ * 登録してみて分かった、届かない宛先 (Android の Edge など)。このページを開いている間は覚えておき、
+ * 窓を開き直しても「このブラウザで受ける」を出さない
+ */
+let endpointBlocked: PushBlock | null = null;
+
+/** Web Push を使えない訳 (機能が無い・届かない宛先を返した)。使えそうなら null */
+export const pushBlock = (): PushBlock | null =>
+  pushBlockOf(pushFeatures()) ?? endpointBlocked;
 
 /** サーバーの Web Push の登録と、このブラウザの購読の endpoint (無ければ undefined) */
 export async function readPushState(): Promise<{
@@ -43,6 +70,13 @@ export async function readPushState(): Promise<{
   const sub = await (
     await navigator.serviceWorker.ready
   ).pushManager.getSubscription();
+  // 前に作った購読が届かない宛先なら、覚えて消す (サーバーには登録されていないので、ブラウザにだけ残っている)
+  const bad = sub ? endpointBlock(sub.endpoint) : null;
+  if (sub && bad) {
+    endpointBlocked ??= bad;
+    await sub.unsubscribe().catch(() => false);
+    return { info, endpoint: undefined };
+  }
   return { info, endpoint: sub?.endpoint };
 }
 
@@ -77,6 +111,14 @@ export async function sendPrefs(
     if (!granted)
       return "通知が許可されていません。ブラウザのサイトの設定で許可してください。";
     const sub = await subscribe(publicKey);
+    // 登録できても、届かない宛先を返すブラウザがある (Android の Edge は `permanently-removed.invalid`)。
+    // サーバーに送っても断られるだけなので、ここで止めて、何ができないかと代わりの道を返す
+    const block = endpointBlock(sub.endpoint);
+    if (block) {
+      endpointBlocked = block;
+      await sub.unsubscribe().catch(() => false);
+      return pushBlockText(block, navigator.userAgent);
+    }
     alerter.setPrefs(prefs);
     const res = await fetch("/api/push", {
       method: "PUT",
@@ -91,7 +133,7 @@ export async function sendPrefs(
       ? "保存しました"
       : `保存できませんでした (${res.status}): ${await res.text()}`;
   } catch (err) {
-    return `登録できませんでした: ${err}`;
+    return registerFailedText(err);
   }
 }
 

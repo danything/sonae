@@ -13,7 +13,12 @@ import type { Database } from "bun:sqlite";
 import { buildPushPayload } from "@block65/webcrypto-web-push";
 
 import type { SonaeEvent } from "#lib/model.ts";
-import { normalizePrefs, type PushPayload, type PushPrefs } from "#lib/push.ts";
+import {
+  normalizePrefs,
+  pushEndpointOk,
+  type PushPayload,
+  type PushPrefs,
+} from "#lib/push.ts";
 
 import {
   digestOf,
@@ -91,18 +96,6 @@ export function vapidFromEnv(
   return { vapid: { jwk, publicKey, subject } };
 }
 
-/**
- * 受け付ける配信サービス。購読の endpoint はブラウザから来るので、任意の宛先へサーバーから
- * POST させないよう、主なブラウザの配信サービスだけに絞る (Chrome・Edge は FCM、Firefox は
- * Mozilla、Safari は Apple、旧 Edge は WNS)
- */
-export const PUSH_HOSTS = [
-  "fcm.googleapis.com",
-  "push.services.mozilla.com",
-  "push.apple.com",
-  "notify.windows.com",
-];
-
 export interface Subscription {
   endpoint: string;
   p256dh: string;
@@ -117,19 +110,7 @@ export function parseSubscription(input: unknown): Subscription | null {
     keys?: { p256dh?: unknown; auth?: unknown };
   };
   if (typeof o.endpoint !== "string" || o.endpoint.length > 1024) return null;
-  let url: URL;
-  try {
-    url = new URL(o.endpoint);
-  } catch {
-    return null;
-  }
-  if (url.protocol !== "https:" || url.port !== "") return null;
-  if (
-    !PUSH_HOSTS.some(
-      (h) => url.hostname === h || url.hostname.endsWith(`.${h}`),
-    )
-  )
-    return null;
+  if (!pushEndpointOk(o.endpoint)) return null;
   const p256dh = o.keys?.p256dh;
   const auth = o.keys?.auth;
   if (typeof p256dh !== "string" || typeof auth !== "string") return null;
