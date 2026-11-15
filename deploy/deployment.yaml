@@ -4,6 +4,8 @@ metadata:
   name: sonae
   namespace: sonae
   annotations:
+    # Helm chart (charts/sonae) へ移すあいだ、deploy/ を読む Application に消させない (移したら chart が引き取る)
+    argocd.argoproj.io/sync-options: Prune=false
     # 参照している Secret が変わったら、Reloader が Pod を入れ替える
     reloader.stakater.com/auto: "true"
 spec:

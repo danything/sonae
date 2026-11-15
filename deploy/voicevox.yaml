@@ -11,6 +11,9 @@ kind: Deployment
 metadata:
   name: voicevox
   namespace: sonae
+  annotations:
+    # Helm chart (charts/sonae) へ移すあいだ、deploy/ を読む Application に消させない (移したら chart が引き取る)
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   replicas: 1
   strategy:
@@ -65,6 +68,9 @@ kind: Service
 metadata:
   name: voicevox
   namespace: sonae
+  annotations:
+    # Helm chart (charts/sonae) へ移すあいだ、deploy/ を読む Application に消させない (移したら chart が引き取る)
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   selector:
     app: voicevox
@@ -79,6 +85,9 @@ kind: NetworkPolicy
 metadata:
   name: voicevox
   namespace: sonae
+  annotations:
+    # Helm chart (charts/sonae) へ移すあいだ、deploy/ を読む Application に消させない (移したら chart が引き取る)
+    argocd.argoproj.io/sync-options: Prune=false
 spec:
   podSelector:
     matchLabels:
