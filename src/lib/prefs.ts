@@ -29,7 +29,10 @@ export function removePref(key: string): void {
 
 export type ThemeMode = "dark" | "light" | "system";
 
-/** テーマを当てる (app.html の描く前のスクリプトと同じ決め方) */
+/**
+ * テーマを選んで当てる (app.html の描く前のスクリプトと同じ決め方と付ける所)。既定は端末に合わせる。
+ * 端末の設定が変わったときの付け直しは app.html が `data-theme-mode` を見てする
+ */
 export function applyTheme(mode: ThemeMode): void {
   const dark =
     mode === "dark" ||
@@ -39,5 +42,16 @@ export function applyTheme(mode: ThemeMode): void {
   document
     .querySelector('meta[name="theme-color"]')
     ?.setAttribute("content", dark ? "#0b0c0f" : "#ffffff");
+  const manifest = document.querySelector('link[rel="manifest"]');
+  const href = manifest?.getAttribute("href");
+  if (manifest && href) manifest.setAttribute("href", manifestHref(href, dark));
   writePref("theme", mode);
+}
+
+/** テーマの地の色のマニフェスト (暗いのは `manifest.webmanifest`、明るいのは `manifest-light.webmanifest`) */
+export function manifestHref(href: string, dark: boolean): string {
+  return href.replace(
+    /manifest(-light)?\.webmanifest$/,
+    dark ? "manifest.webmanifest" : "manifest-light.webmanifest",
+  );
 }

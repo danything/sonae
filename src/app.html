@@ -1,5 +1,6 @@
 <!doctype html>
-<html lang="ja" data-theme="dark">
+<!-- テーマ (data-theme) は下のスクリプトが描く前に付ける。スクリプトが動かなければ明るいテーマ (app.css) -->
+<html lang="ja">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -8,7 +9,7 @@
       href="%sveltekit.assets%/favicon.svg"
       type="image/svg+xml"
     />
-    <meta name="theme-color" content="#0b0c0f" />
+    <meta name="theme-color" content="#ffffff" />
     <!-- iPhone・iPad はホーム画面に追加した Web アプリでだけ Web Push が届く (docs/design.md の 2.4) -->
     <link rel="manifest" href="%sveltekit.assets%/manifest.webmanifest" />
     <!-- iOS のホーム画面のアイコン (SVG は読まないので PNG。tools/icons/build.sh で作る) -->
@@ -33,16 +34,33 @@
         } catch {
           // 既定のまま
         }
-        const mode = saved === "light" || saved === "dark" ? saved : "system";
-        const dark =
-          mode === "dark" ||
-          (mode === "system" &&
-            matchMedia("(prefers-color-scheme: dark)").matches);
-        document.documentElement.dataset.theme = dark ? "dark" : "light";
-        document.documentElement.dataset.themeMode = mode;
-        document
-          .querySelector('meta[name="theme-color"]')
-          ?.setAttribute("content", dark ? "#0b0c0f" : "#ffffff");
+        const root = document.documentElement;
+        root.dataset.themeMode =
+          saved === "light" || saved === "dark" ? saved : "system";
+        // 決め方と付ける所は `#lib/prefs.ts` の applyTheme と同じ。CSS はまだ読んでいないので、地の色 (app.css の --so-bg) を直に書く
+        const scheme = matchMedia("(prefers-color-scheme: dark)");
+        const paint = () => {
+          const mode = root.dataset.themeMode;
+          const dark = mode === "dark" || (mode === "system" && scheme.matches);
+          root.dataset.theme = dark ? "dark" : "light";
+          document
+            .querySelector('meta[name="theme-color"]')
+            ?.setAttribute("content", dark ? "#0b0c0f" : "#ffffff");
+          // ホーム画面に足すときの地の色 (マニフェストの background_color と theme_color) も合わせる
+          const manifest = document.querySelector('link[rel="manifest"]');
+          manifest?.setAttribute(
+            "href",
+            manifest
+              .getAttribute("href")
+              .replace(
+                /manifest(-light)?\.webmanifest$/,
+                dark ? "manifest.webmanifest" : "manifest-light.webmanifest",
+              ),
+          );
+        };
+        paint();
+        // 端末に合わせているときは、開いている間に端末の設定が変わっても付け直す
+        scheme.addEventListener("change", paint);
       })();
     </script>
     %sveltekit.head%
