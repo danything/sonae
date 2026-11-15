@@ -54,6 +54,12 @@ export const OPENINGS = {
   tornado: "竜巻注意情報です。",
 } as const;
 
+/**
+ * 現在地の市町村等の気象の通知 (`Notice.here`) で、地域の文の前に読む文。地域は電文の名前で読むので、
+ * 住んでいる地域か現在地かをこの文で言う
+ */
+export const HERE = "現在地の情報です。";
+
 /** 「試しに聞く」と「試しに鳴らす」で読む文 */
 export const SAMPLE =
   "そなえの読み上げです。この声で地震や津波の情報をお知らせします。";
@@ -70,6 +76,7 @@ export const CONNECTION = {
 /** 合成しておく文 (冒頭の文と試しの文と、受信が切れた・戻ったときの文) */
 export const FIXED_TEXTS: readonly string[] = [
   ...Object.values(OPENINGS),
+  HERE,
   SAMPLE,
   ...Object.values(CONNECTION),
 ];
@@ -297,16 +304,21 @@ function warningParts(n: Notice, w: WeatherWarning): string[] {
   }
   if (n.area) {
     const kinds = kindNames(n.area);
-    if (kinds.length > 0)
+    if (kinds.length > 0) {
+      if (n.here) out.push(HERE);
       out.push(`${clean(n.area.name)}には、${kinds.join("、")}が出ています。`);
+    }
   }
   out.push(...sentences(clean(w.headline)));
   return out;
 }
 
-/** 記録的短時間大雨情報・竜巻注意情報。決まった文と、気象庁の見出しのまま */
-function weatherInfoParts(i: WeatherInfo): string[] {
-  const headline = sentences(clean(i.headline));
+/**
+ * 記録的短時間大雨情報・竜巻注意情報。決まった文と、気象庁の見出しのまま。
+ * 現在地の通知 (`here`) は、決まった文の後に現在地と言う
+ */
+function weatherInfoParts(i: WeatherInfo, here: boolean): string[] {
+  const headline = [...(here ? [HERE] : []), ...sentences(clean(i.headline))];
   if (i.kind === "rain") return [OPENINGS.recordRain, ...headline];
   if (i.kind === "tornado") {
     const until = clockText(i.validUntil);
@@ -382,7 +394,7 @@ export function readoutOf(n: Notice): string[] {
       parts = warningParts(n, e.data);
       break;
     case "weather":
-      parts = weatherInfoParts(e.data);
+      parts = weatherInfoParts(e.data, n.here === true);
       break;
     default:
       parts = [clean(n.title), ...sentences(clean(n.body))];
@@ -390,4 +402,22 @@ export function readoutOf(n: Notice): string[] {
   return parts
     .flatMap((p) => (isFixed(p) ? [p] : sentences(p)))
     .filter(Boolean);
+}
+
+/**
+ * 1 度にまとめて鳴らす通知 (住んでいる地域と現在地の両方に当たった報。`#lib/alert.ts` の `groupAlerts`) の原稿。
+ * 先の通知の原稿に、後の通知の原稿で先に無い文だけを足す (冒頭の文と見出しを 2 度読まない)
+ */
+export function readoutOfAll(ns: Notice[]): string[] {
+  const [first, ...rest] = ns;
+  if (!first) return [];
+  const out = readoutOf(first);
+  const seen = new Set(out);
+  for (const n of rest)
+    for (const p of readoutOf(n))
+      if (!seen.has(p)) {
+        seen.add(p);
+        out.push(p);
+      }
+  return out;
 }

@@ -6,10 +6,19 @@
  *   続けて変えたときに前の送信と追い越さないよう、送るのは 1 つずつ順に (`queuePrefs`)
  * - 住んでいる地域は、緯度・経度が入る市町村等を端末の中で探す (`#lib/home.ts` の `cityAt`・`homeOf`)。
  *   **緯度・経度はサーバーに送らず、覚えもしない**。送るのは市町村等のコードと、そこから引いた地域だけ
+ * - 地図の現在地が入る市町村等も同じ道で探し、開いているときの気象の通知に使う (`trackHere`)。
+ *   これはサーバーに送らず、端末にも覚えない
  */
 
 import { alerter } from "./alerter.svelte.ts";
-import { type Cities, cityAt, homeOf, planHomeSave } from "./home.ts";
+import {
+  type AreaFeature,
+  type Cities,
+  cityAt,
+  createHereFinder,
+  homeOf,
+  planHomeSave,
+} from "./home.ts";
 import { createQueue } from "./prefs-queue.ts";
 import {
   endpointBlock,
@@ -182,12 +191,10 @@ export function loadCities(): Promise<{
   return citiesLoad;
 }
 
-let areasLoad: Promise<Parameters<typeof cityAt>[2]> | undefined;
-function loadWarningAreas(): Promise<Parameters<typeof cityAt>[2]> {
+let areasLoad: Promise<AreaFeature[]> | undefined;
+function loadWarningAreas(): Promise<AreaFeature[]> {
   areasLoad ??= fetch("/areas/warning-areas.geojson")
-    .then(
-      (r) => r.json() as Promise<{ features: Parameters<typeof cityAt>[2] }>,
-    )
+    .then((r) => r.json() as Promise<{ features: AreaFeature[] }>)
     .then((fc) => fc.features);
   areasLoad.catch(() => (areasLoad = undefined));
   return areasLoad;
@@ -201,6 +208,39 @@ export async function homeAt(lat: number, lon: number): Promise<Home | null> {
   ]);
   const code = cityAt(lat, lon, features);
   return code ? homeOf(code, cities, quakeNames) : null;
+}
+
+let hereFinder: ReturnType<typeof createHereFinder> | undefined;
+/** 現在地を受けた回数。前の位置の探す途中に新しい位置が来たら、前のほうの答えを使わない */
+let hereSeq = 0;
+
+/**
+ * 地図の現在地から、いる市町村等を `alerter.here` に入れる (開いているときの気象の通知に使う)。
+ * 位置が無い (地図の現在地がオフ・まだ取れない) か、「現在地の気象も知らせる」を切っていれば空にする。
+ * 前の市町村等の中にいる間は面を引き直さない (`createHereFinder`)。
+ * **緯度・経度はサーバーに送らず、覚えもしない** (住んでいる地域と同じ)。`alerter.here` もメモリだけ
+ */
+export async function trackHere(
+  at: { lat: number; lon: number } | undefined,
+): Promise<void> {
+  const seq = ++hereSeq;
+  if (!at || alerter.settings.here === false) {
+    alerter.here = null;
+    return;
+  }
+  try {
+    const [{ cities, quakeNames }, features] = await Promise.all([
+      loadCities(),
+      loadWarningAreas(),
+    ]);
+    if (seq !== hereSeq) return;
+    hereFinder ??= createHereFinder(features);
+    const code = hereFinder(at.lat, at.lon);
+    if (code === (alerter.here?.code ?? null)) return;
+    alerter.here = code ? homeOf(code, cities, quakeNames) : null;
+  } catch {
+    // 面を読めなければ、住んでいる地域だけで知らせる (次の位置で読み直す)
+  }
 }
 
 /**
