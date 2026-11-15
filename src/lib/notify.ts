@@ -34,7 +34,7 @@ import {
   type WeatherInfo,
   type WeatherWarning,
 } from "#lib/model.ts";
-import type { PushPrefs, TsunamiLevel } from "#lib/push.ts";
+import type { PushPayload, PushPrefs, TsunamiLevel } from "#lib/push.ts";
 import { OFFICE_PREFIX, selectHref } from "#lib/view.ts";
 
 /** 押したときに開く所 (1 つの画面で、その件を選んだ URL。docs/ui.md) */
@@ -567,4 +567,20 @@ export function decide(
   if (!prev) return ok ? { send: true, renotify: true } : { send: false };
   if (prev.digest === digest) return { send: false };
   return { send: true, renotify: ok && n.level > prev.level };
+}
+
+/**
+ * 通知に出す中身。Web Push (サーバー) も、開いている画面の通知 (`alerter.svelte.ts`) もこれで作り、
+ * `toNotification` で通知の形にする (同じ事象は同じ tag・見出し・本文になり、前の通知を置き換える)
+ */
+export function payloadOf(n: Notice, renotify: boolean): PushPayload {
+  return {
+    title: n.title,
+    body: n.body,
+    tag: n.tag,
+    url: n.url,
+    renotify,
+    sticky: n.sticky,
+    timestamp: n.at,
+  };
 }

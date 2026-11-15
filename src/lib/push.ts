@@ -168,12 +168,44 @@ export interface NotificationShape {
     tag: string;
     renotify: boolean;
     requireInteraction: boolean;
+    /** OS の通知音を鳴らさない (開いている画面が自分で音を鳴らしたとき。docs/design.md の 2.4) */
+    silent: boolean;
     timestamp: number;
     icon: string;
     lang: string;
     data: { url: string };
   };
 }
+
+/** いま出ている通知のうち、比べる所 (`Notification` の title・body・tag) */
+export interface Shown {
+  title: string;
+  body: string;
+  tag: string;
+}
+
+/**
+ * 同じ事象の同じ中身の通知が、もう出ているか。開いている画面と Web Push の両方が同じ事象で通知を出すので
+ * (docs/design.md の 2.4)、後から出すほうはこれで 2 度目の音を鳴らさない
+ * (Service Worker は鳴らさずに置き換え、画面は出さない)
+ */
+export function isShown(
+  n: NotificationShape,
+  shown: readonly Shown[],
+): boolean {
+  return shown.some(
+    (s) =>
+      s.tag === n.options.tag &&
+      s.title === n.title &&
+      s.body === n.options.body,
+  );
+}
+
+/** 鳴らさずに置き換える形にする (同じ tag の通知を、音も前に出すことも無しに差し替える) */
+export const quiet = (n: NotificationShape): NotificationShape => ({
+  title: n.title,
+  options: { ...n.options, renotify: false, silent: true },
+});
 
 /** 届いた中身を通知の形にする。読めないときも何か出す (iOS は出さないと購読を止める) */
 export function toNotification(raw: unknown): NotificationShape {
@@ -190,6 +222,7 @@ export function toNotification(raw: unknown): NotificationShape {
       tag: str(p.tag, "sonae"),
       renotify: p.renotify === true,
       requireInteraction: p.sticky === true,
+      silent: false,
       timestamp: typeof p.timestamp === "number" ? p.timestamp : Date.now(),
       // Android の通知は SVG のアイコンを出さないので PNG (tools/icons/build.sh)
       icon: "/icons/icon-192.png",

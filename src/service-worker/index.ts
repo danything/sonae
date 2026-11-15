@@ -6,7 +6,7 @@
 
 /// <reference types="@sveltejs/kit" />
 
-import { toNotification } from "#lib/push.ts";
+import { isShown, quiet, toNotification } from "#lib/push.ts";
 
 const sw = self as unknown as ServiceWorkerGlobalScope;
 
@@ -26,9 +26,20 @@ sw.addEventListener("push", (event) => {
     raw = undefined;
   }
   const n = toNotification(raw);
-  // renotify は DOM の型に無いが、Chrome などは読む (同じ tag の置き換えで鳴らし直す)
   event.waitUntil(
-    sw.registration.showNotification(n.title, n.options as NotificationOptions),
+    (async () => {
+      // 開いている画面が同じ事象の同じ中身をもう出していたら、鳴らさずに置き換える (2 度鳴らさない)。
+      // 出すこと自体はやめない (iOS は Web Push で通知を出さないと購読を止める)
+      const shown = await sw.registration
+        .getNotifications({ tag: n.options.tag })
+        .catch(() => []);
+      const out = isShown(n, shown) ? quiet(n) : n;
+      // renotify は DOM の型に無いが、Chrome などは読む (同じ tag の置き換えで鳴らし直す)
+      await sw.registration.showNotification(
+        out.title,
+        out.options as NotificationOptions,
+      );
+    })(),
   );
 });
 
