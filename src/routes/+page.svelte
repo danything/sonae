@@ -75,7 +75,7 @@
     WEATHER_INFO_LABEL,
     type WeatherInfo,
   } from "#lib/model.ts";
-  import { CREDITS, KMONI_URL, NOTICE } from "#lib/notice.ts";
+  import { KMONI_URL, NOTICE, SHORT_CREDIT } from "#lib/notice.ts";
   import { PHONE_FORM } from "#lib/phone-form.ts";
   import {
     applyTheme,
@@ -787,12 +787,14 @@
 {/snippet}
 
 {#snippet credits(where: string)}
-  <!-- 注意文と出典 (docs/design.md の 5 章)。どちらの形も一覧のいちばん下 -->
+  <!-- 注意文と短い出典 (docs/design.md の 5 章)。どちらの形も一覧のいちばん下。出典の全文は「出典と注意」の窓 -->
   <footer class="foot {where} tiny muted">
     <p>{NOTICE}</p>
-    <ul>
-      {#each CREDITS as c (c)}<li>{c}</li>{/each}
-    </ul>
+    <p>
+      {SHORT_CREDIT}。全文は<a href={aboutHref} data-testid="foot-credits"
+        >「出典と注意」</a
+      >にあります。
+    </p>
   </footer>
 {/snippet}
 
@@ -1140,6 +1142,7 @@
         officeHref={(code) =>
           selectHref(params, "weather", `${OFFICE_PREFIX}${code}`)}
         onoffice={() => (tab = "list")}
+        {aboutHref}
         shown={!phone.current || tab === "map"}
       />
     </div>
@@ -1422,15 +1425,9 @@
   .list-foot {
     margin-top: var(--so-space-4);
   }
-  .foot p,
-  .foot ul {
+  .foot p {
     margin: 0 0 var(--so-space-2);
     padding: 0 var(--so-space-3);
-    list-style: none;
-  }
-  .foot li {
-    margin: 0;
-    list-style: none;
   }
   .phone-search,
   .dock,
