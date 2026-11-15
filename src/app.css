@@ -4,7 +4,7 @@
  *
  * - トークンの名前は denpa の `--dp-*` を `--so-*` にしたもの。値は denpa と同じ
  * - 層は地・件の面・操作の層の 3 つ (denpa の design.md 2 章)
- * - テーマは暗いのが既定で、明るい・端末に合わせるも選べる (app.html と `#lib/prefs.ts` が <html data-theme> を付ける)
+ * - テーマの既定は端末に合わせる。暗い・明るいも選べる (app.html と `#lib/prefs.ts` が <html data-theme> を付ける。スクリプトが動かなければ明るい)
  * - スマホの形は `<html data-phone>` (1000px 未満。app.html が描く前に付ける)。上のヘッダーを出さず、下のタブと dock に寄せる
  * - 動きは CSS の透明度と transform だけ。動きを減らす設定では全部止める (ファイルの最後)
  *
@@ -25,6 +25,9 @@
   --pico-font-family-sans-serif:
     "BIZ UDPGothic", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
   --pico-font-size: 16px;
+  /* 等幅 (キーの印など)。denpa の --dp-font-mono と同じ並び */
+  --pico-font-family-monospace:
+    ui-monospace, SFMono-Regular, "Cascadia Mono", Menlo, monospace;
   --pico-line-height: 1.6;
   --pico-spacing: 1rem;
   --pico-typography-spacing-vertical: 0.75rem;
@@ -100,7 +103,7 @@
   }
 }
 
-/* 明るいテーマ。値は Pico の色見本の段 (denpa と同じ) */
+/* 明るいテーマ (data-theme が無いときも)。値は Pico の色見本の段 (denpa と同じ) */
 :root:not([data-theme="dark"]),
 [data-theme="light"] {
   color-scheme: light;
@@ -132,7 +135,7 @@
   --so-warn-text: #694d00;
   --so-info-text: #025d5d;
 }
-/* 暗いテーマ (既定)。ほぼ黒で色みを抑えた段 (denpa と同じ) */
+/* 暗いテーマ。ほぼ黒で色みを抑えた段 (denpa と同じ) */
 [data-theme="dark"] {
   color-scheme: dark;
   --pico-background-color: #0b0c0f;

@@ -15,6 +15,11 @@
  * - ブラウザは、人がページを一度操作するまで音を出させない (自動再生の制限)。最初の操作で `<audio>` と
  *   読み上げを一度だけ無音で動かして、後から鳴らせるようにする。鳴らせない間は `blocked` が立ち、
  *   画面の上の端に帯 (押すと鳴らせるようになる) を出す。
+ * - 気象の警報・注意報などは、住んでいる地域に加えて地図の現在地が入る市町村等でも知らせる (`here`。
+ *   スイッチ `here` を切れば住んでいる地域だけ)。両方に当たった報は 1 度だけ鳴らす (`groupAlerts`)。
+ * - 知らせるもの (OS の通知・音・読み上げ) がオンの間は、Web Lock を 1 つ持ち続けて、Edge の
+ *   「スリープ中のタブ」などで裏のタブが止まらないようにする (`#lib/awake.ts`)。止まると、鳴るのが
+ *   タブを前に出すまで遅れる。
  * - 同じ事象の続報で何度も鳴らさない (控えはメモリに持つ。読み直したら忘れる)。
  *   タブを幾つも開いていても 1 つだけが鳴らす (Web Locks)。
  */
@@ -23,13 +28,15 @@ import {
   ALERT_OFF,
   type AlertSettings,
   autoplayAllowed,
+  groupAlerts,
   notifyOn,
   pageNotification,
   parseAlertPrefs,
   parseAlertSettings,
   type Permission,
-  planAlert,
+  planAlerts,
 } from "./alert.ts";
+import { KeepAwake } from "./awake.ts";
 import { chimeWav } from "./chime.ts";
 import {
   CONNECTION_TAG,
@@ -42,11 +49,12 @@ import { contentOf, type Notice, type Sent } from "./notify.ts";
 import { readPref, writePref } from "./prefs.ts";
 import {
   DEFAULT_PREFS,
+  type Home,
   isShown,
   normalizePrefs,
   type PushPrefs,
 } from "./push.ts";
-import { CONNECTION, readoutOf, SAMPLE } from "./readout.ts";
+import { CONNECTION, readoutOfAll, SAMPLE } from "./readout.ts";
 import { creditOf, type SpeechInfo } from "./voices.ts";
 
 /** 控えを持つ数の上限 (長く開いたままでも増え続けない) */
@@ -62,6 +70,11 @@ const permissionNow = (): Permission =>
 class Alerter {
   settings = $state<AlertSettings>({ ...ALERT_OFF });
   prefs = $state<PushPrefs>({ ...DEFAULT_PREFS });
+  /**
+   * 地図の現在地が入る市町村等 (`#lib/push-client.ts` の `trackHere` が入れる)。気象の警報・注意報などを、
+   * 住んでいる地域に加えてここでも知らせる。メモリだけに持ち、サーバーに送らない。緯度・経度は持たない
+   */
+  here = $state<Home | null>(null);
   /** 人がページを操作した (ブラウザが音を出させる) */
   activated = $state(false);
   /** 開いたときから自動再生を許している (操作の前でも `<audio>` を鳴らせる) */
@@ -122,6 +135,11 @@ class Alerter {
     return notifyOn(this.settings, this.permission);
   }
 
+  /** 何かで知らせる (OS の通知・音・読み上げのどれかがオン)。この間は裏のタブを眠らせない */
+  get alerting(): boolean {
+    return this.notifying || this.settings.sound || this.settings.speech;
+  }
+
   /** 音か読み上げがオンなのに、いまは鳴らせない */
   get blocked(): boolean {
     return (
@@ -167,8 +185,15 @@ class Alerter {
     document.addEventListener("visibilitychange", onVisible);
     // VOICEVOX が後からつながったときのために、ときどき読み直す
     const timer = setInterval(() => void this.loadSpeech(), 5 * 60_000);
+    // 知らせるものがオンの間は Web Lock を持ち、Edge の「スリープ中のタブ」などで止まらないようにする
+    const awake = new KeepAwake(navigator.locks);
+    const stopAwake = $effect.root(() => {
+      $effect(() => awake.set(this.alerting));
+    });
     return () => {
       clearInterval(timer);
+      stopAwake();
+      awake.set(false);
       document.removeEventListener("visibilitychange", onVisible);
       for (const t of events)
         window.removeEventListener(t, onGesture, { capture: true });
@@ -351,21 +376,24 @@ class Alerter {
   /** SSE で受けたイベント (live が新しいと判定したものだけ) */
   handle(e: SonaeEvent): void {
     // オフの間も控えは付ける (オンにした直後に、前から続いている事象の続報で鳴らさない)
-    const p = planAlert(e, Date.now(), this.prefs, this.sent);
-    if (this.sent.size > SENT_MAX) {
+    const here = this.settings.here === false ? null : this.here;
+    const g = groupAlerts(
+      planAlerts(e, Date.now(), this.prefs, this.sent, here),
+    );
+    while (this.sent.size > SENT_MAX) {
       const oldest = this.sent.keys().next().value;
-      if (oldest !== undefined) this.sent.delete(oldest);
+      if (oldest === undefined) break;
+      this.sent.delete(oldest);
     }
-    if (!p) return;
-    const n = p.notice;
     const notify = this.notifying;
-    if (!p.renotify) {
-      // 鳴らさない続報 (取消・解除・震源が決まった) は、この画面が出した通知が残っていれば置き換えるだけ
-      if (notify) void this.replace(n);
-      return;
-    }
+    // 鳴らさない続報 (取消・解除・震源が決まった) は、この画面が出した通知が残っていれば置き換えるだけ
+    if (notify) for (const n of g.replace) void this.replace(n);
+    const n = g.ring;
+    if (!n) return;
     if (notify || this.settings.sound || this.settings.speech)
-      void this.once(`${n.tag}\n${contentOf(n)}`, () => this.ring(n, notify));
+      void this.once(`${n.tag}\n${contentOf(n)}`, () =>
+        this.ring(n, notify, g.also),
+      );
   }
 
   /** 試しに鳴らす (ダイアログのボタン。押した操作の中なので、鳴らせるようにもなる) */
@@ -473,10 +501,14 @@ class Alerter {
    * チャイムが鳴れば通知は音なしで出し (2 つの音を重ねない)、鳴らなければ OS の通知音に任せる。
    * どちらかの音が鳴ったら、少しおいてから読む
    */
-  private async ring(n: Notice | null, notify: boolean): Promise<void> {
+  private async ring(
+    n: Notice | null,
+    notify: boolean,
+    also: Notice[] = [],
+  ): Promise<void> {
     const { sound, speech } = this.settings;
     const reads = speech && this.canSpeak;
-    const parts = reads ? (n ? readoutOf(n) : [SAMPLE]) : [];
+    const parts = reads ? (n ? readoutOfAll([n, ...also]) : [SAMPLE]) : [];
     // 音を合わせて待つ間に、最初の文を取りに行っておく
     const pending = parts.length > 0 ? this.fetchAll(parts) : undefined;
     this.rings++;
@@ -484,6 +516,8 @@ class Alerter {
     const chime = sound ? this.chime() : Promise.resolve(false);
     const chimed = notify ? await chime : false;
     const notified = n && notify ? await this.show(n, chimed) : false;
+    // 同じ報のほかの地域 (住んでいる地域と現在地の両方に当たった) は、音なしの通知で並べる (鳴らすのは 1 度)
+    if (notify) for (const a of also) await this.show(a, true);
     if (!pending) return;
     const go = () => {
       if (n) this.onread?.(n);

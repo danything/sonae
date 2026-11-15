@@ -4,24 +4,24 @@
 いまは持ち主 1 人で使う (ログインで閉じる。Entra のアプリロールで絞り、既定は `admin`。家族と共有するときは family 用のロールに替える)。ホスト名は `s.doany.io`。
 
 <p align="center">
-  <img src="docs/images/demo-anim.avif" alt="緊急地震速報 (警報) を受けると、画面の上に赤い帯が出て、地図が震源と警報の地域を示し、OS の通知が出る。続いて地震の情報が来ると、地図が各地の震度で塗られる" width="720">
+  <img src="docs/images/demo-anim.avif" alt="緊急地震速報 (警報) を受けると、右の列が詳しい内容に替わって先頭に赤い箱が出て、地図が震源と警報の地域を示し、OS の通知が出る。出ている間が過ぎると一覧へ戻り、続いて地震の情報を読み上げ始めると、詳しい内容が開いて地図が各地の震度で塗られる" width="720">
 </p>
 
-**音声つきの動画** (56 秒・1.9 MB): 試験用のデータで、緊急地震速報 → 地震の情報 → 津波注意報を受けたところ。チャイム → OS の通知 → 読み上げの流れと、地図・一覧・詳しい内容・吹き出しの動きが分かる。
+**音声つきの動画** (58 秒・2.2 MB): 試験用のデータで、緊急地震速報 → 地震の情報 → 津波注意報を受けたところ。チャイム → OS の通知 → 読み上げの流れと、読み上げ始めた報の詳しい内容が自動で開くようす、地図・一覧・吹き出しの動きが分かる。
 
-https://github.com/user-attachments/assets/ae573ddd-398a-4bd6-9a3d-08b5669f3957
+https://github.com/user-attachments/assets/24a0b5a8-9ba6-4722-bb65-c7baeda2827f
 
 [docs/images/demo.mp4](https://raw.githubusercontent.com/danything/sonae/main/docs/images/demo.mp4) (落として開く)
 
 <table>
   <tr>
-    <td align="center"><img src="docs/images/map.webp" alt="地図と一覧" width="380"><br><sub><b>地図と一覧</b> — 各地の震度と津波注意報の海岸を地図に、全部の種類を新しい順に 1 本の一覧に</sub></td>
-    <td align="center"><img src="docs/images/detail.webp" alt="詳しい内容" width="380"><br><sub><b>詳しい内容</b> — 行を押すと、震源・M・各地域の震度</sub></td>
+    <td align="center"><img src="docs/images/map.webp" alt="地図と一覧" width="380"><br><sub><b>地図と一覧</b> — 津波注意報の海岸と気象の警報・注意報を地図に、全部の種類を新しい順に 1 本の一覧に</sub></td>
+    <td align="center"><img src="docs/images/detail.webp" alt="詳しい内容" width="380"><br><sub><b>詳しい内容</b> — 行を押すと、震源・M・各地域の震度。地図も各地の震度で塗る</sub></td>
     <td align="center"><img src="docs/images/notify.webp" alt="通知の窓" width="380"><br><sub><b>通知</b> — 知らせる条件・音と読み上げ・読み上げの声・Web Push</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/images/phone-map.webp" alt="スマホの地図" width="190"><br><sub><b>スマホ</b> — 地図が画面いっぱいに</sub></td>
-    <td align="center"><img src="docs/images/phone-list.webp" alt="スマホの一覧" width="190"><br><sub><b>スマホの一覧</b> — 地図の上に重ねる面</sub></td>
+    <td align="center"><img src="docs/images/phone-map.webp" alt="スマホの地図" width="190"><br><sub><b>スマホ</b> — 地図が画面いっぱいに。下に選んだものの 1 行と 5 つのタブ</sub></td>
+    <td align="center"><img src="docs/images/phone-list.webp" alt="スマホの一覧" width="190"><br><sub><b>スマホの一覧</b> — 地図の上に重ねる面。種類のチップは下に</sub></td>
     <td></td>
   </tr>
 </table>

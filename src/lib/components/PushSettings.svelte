@@ -11,6 +11,7 @@
   import { goto } from "$app/navigation";
 
   import { alerter } from "#lib/alerter.svelte.ts";
+  import { EDGE_SLEEP_HINT, isDesktopEdge } from "#lib/awake.ts";
   import { byPrefecture, type Cities, homeOf } from "#lib/home.ts";
   import { INTENSITIES, intensityLabel } from "#lib/model.ts";
   import {
@@ -469,7 +470,7 @@
         住んでいる地域の気象
         <select
           bind:value={prefs.weather}
-          disabled={!prefs.home}
+          disabled={!prefs.home && alerter.settings.here === false}
           data-testid="prefs-weather"
         >
           <option value="warning">警報以上</option>
@@ -478,7 +479,7 @@
         </select>
       </label>
       <p class="small muted">
-        警報以上には、危険警報・特別警報と、記録的短時間大雨情報・竜巻注意情報も入ります。
+        警報以上には、危険警報・特別警報と、記録的短時間大雨情報・竜巻注意情報も入ります。開いているときは、現在地の気象にも同じ条件を使います。
       </p>
       <label>
         <input
@@ -525,6 +526,9 @@
       をアプリとして入れる (Chrome・Edge) か、サイトの設定で自動再生を許す
       (Firefox・Safari・Edge) と、開いただけで鳴らせることがあります。
     </p>
+    {#if alerter.alerting && typeof navigator !== "undefined" && isDesktopEdge(navigator.userAgent)}
+      <p class="small muted" data-testid="edge-sleep">{EDGE_SLEEP_HINT}</p>
+    {/if}
     <label>
       <input
         type="checkbox"
@@ -639,6 +643,30 @@
       (通知・音・読み上げ)
       で知らせます。戻ったら短く知らせます。切れている間も、自分でつなぎ直します。
     </p>
+    <label>
+      <input
+        type="checkbox"
+        role="switch"
+        checked={alerter.settings.here !== false}
+        onchange={(e) =>
+          alerter.setSettings({
+            ...alerter.settings,
+            here: e.currentTarget.checked,
+          })}
+        data-testid="alert-here"
+      />
+      現在地の気象も知らせる
+    </label>
+    <p class="small muted">
+      地図で現在地を出している間、いる市町村の気象警報・注意報も、上の「住んでいる地域の気象」と同じ条件で知らせます。位置はこの端末の中で市町村にするだけで、サーバーに送りません。
+    </p>
+    {#if alerter.settings.here !== false}
+      <p class="small muted" data-testid="alert-here-city">
+        {alerter.here
+          ? `いまは${alerter.here.name}にいます。`
+          : "地図の現在地がオフか、まだ取れていません。住んでいる地域だけで知らせます。"}
+      </p>
+    {/if}
 
     <h2 class="section-head">訓練・試験</h2>
     <label>

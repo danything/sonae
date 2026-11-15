@@ -119,7 +119,8 @@ export function byPrefecture(
 }
 
 type Ring = [number, number][];
-interface Feature {
+/** 市町村等の面 (`warning-areas.geojson` の 1 つ) */
+export interface AreaFeature {
   properties: { code?: string };
   geometry:
     | { type: "Polygon"; coordinates: Ring[] }
@@ -148,19 +149,42 @@ const inPolygon = (lon: number, lat: number, poly: Ring[]) =>
   inRing(lon, lat, poly[0] ?? []) &&
   !poly.slice(1).some((hole) => inRing(lon, lat, hole));
 
+/** 緯度・経度が、市町村等の面の中か */
+export function inFeature(lat: number, lon: number, f: AreaFeature): boolean {
+  const g = f.geometry;
+  if (!g || !f.properties.code) return false;
+  const polys = g.type === "Polygon" ? [g.coordinates] : g.coordinates;
+  return polys.some((p) => inPolygon(lon, lat, p));
+}
+
+/** 緯度・経度が入る市町村等の面。どこにも入らなければ (海の上など) undefined */
+export const featureAt = (
+  lat: number,
+  lon: number,
+  features: AreaFeature[],
+): AreaFeature | undefined => features.find((f) => inFeature(lat, lon, f));
+
 /** 緯度・経度が入る市町村等のコード。どこにも入らなければ (海の上など) null */
 export function cityAt(
   lat: number,
   lon: number,
-  features: Feature[],
+  features: AreaFeature[],
 ): string | null {
-  for (const f of features) {
-    const g = f.geometry;
-    if (!g || !f.properties.code) continue;
-    const polys = g.type === "Polygon" ? [g.coordinates] : g.coordinates;
-    if (polys.some((p) => inPolygon(lon, lat, p))) return f.properties.code;
-  }
-  return null;
+  return featureAt(lat, lon, features)?.properties.code ?? null;
+}
+
+/**
+ * 現在地が入る市町村等を、動いたときに探し直す (開いているときの気象の通知に使う。`#lib/push-client.ts`)。
+ * 前の面の中にまだいれば探さない (位置は数秒ごとに届くので、全部の面を毎回は引かない)。
+ * 緯度・経度は覚えず、覚えるのは入っている面だけ
+ */
+export function createHereFinder(features: AreaFeature[]) {
+  let last: AreaFeature | undefined;
+  return (lat: number, lon: number): string | null => {
+    if (!last || !inFeature(lat, lon, last))
+      last = featureAt(lat, lon, features);
+    return last?.properties.code ?? null;
+  };
 }
 
 /** Web Push の登録の様子 (`#lib/push-client.ts` の `readPushState` の形) */
