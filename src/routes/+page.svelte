@@ -723,13 +723,22 @@
     if (plan.closeDialog) pushOpen = false;
     const href = openHref(params, target, plan.closeDialog);
     if (opening === href) return;
-    const prev = own ? auto : null;
-    auto = {
-      href,
-      back: prev?.back ?? here,
-      pushed: prev?.pushed ?? !plan.replace,
-      ...(target.kind === "eew" ? { eew: target.id } : {}),
-    };
+    const same =
+      v.selected?.kind === target.kind && v.selected.id === target.id;
+    if (!same) {
+      const prev = own ? auto : null;
+      auto = {
+        href,
+        back: prev?.back ?? here,
+        pushed: prev?.pushed ?? !plan.replace,
+        ...(target.kind === "eew" ? { eew: target.id } : {}),
+      };
+    } else if (auto?.href === here) {
+      // もう開いているものの上の窓を閉じただけ。自動で開いたものなら、URL が替わるので控えも合わせる
+      auto = { ...auto, href };
+    }
+    // 人が自分で開いていたものの窓を閉じただけのときは、自動で開いたものとして控えない
+    // (出ている間が過ぎても、窓を開き直して戻ったりしない)
     // 地図は選んだものが替わったので、いつもの決まりでその報へ寄る (スマホの形でもタブは替えない。
     // 地図のタブなら地図が寄って dock にその報が出て、一覧のタブなら詳しい内容が出る)
     opening = href;
