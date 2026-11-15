@@ -17,6 +17,9 @@
  *   画面の上の端に帯 (押すと鳴らせるようになる) を出す。
  * - 気象の警報・注意報などは、住んでいる地域に加えて地図の現在地が入る市町村等でも知らせる (`here`。
  *   スイッチ `here` を切れば住んでいる地域だけ)。両方に当たった報は 1 度だけ鳴らす (`groupAlerts`)。
+ * - 知らせるもの (OS の通知・音・読み上げ) がオンの間は、Web Lock を 1 つ持ち続けて、Edge の
+ *   「スリープ中のタブ」などで裏のタブが止まらないようにする (`#lib/awake.ts`)。止まると、鳴るのが
+ *   タブを前に出すまで遅れる。
  * - 同じ事象の続報で何度も鳴らさない (控えはメモリに持つ。読み直したら忘れる)。
  *   タブを幾つも開いていても 1 つだけが鳴らす (Web Locks)。
  */
@@ -33,6 +36,7 @@ import {
   type Permission,
   planAlerts,
 } from "./alert.ts";
+import { KeepAwake } from "./awake.ts";
 import { chimeWav } from "./chime.ts";
 import {
   CONNECTION_TAG,
@@ -131,6 +135,11 @@ class Alerter {
     return notifyOn(this.settings, this.permission);
   }
 
+  /** 何かで知らせる (OS の通知・音・読み上げのどれかがオン)。この間は裏のタブを眠らせない */
+  get alerting(): boolean {
+    return this.notifying || this.settings.sound || this.settings.speech;
+  }
+
   /** 音か読み上げがオンなのに、いまは鳴らせない */
   get blocked(): boolean {
     return (
@@ -176,8 +185,15 @@ class Alerter {
     document.addEventListener("visibilitychange", onVisible);
     // VOICEVOX が後からつながったときのために、ときどき読み直す
     const timer = setInterval(() => void this.loadSpeech(), 5 * 60_000);
+    // 知らせるものがオンの間は Web Lock を持ち、Edge の「スリープ中のタブ」などで止まらないようにする
+    const awake = new KeepAwake(navigator.locks);
+    const stopAwake = $effect.root(() => {
+      $effect(() => awake.set(this.alerting));
+    });
     return () => {
       clearInterval(timer);
+      stopAwake();
+      awake.set(false);
       document.removeEventListener("visibilitychange", onVisible);
       for (const t of events)
         window.removeEventListener(t, onGesture, { capture: true });

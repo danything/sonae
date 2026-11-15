@@ -11,6 +11,7 @@
   import { goto } from "$app/navigation";
 
   import { alerter } from "#lib/alerter.svelte.ts";
+  import { EDGE_SLEEP_HINT, isDesktopEdge } from "#lib/awake.ts";
   import { byPrefecture, type Cities, homeOf } from "#lib/home.ts";
   import { INTENSITIES, intensityLabel } from "#lib/model.ts";
   import {
@@ -525,6 +526,9 @@
       をアプリとして入れる (Chrome・Edge) か、サイトの設定で自動再生を許す
       (Firefox・Safari・Edge) と、開いただけで鳴らせることがあります。
     </p>
+    {#if alerter.alerting && typeof navigator !== "undefined" && isDesktopEdge(navigator.userAgent)}
+      <p class="small muted" data-testid="edge-sleep">{EDGE_SLEEP_HINT}</p>
+    {/if}
     <label>
       <input
         type="checkbox"
