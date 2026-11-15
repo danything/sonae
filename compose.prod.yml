@@ -1,0 +1,52 @@
+# 実運用向け (Linux)。リポジトリの中では開発用の compose.yml と並ぶので別名にしているが、
+# 使う人は `compose.yml` として置く (`-f` を書かずに済む)。install.sh (docs/install.md) が ~/sonae に置いて起こす。
+# 手で置くなら
+#
+#   curl -Lo compose.yml https://raw.githubusercontent.com/danything/sonae/main/compose.prod.yml
+#   touch sonae.env && chmod 600 sonae.env    # 秘密 (VAPID の鍵・OIDC のクライアントシークレット) はここに
+#   docker compose up -d
+#
+# イメージは公開してあるので、このファイルと sonae.env だけで動く。**変えたいことは同じ場所の compose.override.yml に書く**
+# (install.sh は上げ直すたびにこのファイルを上書きする)。
+name: sonae
+
+services:
+  sonae:
+    image: ghcr.io/danything/sonae:latest
+    restart: unless-stopped
+    depends_on:
+      - voicevox
+    # 秘密と、手で足す環境変数 (docs/install.md の「環境変数を足す」)。install.sh が無いときだけ作り、
+    # VAPID の鍵 (VAPID_PRIVATE_JWK) が無ければ足す。OIDC の 3 つ (OIDC_ISSUER・OIDC_CLIENT_ID・OIDC_CLIENT_SECRET) も
+    # ここに書く。揃うまで画面は開かず、/health だけ答える (docs/entra.md)
+    env_file:
+      - path: ./sonae.env
+        required: false
+    environment:
+      TZ: Asia/Tokyo
+      # 読み上げの声を作る VOICEVOX (下の voicevox。docs/design.md の 2.4)
+      VOICEVOX_URL: http://voicevox:50021
+      # 何も流れない接続を切るまでの秒数 (adapter-bun)。既定の 10 秒だと SSE (/api/stream) が切れる
+      CONNECTION_IDLE_TIMEOUT: "255"
+      # 止めるとき、処理中の要求を待つ上限 (秒)。SSE は終わらないので長く待たない
+      SHUTDOWN_TIMEOUT: "5"
+    volumes:
+      # DB (sonae.db) の置き場。イメージの既定 (SONAE_DATA=/data) のまま
+      - sonae-data:/data
+    ports:
+      # 3000 は denpa などと重なりやすいので、ホストには 3030 で出す
+      - "3030:3000"
+
+  # 読み上げの声を作る VOICEVOX のエンジン (公式のイメージ。バージョンだけのタグは CPU 用)。
+  # 外には公開せず、sonae だけが同じネットワークの中からつなぐ。
+  # 声の利用規約は https://voicevox.hiroshiba.jp/term/ と各キャラクターの規約 (docs/install.md の「VOICEVOX」)
+  voicevox:
+    image: voicevox/voicevox_engine:0.26.2
+    restart: unless-stopped
+    environment:
+      VV_CPU_NUM_THREADS: "2"
+    cpus: 2
+    mem_limit: 3g
+
+volumes:
+  sonae-data:

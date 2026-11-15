@@ -13,9 +13,30 @@
 VOICEVOX は公式のイメージを別のコンテナで動かし (理由は [docs/design.md の 2.4](docs/design.md))、`docker compose up` でも Helm chart でも sonae と一緒に起きる。
 VOICEVOX が止まっているときは、ブラウザの読み上げで同じ文を読む。
 
+## 1 行で入れる
+
+sonae は、使う人が自分のサーバーに立てて使う (セルフホスト)。**1 行で、sonae と VOICEVOX のエンジンが立ち上がり、ブラウザが開く。** clone は要らない。
+
+```sh
+# Linux (x86_64。Docker Compose で動かす。Docker は先に入れておく)
+curl -fsSL https://raw.githubusercontent.com/danything/sonae/main/install.sh | bash
+# Mac (Apple Silicon・Intel。管理者のパスワードを聞かれる)
+curl -fsSL https://raw.githubusercontent.com/danything/sonae/main/install.sh | sudo bash
+```
+
+```powershell
+# Windows (x64。管理者の PowerShell で)
+irm https://raw.githubusercontent.com/danything/sonae/main/install.ps1 | iex
+```
+
+- Linux は Docker Compose で sonae と VOICEVOX (公式のイメージ) を動かす。Mac と Windows はコンテナを使わず、配布物の bun とアプリ、公式の VOICEVOX のエンジン (CPU 版) をそのまま動かす (Mac は root の LaunchDaemon、Windows は SYSTEM のタスク)
+- 開くのは <http://localhost:3030> (Linux は genkan があれば <http://sonae.localhost>)
+- もう一度流せば最新に上げ直す。`--uninstall` (Windows は `-Uninstall`) で止めて外す (DB と設定は残す)。Web Push の VAPID の鍵は、無ければ作る
+- **ログイン (OIDC) の設定を書くまで、画面は開かない。** 書き場所 (`sonae.env`) と、OS ごとの置き場・VOICEVOX の版と規約は [docs/install.md](docs/install.md) ([Mac](docs/install-mac.md)・[Windows](docs/install-windows.md))
+
 ## Kubernetes に立てる (Helm chart)
 
-sonae は、使う人が自分のサーバーに立てて使う (セルフホスト。[docs/design.md の 1 章](docs/design.md))。Kubernetes には Helm chart で入れる。
+Kubernetes には Helm chart で入れる (セルフホストの考え方は [docs/design.md の 1 章](docs/design.md))。
 chart はリリースのたびに `oci://ghcr.io/danything/charts/sonae` に出る。中身は sonae・VOICEVOX のエンジン・Service・HTTPRoute か Ingress・PVC・NetworkPolicy で、値の意味は [charts/sonae/values.yaml](charts/sonae/values.yaml) のコメントに書いてある。
 
 1. OIDC の IdP にクライアントを作り、リダイレクト URI `https://<ホスト名>/auth/callback` を登録する (Entra ID なら [docs/entra.md](docs/entra.md))。ロール `admin` (`sonae.oidc.role` で替えられる) を持つ人だけが開ける。

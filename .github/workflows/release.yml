@@ -1,7 +1,17 @@
 name: Release
 
-# **リリースを作ったら、Helm chart を GHCR の OCI レジストリに出す** (README の `oci://ghcr.io/danything/charts/sonae`)。
-# denpa の release.yml の charts ジョブと同じ形。
+# **リリースを作ったら、次の 3 つを出す。**
+#
+# | ジョブ    | 出すもの                                                                                              | 使う人                       |
+# | --------- | ----------------------------------------------------------------------------------------------------- | ---------------------------- |
+# | `images`  | イメージ `ghcr.io/danything/sonae` に、バージョンの名前 (`0.1.0`・`0.1`) を貼る                        | install.sh (Linux)           |
+# | `bundles` | Mac と Windows でそのまま動かす本体 (`sonae-<バージョン>-<darwin-arm64・darwin-x64・windows-x64>`) | install.sh (Mac)・install.ps1 |
+# | `charts`  | Helm chart (GHCR の OCI レジストリ。README の `oci://ghcr.io/danything/charts/sonae`)                  | Kubernetes                   |
+#
+# リリースのタグは `v0.1.0` の形 (x.y.z の形でなければ、名前も配布物も chart も出さない)。
+# **プレリリースにも出す** (latest ではないので、install.sh・install.ps1 の既定 (最新のリリース) には降ってこない)。
+#
+# chart の作りは denpa の release.yml の charts ジョブと同じ形。
 #
 # chart のバージョン (Chart.yaml の version) とアプリのバージョン (appVersion) は、リリースのタグの
 # バージョン (`v` を落とす。`v0.1.0` → `0.1.0`) で上書きしてパッケージにする。リポジトリの Chart.yaml は書き戻さない。
@@ -25,6 +35,136 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
+  # **ビルドし直さない。** main に入るたびに docker-publish.yml がコミットの sha のタグで出しているので、
+  # そのイメージにバージョンの名前を貼り足すだけ (試したものと出すものを同じにする)。
+  # タグのコミットが deploy/ か charts/ だけを変えたもの (イメージの差し替えの PR など) だとイメージが無いので、
+  # その前の、中身を変えた最後のコミットのイメージを使う (docker-publish.yml の paths-ignore と同じ)。
+  # タグを打つのは main に入れた直後のことが多いので、そのイメージが出るまで 30 分まで待つ。
+  # `latest` は動かさない (main に入るたびに docker-publish.yml が動かす。chart の既定が latest のため)
+  images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || github.event.release.tag_name }}
+          fetch-depth: 0
+
+      - name: Decide names
+        id: names
+        env:
+          TAG: ${{ github.event.release.tag_name || github.event.inputs.ref }}
+        run: |
+          set -eu
+          version="${TAG#v}"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "x.y.z の形式ではないので名前は貼りません: $TAG"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          sha=$(git log -1 --format=%H HEAD -- . ':(exclude)deploy' ':(exclude)charts')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "series=${version%.*}" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "貼る名前: $version ${version%.*} (元は $sha)"
+
+      - uses: docker/setup-buildx-action@v4
+        if: steps.names.outputs.skip != 'true'
+
+      - uses: docker/login-action@v4
+        if: steps.names.outputs.skip != 'true'
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Point the names at the image
+        if: steps.names.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.names.outputs.version }}
+          SERIES: ${{ steps.names.outputs.series }}
+          SHA: ${{ steps.names.outputs.sha }}
+        run: |
+          set -eu
+          image="${REGISTRY}/${GITHUB_REPOSITORY,,}"
+          waited=0
+          until docker buildx imagetools inspect "$image:$SHA" > /dev/null 2>&1; do
+            if [ "$waited" -ge 1800 ]; then
+              echo "$image:$SHA が 30 分待っても出ません。main の docker-publish.yml を確かめてください" >&2
+              exit 1
+            fi
+            echo "$image:$SHA はまだありません。main のビルドを待ちます (${waited} 秒)"
+            sleep 30
+            waited=$((waited + 30))
+          done
+          docker buildx imagetools create -t "$image:$VERSION" -t "$image:$SERIES" "$image:$SHA"
+          docker buildx imagetools inspect "$image:$VERSION"
+
+  # **Mac と Windows でそのまま動かす本体をリリースに添える** (組み方は .github/bundle.sh。installers.yml も同じ組み方で試す)。
+  # 中身は bun とビルドしたアプリと、VOICEVOX のエンジンの取り方 (voicevox.txt)。エンジンそのものは入れない。
+  # **リリースを作ったときだけ** (手で回したときは、入力のタグを取り出して組むと別物を添えうるので組まない)
+  bundles:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      # write はリリースに添えるため
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Check the tag
+        id: ver
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if ! printf '%s' "${TAG#v}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "x.y.z の形式ではないので配布物は添えません: $TAG"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: oven-sh/setup-bun@v2
+        if: steps.ver.outputs.skip != 'true'
+        with:
+          bun-version-file: .bun-version
+
+      - name: Build
+        if: steps.ver.outputs.skip != 'true'
+        env:
+          APP_VERSION: ${{ github.event.release.tag_name }}
+        run: |
+          bun i --frozen-lockfile
+          bun run build
+
+      - name: Bundle
+        if: steps.ver.outputs.skip != 'true'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          for target in darwin-arm64 darwin-x64 windows-x64; do
+            bash .github/bundle.sh "$target" "$TAG" dist
+          done
+
+      # 添える前に出所の証明を付ける (`gh attestation verify <ファイル> -R danything/sonae` で確かめられる)
+      - name: Attest
+        if: steps.ver.outputs.skip != 'true'
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            dist/sonae-*.tar.gz
+            dist/sonae-*.zip
+
+      - name: Attach to the release
+        if: steps.ver.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" dist/* --clobber -R "${{ github.repository }}"
+
   charts:
     runs-on: ubuntu-latest
     steps:

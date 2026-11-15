@@ -3,7 +3,7 @@
   "extends": ["github>5ym/repo-config"],
   "packageRules": [
     {
-      "description": "VOICEVOX のエンジンのイメージは charts/sonae/values.yaml (helm-values) と compose.yml の 2 か所にあり、同じバージョンにそろえる。sonae のイメージ (deploy/application.yaml の image.tag) は公開のワークフローが差し替えるので Renovate は見ない",
+      "description": "VOICEVOX のエンジンのイメージは charts/sonae/values.yaml (helm-values) と compose.yml・compose.prod.yml の 3 か所にあり (Mac と Windows の配布物の版も compose.prod.yml から読む。.github/bundle.sh)、同じバージョンにそろえる。sonae のイメージ (deploy/application.yaml の image.tag) は公開のワークフローが差し替えるので Renovate は見ない",
       "matchPackageNames": ["voicevox/voicevox_engine"],
       "groupName": "VOICEVOX engine"
     }
