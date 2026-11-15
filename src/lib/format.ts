@@ -4,6 +4,7 @@ import type {
   Hypocenter,
   Quake,
   SourceId,
+  SourceStatus,
   Status,
   WeatherInfo,
 } from "./model.ts";
@@ -80,6 +81,25 @@ export const SOURCE_LABEL: Record<SourceId, string> = {
   ptwc: "PTWC (米国 太平洋津波警報センター)",
   "jma-bosai": "気象庁ホームページ (国際津波)",
 };
+
+const SOURCE_STATE: Record<SourceStatus["state"], string> = {
+  connecting: "接続中",
+  connected: "受信中",
+  retrying: "再接続中",
+  stopped: "停止",
+  off: "オフ",
+};
+
+/** 情報源の受信の状態の 1 行 (「受信中・11/13 08:43」「オフ (授権碼がありません)」) */
+export function sourceStateText(s: SourceStatus): string {
+  const state = SOURCE_STATE[s.state] ?? s.state;
+  if (s.state === "off") return s.reason ? `${state} (${s.reason})` : state;
+  return s.lastSeenAt ? `${state}・${jst(s.lastSeenAt)}` : state;
+}
+
+/** 注意の色で出す状態か。受信中と、設定で切ってあるものは問題ではない */
+export const sourceInTrouble = (s: SourceStatus) =>
+  s.state !== "connected" && s.state !== "off";
 
 /** M の書き方 (「M3.5」)。M が無ければ電文の文のまま、それも無ければ「—」 */
 export function magnitudeText(

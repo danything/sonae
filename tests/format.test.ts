@@ -1,6 +1,12 @@
 import { expect, test } from "bun:test";
 
-import { jstTime, magnitudeText, quakeName } from "#lib/format.ts";
+import {
+  jstTime,
+  magnitudeText,
+  quakeName,
+  sourceInTrouble,
+  sourceStateText,
+} from "#lib/format.ts";
 import { type Tsunami, tsunamiTop } from "#lib/model.ts";
 
 test("地震の名前: 震源が無ければ最初の地域で「など」、地域も無ければ調査中", () => {
@@ -25,4 +31,37 @@ test("津波のいちばん強い区分 (解除・なしだけなら none)", () 
   });
   expect(tsunamiTop(t("watch", "warning", "none"))).toBe("warning");
   expect(tsunamiTop(t("none"))).toBe("none");
+});
+
+test("受信の状態の 1 行 (受信中は最後に受けた時刻、オフは訳)", () => {
+  const since = "2026-11-13T00:00:00Z";
+  expect(
+    sourceStateText({
+      id: "jma",
+      state: "connected",
+      lastSeenAt: "2026-11-13T14:41:00Z",
+      since,
+    }),
+  ).toBe("受信中・11/13 23:41");
+  expect(sourceStateText({ id: "p2p", state: "retrying", since })).toBe(
+    "再接続中",
+  );
+  expect(
+    sourceStateText({
+      id: "cwa",
+      state: "off",
+      reason: "授権碼がありません",
+      since,
+    }),
+  ).toBe("オフ (授権碼がありません)");
+});
+
+test("設定で切ってある情報源は問題にしない (注意の印を出さない)", () => {
+  const since = "2026-11-13T00:00:00Z";
+  expect(sourceInTrouble({ id: "jma", state: "connected", since })).toBe(false);
+  expect(sourceInTrouble({ id: "cwa", state: "off", since })).toBe(false);
+  expect(sourceInTrouble({ id: "wolfx", state: "stopped", since })).toBe(true);
+  expect(sourceInTrouble({ id: "usgs", state: "connecting", since })).toBe(
+    true,
+  );
 });

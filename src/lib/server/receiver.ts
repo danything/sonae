@@ -27,6 +27,8 @@ interface App {
   store: Store;
   broker: Broker;
   sources: Source[];
+  /** 設定で切ってある情報源の状態 (`off`)。受信はしないが、「受信の状態」に並べる */
+  off: SourceStatus[];
   /** Web Push の送り手。VAPID の鍵が無ければ無い (機能を切る) */
   pusher?: Pusher;
   /** 読み上げの音を作る VOICEVOX。`VOICEVOX_URL` が無ければ無い (画面は端末の読み上げで読む) */
@@ -48,6 +50,7 @@ export function app(): App {
       store: new Store(d),
       broker: new Broker(),
       sources: [],
+      off: [],
       pusher: vapid ? new Pusher(d, vapid) : undefined,
       voice: voicevoxFromEnv(d),
     };
@@ -73,7 +76,8 @@ export function startVoice(): void {
 }
 
 export function statuses(): SourceStatus[] {
-  return app().sources.map((s) => s.status());
+  const a = app();
+  return [...a.sources.map((s) => s.status()), ...a.off];
 }
 
 export function startReceiving(): void {
@@ -104,11 +108,19 @@ export function startReceiving(): void {
   ];
   // 台湾の中央氣象署は授権碼が要る。無ければ作らない (docs/cwa.md)
   const cwa = cwaSource(ctx);
+  a.off = [];
   if (cwa) a.sources.push(cwa);
-  else
+  else {
+    a.off.push({
+      id: "cwa",
+      state: "off",
+      reason: "授権碼がありません",
+      since: new Date().toISOString(),
+    });
     console.log(
       "[cwa] 授権碼 (CWA_API_KEY) が無いので、中央氣象署の受信は切ってあります",
     );
+  }
   for (const s of a.sources) {
     s.run(controller.signal).catch((err: unknown) =>
       console.error(`[${s.id}] 受信が止まりました: ${err}`),

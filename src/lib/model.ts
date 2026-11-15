@@ -890,7 +890,10 @@ export type SonaeEvent =
 
 export interface SourceStatus {
   id: SourceId;
-  state: "connecting" | "connected" | "retrying" | "stopped";
+  /** `off` は設定で受信を切ってあるもの (中央氣象署の授権碼が無いなど)。問題ではないので注意の印は出さない */
+  state: "connecting" | "connected" | "retrying" | "stopped" | "off";
+  /** 切ってある訳 (`off` のときだけ。「授権碼がありません」) */
+  reason?: string;
   /** 最後に何かを受けた時刻 (heartbeat や 304 も含む) */
   lastSeenAt?: string;
   /** 最後に情報を受けた時刻 */
