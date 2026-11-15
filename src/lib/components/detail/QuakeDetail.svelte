@@ -44,6 +44,8 @@
       .sort((a, b) => intensityRank(b.int) - intensityRank(a.int));
   }
   const areas = $derived(byIntensity(q.areas));
+  /** 観測点がこの数までなら、震度の一覧を開いておく (1 点だけを畳んでも押す手間になるだけ) */
+  const STATIONS_OPEN_MAX = 20;
   const stations = $derived(byIntensity(q.stations));
 
   /** 長周期地震動階級の大きい順 (階級 1 以上だけ) に、地域・観測点を束ねる */
@@ -167,7 +169,8 @@
   {/if}
 
   {#if stations.length > 0}
-    <details>
+    <!-- 少ないときは畳まない (押す手間だけになる)。多いときだけ畳む -->
+    <details open={q.stations.length <= STATIONS_OPEN_MAX}>
       <summary>観測点の震度 ({q.stations.length} 点)</summary>
       <dl class="ints">
         {#each stations as g (g.int)}
