@@ -12,7 +12,8 @@
 #
 # もう一度流せば最新に上げ直す (VOICEVOX は 2 GB ほどあるので、バージョンが変わったときだけ取り直す)。
 # **Web Push の VAPID の鍵は、無ければ作る** (docs/push.md と同じ作り方)。一度作ったら替えない。
-# **ログイン (OIDC) はここでは決めない。** 3 つ揃うまで画面は開かず /health だけ答える (sonae.env に書く。docs/install.md)。
+# **誰を通すか:** この PC のブラウザ (ループバック) と家の LAN からはログインなしで開けるように、sonae.env に TRUSTED_NETWORKS を
+# 書く (無いときだけ)。**その中の誰でも設定を変えられる。** 外からも開くなら OIDC を sonae.env に書く (docs/install.md の「ログイン」)。
 #
 # 置き場:
 #   %ProgramFiles%\sonae\    server\ (bun とアプリ)・voicevox\ (VOICEVOX のエンジン)。管理者しか書けない
@@ -252,7 +253,14 @@ function Initialize-Env([string]$Bun, [string]$Work) {
                     '# (VAPID の鍵の行が無ければ足すだけ)。直したら install.ps1 を流し直す。秘密が入るので人に見せない',
                     '# 値は引用符で囲まずに書く (書いた文字がそのまま渡る)',
                     '#',
-                    '# ログイン (OIDC)。3 つ揃うまで画面は開かない (docs/entra.md)。IdP には <開く URL>/auth/callback を登録する',
+                    '# 誰を通すか (docs/install.md の「ログイン」)。このネットワークの中からは、ログインなしで開ける。',
+                    '# **その中の誰でも、設定 (読み上げの声・通知の条件・Web Push の購読) を変えられる。** 家の LAN だけにし、0.0.0.0/0 にはしない。',
+                    '# 外から開くなら OIDC (下) を使う。http の LAN の IP (http://192.168.x.x:3030) で開くと、Web Push は使えない (localhost か https で開く)',
+                    'TRUSTED_NETWORKS=127.0.0.0/8,::1/128,192.168.0.0/16,10.0.0.0/8',
+                    '# このほかの名前 (自分のドメイン・Tailscale の名前) で、ログインなしで開くなら書く (IP・localhost・PC の名前などは要らない)',
+                    '# ALLOWED_HOSTS=sonae.example.com',
+                    '#',
+                    '# ログイン (OIDC)。3 つ揃えば、上のネットワークの外からもログインして開ける (docs/entra.md)。IdP には <開く URL>/auth/callback を登録する',
                     '# OIDC_ISSUER=https://login.microsoftonline.com/<テナントの ID>/v2.0',
                     '# OIDC_CLIENT_ID=',
                     '# OIDC_CLIENT_SECRET=',
@@ -363,9 +371,12 @@ function Install-Sonae([string]$Ref) {
     # VOICEVOX は入れ替えたときと、タスクが無いときだけ起こし直す (モデルを読むのに時間が掛かる)
     if ($voicevoxNew -or -not (Get-ScheduledTask -TaskName $VoicevoxTask -ErrorAction SilentlyContinue)) { Register-Voicevox }
     Register-Server $envFile
+    $trusted = Select-String -LiteralPath $envFile -Pattern '^TRUSTED_NETWORKS=(.*)$' | Select-Object -Last 1
+    if ($trusted) {
+        Say "ログインなしで開けるのは $($trusted.Matches[0].Groups[1].Value) の中からです。その中の誰でも設定を変えられます (変えるなら $envFile の TRUSTED_NETWORKS)"
+    }
     if (-not (Test-EnvKey $envFile 'OIDC_CLIENT_SECRET')) {
-        Say 'ログイン (OIDC) がまだなので、画面は「ログインの設定 (OIDC) がまだです」と出ます。'
-        Say "  $envFile に OIDC_ISSUER・OIDC_CLIENT_ID・OIDC_CLIENT_SECRET を書いて、もう一度流してください (docs/install.md の「ログイン」)"
+        Say "外からも開くなら、$envFile に OIDC_ISSUER・OIDC_CLIENT_ID・OIDC_CLIENT_SECRET を書いて、もう一度流してください (docs/install.md の「ログイン」)"
     }
     Say '読み上げの声は VOICEVOX で作ります。使うときは VOICEVOX の利用規約 (https://voicevox.hiroshiba.jp/term/) と'
     Say '  声のキャラクターの規約に従ってください (既定の声は「VOICEVOX:剣崎雌雄」。docs/install.md の「VOICEVOX」)'

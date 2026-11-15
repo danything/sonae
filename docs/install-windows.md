@@ -44,6 +44,6 @@ irm https://raw.githubusercontent.com/danything/sonae/main/install.ps1 | iex
 ## 確かめたこと
 
 CI (`.github/workflows/installers.yml` の `install-windows`。GitHub の Windows のランナー) で、リリースと同じ組み方の配布物を渡して Windows PowerShell 5.1 で流し、
-`/health` が答える・OIDC が無いと画面は 503・VAPID の鍵ができて Web Push が有効になる・VOICEVOX のエンジンが既定の声 (剣崎雌雄) で合成できる・
+`/health` が答える・ループバックからはログインなしで開け、知らない名前では 403・VAPID の鍵ができて Web Push が有効になる・VOICEVOX のエンジンが既定の声 (剣崎雌雄) で合成できる・
 sonae がエンジンにつながる・上げ直しても鍵が替わらない・外しても DB と `sonae.env` が残る、までを見ています。
 実機の Windows ではまだ流していません。

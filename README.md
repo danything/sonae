@@ -59,7 +59,7 @@ irm https://raw.githubusercontent.com/danything/sonae/main/install.ps1 | iex
 - Linux は Docker Compose で sonae と VOICEVOX (公式のイメージ) を動かす。Mac と Windows はコンテナを使わず、配布物の bun とアプリ、公式の VOICEVOX のエンジン (CPU 版) をそのまま動かす (Mac は root の LaunchDaemon、Windows は SYSTEM のタスク)
 - 開くのは <http://localhost:3030> (Linux は genkan があれば <http://sonae.localhost>)
 - もう一度流せば最新に上げ直す。`--uninstall` (Windows は `-Uninstall`) で止めて外す (DB と設定は残す)。Web Push の VAPID の鍵は、無ければ作る
-- **ログイン (OIDC) の設定を書くまで、画面は開かない。** 書き場所 (`sonae.env`) と、OS ごとの置き場・VOICEVOX の版と規約は [docs/install.md](docs/install.md) ([Mac](docs/install-mac.md)・[Windows](docs/install-windows.md))
+- **家の LAN (とそのマシンのブラウザ) からは、ログインなしで開ける** (`sonae.env` の `TRUSTED_NETWORKS`)。その中の誰でも設定を変えられるので、家の外からも開くならログイン (OIDC) を足す。http の LAN の IP で開いた端末では Web Push は使えない。書き場所と、OS ごとの置き場・VOICEVOX の版と規約は [docs/install.md](docs/install.md) ([Mac](docs/install-mac.md)・[Windows](docs/install-windows.md))
 
 ## Kubernetes に立てる (Helm chart)
 
