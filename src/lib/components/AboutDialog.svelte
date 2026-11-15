@@ -3,14 +3,28 @@
 
   import { alerter } from "#lib/alerter.svelte.ts";
   import { MAP_LEGEND } from "#lib/map/style.ts";
+  import type { SourceStatus } from "#lib/model.ts";
   import { CREDITS, EEW_NOTICE, NOTICE } from "#lib/notice.ts";
+
+  import StatusList from "./StatusList.svelte";
 
   /**
    * **出典と注意**。ヘッダーと「その他」のメニューから開く窓。URL の `about=1` で開いたまま共有できる。
    * 地図の色の意味 (「地図の見方」) もここに書く (層はいつも全部出していて、切り替えの並びが無いため)。
+   * 「受信の状態」は、どの情報源を受けているかをいつも見られる所 (注意の印は問題があるときだけ出るため)。
    * 閉じるのは左下の「閉じる」・幕・Esc
    */
-  let { open, onclose }: { open: boolean; onclose: () => void } = $props();
+  let {
+    open,
+    onclose,
+    connected,
+    statuses,
+  }: {
+    open: boolean;
+    onclose: () => void;
+    connected: boolean;
+    statuses: SourceStatus[];
+  } = $props();
   let dialog = $state<HTMLDialogElement>();
 
   $effect(() => {
@@ -44,6 +58,13 @@
           rel="noopener">緊急地震速報 (警報) 及び (予報) について</a
         >)。sonae は、地点ごとの震度や到達時刻を自分で予想しません。
       </p>
+      <h2>受信の状態</h2>
+      <p class="small muted">
+        情報源ごとの受信と、最後に受けた時刻です。開いている間も替わります
+      </p>
+      <div class="receive">
+        <StatusList {connected} {statuses} />
+      </div>
       <h2>地図の見方</h2>
       <dl class="small legend" data-testid="map-legend">
         {#each MAP_LEGEND as l (l.label)}
@@ -172,6 +193,14 @@
   }
   .legend {
     margin: 0;
+  }
+  /* 窓の中では本文の左に揃え、行を詰める (メニューの箱の並びは押しやすい高さ) */
+  .receive :global(.side-list) {
+    padding: 0;
+  }
+  .receive :global(.side-item) {
+    min-height: 2rem;
+    padding: 0;
   }
   .legend dt {
     font-weight: var(--so-weight-bold);

@@ -51,6 +51,7 @@
     magnitudeText,
     placeName,
     quakeName,
+    sourceInTrouble,
     STATUS_LABEL,
     volcanoKindText,
     weatherTitle,
@@ -686,10 +687,10 @@
     applyTheme(mode);
   }
 
-  // ---- 状態 (つながっていないものがあるときだけ、ヘッダーと dock に注意の印。押すと情報源ごとの受信) ----
+  // ---- 状態 (つながっていないものがあるときだけ、ヘッダーと dock に注意の印。押すと情報源ごとの受信。
+  // 設定で切ってある情報源 (オフ) は問題にしない。いつもの状態は「出典と注意」の「受信の状態」) ----
   const trouble = $derived(
-    browser &&
-      (!live.connected || snap.statuses.some((s) => s.state !== "connected")),
+    browser && (!live.connected || snap.statuses.some(sourceInTrouble)),
   );
 
   // ---- 出典と注意 ----
@@ -1453,7 +1454,12 @@
     </div>
   </nav>
 
-  <AboutDialog open={v.about} onclose={closeAbout} />
+  <AboutDialog
+    open={v.about}
+    onclose={closeAbout}
+    connected={live.connected}
+    statuses={snap.statuses}
+  />
   {#if user}
     <PushSettings
       bind:open={pushOpen}
