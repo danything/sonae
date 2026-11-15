@@ -60,6 +60,8 @@
   let locating = $state(false);
   let busy = $state(false);
   let message = $state("");
+  /** 条件を覚えたかどうか (条件のすぐ下に出す。Web Push の登録の知らせは下の message) */
+  let prefsMessage = $state("");
 
   const others = $derived(
     info?.enabled
@@ -78,6 +80,7 @@
   /** 条件は、このブラウザが Web Push に登録してあればその条件、無ければ端末に覚えた条件 */
   async function load(): Promise<void> {
     message = "";
+    prefsMessage = "";
     prefs = normalizePrefs(alerter.prefs);
     pref = prefs.home?.code.slice(0, 2) ?? "";
     if (Object.keys(cities).length === 0) void loadCities();
@@ -101,14 +104,24 @@
     }
   }
 
-  /** 条件を端末に覚え、Web Push に登録してあればサーバーにも送る */
-  async function savePrefs(): Promise<void> {
+  /**
+   * 条件を変えたらすぐ端末に覚え、Web Push に登録してあればサーバーにも送る (保存のボタンは無い。押し忘れると覚えないため)。
+   * 続けて変えたときに前の送信と追い越さないよう、送るのは 1 つずつ順に
+   */
+  let saving: Promise<void> = Promise.resolve();
+  function savePrefs(): void {
     alerter.setPrefs(prefs);
     if (!registered) {
-      message = "保存しました";
+      prefsMessage = "保存しました";
       return;
     }
-    await save();
+    prefsMessage = "保存しています…";
+    saving = saving.then(async () => {
+      await save(false);
+      // 送れたかどうかは save が message に書く。条件のすぐ下に移して出す
+      prefsMessage = message;
+      message = "";
+    });
   }
 
   function setSound(on: boolean): void {
@@ -170,7 +183,8 @@
           if (code && cities[code]) {
             pref = code.slice(0, 2);
             setHome(code);
-            message = `${cities[code]?.[1]} を選びました。「条件を保存」で覚えます。`;
+            savePrefs();
+            message = `${cities[code]?.[1]} を選びました。`;
           } else {
             message =
               "いまの位置が入る市町村が見つかりませんでした。一覧から選んでください。";
@@ -218,7 +232,8 @@
     return pm.subscribe({ userVisibleOnly: true, applicationServerKey: want });
   }
 
-  async function save(): Promise<void> {
+  /** `reload` を外すと、送った後に条件を読み直さない (読み直すと、送っている間に変えた条件が戻るため) */
+  async function save(reload = true): Promise<void> {
     if (!info?.enabled) return;
     busy = true;
     message = "";
@@ -242,7 +257,7 @@
       message = res.ok
         ? "保存しました"
         : `保存できませんでした (${res.status}): ${await res.text()}`;
-      await load();
+      if (reload) await load();
     } catch (err) {
       message = `登録できませんでした: ${err}`;
     } finally {
@@ -308,137 +323,137 @@
       条件はこのブラウザごとに覚え、開いているときの音・読み上げと Web Push
       の両方に使います。訓練・試験は知らせません。
     </p>
-    <label>
-      緊急地震速報
-      <select bind:value={prefs.eew}>
-        <option value="warning">警報だけ</option>
-        <option value="all">予報も</option>
-        <option value="off">知らせない</option>
-      </select>
-    </label>
-    <label>
-      地震 (最大震度)
-      <select bind:value={prefs.quakeMinInt}>
-        {#each INTENSITIES as i (i)}
-          <option value={i}>震度{intensityLabel(i)}以上</option>
-        {/each}
-        <option value="off">知らせない</option>
-      </select>
-    </label>
-    <fieldset class="home" data-testid="home">
-      <legend>住んでいる地域 (通知に使う)</legend>
-      <p class="small muted">
-        タブを閉じていても通知を送るため、サーバーに市町村だけを覚えさせます。地震と気象の両方に使います。
-      </p>
-      <div class="home-pick">
-        <label>
-          都道府県
-          <select
-            bind:value={
-              () => pref,
-              (v) => {
-                pref = v;
-                setHome("");
-              }
-            }
-          >
-            <option value="">選ばない</option>
-            {#each prefGroups as g (g.cities[0]?.code)}
-              <option value={g.cities[0]?.code.slice(0, 2)}>{g.pref}</option>
-            {/each}
-          </select>
-        </label>
-        <label>
-          市町村
-          <select
-            bind:value={() => prefs.home?.code ?? "", setHome}
-            disabled={pref === ""}
-            data-testid="home-city"
-          >
-            <option value="">選ばない</option>
-            {#each prefCities as c (c.code)}
-              <option value={c.code}>{c.name}</option>
-            {/each}
-          </select>
-        </label>
-      </div>
-      <div class="cluster">
-        <button
-          type="button"
-          class="secondary"
-          onclick={locate}
-          disabled={locating || Object.keys(cities).length === 0}
-          data-testid="home-locate"
-          >{locating ? "位置を取っています…" : "現在地から選ぶ"}</button
-        >
-      </div>
-      {#if prefs.home}
+    <!-- 条件は変えたらすぐ覚える (change はここまで上がってくる) -->
+    <div class="stack" onchange={savePrefs}>
+      <label>
+        緊急地震速報
+        <select bind:value={prefs.eew}>
+          <option value="warning">警報だけ</option>
+          <option value="all">予報も</option>
+          <option value="off">知らせない</option>
+        </select>
+      </label>
+      <label>
+        地震 (最大震度)
+        <select bind:value={prefs.quakeMinInt}>
+          {#each INTENSITIES as i (i)}
+            <option value={i}>震度{intensityLabel(i)}以上</option>
+          {/each}
+          <option value="off">知らせない</option>
+        </select>
+      </label>
+      <fieldset class="home" data-testid="home">
+        <legend>住んでいる地域 (通知に使う)</legend>
         <p class="small muted">
-          {prefs.home.name}{prefs.home.quake
-            ? `・地震は「${prefs.home.quake.name}」の震度で見ます`
-            : ""}
+          タブを閉じていても通知を送るため、サーバーに市町村だけを覚えさせます。地震と気象の両方に使います。
+        </p>
+        <div class="home-pick">
+          <label>
+            都道府県
+            <select
+              bind:value={
+                () => pref,
+                (v) => {
+                  pref = v;
+                  setHome("");
+                }
+              }
+            >
+              <option value="">選ばない</option>
+              {#each prefGroups as g (g.cities[0]?.code)}
+                <option value={g.cities[0]?.code.slice(0, 2)}>{g.pref}</option>
+              {/each}
+            </select>
+          </label>
+          <label>
+            市町村
+            <select
+              bind:value={() => prefs.home?.code ?? "", setHome}
+              disabled={pref === ""}
+              data-testid="home-city"
+            >
+              <option value="">選ばない</option>
+              {#each prefCities as c (c.code)}
+                <option value={c.code}>{c.name}</option>
+              {/each}
+            </select>
+          </label>
+        </div>
+        <div class="cluster">
+          <button
+            type="button"
+            class="secondary"
+            onclick={locate}
+            disabled={locating || Object.keys(cities).length === 0}
+            data-testid="home-locate"
+            >{locating ? "位置を取っています…" : "現在地から選ぶ"}</button
+          >
+        </div>
+        {#if prefs.home}
+          <p class="small muted">
+            {prefs.home.name}{prefs.home.quake
+              ? `・地震は「${prefs.home.quake.name}」の震度で見ます`
+              : ""}
+          </p>
+        {/if}
+      </fieldset>
+      <label>
+        住んでいる地域の震度
+        <select bind:value={prefs.areaMinInt} disabled={!prefs.home?.quake}>
+          {#each INTENSITIES as i (i)}
+            <option value={i}>震度{intensityLabel(i)}以上</option>
+          {/each}
+        </select>
+      </label>
+      <label>
+        住んでいる地域の気象
+        <select
+          bind:value={prefs.weather}
+          disabled={!prefs.home}
+          data-testid="prefs-weather"
+        >
+          <option value="warning">警報以上</option>
+          <option value="all">注意報も</option>
+          <option value="off">知らせない</option>
+        </select>
+      </label>
+      <p class="small muted">
+        警報以上には、危険警報・特別警報と、記録的短時間大雨情報・竜巻注意情報も入ります。
+      </p>
+      <label>
+        <input
+          type="checkbox"
+          role="switch"
+          bind:checked={prefs.weatherSpecial}
+        />
+        気象の特別警報は、どの地域に出ても知らせる
+      </label>
+      <label>
+        津波
+        <select bind:value={prefs.tsunami}>
+          <option value="watch">津波注意報以上</option>
+          <option value="warning">津波警報以上</option>
+          <option value="major">大津波警報だけ</option>
+          <option value="off">知らせない</option>
+        </select>
+      </label>
+      <label>
+        火山
+        <select bind:value={prefs.volcano} data-testid="prefs-volcano">
+          <option value="warning">噴火速報と噴火警報 (レベル 4・5)</option>
+          <option value="all">火口周辺警報 (レベル 2・3) も</option>
+          <option value="off">知らせない</option>
+        </select>
+      </label>
+      <label>
+        <input type="checkbox" role="switch" bind:checked={prefs.advisory} />
+        南海トラフ地震臨時情報・後発地震注意情報
+      </label>
+      {#if prefsMessage}
+        <p class="small" role="status" data-testid="prefs-status">
+          {prefsMessage}
         </p>
       {/if}
-    </fieldset>
-    <label>
-      住んでいる地域の震度
-      <select bind:value={prefs.areaMinInt} disabled={!prefs.home?.quake}>
-        {#each INTENSITIES as i (i)}
-          <option value={i}>震度{intensityLabel(i)}以上</option>
-        {/each}
-      </select>
-    </label>
-    <label>
-      住んでいる地域の気象
-      <select
-        bind:value={prefs.weather}
-        disabled={!prefs.home}
-        data-testid="prefs-weather"
-      >
-        <option value="warning">警報以上</option>
-        <option value="all">注意報も</option>
-        <option value="off">知らせない</option>
-      </select>
-    </label>
-    <p class="small muted">
-      警報以上には、危険警報・特別警報と、記録的短時間大雨情報・竜巻注意情報も入ります。
-    </p>
-    <label>
-      <input
-        type="checkbox"
-        role="switch"
-        bind:checked={prefs.weatherSpecial}
-      />
-      気象の特別警報は、どの地域に出ても知らせる
-    </label>
-    <label>
-      津波
-      <select bind:value={prefs.tsunami}>
-        <option value="watch">津波注意報以上</option>
-        <option value="warning">津波警報以上</option>
-        <option value="major">大津波警報だけ</option>
-        <option value="off">知らせない</option>
-      </select>
-    </label>
-    <label>
-      火山
-      <select bind:value={prefs.volcano} data-testid="prefs-volcano">
-        <option value="warning">噴火速報と噴火警報 (レベル 4・5)</option>
-        <option value="all">火口周辺警報 (レベル 2・3) も</option>
-        <option value="off">知らせない</option>
-      </select>
-    </label>
-    <label>
-      <input type="checkbox" role="switch" bind:checked={prefs.advisory} />
-      南海トラフ地震臨時情報・後発地震注意情報
-    </label>
-    <div class="cluster">
-      <button
-        type="button"
-        onclick={savePrefs}
-        disabled={busy}
-        data-testid="prefs-save">条件を保存</button
-      >
     </div>
 
     <h2 class="section-head">開いているとき</h2>
@@ -550,7 +565,7 @@
             disabled={busy}>解除</button
           >
         {:else}
-          <button type="button" onclick={save} disabled={busy}
+          <button type="button" onclick={() => save()} disabled={busy}
             >このブラウザで受ける</button
           >
         {/if}
