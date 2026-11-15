@@ -9,14 +9,9 @@
  */
 
 import { alerter } from "./alerter.svelte.ts";
-import { type Cities, cityAt, homeOf } from "./home.ts";
+import { type Cities, cityAt, homeOf, planHomeSave } from "./home.ts";
 import { createQueue } from "./prefs-queue.ts";
-import {
-  base64UrlToBytes,
-  type Home,
-  normalizePrefs,
-  type PushPrefs,
-} from "./push.ts";
+import { base64UrlToBytes, type Home, type PushPrefs } from "./push.ts";
 
 export interface Registered {
   endpoint: string;
@@ -164,25 +159,21 @@ export async function homeAt(lat: number, lon: number): Promise<Home | null> {
  * 登録してあればサーバーの条件、無ければ端末に覚えた条件のまま。返すのは知らせる文
  */
 export async function saveHome(home: Home): Promise<string> {
-  let state: Awaited<ReturnType<typeof readPushState>> | undefined;
+  // 「通知」の窓で変えた条件をまだ送っている途中なら、それが終わってからサーバーの条件を読む
+  // (古い条件に住んでいる地域だけを足して送り、窓で変えた所を戻さない)
+  await prefsSettled();
+  let state: Awaited<ReturnType<typeof readPushState>> | null = null;
   try {
     state = await readPushState();
   } catch {
-    // サーバーの登録を読めなくても、端末には覚える
+    // サーバーの登録を読めなくても、端末には覚える (そう知らせる)
   }
-  const info = state?.info;
-  const mine = info?.enabled
-    ? info.subscriptions.find((s) => s.endpoint === state?.endpoint)
-    : undefined;
-  const prefs = normalizePrefs({
-    ...(mine ? mine.prefs : alerter.prefs),
-    home,
-  });
-  alerter.setPrefs(prefs);
-  const done = `${home.name}を住んでいる地域にしました`;
-  if (!mine || !info?.enabled) return done;
-  const result = await queuePrefs(() => sendPrefs(info.publicKey, prefs));
+  const plan = planHomeSave(state, alerter.prefs, home);
+  alerter.setPrefs(plan.prefs);
+  const key = plan.publicKey;
+  if (key === null) return plan.note;
+  const result = await queuePrefs(() => sendPrefs(key, plan.prefs));
   return result === null || result === "保存しました"
-    ? done
-    : `${done}。${result}`;
+    ? plan.note
+    : `${plan.note}。${result}`;
 }

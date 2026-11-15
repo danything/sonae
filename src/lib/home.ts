@@ -4,7 +4,7 @@
  * 「現在地から選ぶ」は端末の中で面を引くだけで、緯度・経度はサーバーに送らない。
  */
 
-import type { Home } from "./push.ts";
+import { type Home, normalizePrefs, type PushPrefs } from "./push.ts";
 
 /** cities.json の 1 行: [名前, 府県と市町村の名前, 府県予報区, 一次細分区域, まとめた地域, 地震情報／細分区域] */
 export type CityRow = [
@@ -102,4 +102,44 @@ export function cityAt(
     if (polys.some((p) => inPolygon(lon, lat, p))) return f.properties.code;
   }
   return null;
+}
+
+/** Web Push の登録の様子 (`#lib/push-client.ts` の `readPushState` の形) */
+export interface PushStateLike {
+  info:
+    | { enabled: false }
+    | {
+        enabled: true;
+        publicKey: string;
+        subscriptions: { endpoint: string; prefs: PushPrefs }[];
+      };
+  endpoint: string | undefined;
+}
+
+/**
+ * 地図のメニューから住んでいる地域を変えるときに、覚える条件と、サーバーへ送るかを決める。
+ * このブラウザが Web Push に登録してあればサーバーの条件の `home` だけを替えて送り、無ければ端末の条件の `home` だけを替える。
+ * 登録を読めなかったとき (`state` が null) は端末にだけ覚え、そう知らせる
+ */
+export function planHomeSave(
+  state: PushStateLike | null,
+  local: PushPrefs,
+  home: Home,
+): { prefs: PushPrefs; publicKey: string | null; note: string } {
+  const done = `${home.name}を住んでいる地域にしました`;
+  if (state === null)
+    return {
+      prefs: normalizePrefs({ ...local, home }),
+      publicKey: null,
+      note: `${done}。Web Push の登録を読めなかったので、このブラウザにだけ覚えました`,
+    };
+  const info = state.info;
+  const mine = info.enabled
+    ? info.subscriptions.find((s) => s.endpoint === state.endpoint)
+    : undefined;
+  return {
+    prefs: normalizePrefs({ ...(mine ? mine.prefs : local), home }),
+    publicKey: mine && info.enabled ? info.publicKey : null,
+    note: done,
+  };
 }

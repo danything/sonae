@@ -691,9 +691,12 @@
   }
 
   /** 押した所が入る市町村等を、住んでいる地域にする (通知の窓の「現在地から選ぶ」と同じ探し方と覚え方) */
+  /** 住んでいる地域を探して覚えている途中か (続けて押したときに、知らせの文が前後しないよう 1 つずつ) */
+  let homeBusy = false;
   async function setHomeHere(): Promise<void> {
     const at = place;
-    if (!at) return;
+    if (!at || homeBusy) return;
+    homeBusy = true;
     showNote("市町村を探しています…");
     try {
       const home = await homeAt(at.lat, at.lon);
@@ -706,6 +709,8 @@
       showNote(await saveHome(home));
     } catch (err) {
       showNote(`住んでいる地域を決められませんでした: ${err}`);
+    } finally {
+      homeBusy = false;
     }
   }
 
