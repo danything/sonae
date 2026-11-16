@@ -363,6 +363,24 @@ describe("気象警報・注意報の通知", () => {
     expect(notice(danger, prefs({ home: far }))).toBeNull();
     // 前の控えの通知 (どこかの特別警報の tag) を「住んでいる地域と現在地」で見ても鳴らさない
     expect(wide && matches(wide, prefs({ home: far }))).toBe(false);
+    // 読み上げは、府県予報区と種類、対象の市町村 (特別警報と同じ形)。サーバーが通す文の中にある
+    if (!wide) throw new Error("通知が無い");
+    const parts = readoutOf(wide);
+    expect(parts[0]).toBe(OPENINGS.weatherDanger);
+    expect(parts[1]).toBe("島根県に、レベル4大雨危険警報が出ています。");
+    expect(parts[2]).toStartWith("対象の市町村は、松江市");
+    const all = readoutCandidates(noticeOf(ev(danger), SHIMANE_AT)!);
+    for (const p of parts) expect(all).toContain(p);
+    // 同じ府県予報区の、危険警報の出ていない市町村に住んでいても、危険警報を先に言う
+    const other = danger.areas.find((a) => areaLevel(a) < 4);
+    if (!other) throw new Error("危険警報の出ていない市町村が無い");
+    const mixed = notice(
+      danger,
+      prefs({ home: home({ code: other.code }), weather: "everywhere" }),
+    );
+    if (!mixed) throw new Error("通知が無い");
+    expect(readoutOf(mixed).slice(0, 2)).toEqual(parts.slice(0, 2));
+    for (const p of readoutOf(mixed)) expect(all).toContain(p);
   });
 
   test("住んでいる地域が特別警報なら、地域の通知で言う", () => {
