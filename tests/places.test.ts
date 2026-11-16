@@ -57,6 +57,16 @@ test("手元の市町村: 名前が同じ・頭が同じ・どこかに入るの
   expect(localPlaces("区", cities, bounds, 3)).toHaveLength(3);
 });
 
+test("手元の市町村: 2 つに分けた市町村は、説明の文ではなく府県と名前で出す", () => {
+  const sendai = localPlaces("仙台市東部", cities, bounds)[0];
+  expect(sendai?.label).toBe("宮城県仙台市東部");
+  expect(localPlaces("仙台市", cities, bounds).map((p) => p.label)).toContain(
+    "宮城県仙台市西部",
+  );
+  // 説明の文の字では当たらない
+  expect(localPlaces("気象庁予報警報規程", cities, bounds)).toEqual([]);
+});
+
 test("国土地理院の住所検索の応答を候補にする。形の違うものは捨てる", () => {
   const r = parseGsi([
     {

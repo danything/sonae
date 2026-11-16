@@ -6,7 +6,7 @@
  *   送るのは打った文字だけで、sonae のサーバーは通さない (残さない)
  */
 
-import type { Cities } from "./home.ts";
+import { type Cities, prefectureOf } from "./home.ts";
 import type { OfficeTable } from "./map/style.ts";
 
 /** 国土地理院の住所検索。CORS は `*` (2026-11-15 に確かめた) */
@@ -70,7 +70,9 @@ export function localPlaces(
   if (q === "") return [];
   const hits: { rank: number; code: string; place: Place }[] = [];
   for (const [code, row] of Object.entries(cities)) {
-    const [name, full] = row;
+    const [name] = row;
+    // 2 列目は分けた市町村 (仙台市東部など) では説明の文なので、府県の名前を前に付けて作る (`homeOf` と同じ)
+    const full = `${prefectureOf(code)}${name}`;
     const n = normalize(name);
     const f = normalize(full);
     const rank =
