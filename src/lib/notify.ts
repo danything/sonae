@@ -727,7 +727,7 @@ export const advisoryQuotaTag = (n: Pick<Notice, "here">): string =>
   n.here ? ADVISORY_QUOTA.here : ADVISORY_QUOTA.home;
 
 /** 日本時間の暦日 (`2026-11-16`)。注意報の 1 日 1 回の区切り */
-const jstDay = (t: number): string =>
+export const jstDay = (t: number): string =>
   new Date(t + 9 * 60 * 60_000).toISOString().slice(0, 10);
 
 export type DailyPlan =
