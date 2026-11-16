@@ -1,0 +1,30 @@
+{
+  "type": "jma_eqlist",
+  "No1": {
+    "Title": "震源・震度情報",
+    "EventID": "20080614084350",
+    "time": "2008/06/14 08:43",
+    "time_full": "2008/06/14 08:43:00",
+    "location": "岩手県内陸南部",
+    "magnitude": "7.0",
+    "shindo": "6+",
+    "depth": "10km",
+    "latitude": "39.0",
+    "longitude": "140.9",
+    "info": "この地震による津波の心配はありません。"
+  },
+  "No2": {
+    "Title": "震度速報",
+    "EventID": "20080614061020",
+    "time": "2008/06/14 06:10",
+    "time_full": "2008/06/14 06:10:00",
+    "location": "",
+    "magnitude": "",
+    "shindo": "3",
+    "depth": "",
+    "latitude": "",
+    "longitude": "",
+    "info": ""
+  },
+  "md5": "made-by-sonae"
+}
