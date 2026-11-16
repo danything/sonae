@@ -1,6 +1,7 @@
 {{- if not (and .Values.sonae.oidc.issuer .Values.sonae.oidc.clientId .Values.secrets.name) }}
 **OIDC が揃っていません。** sonae.oidc.issuer・sonae.oidc.clientId・secrets.name (oidc-client-secret の入った Secret) を書くまで、
-画面は開かず /health だけ答えます (docs/entra.md)。
+画面は開かず /health だけ答えます (docs/entra.md)。sonae.extraEnv で TRUSTED_NETWORKS を渡したときは、
+そのネットワークの中からだけログインなしで開けます (docs/install.md の「ログイン」)。
 {{- end }}
 {{- if not (include "sonae.publicUrl" .) }}
 **公開の URL がありません。** sonae.publicUrl か、httpRoute.hostnames・ingress.hosts を書いてください。

@@ -71,7 +71,8 @@ spec:
               memory: 3Gi
 
         networkPolicy:
-          # 外向きを DNS と公開のインターネットと VOICEVOX だけにする。この家の DNS は kube-system の kube-dns
+          # 外向きを DNS と公開のインターネットと VOICEVOX だけにする (家の LAN の Webhook には送れない)。
+          # この家の DNS は kube-system の kube-dns
           egress:
             enabled: true
 
