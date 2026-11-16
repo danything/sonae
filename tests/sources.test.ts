@@ -321,4 +321,46 @@ describe("Wolfx", () => {
     ac.abort();
     await run;
   });
+
+  test("つながっている間は一覧を定期に問い合わせ、受けたら数え直し、切れたら止める", async () => {
+    const { ctx, got } = context();
+    const ac = new AbortController();
+    const sockets: FakeSocket[] = [];
+    const src = wolfxSource(ctx, {
+      log: () => {},
+      eqlistPollMs: 50,
+      connect: () => {
+        const s = new FakeSocket();
+        sockets.push(s);
+        queueMicrotask(() => s.fire("open"));
+        return s;
+      },
+    });
+    const run = src.run(ac.signal);
+    const s = () => sockets[0] as FakeSocket;
+    const queries = () =>
+      s().sent.filter((x) => x === "query_jmaeqlist").length;
+    await tick(5);
+    expect(queries()).toBe(1);
+    await tick(70);
+    expect(queries()).toBe(2);
+    // Wolfx が一覧を自分から送ってきたら、次の問い合わせはそこから数える (すぐには重ねない)
+    const list = fixture("wolfx/made-eqlist.json");
+    s().fire("message", { data: list });
+    expect(got).toHaveLength(2);
+    await tick(30);
+    expect(queries()).toBe(2);
+    await tick(40);
+    expect(queries()).toBe(3);
+    // 答えが前と同じ一覧なら何も渡さない
+    s().fire("message", { data: list });
+    expect(got).toHaveLength(2);
+    // 切れている間は問い合わせない
+    s().close();
+    const before = s().sent.length;
+    await tick(100);
+    expect(s().sent.length).toBe(before);
+    ac.abort();
+    await run;
+  });
 });

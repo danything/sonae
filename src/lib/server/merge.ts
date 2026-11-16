@@ -93,8 +93,9 @@ const byTime = (a: QuakeReport, b: QuakeReport) =>
 
 /**
  * いまの姿を組む情報源の順。気象庁の XML を正とし、無ければ P2P (551。地域・観測点ごとの震度もある)、
- * それも無ければ Wolfx (jma_eqlist。震源・M・最大震度だけ) の報だけで組む。情報源を混ぜないのは、
- * 震度の地域の並びが報ごとにまるごとなので、混ぜると食い違うため
+ * それも無ければ Wolfx (jma_eqlist。震源・M・最大震度だけ) の報だけで組む。震度は混ぜない
+ * (震度の地域の並びが報ごとにまるごとなので、混ぜると食い違う)。例外は震源だけで、XML が無く、
+ * P2P が震度速報だけで震源が無いときは、Wolfx の一覧の震源・M・深さで補う (hypocenterSource に出典を残す)
  */
 const QUAKE_SOURCE_ORDER = ["jma", "p2p", "wolfx"] as const;
 
@@ -112,7 +113,15 @@ export function summarizeQuake(
     ) ?? [];
   const latest = <K extends keyof QuakeReport>(k: K) =>
     pool.findLast((r) => r[k] !== undefined && r[k] !== null)?.[k];
-  const withHypo = pool.findLast((r) => r.hypocenter !== undefined);
+  const own = pool.findLast((r) => r.hypocenter !== undefined);
+  // XML が無く、P2P が震度速報だけのときは、Wolfx の一覧の震源で補う (XML の震源には混ぜない)
+  const lent =
+    own || pool[0]?.source !== "p2p"
+      ? undefined
+      : live.findLast(
+          (r) => r.source === "wolfx" && r.hypocenter !== undefined,
+        );
+  const withHypo = own ?? lent;
   const withInt = pool.findLast(
     (r) =>
       r.areas.length > 0 || r.stations.length > 0 || r.maxInt !== undefined,
@@ -143,6 +152,7 @@ export function summarizeQuake(
       [],
       sorted.map((r) => r.source),
     ),
+    ...(lent ? { hypocenterSource: "wolfx" as const } : {}),
     reports: sorted,
   };
 }
