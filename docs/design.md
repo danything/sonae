@@ -391,7 +391,7 @@ devDependencies に入れ、Vite がサーバーに束ねる。テスト (`tests
   - Web Push の `Topic` に tag の SHA-256 の先頭 32 字を付ける。配信サービスがまだ届けていない前の通知は、続報で置き換わる。
   - 起動したときに長期フィードで埋めた昔の電文を鳴らさないよう、事象の時刻から緊急地震速報は 3 分・地震と記録的短時間大雨情報・竜巻注意情報は 1 時間・津波・お知らせ・火山・気象警報は 6 時間を過ぎたものは送らない。有効期限の過ぎた竜巻注意情報も送らない。
 - **送り方:** 緊急地震速報と津波、噴火速報と噴火警報 (居住地域)、気象の危険警報・特別警報と記録的短時間大雨情報・竜巻注意情報は `Urgency: high`。`TTL` は緊急地震速報 120 秒 (遅れて届いても意味が無い)、地震情報と記録的短時間大雨情報・竜巻注意情報 1 時間、津波・お知らせ・火山・気象警報 6 時間。緊急地震速報の警報と津波警報以上、噴火速報と噴火警報 (居住地域)、気象の危険警報・特別警報は、閉じるまで残す (`requireInteraction`)。
-- **Service Worker** (`src/service-worker/`、SvelteKit が自動で登録): 通知を出し、押されたらその事象の画面 (1 つの画面でその件を選んだ URL。`/?q=<id>`・`/?k=tsunami&t=<id>`・`/?k=eew&e=<識別番号>`。[ui.md](ui.md)) を開く。開いている画面があればそれを移して前に出す。このサイトの中のパスしか開かない。画面やデータの控え (オフライン) はしない (古い地震情報を出さないため)。型は WebWorker の型で、`bun run check` が別に見る。
+- **Service Worker** (`src/service-worker/`、SvelteKit が自動で登録): 通知を出し、押されたらその事象の画面 (1 つの画面でその件を選んだ URL。`/?q=<id>`・`/?t=<id>`・`/?e=<識別番号>`。[ui.md](ui.md)) を開く。開いている画面があればそれを移して前に出す。このサイトの中のパスしか開かない。画面やデータの控え (オフライン) はしない (古い地震情報を出さないため)。型は WebWorker の型で、`bun run check` が別に見る。
 - **iPhone・iPad:** ホーム画面に追加した Web アプリ (iOS 16.4 以降) でだけ Web Push が届く。そのための Web アプリのマニフェスト (`static/manifest.webmanifest`。明るいテーマでは地の色だけが違う `manifest-light.webmanifest`) を置き、ダイアログで案内する。
 - **使えないブラウザ:** 機能が無い・届かない宛先を返す (Android の Edge は `permanently-removed.invalid`)・登録が例外で止まる、のどれでも、ダイアログに何ができないかと代わりの道 (ほかのブラウザ・開いている間の通知と音) を出し、黙って押せないままにしない。決めるのは機能の有無と宛先で、ブラウザの名前は文に添えるだけ (`#lib/push-support.ts`。[push.md](push.md) の「使えないブラウザ」)。
 - **ホーム画面のアイコン:** iOS と Android のホーム画面は SVG のアイコンを使わないので、`static/favicon.svg` から PNG を作って `static/icons/` に置く (192・512・maskable の 512 をマニフェストに、180 の `apple-touch-icon.png` を `app.html` の `<link rel="apple-touch-icon">` に)。白い地に印を置き、maskable は印を安全な円 (直径 80%) に収まる 55% にする。作り方はホストに何も入れず、コンテナの rsvg-convert で描く。`favicon.svg` を変えたら、次のコマンドで作り直してコミットする。
@@ -405,7 +405,7 @@ devDependencies に入れ、Vite がサーバーに束ねる。テスト (`tests
   - **条件は Webhook ごとに持つが、画面は増やさない。** 「通知」の条件をそのまま使い、足したときの条件で送る。その後に条件を変えると (「通知」の窓・地図のメニュー)、その人の Webhook 全部に送る (`PUT /api/webhooks`)。条件の欄を Webhook ごとに並べると窓が倍になるため。ブラウザごとに条件が違うときは、最後に変えたものになる
   - **URL は秘密** (知っていれば誰でも投稿できる)。DB には持つが、API は返さず (一覧はホストだけ)、記録にもホストだけを出す。送れなかった理由も、HTTP の状態か決まった言葉 (「時間切れです」「つながりませんでした (ECONNREFUSED)」) だけにする (例外の文には URL が入りうる)
   - **宛先のアドレスは縛らない** (Web Push の配信サービスの表とは違う)。家の中の Home Assistant のような LAN の送り先がふつうにあり、送り先を足せるのはログインした人だけだから (denpa と同じ考え方)。代わりに、送り先を足がかりに別の所を覗かせない。リダイレクトは追わず、相手の本文は読まずに捨て、画面にも返さない
-  - Discord は `content` (メンションは飛ばさない)、Slack とほかは `text` で受けるので、URL で見分けて形を変える (`discord`・`slack`)。押すとその報を開く URL (`PUBLIC_URL` があるとき) は、Discord と Slack では `<...>` で囲む (Discord は画面がログインの後ろなので、ページの見本を出さない)
+  - 送る本文の形は送り先 (Discord・Slack・ほか) を URL で見分けて変える。形は [push.md の「Webhook」](push.md#webhook)
   - API は `GET`・`POST`・`PUT`・`DELETE /api/webhooks` と `POST /api/webhooks/test` (1 人 10 分に 5 回まで)。どれもログインが要り、本文は `application/json` だけ受ける (415)。1 人 10 まで。VAPID の鍵が無くても使える
   - 送るのは待たない (10 秒で切る)。相手が遅くても、ほかの送り先と Web Push は待たない
 - **開いているとき:** SSE で受けたら、OS の通知と、短い音 (`<audio>`) と読み上げで知らせる (`src/lib/alerter.svelte.ts`)。読み上げの声は VOICEVOX で作る (下の「読み上げ」)。
@@ -539,7 +539,7 @@ VOICEVOX が止まっている・つながらないときは、画面が端末�
 - **IdP は doany.io の Entra ID の共用のアプリ登録 `Main`。新しくアプリは登録しない。** ashi と同じく、誰が使えるかはエンタープライズ アプリケーションのロールの割り当てで決める。
   通すロールは `OIDC_ROLE` (**既定は `admin`**。まずは持ち主 1 人)。家族と共有するときは、家族を Entra に招き (B2B のゲスト)、このロールを割り当てる。`admin` を家族に渡したくなければ、family 用のロールを足して `OIDC_ROLE` を替える。どちらもコードの変更は要らない (2026-11-16 に確かめた)。
   リダイレクト URI・環境変数の表・家族と共有する手順は [entra.md](entra.md)。
-- issuer・client id・secret の 3 つが揃わず、信頼するネットワーク (下) も書いていなければ、画面は開かない (`/health` だけ答え、ほかは 503)。手元の開発だけ、`AUTH_DISABLED=1` でログインを飛ばせる (本番の `NODE_ENV=production` では効かない)。
+- issuer・client id・secret の 3 つが揃わず、信頼するネットワーク (下) も書いていなければ、画面は開かない (`/health` だけ答え、ほかは 503)。信頼するネットワークだけを書いたときは、その外からは 403。手元の開発だけ、`AUTH_DISABLED=1` でログインを飛ばせる (本番の `NODE_ENV=production` では効かない)。
 - **信頼するネットワーク (`TRUSTED_NETWORKS`) の中からは、ログインなしで通す** (`src/lib/server/trust.ts`。denpa と同じ考え方)。1 行で入れたセルフホストの 1 台目が、IdP を用意しなくても開けるように。
   - 書いていなければ誰も通さない (いままでどおり)。本番 (家の Talos のクラスタ) と chart の既定は書かず、OIDC だけ。インストーラ (install.sh・install.ps1) は家の LAN とそのマシンのブラウザを書く ([install.md の「ログイン」](install.md#ログイン))
   - **アドレスに加えて名前も見る** (DNS リバインディング除け)。通すのは IP の直書き・localhost・ドットの無い名前・家の中だけの名前 (`.localhost`・`.local`・`.lan`・`.home.arpa`・`.internal`)・`ALLOWED_HOSTS` だけ
