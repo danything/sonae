@@ -94,6 +94,8 @@ export interface SocketLoopOptions {
   /** つながったとき (埋め直しに使う) */
   onOpen?(ws: SocketLike): void | Promise<void>;
   onMessage(text: string, ws: SocketLike): void;
+  /** つながっていた接続が切れたとき (止めたときも)。onOpen で始めた定期の処理を止める */
+  onClose?(ws: SocketLike): void;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   log?: (msg: string) => void;
 }
@@ -145,6 +147,13 @@ function once(
         ws?.close();
       } catch {
         // もう閉じている
+      }
+      if (openedAt !== undefined) {
+        try {
+          o.onClose?.(ws);
+        } catch (e) {
+          log(`[${o.status.get().id}] 切れたときの後始末に失敗しました: ${e}`);
+        }
       }
       resolve(openedAt);
     };

@@ -163,6 +163,11 @@ export interface Quake {
   /** 気象庁の XML を受けていない (P2P・Wolfx だけの仮の姿) */
   provisional: boolean;
   sources: ("jma" | "p2p" | "wolfx")[];
+  /**
+   * 震源・M・深さを、震度とは別の情報源から補ったとき、その情報源。いまは、気象庁の XML が無く、
+   * P2P が震度速報だけで、Wolfx の一覧に震源があるときの "wolfx" だけ。補っていなければ無い。詳しい内容に出す
+   */
+  hypocenterSource?: "wolfx";
   reports: QuakeReport[];
   updatedAt: string;
 }

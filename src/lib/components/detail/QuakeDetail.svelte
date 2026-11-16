@@ -83,6 +83,12 @@
     <div class="grow">
       <h1 id="detail-title">{quakeName(q)}</h1>
       <p class="small muted">{facts.join("・")}</p>
+      {#if q.hypocenterSource}
+        <!-- 震度とは別の情報源から震源を補ったとき (気象庁の XML が来るまで) -->
+        <p class="small muted" data-testid="hypocenter-source">
+          震源・M・深さは {SOURCE_LABEL[q.hypocenterSource]}、震度は {SOURCE_LABEL.p2p}の速報です
+        </p>
+      {/if}
       {#if q.cancelled || q.provisional}
         <p class="tags">
           {#if q.cancelled}<span class="tag error">取消</span>{/if}
