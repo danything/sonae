@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 
 import {
+  depthText,
   jstTime,
   magnitudeText,
   quakeName,
@@ -18,11 +19,17 @@ test("地震の名前: 震源が無ければ最初の地域で「など」、地
   expect(quakeName({ areas: [] })).toBe("震源は調査中");
 });
 
-test("一覧の時刻と M の書き方", () => {
+test("一覧の時刻・深さ・M の書き方", () => {
   expect(jstTime("2026-11-13T15:03:45Z")).toBe("00:03");
   expect(jstTime(undefined)).toBe("—");
+  expect(depthText({ name: "x", depthKm: 0 })).toBe("ごく浅い");
+  expect(depthText({ name: "x" })).toBe("不明");
   expect(magnitudeText({ magnitude: 3.5 })).toBe("M3.5");
+  expect(magnitudeText({ magnitude: 7 })).toBe("M7.0");
   expect(magnitudeText({ magnitudeText: "Ｍ不明" })).toBe("Ｍ不明");
+  expect(
+    magnitudeText({ magnitude: null, magnitudeText: "Ｍ８を超える巨大地震" }),
+  ).toBe("Ｍ８を超える巨大地震");
 });
 
 test("津波のいちばん強い区分 (解除・なしだけなら none)", () => {

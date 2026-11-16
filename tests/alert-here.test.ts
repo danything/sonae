@@ -8,59 +8,36 @@ import {
   planEntry,
 } from "#lib/alert.ts";
 import { type AreaFeature, createHereFinder, featureAt } from "#lib/home.ts";
-import type { SonaeEvent, WeatherInfo, WeatherWarning } from "#lib/model.ts";
+import type { WeatherWarning } from "#lib/model.ts";
 import { ADVISORY_QUOTA, type Sent } from "#lib/notify.ts";
-import { DEFAULT_PREFS, type Home, type PushPrefs } from "#lib/push.ts";
 import { HERE, isFixed, readoutOf, readoutOfAll } from "#lib/readout.ts";
-import { parseWeatherXml } from "#lib/server/sources/jma-weather.ts";
 
-import { NOW, quake } from "./events.ts";
-import { fixture } from "./helpers.ts";
+import {
+  NOW,
+  prefs,
+  quake,
+  warningEvent as ev,
+  weatherEvent,
+} from "./events.ts";
+import {
+  homeAt,
+  toSpecialRain,
+  weatherInfo,
+  weatherWarning,
+} from "./helpers.ts";
 
-function warning(patch = (s: string) => s): WeatherWarning {
-  const [item] = parseWeatherXml(
-    patch(fixture("jma/15_17_01_251222_VPWW55.xml")),
-    "VPWW55",
-  );
-  if (item?.type !== "warning") throw new Error("警報・注意報ではありません");
-  return { ...item.warning, updatedAt: "" } as WeatherWarning;
-}
-const ev = (data: WeatherWarning): SonaeEvent => ({
-  seq: 1,
-  type: "warning",
-  data,
-});
+const RAIN = "15_17_01_251222_VPWW55.xml";
 
 /** 島根県の大雨 (松江市・出雲市にレベル３大雨警報、奥出雲町はレベル２大雨注意報) */
 const AT = Date.parse("2024-11-02T11:30:00+09:00");
-const shimane = warning();
+const shimane = weatherWarning(RAIN, "VPWW55");
 /** 大雨警報を大雨特別警報に書き換えた作り物 (奥出雲町は注意報のまま) */
-const special = warning((s) =>
-  s.replace(
-    /<Name>レベル３大雨警報<\/Name>\s*<Code>03<\/Code>/g,
-    "<Name>レベル５大雨特別警報</Name><Code>33</Code>",
-  ),
-);
+const special = weatherWarning(RAIN, "VPWW55", toSpecialRain);
 
-const city = (code: string, name: string): Home => ({
-  code,
-  name,
-  quake: null,
-  office: "320000",
-  ichiji: "320010",
-});
-const matsue = city("3220100", "島根県松江市");
-const izumo = city("3220300", "島根県出雲市");
-const okuizumo = city("3234300", "島根県奥出雲町");
-const chiyoda: Home = {
-  ...city("1310100", "東京都千代田区"),
-  office: "130000",
-};
-
-const prefs = (patch: Partial<PushPrefs> = {}): PushPrefs => ({
-  ...DEFAULT_PREFS,
-  ...patch,
-});
+const matsue = homeAt("3220100");
+const izumo = homeAt("3220300");
+const okuizumo = homeAt("3234300");
+const chiyoda = homeAt("1310100");
 
 describe("開いているときは、現在地の気象も知らせる", () => {
   test("住んでいる地域を選んでいなくても、現在地の警報は「現在地の」と付けて知らせる", () => {
@@ -205,39 +182,25 @@ describe("開いているときは、現在地の気象も知らせる", () => {
   });
 
   test("気象でない報も、「住んでいる地域と現在地」の判定には現在地を使う (通知は 1 つのまま)", () => {
-    const kashiwa: Home = {
-      ...city("1221700", "千葉県柏市"),
-      quake: { code: "340", name: "千葉県北西部" },
-    };
+    const kashiwa = homeAt("1221700");
     const p = prefs({ quake: "nearby", home: chiyoda });
-    // 千代田区 (住んでいる地域) は細分区域が無い作りなので当たらず、現在地の千葉県北西部 (震度 4) で当たる
-    expect(planAlerts(quake(), NOW, p, new Map(), null)).toEqual([]);
-    const plans = planAlerts(quake(), NOW, p, new Map(), kashiwa);
+    // 千代田区 (住んでいる地域。東京都２３区) は揺れておらず当たらない。現在地の柏市 (千葉県北西部、震度 4) で当たる
+    const q = quake({
+      areas: [{ code: "341", name: "千葉県北西部", int: "4" }],
+    });
+    expect(planAlerts(q, NOW, p, new Map(), null)).toEqual([]);
+    const plans = planAlerts(q, NOW, p, new Map(), kashiwa);
     expect(plans.map((x) => x.notice.tag)).toEqual(["quake:20261114090000"]);
     expect(plans[0]?.notice.here).toBeUndefined();
   });
 
   test("記録的短時間大雨情報は、住んでいる地域が対象なら現在地を足さない", () => {
-    const [item] = parseWeatherXml(
-      fixture("jma/18_03_01_190412_VPOA50.xml"),
-      "VPOA50",
-    );
-    if (item?.type !== "weather") throw new Error("気象の報ではありません");
-    const rain = {
-      ...item.info,
-      cancelled: false,
-      updatedAt: "",
-    } as WeatherInfo;
-    const e: SonaeEvent = { seq: 1, type: "weather", data: rain };
+    const rain = weatherInfo("18_03_01_190412_VPOA50.xml", "VPOA50");
+    const e = weatherEvent(rain);
     const at = Date.parse(rain.reportedAt) + 60_000;
-    const sapporo: Home = {
-      code: "0110000",
-      name: "北海道札幌市",
-      quake: null,
-      office: "016000",
-      ichiji: "016010",
-    };
-    const ebetsu: Home = { ...sapporo, code: "0121700", name: "北海道江別市" };
+    // 札幌市と江別市は同じ一次細分区域 (石狩地方)
+    const sapporo = homeAt("0110000");
+    const ebetsu = homeAt("0121700");
     const both = planAlerts(e, at, prefs({ home: sapporo }), new Map(), ebetsu);
     expect(both.map((p) => p.notice.title)).toEqual([
       "記録的短時間大雨情報 北海道札幌市",

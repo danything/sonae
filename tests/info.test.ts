@@ -4,10 +4,14 @@ import { type Advisory, isPinnedAdvisory } from "#lib/model.ts";
 import { matches, noticeOf } from "#lib/notify.ts";
 import { normalizePrefs } from "#lib/push.ts";
 import { parseJmaXml, WANTED_CODES } from "#lib/server/sources/jma-xml.ts";
-import type { Incoming } from "#lib/server/sources/types.ts";
 import { readView, selectHref } from "#lib/view.ts";
 
-import { codeOf, fixture, memoryStore } from "./helpers.ts";
+import {
+  codeOf,
+  fixture,
+  jmaIncoming as incoming,
+  memoryStore,
+} from "./helpers.ts";
 
 const ACTIVITY = "32-35_09_01_191111_VXSE56.xml"; // 伊豆東部の地震活動の見通しに関する情報
 const COUNT = "32-35_03_01_100514_VXSE60.xml"; // 地震回数に関する情報 (伊豆半島東方沖)
@@ -20,16 +24,6 @@ function advisory(file: string) {
   if (item?.type !== "advisory") throw new Error("お知らせではありません");
   return item.advisory;
 }
-const incoming = (file: string): Incoming => {
-  const body = fixture(`jma/${file}`);
-  return {
-    source: "jma",
-    key: file,
-    code: codeOf(file),
-    body,
-    items: parseJmaXml(body, codeOf(file)),
-  };
-};
 
 describe("地震の活動状況・地震回数 (VXSE56・60)", () => {
   test("取る種別に入っている", () => {

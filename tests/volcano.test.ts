@@ -15,9 +15,13 @@ import {
   readVolcanoCoordinate,
   WANTED_CODES,
 } from "#lib/server/sources/jma-xml.ts";
-import type { Incoming } from "#lib/server/sources/types.ts";
 
-import { codeOf, fixture, memoryStore } from "./helpers.ts";
+import {
+  codeOf,
+  fixture,
+  jmaIncoming as incoming,
+  memoryStore,
+} from "./helpers.ts";
 
 const ASAMA = "45_01_01_200522_VFVO50.xml"; // 浅間山 レベル 1 → 3 引上げ
 const HAKONE = "45_02_01_200522_VFVO50.xml"; // 箱根山 レベル 1 → 5 引上げ
@@ -33,16 +37,6 @@ function volcano(file: string): Omit<Volcano, "updatedAt" | "cancelled"> {
   if (item?.type !== "volcano") throw new Error("火山ではありません");
   return item.volcano;
 }
-const incoming = (file: string): Incoming => {
-  const body = fixture(`jma/${file}`);
-  return {
-    source: "jma",
-    key: file,
-    code: codeOf(file),
-    body,
-    items: parseJmaXml(body, codeOf(file)),
-  };
-};
 const event = (v: Volcano, at = v.reportedAt): SonaeEvent => ({
   seq: 1,
   type: "volcano",
