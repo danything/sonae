@@ -1,10 +1,11 @@
 <script lang="ts">
   /**
-   * 通知の条件と、開いているときの音・読み上げと、Web Push の登録 (docs/design.md の 2.4)。
+   * 通知の条件と、開いているときの OS の通知・音・読み上げと、Web Push の登録と Webhook の送り先
+   * (docs/design.md の 2.4・docs/push.md)。
    * ヘッダーのナビ (スマホの形は下のタブ) の「通知」から開くダイアログ 1 つに閉じる。
    * 開け閉めは `open` で持つ (閉じるのは左下の「閉じる」・幕・Esc)。
    * 条件はブラウザごとに 1 つで、音・読み上げのために端末 (localStorage) に、Web Push のためにサーバー (購読) に持つ。
-   * サーバーに VAPID の鍵が無いときは、Web Push の節にそう出すだけ (条件と音・読み上げは使える)。
+   * サーバーに VAPID の鍵が無いときは、Web Push の節にそう出すだけ (条件と、開いているときの知らせは使える)。
    */
   import "@anyblades/blades/components/modal";
 
@@ -595,7 +596,7 @@
       </label>
       <p class="small" id="voice-note">
         声はこの家の全部の端末で同じになります
-        (サーバーに保存します)。読み上げのオン/オフは端末ごとです。
+        (サーバーに保存します)。「音と読み上げ」の選択は端末ごとです。
       </p>
       {#if voiceMessage}
         <p class="small" role="status" data-testid="voice-status">
@@ -603,7 +604,7 @@
         </p>
       {/if}
     {/if}
-    {#if alerter.settings.sound || alerter.settings.speech}
+    {#if alerter.settings.sound}
       <!-- いまの選択どおりに鳴らす (読み上げもなら、選んである声で試しの文も読む)。声の保存中は止める -->
       <div class="cluster">
         <button
@@ -729,9 +730,5 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: var(--so-space-2);
-  }
-  .section-head {
-    margin: var(--so-space-3) 0 0;
-    font-size: var(--so-text-base);
   }
 </style>

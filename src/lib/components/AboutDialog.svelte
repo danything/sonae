@@ -174,10 +174,8 @@
       </ul>
     </div>
     <div class="modal-foot">
-      <button
-        type="button"
-        class="secondary modal-close"
-        onclick={() => dialog?.close()}>閉じる</button
+      <button type="button" class="secondary" onclick={() => dialog?.close()}
+        >閉じる</button
       >
     </div>
   </article>

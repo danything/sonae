@@ -11,18 +11,7 @@
 </script>
 
 <span
-  class="volcano-level"
+  class="level-label"
   style:background={c?.bg ?? "rgb(200 200 203)"}
   style:color={c?.fg ?? "#000"}>{label}</span
 >
-
-<style>
-  .volcano-level {
-    border-radius: var(--so-radius-sm);
-    padding: 0 var(--so-space-2);
-    font-size: var(--so-text-xs);
-    font-weight: var(--so-weight-bold);
-    line-height: 1.75;
-    white-space: nowrap;
-  }
-</style>
