@@ -394,20 +394,12 @@ class Alerter {
 
   /** SSE で受けたイベント (live が新しいと判定したものだけ) */
   handle(e: SonaeEvent): void {
-    // オフの間も控えは付ける (オンにした直後に、前から続いている事象の続報で鳴らさない)
+    // オフの間も控えは付ける (オンにした直後に、前から続いている事象の続報で鳴らさない)。
+    // 注意報の 1 日 1 回は、知らせるもの (通知・音・読み上げ) がオンの間だけ数える (鳴らせなかった分は数えない)
+    const plan = () =>
+      planAlerts(e, Date.now(), this.prefs, this.sent, this.here, this.left);
     this.deliver(
-      groupAlerts(
-        this.counted(() =>
-          planAlerts(
-            e,
-            Date.now(),
-            this.prefs,
-            this.sent,
-            this.here,
-            this.left,
-          ),
-        ),
-      ),
+      groupAlerts(this.alerting ? this.counted(plan) : this.uncounted(plan)),
     );
   }
 
@@ -457,8 +449,9 @@ class Alerter {
     const now = Date.now();
     const plan = () =>
       planEntry(presentEvents(present, now), this.prefs, this.sent, next, now);
-    // 初めて取れた市町村等は知らせないので、注意報の 1 日 1 回も数えない (数えた日を戻す)
-    const plans = first ? this.uncounted(plan) : this.counted(plan);
+    // 初めて取れた市町村等は知らせないので、注意報の 1 日 1 回も数えない (数えた日を戻す)。オフの間も数えない
+    const plans =
+      first || !this.alerting ? this.uncounted(plan) : this.counted(plan);
     if (!first) this.deliver(groupAlerts(plans));
     else this.trimSent();
   }
