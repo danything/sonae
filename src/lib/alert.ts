@@ -3,7 +3,14 @@
  * 知らせる判定は Web Push と同じ `#lib/notify.ts` の noticeOf・decide を使う。鳴らすのは `alerter.svelte.ts`。
  */
 
-import type { SonaeEvent, WeatherWarning } from "./model.ts";
+import {
+  isTsunamiActive,
+  latestPerVolcano,
+  type SonaeEvent,
+  type Tsunami,
+  type Volcano,
+  type WeatherWarning,
+} from "./model.ts";
 import {
   contentOf,
   decide,
@@ -23,31 +30,58 @@ import {
   toNotification,
 } from "./push.ts";
 
+/**
+ * 開いているときの音と読み上げ。画面では 1 つの選択 (オフ / 通知音だけ / 読み上げも) で、
+ * 読み上げるときはいつも通知音も鳴らす (`speech` なら `sound` も立つ。持ち主の決定、2026-11-16)
+ */
 export interface AlertSettings {
-  /** 短い音を鳴らす */
+  /** 短い音 (チャイム) を鳴らす */
   sound: boolean;
-  /** 読み上げる */
+  /** 読み上げる (このときは `sound` も立つ) */
   speech: boolean;
   // 声は端末に持たない (この家で 1 つ。サーバーの DB。前の `voice` は読まない)
   /** OS の通知を出す。無ければ既定 (通知の許可があれば出す)。許可が無ければ、オンでも出せない */
   notify?: boolean;
   // 画面への配信が切れた・戻ったことはいつも知らせる (2026-11-16 からスイッチは無い。前の `outage` は読まない)
-  /** 地図の現在地が入る市町村等の気象も知らせる。無ければ既定 (知らせる) */
-  here?: boolean;
+  // 現在地は、範囲の「住んでいる地域と現在地」でいつも使う (2026-11-16 からスイッチは無い。前の `here` は読まない)
 }
 
 export const ALERT_OFF: AlertSettings = { sound: false, speech: false };
 
-/** 覚えた値を読む。読めなければオフ (通知は既定のまま) */
+/** 音と読み上げの選択 (「通知」の窓の 1 つの選択) */
+export const AUDIO_MODES = ["off", "chime", "speech"] as const;
+export type AudioMode = (typeof AUDIO_MODES)[number];
+
+export const AUDIO_LABEL: Record<AudioMode, string> = {
+  off: "オフ",
+  chime: "通知音だけ",
+  speech: "読み上げも",
+};
+
+/** いまの設定がどの選択か */
+export const audioModeOf = (s: AlertSettings): AudioMode =>
+  s.speech ? "speech" : s.sound ? "chime" : "off";
+
+/** 選択を設定にする (ほかの項目はそのまま) */
+export const withAudioMode = (
+  s: AlertSettings,
+  mode: AudioMode,
+): AlertSettings => ({
+  ...s,
+  sound: mode !== "off",
+  speech: mode === "speech",
+});
+
+/**
+ * 覚えた値を読む。読めなければオフ (通知は既定のまま)。前の形は音と読み上げが別のスイッチで、
+ * 読み上げだけ (音はオフ) にもできた。その値は「読み上げも」(音も鳴らす) に読み替える
+ */
 export function parseAlertSettings(raw: string | null): AlertSettings {
   try {
     const o = JSON.parse(raw ?? "") as Partial<AlertSettings> | null;
-    const s: AlertSettings = {
-      sound: o?.sound === true,
-      speech: o?.speech === true,
-    };
+    const speech = o?.speech === true;
+    const s: AlertSettings = { sound: speech || o?.sound === true, speech };
     if (typeof o?.notify === "boolean") s.notify = o.notify;
-    if (typeof o?.here === "boolean") s.here = o.here;
     return s;
   } catch {
     return { ...ALERT_OFF };
@@ -111,8 +145,9 @@ export function planAlerts(
 ): AlertPlan[] {
   const base = noticeOf(e, now);
   if (!base) return [];
-  // 気象は住んでいる地域で中身が変わる (Web Push と同じく、条件ごとに作る)
-  const home = noticeFor(base, prefs);
+  // 気象は住んでいる地域で中身が変わる (Web Push と同じく、条件ごとに作る)。気象のほかの種類は
+  // 通知が 1 つで、「住んでいる地域と現在地」の判定に現在地も使う (mark が decide に渡す)
+  const home = noticeFor(base, prefs, here);
   const notices: { notice: Notice; quiet: boolean }[] = home
     ? [{ notice: home, quiet: false }]
     : [];
@@ -135,7 +170,7 @@ export function planAlerts(
     // 記録的短時間大雨情報・竜巻注意情報は、地域が違っても同じ tag (先に並ぶほうだけ)
     if (seen.has(n.tag)) continue;
     seen.add(n.tag);
-    const p = mark(n, prefs, sent);
+    const p = mark(n, prefs, sent, here);
     if (p) plans.push(quiet ? { ...p, renotify: false } : p);
   }
   return plans;
@@ -146,37 +181,88 @@ function mark(
   n: Notice,
   prefs: PushPrefs,
   sent: Map<string, Sent>,
+  here: Home | null,
 ): AlertPlan | null {
   const prev = sent.get(n.tag);
   const digest = contentOf(n);
-  const p = decide(n, prefs, prev, digest);
+  const p = decide(n, prefs, prev, digest, here);
   if (!p.send) return null;
   sent.set(n.tag, { level: Math.max(prev?.level ?? 0, n.level), digest });
   return { notice: n, renotify: p.renotify };
 }
 
+/** 画面が持ついまの状態のうち、現在地に入ったときに見るもの */
+export interface Present {
+  warnings: readonly WeatherWarning[];
+  tsunamis: readonly Tsunami[];
+  volcanoes: readonly Volcano[];
+}
+
 /**
- * 現在地が別の市町村等に替わったとき、そこにもう出ている気象警報・注意報を知らせるかを決めて控える
- * (`warnings` は画面が持ついまの警報・注意報。府県予報区と種別ごとの最新の報)。
- * 段は `planAlerts` と同じ (警報以上 / 注意報も)。同じ中身は控えで 1 度だけなので、境目で行き来しても、
- * 戻ってきても鳴らし直さない。出たままの警報は、報が古くても (6 時間を過ぎても) 出ているので知らせる。
- * 住んでいる地域と同じ市町村等なら足さない (住んでいる地域の通知で知らせている)
+ * いま出ているもの (現在地に入ったときに知らせるか見るもの)。気象警報・注意報 (府県予報区と種別ごとの
+ * 最新の報)、まだ終わっていない津波、火山ごとのいまの噴火警報・予報。古さは見ない (出たままなら出ている)
+ */
+export function presentEvents(p: Present, now: number): SonaeEvent[] {
+  return [
+    ...p.warnings.map((data): SonaeEvent => ({
+      seq: 0,
+      type: "warning",
+      data,
+    })),
+    ...p.tsunamis
+      .filter((t) => t.status === "normal" && isTsunamiActive(t, now))
+      .map((data): SonaeEvent => ({ seq: 0, type: "tsunami", data })),
+    ...latestPerVolcano([...p.volcanoes]).map((data): SonaeEvent => ({
+      seq: 0,
+      type: "volcano",
+      data,
+    })),
+  ];
+}
+
+/** 報の時刻 (noticeOf が古さを見る時刻。いま出ているものは古くても知らせるので、これを「いま」として渡す) */
+function timeOf(e: SonaeEvent): number {
+  switch (e.type) {
+    case "warning":
+      return Date.parse(e.data.reportedAt);
+    case "tsunami":
+      return Date.parse(e.data.issuedAt);
+    case "volcano":
+      return Date.parse(e.data.eventTime ?? e.data.reportedAt);
+    default:
+      return Number.NaN;
+  }
+}
+
+/**
+ * 現在地が別の市町村等に替わったとき、そこにもう出ているものを知らせるかを決めて控える
+ * (`events` は `presentEvents` で作った、いま出ているもの)。
+ * - 気象警報・注意報は、現在地の通知 (`hereNoticeFor`) を作る。段は `planAlerts` と同じ (警報以上)
+ * - 津波・火山は全国と同じ通知 (同じ tag) で、範囲の判定に現在地を使う。まだ知らせていなければ、ここで初めて知らせる
+ *
+ * 同じ中身は控えで 1 度だけなので、境目で行き来しても、戻ってきても鳴らし直さない。出たままのものは、
+ * 報が古くても (6 時間を過ぎても) 出ているので知らせる。住んでいる地域と同じ市町村等なら足さない
+ * (住んでいる地域の通知で知らせている)
  */
 export function planEntry(
-  warnings: readonly WeatherWarning[],
+  events: readonly SonaeEvent[],
   prefs: PushPrefs,
   sent: Map<string, Sent>,
   here: Home,
 ): AlertPlan[] {
   if (here.code === prefs.home?.code) return [];
   const plans: AlertPlan[] = [];
-  for (const w of warnings) {
-    const e: SonaeEvent = { seq: 0, type: "warning", data: w };
+  for (const e of events) {
     // 古さは見ない (いま出ているもの)。訓練・試験は noticeOf が外す
-    const base = noticeOf(e, Date.parse(w.reportedAt));
-    const n = base ? hereNoticeFor(base, prefs, here) : null;
+    const base = noticeOf(e, timeOf(e));
+    if (!base) continue;
+    const n =
+      e.type === "warning"
+        ? hereNoticeFor(base, prefs, here)
+        : noticeFor(base, prefs, here);
     if (!n || n.closing) continue;
-    const p = mark(n, prefs, sent);
+    const p = mark(n, prefs, sent, here);
+    // 津波・火山の控えが前からあり中身も同じなら、mark が null を返す (もう知らせている)
     if (p) plans.push(p);
   }
   return plans;

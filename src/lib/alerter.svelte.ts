@@ -15,8 +15,8 @@
  * - ブラウザは、人がページを一度操作するまで音を出させない (自動再生の制限)。最初の操作で `<audio>` と
  *   読み上げを一度だけ無音で動かして、後から鳴らせるようにする。鳴らせない間は `blocked` が立ち、
  *   画面の上の端に帯 (押すと鳴らせるようになる) を出す。
- * - 気象の警報・注意報などは、住んでいる地域に加えて地図の現在地が入る市町村等でも知らせる (`here`。
- *   スイッチ `here` を切れば住んでいる地域だけ)。両方に当たった報は 1 度だけ鳴らす (`groupAlerts`)。
+ * - 範囲の「住んでいる地域と現在地」(と「全国」の中の地域の分) は、住んでいる地域に加えて地図の現在地が
+ *   入る市町村等でも見る (`here`)。気象は両方に当たった報を 1 度だけ鳴らす (`groupAlerts`)。
  * - 知らせるもの (OS の通知・音・読み上げ) がオンの間は、Web Lock を 1 つ持ち続けて、Edge の
  *   「スリープ中のタブ」などで裏のタブが止まらないようにする (`#lib/awake.ts`)。止まると、鳴るのが
  *   タブを前に出すまで遅れる。
@@ -37,6 +37,8 @@ import {
   type Permission,
   planAlerts,
   planEntry,
+  type Present,
+  presentEvents,
 } from "./alert.ts";
 import { KeepAwake } from "./awake.ts";
 import { chimeWav } from "./chime.ts";
@@ -46,7 +48,7 @@ import {
   type OutageSignal,
   OutageWatch,
 } from "./connection.ts";
-import type { SonaeEvent, WeatherWarning } from "./model.ts";
+import type { SonaeEvent } from "./model.ts";
 import { contentOf, type Notice, type Sent } from "./notify.ts";
 import { readPref, writePref } from "./prefs.ts";
 import {
@@ -171,11 +173,16 @@ class Alerter {
   start(): () => void {
     const raw = readPref("alert");
     this.settings = parseAlertSettings(raw);
-    // 前は声を端末ごとに `voice` に、「受信が切れたら知らせる」のスイッチを `outage` に持っていた。
-    // 読まずに消す (読めた値だけで書き直す)
-    if (raw !== null && (raw.includes('"voice"') || raw.includes('"outage"')))
-      writePref("alert", JSON.stringify(this.settings));
-    this.prefs = parseAlertPrefs(readPref("alert.prefs"));
+    // 前は声を端末ごとに `voice` に、「受信が切れたら知らせる」を `outage` に、「現在地の気象も知らせる」を
+    // `here` に持ち、読み上げだけ (音はオフ) にもできた。読み替えた形で書き直す (読めた値だけを残す)
+    const settings = JSON.stringify(this.settings);
+    if (raw !== null && raw !== settings) writePref("alert", settings);
+    // 条件も前の形 (段の選び方) なら、読み替えた範囲で書き直す
+    const rawPrefs = readPref("alert.prefs");
+    this.prefs = parseAlertPrefs(rawPrefs);
+    const prefs = JSON.stringify(this.prefs);
+    if (rawPrefs !== null && rawPrefs !== prefs)
+      writePref("alert.prefs", prefs);
     // 自動再生を許している (アプリとして入れた・サイトの設定で許した) ブラウザでは、押さなくても鳴らせる
     this.activated = navigator.userActivation?.hasBeenActive ?? false;
     this.autoplay = autoplayAllowed(navigator, globalThis.AudioContext);
@@ -385,22 +392,21 @@ class Alerter {
   /** SSE で受けたイベント (live が新しいと判定したものだけ) */
   handle(e: SonaeEvent): void {
     // オフの間も控えは付ける (オンにした直後に、前から続いている事象の続報で鳴らさない)
-    const here = this.settings.here === false ? null : this.here;
     this.deliver(
       groupAlerts(
-        planAlerts(e, Date.now(), this.prefs, this.sent, here, this.left),
+        planAlerts(e, Date.now(), this.prefs, this.sent, this.here, this.left),
       ),
     );
   }
 
   /**
-   * 地図の現在地が入る市町村等が替わった (`#lib/push-client.ts` の `trackHere` が呼ぶ。`warnings` は
-   * 画面が持ついまの気象警報・注意報)。別の市町村等に入ったら、そこにもう出ているものを 1 度知らせる
+   * 地図の現在地が入る市町村等が替わった (`#lib/push-client.ts` の `trackHere` が呼ぶ。`present` は
+   * 画面が持ついまの気象警報・注意報・津波・噴火警報)。別の市町村等に入ったら、そこにもう出ているものを 1 度知らせる
    * (`planEntry`。同じ中身は控えで 1 度だけ)。開いてから初めて取れた市町村等は知らせず、控えだけ付ける
    * (開いたときに出ているものは画面で見える。住んでいる地域と同じ。開き直すたびに鳴らさない)。
    * 出た市町村等は `left` に残し、そこの解除・続報で出ている通知を置き換える
    */
-  moveHere(next: Home | null, warnings: readonly WeatherWarning[]): void {
+  moveHere(next: Home | null, present: Present): void {
     const prev = this.here;
     if ((next?.code ?? null) === (prev?.code ?? null)) return;
     if (prev)
@@ -411,7 +417,13 @@ class Alerter {
     if (!next) return;
     const first = !this.placed;
     this.placed = true;
-    const plans = planEntry(warnings, this.prefs, this.sent, next);
+    const now = Date.now();
+    const plans = planEntry(
+      presentEvents(present, now),
+      this.prefs,
+      this.sent,
+      next,
+    );
     if (!first) this.deliver(groupAlerts(plans));
     else this.trimSent();
   }

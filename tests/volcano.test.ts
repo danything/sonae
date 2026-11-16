@@ -201,8 +201,52 @@ describe("通知", () => {
     const n3 = noticeOf(event(asama), at(asama));
     if (!n3) throw new Error("通知が無い");
     expect(matches(n3, DEFAULT_PREFS)).toBe(false);
-    expect(matches(n3, { ...DEFAULT_PREFS, volcano: "all" })).toBe(true);
     expect(matches(n5, { ...DEFAULT_PREFS, volcano: "off" })).toBe(false);
+  });
+
+  test("住んでいる地域と現在地: 対象の市町村等なら火口周辺警報も知らせ、噴火警報 (レベル 4・5) はどこでも", () => {
+    const asama = full(ASAMA);
+    // 対象の市町村等のコードを電文から読む
+    expect(asama.cityCodes).toEqual([
+      "1042500",
+      "2020800",
+      "2032100",
+      "2032300",
+    ]);
+    const n3 = noticeOf(event(asama), at(asama));
+    if (!n3) throw new Error("通知が無い");
+    const place = (code: string, name: string) => ({
+      code,
+      name,
+      quake: null,
+      office: null,
+      ichiji: null,
+    });
+    const karuizawa = place("2032100", "長野県軽井沢町");
+    const tokyo = place("1310100", "東京都千代田区");
+    const near = { ...DEFAULT_PREFS, volcano: "nearby" } as const;
+    expect(matches(n3, { ...near, home: karuizawa })).toBe(true);
+    expect(matches(n3, { ...near, home: tokyo })).toBe(false);
+    // 現在地 (開いている画面だけ) でも見る
+    expect(matches(n3, { ...near, home: tokyo }, karuizawa)).toBe(true);
+    // 「全国」も、住んでいる地域が対象なら火口周辺警報を知らせる
+    expect(matches(n3, { ...DEFAULT_PREFS, home: karuizawa })).toBe(true);
+
+    const hakone = full(HAKONE);
+    const n5 = noticeOf(event(hakone), at(hakone));
+    if (!n5) throw new Error("通知が無い");
+    expect(matches(n5, { ...near, home: tokyo })).toBe(true);
+
+    // 噴火速報は、「住んでいる地域と現在地」なら対象の市町村等のときだけ
+    const flash = full(ONTAKE);
+    const nf = noticeOf(event(flash), at(flash));
+    if (!nf) throw new Error("通知が無い");
+    expect(matches(nf, { ...near, home: tokyo })).toBe(false);
+    const target = flash.cityCodes?.[0];
+    if (!target) throw new Error("噴火速報に対象の市町村等が無い");
+    expect(
+      matches(nf, { ...near, home: place(target, "噴火速報の対象") }),
+    ).toBe(true);
   });
 
   test("警報の解除と取消は、前に知らせた所にだけ送る (closing)", () => {
@@ -219,9 +263,10 @@ describe("通知", () => {
     expect(noticeOf(event(flash), at(flash) + 6 * 60 * 60_000 + 1)).toBeNull();
   });
 
-  test("条件の読み直し: 知らない値は既定に戻す", () => {
-    expect(normalizePrefs({ volcano: "all" }).volcano).toBe("all");
-    expect(normalizePrefs({ volcano: "loud" }).volcano).toBe("warning");
+  test("条件の読み直し: 前の段は全国に読み替え、知らない値は既定に戻す", () => {
+    expect(normalizePrefs({ volcano: "all" }).volcano).toBe("everywhere");
+    expect(normalizePrefs({ volcano: "nearby" }).volcano).toBe("nearby");
+    expect(normalizePrefs({ volcano: "loud" }).volcano).toBe("everywhere");
   });
 });
 

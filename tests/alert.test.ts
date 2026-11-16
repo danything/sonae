@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   alertFor,
+  audioModeOf,
   autoplayAllowed,
   mutedText,
   notifyOn,
@@ -9,6 +10,7 @@ import {
   parseAlertPrefs,
   parseAlertSettings,
   planAlert,
+  withAudioMode,
 } from "#lib/alert.ts";
 import { chimeWav } from "#lib/chime.ts";
 import { payloadOf, type Sent } from "#lib/notify.ts";
@@ -21,23 +23,50 @@ describe("開いているときの音と読み上げの設定", () => {
   test("既定は音も読み上げもオフ。読めない値もオフ", () => {
     expect(parseAlertSettings(null)).toEqual({ sound: false, speech: false });
     expect(parseAlertSettings("{")).toEqual({ sound: false, speech: false });
-    expect(parseAlertSettings('{"sound":"yes","speech":true}')).toEqual({
+    expect(parseAlertSettings('{"sound":"yes","speech":false}')).toEqual({
       sound: false,
-      speech: true,
+      speech: false,
     });
     // 声は端末に持たない (この家で 1 つ。サーバー)。前に覚えた voice は読まない
-    expect(parseAlertSettings('{"speech":true,"voice":52}')).toEqual({
-      sound: false,
+    expect(
+      parseAlertSettings('{"sound":true,"speech":true,"voice":52}'),
+    ).toEqual({ sound: true, speech: true });
+  });
+
+  test("音と読み上げは 1 つの選択。前の形の 2 つのスイッチを読み替える", () => {
+    const mode = (raw: string) => audioModeOf(parseAlertSettings(raw));
+    expect(mode('{"sound":true,"speech":true}')).toBe("speech");
+    expect(mode('{"sound":true,"speech":false}')).toBe("chime");
+    expect(mode('{"sound":false,"speech":false}')).toBe("off");
+    // 前は読み上げだけ (音はオフ) にもできた。「読み上げも」(通知音も鳴らす) に読み替える
+    expect(parseAlertSettings('{"sound":false,"speech":true}')).toEqual({
+      sound: true,
       speech: true,
+    });
+    // 選んだら音と読み上げをそろえる (OS の通知のスイッチはそのまま)
+    const s = { sound: false, speech: false, notify: false };
+    expect(withAudioMode(s, "speech")).toEqual({
+      sound: true,
+      speech: true,
+      notify: false,
+    });
+    expect(withAudioMode(s, "chime")).toEqual({
+      sound: true,
+      speech: false,
+      notify: false,
+    });
+    expect(withAudioMode({ sound: true, speech: true }, "off")).toEqual({
+      sound: false,
+      speech: false,
     });
   });
 
   test("条件は Web Push と同じ既定。読めない項目は既定に戻す", () => {
     expect(parseAlertPrefs(null)).toEqual(DEFAULT_PREFS);
     expect(parseAlertPrefs("not json")).toEqual(DEFAULT_PREFS);
-    expect(parseAlertPrefs('{"tsunami":"major","eew":"loud"}')).toEqual({
+    expect(parseAlertPrefs('{"tsunami":"nearby","eew":"loud"}')).toEqual({
       ...DEFAULT_PREFS,
-      tsunami: "major",
+      tsunami: "nearby",
     });
   });
 });
@@ -100,7 +129,7 @@ describe("開いているときに鳴らすか", () => {
       }),
       tsunami({ ended: true, areas: [] }),
     ];
-    const p = prefs({ eew: "all" });
+    const p = prefs();
     const sent = new Map<string, Sent>();
     const log = new Map<string, Sent>();
     for (const e of events) {

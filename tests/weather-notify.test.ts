@@ -84,7 +84,7 @@ describe("気象警報・注意報の通知", () => {
     expect(notice(shimane, prefs())).toBeNull();
   });
 
-  test("注意報は既定では知らせない。「注意報も」なら知らせる", () => {
+  test("注意報は、どの範囲でも知らせない", () => {
     const w: WeatherWarning = {
       ...shimane,
       areas: [
@@ -105,7 +105,9 @@ describe("気象警報・注意報の通知", () => {
     const n = notice(w, prefs({ home: home() }));
     expect(n?.level).toBe(2);
     expect(n && matches(n, prefs({ home: home() }))).toBe(false);
-    expect(n && matches(n, prefs({ home: home(), weather: "all" }))).toBe(true);
+    expect(
+      n && matches(n, prefs({ home: home(), weather: "everywhere" })),
+    ).toBe(false);
     expect(n && matches(n, prefs({ home: home(), weather: "off" }))).toBe(
       false,
     );
@@ -162,6 +164,28 @@ describe("気象警報・注意報の通知", () => {
     expect(notice(shimane, prefs({ home: okuizumo }))?.tag).toBe(
       "warning:3234300:VPWW55",
     );
+  });
+
+  test("「全国」なら、ほかの府県予報区の危険警報 (レベル 4) も府県予報区ごとに知らせる", () => {
+    // 同じ電文の大雨警報を大雨危険警報に書き換えた作り物 (危険警報のサンプル電文が無いため)
+    const danger = warning("15_17_01_251222_VPWW55.xml", "VPWW55", (s) =>
+      s.replace(
+        /<Name>レベル３大雨警報<\/Name>\s*<Code>03<\/Code>/g,
+        "<Name>レベル４大雨危険警報</Name><Code>43</Code>",
+      ),
+    );
+    const far = home({ code: "1310100", name: "東京都千代田区" });
+    const wide = notice(danger, prefs({ home: far, weather: "everywhere" }));
+    expect(wide?.tag).toBe("warning:special:320000:VPWW55");
+    expect(wide?.level).toBe(4);
+    expect(wide?.title).toBe("島根県にレベル4大雨危険警報");
+    expect(
+      wide && matches(wide, prefs({ home: far, weather: "everywhere" })),
+    ).toBe(true);
+    // 「住んでいる地域と現在地」では、ほかの所の危険警報は知らせない (特別警報だけ)
+    expect(notice(danger, prefs({ home: far }))).toBeNull();
+    // 前の控えの通知 (どこかの特別警報の tag) を「住んでいる地域と現在地」で見ても鳴らさない
+    expect(wide && matches(wide, prefs({ home: far }))).toBe(false);
   });
 
   test("住んでいる地域が特別警報なら、地域の通知で言う", () => {
@@ -254,6 +278,8 @@ describe("住んでいる地域を選ぶ", () => {
         quake: { code: "570", name: "島根県東部" },
         office: "320000",
         ichiji: "320010",
+        // 表に津波予報区の列が無ければ、海に面していないものとして空
+        tsunami: [],
       },
     );
     expect(homeOf("9999999", cities, new Map())).toBeNull();

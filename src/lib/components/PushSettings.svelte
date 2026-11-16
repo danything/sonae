@@ -8,10 +8,24 @@
    */
   import "@anyblades/blades/components/modal";
 
+  import { untrack } from "svelte";
+
+  import {
+    AUDIO_LABEL,
+    AUDIO_MODES,
+    type AudioMode,
+    audioModeOf,
+    withAudioMode,
+  } from "#lib/alert.ts";
   import { alerter } from "#lib/alerter.svelte.ts";
   import { EDGE_SLEEP_HINT, isDesktopEdge } from "#lib/awake.ts";
   import { byPrefecture, type Cities, homeOf } from "#lib/home.ts";
-  import { INTENSITIES, intensityLabel } from "#lib/model.ts";
+  import {
+    homeNote,
+    SCOPE_LABEL,
+    SCOPE_OPTION,
+    scopeText,
+  } from "#lib/notify.ts";
   import {
     homeAt,
     loadCities as readCities,
@@ -28,7 +42,13 @@
     pushBlockText,
     QUIET_DENY_MS,
   } from "#lib/push-support.ts";
-  import { DEFAULT_PREFS, normalizePrefs, type PushPrefs } from "#lib/push.ts";
+  import {
+    DEFAULT_PREFS,
+    normalizePrefs,
+    type PushPrefs,
+    SCOPE_KINDS,
+    SCOPES,
+  } from "#lib/push.ts";
   import { voiceLabel } from "#lib/voices.ts";
   import { syncWebhookPrefs } from "#lib/webhook-client.ts";
 
@@ -197,14 +217,11 @@
     });
   }
 
-  function setSound(on: boolean): void {
-    alerter.setSettings({ ...alerter.settings, sound: on });
+  /** 音と読み上げの選択 (オフ / 通知音だけ / 読み上げも) */
+  function setAudio(mode: AudioMode): void {
+    alerter.setSettings(withAudioMode(alerter.settings, mode));
     // 押した操作の中で鳴らして、音の大きさを確かめてもらう (鳴らせるようにもなる)
-    if (on) alerter.preview();
-  }
-  function setSpeech(on: boolean): void {
-    alerter.setSettings({ ...alerter.settings, speech: on });
-    if (on) alerter.preview();
+    if (mode !== "off") alerter.preview();
   }
 
   /** 開いているときの OS の通知。オンにするとき、まだ聞いていなければ許可を聞く (このスイッチの操作の中で) */
@@ -277,6 +294,18 @@
       { maximumAge: 10 * 60_000, timeout: 20_000 },
     );
   }
+
+  // 2026-11-16 より前に覚えた住んでいる地域には津波予報区が無い。表が読めたら引き直して覚え直す
+  // (サーバーの購読と Webhook にも送る。サーバーは表を読まないので、ここで直す)
+  $effect(() => {
+    const home = prefs.home;
+    if (!open || !home || home.tsunami !== undefined) return;
+    if (Object.keys(cities).length === 0) return;
+    const fresh = homeOf(home.code, cities, quakeNames);
+    if (!fresh) return;
+    prefs.home = fresh;
+    untrack(() => savePrefs());
+  });
 
   // 開いたら、そのたびに購読と条件を読み直す
   $effect(() => {
@@ -381,27 +410,10 @@
     </p>
     <!-- 条件は変えたらすぐ覚える (change はここまで上がってくる) -->
     <div class="stack" onchange={() => savePrefs()}>
-      <label>
-        緊急地震速報
-        <select bind:value={prefs.eew}>
-          <option value="warning">警報だけ</option>
-          <option value="all">予報も</option>
-          <option value="off">知らせない</option>
-        </select>
-      </label>
-      <label>
-        地震 (最大震度)
-        <select bind:value={prefs.quakeMinInt}>
-          {#each INTENSITIES as i (i)}
-            <option value={i}>震度{intensityLabel(i)}以上</option>
-          {/each}
-          <option value="off">知らせない</option>
-        </select>
-      </label>
       <fieldset class="home" data-testid="home">
-        <legend>住んでいる地域 (通知に使う)</legend>
+        <legend>住んでいる地域</legend>
         <p class="small muted">
-          タブを閉じていても通知を送るため、サーバーに市町村だけを覚えさせます。地震と気象の両方に使います。
+          下の「住んでいる地域と現在地」に使います。タブを閉じていても通知を送るため、サーバーに市町村だけを覚えさせます。
         </p>
         <div class="home-pick">
           <label>
@@ -445,56 +457,29 @@
             >{locating ? "位置を取っています…" : "現在地から選ぶ"}</button
           >
         </div>
-        {#if prefs.home}
-          <p class="small muted">
-            {prefs.home.name}{prefs.home.quake
-              ? `・地震は「${prefs.home.quake.name}」の震度で見ます`
-              : ""}
-          </p>
-        {/if}
+        <p class="small muted" data-testid="home-note">
+          {homeNote(prefs.home)}
+        </p>
       </fieldset>
-      <label>
-        住んでいる地域の震度
-        <select bind:value={prefs.areaMinInt} disabled={!prefs.home?.quake}>
-          {#each INTENSITIES as i (i)}
-            <option value={i}>震度{intensityLabel(i)}以上</option>
-          {/each}
-        </select>
-      </label>
-      <label>
-        住んでいる地域の気象
-        <select
-          bind:value={prefs.weather}
-          disabled={!prefs.home && alerter.settings.here === false}
-          data-testid="prefs-weather"
-        >
-          <option value="warning">警報以上</option>
-          <option value="all">注意報も</option>
-          <option value="off">知らせない</option>
-        </select>
-      </label>
+      {#each SCOPE_KINDS as kind (kind)}
+        <label>
+          {SCOPE_LABEL[kind]}
+          <select
+            bind:value={prefs[kind]}
+            aria-describedby={`scope-${kind}`}
+            data-testid={`scope-${kind}`}
+          >
+            {#each SCOPES as s (s)}
+              <option value={s}>{SCOPE_OPTION[s]}</option>
+            {/each}
+          </select>
+        </label>
+        <p class="small muted" id={`scope-${kind}`}>
+          {scopeText(kind, prefs[kind])}
+        </p>
+      {/each}
       <p class="small muted">
-        警報以上には、危険警報・特別警報と、記録的短時間大雨情報・竜巻注意情報も入ります。開いているときは、現在地の気象にも同じ条件を使います。気象の特別警報は、どの地域に出ても知らせます。
-      </p>
-      <label>
-        津波
-        <select bind:value={prefs.tsunami}>
-          <option value="watch">津波注意報以上</option>
-          <option value="warning">津波警報以上</option>
-          <option value="major">大津波警報だけ</option>
-          <option value="off">知らせない</option>
-        </select>
-      </label>
-      <label>
-        火山
-        <select bind:value={prefs.volcano} data-testid="prefs-volcano">
-          <option value="warning">噴火速報と噴火警報 (レベル 4・5)</option>
-          <option value="all">火口周辺警報 (レベル 2・3) も</option>
-          <option value="off">知らせない</option>
-        </select>
-      </label>
-      <p class="small muted">
-        南海トラフ地震臨時情報と後発地震注意情報は、いつも知らせます。
+        気象の特別警報、南海トラフ地震臨時情報と後発地震注意情報は、いつも知らせます。
       </p>
       {#if prefsMessage}
         <p class="small" role="status" data-testid="prefs-status">
@@ -546,28 +531,30 @@
       <p class="small" role="status">{notifyMessage}</p>
     {/if}
     <label>
-      <input
-        type="checkbox"
-        role="switch"
-        checked={alerter.settings.sound}
-        onchange={(e) => setSound(e.currentTarget.checked)}
-        data-testid="alert-sound"
-      />
-      音を鳴らす
+      音と読み上げ
+      <select
+        value={audioModeOf(alerter.settings)}
+        onchange={(e) => setAudio(e.currentTarget.value as AudioMode)}
+        data-testid="alert-audio"
+      >
+        {#each AUDIO_MODES as m (m)}
+          <option
+            value={m}
+            disabled={m === "speech" &&
+              !alerter.canSpeak &&
+              !alerter.settings.speech}
+            >{AUDIO_LABEL[m]}{m === "speech" && !alerter.canSpeak
+              ? " (このブラウザは対応していません)"
+              : ""}</option
+          >
+        {/each}
+      </select>
     </label>
-    <label>
-      <input
-        type="checkbox"
-        role="switch"
-        checked={alerter.settings.speech}
-        disabled={!alerter.canSpeak}
-        onchange={(e) => setSpeech(e.currentTarget.checked)}
-        data-testid="alert-speech"
-      />
-      読み上げる{alerter.canSpeak
-        ? ""
-        : " (このブラウザは読み上げに対応していません)"}
-    </label>
+    {#if alerter.settings.speech && !alerter.canSpeak}
+      <p class="small muted" data-testid="alert-no-speech">
+        このブラウザは読み上げに対応していないため、通知音だけを鳴らします。
+      </p>
+    {/if}
     {#if alerter.settings.speech && alerter.voicevox && alerter.speech}
       <label>
         声
@@ -615,30 +602,11 @@
       (通知・音・読み上げ)
       で知らせます。戻ったら短く知らせます。切れている間も、自分でつなぎ直します。
     </p>
-    <label>
-      <input
-        type="checkbox"
-        role="switch"
-        checked={alerter.settings.here !== false}
-        onchange={(e) =>
-          alerter.setSettings({
-            ...alerter.settings,
-            here: e.currentTarget.checked,
-          })}
-        data-testid="alert-here"
-      />
-      現在地の気象も知らせる
-    </label>
-    <p class="small muted">
-      地図で現在地を出している間、いる市町村の気象警報・注意報も、上の「住んでいる地域の気象」と同じ条件で知らせます。位置はこの端末の中で市町村にするだけで、サーバーに送りません。
+    <p class="small muted" data-testid="alert-here-city">
+      地図で現在地を出している間は、いる市町村も「住んでいる地域と現在地」に使います。位置はこの端末の中で市町村にするだけで、サーバーに送りません。{alerter.here
+        ? `いまは${alerter.here.name}にいます。`
+        : "いまは地図の現在地がオフか、まだ取れていないので、住んでいる地域だけで見ます。"}
     </p>
-    {#if alerter.settings.here !== false}
-      <p class="small muted" data-testid="alert-here-city">
-        {alerter.here
-          ? `いまは${alerter.here.name}にいます。`
-          : "地図の現在地がオフか、まだ取れていません。住んでいる地域だけで知らせます。"}
-      </p>
-    {/if}
 
     <h2 class="section-head">Web Push (タブを閉じていても届く)</h2>
     {#if !info}

@@ -379,6 +379,11 @@ export interface Volcano {
   warning?: { name: string; code?: string; condition?: string };
   /** 対象の市町村 */
   cities: string[];
+  /**
+   * 対象の市町村等のコード (気象・地震・火山情報／市町村等、7 桁)。住んでいる地域と現在地に当てる
+   * (docs/design.md の 2.4)。2026-11-16 より前に受けた報には無い
+   */
+  cityCodes?: string[];
   /** 火山の活動の状況と、防災上の警戒事項 (噴火警報・予報) */
   activity?: string;
   prevention?: string;

@@ -49,7 +49,7 @@ const DAY = 24 * 60 * 60 * 1000;
 /** eews の鍵。通常は地震識別番号のまま、訓練・試験は後ろに付けて分ける */
 const eewKey = (eventId: string, status: Status) =>
   status === "normal" ? eventId : `${eventId}-${status}`;
-/** 原文を残す期間 (docs/design.md の未決の点 8) */
+/** 原文を残す期間 (docs/design.md の未決の点 11) */
 export const RAW_RETENTION_DAYS = 30;
 
 export class Store {
