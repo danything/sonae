@@ -40,7 +40,7 @@ const SCALES: Record<number, ObservedIntensity> = {
   60: "6+",
   70: "7",
 };
-export const p2pScale = (v: unknown): ObservedIntensity | undefined =>
+const p2pScale = (v: unknown): ObservedIntensity | undefined =>
   typeof v === "number" ? SCALES[Math.trunc(v)] : undefined;
 
 const KINDS: Record<string, QuakeKind> = {

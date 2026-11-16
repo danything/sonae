@@ -1,9 +1,9 @@
 /**
- * 張り直しの間隔と、WebSocket を張り続ける輪。P2P と Wolfx で同じものを使う。
+ * 張り直しの間隔と、WebSocket を張り続ける輪。P2P・Wolfx・EMSC で同じものを使う。
  *
  * - 指数のバックオフに揺らぎを足す (1 秒から倍々、上限 30 秒、full jitter)
  * - 60 秒つながっていたら間隔を戻す
- * - 90 秒何も来なければ (heartbeat も含めて) 死んだとみなして張り直す
+ * - 決まった時間 (既定 90 秒。情報源ごとに変える。P2P は見ない) 何も来なければ (heartbeat も含めて) 切れたとみなして張り直す
  */
 
 import { Backoff } from "#lib/backoff.ts";
@@ -73,7 +73,7 @@ const BunWebSocket = WebSocket as unknown as new (
   options: { headers: Record<string, string> },
 ) => SocketLike;
 
-export const defaultConnect: Connect = (url) =>
+const defaultConnect: Connect = (url) =>
   new BunWebSocket(url, { headers: { "user-agent": USER_AGENT } });
 
 /** 情報源に名乗る名前。個人の連絡先は入れない */

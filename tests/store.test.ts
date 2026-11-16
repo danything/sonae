@@ -322,11 +322,13 @@ describe("地震情報の新旧の判定", () => {
     });
   });
 
-  test("訓練の電文は別の地震として持ち、一覧には既定で出さない", () => {
+  test("訓練の電文は別の地震として持ち、一覧には出さない", () => {
     const { store } = memoryStore();
     store.ingest(jma("32-35_01_03_240613_VXSE53.xml"));
     expect(store.quakes()).toEqual([]);
-    expect(store.quakes(50, true)[0]?.status).toBe("training");
+    expect(
+      store.db.query<{ status: string }, []>("SELECT status FROM quakes").all(),
+    ).toEqual([{ status: "training" }]);
   });
 });
 

@@ -26,9 +26,9 @@ import {
 import { sleep, StatusTracker, USER_AGENT } from "./retry.ts";
 import type { Source } from "./types.ts";
 
-export const TREM_RTS_URL = "https://api.lb.exptech.dev/api/v1/trem/sse/rts";
+const TREM_RTS_URL = "https://api.lb.exptech.dev/api/v1/trem/sse/rts";
 /** 観測点の表。2 つのノードは同じ表を返す (ETag はノードごと)。先のほうから取る */
-export const TREM_STATION_URLS = [
+const TREM_STATION_URLS = [
   "https://static.core-tnn1.exptech.dev/resource/station",
   "https://static.core-tyo1.exptech.dev/resource/station",
 ];

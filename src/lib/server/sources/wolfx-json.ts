@@ -14,10 +14,10 @@ import {
   type ObservedIntensity,
   type QuakeKind,
   type QuakeReport,
-  type Status,
 } from "#lib/model.ts";
 import { jstToIso } from "#lib/server/time.ts";
 
+import { STATUS } from "./jma-xml.ts";
 import type { EewReport, QuakeIncoming } from "./types.ts";
 
 type Json = Record<string, unknown>;
@@ -26,12 +26,6 @@ const obj = (v: unknown): Json =>
 const str = (v: unknown) => (typeof v === "string" && v !== "" ? v : undefined);
 const num = (v: unknown) =>
   typeof v === "number" && Number.isFinite(v) ? v : undefined;
-
-const STATUS: Record<string, Status> = {
-  通常: "normal",
-  訓練: "training",
-  試験: "test",
-};
 
 export type WolfxMessage =
   | { type: "heartbeat" }

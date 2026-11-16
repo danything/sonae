@@ -237,10 +237,7 @@ function readComments(body: V): string[] {
 }
 
 /** 警報等情報要素／津波警報・注意報・予報 のコード。知らないコードは名前で見る */
-export function tsunamiGrade(
-  code: string | undefined,
-  name: string,
-): TsunamiGrade {
+function tsunamiGrade(code: string | undefined, name: string): TsunamiGrade {
   switch (code) {
     case "52":
     case "53":
@@ -657,7 +654,7 @@ export function parseFeed(xml: string): FeedEntry[] {
 }
 
 /** 電文の中のリンクは、気象庁のサイトのものだけを使う (画面でリンクにするため) */
-export function jmaUrl(v: string | undefined): string | undefined {
+function jmaUrl(v: string | undefined): string | undefined {
   if (!v) return undefined;
   try {
     const u = new URL(v);

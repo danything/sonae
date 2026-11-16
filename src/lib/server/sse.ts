@@ -6,7 +6,7 @@ export const PING_MS = 30_000;
  * 埋め直しで送る上限。超えるときは埋め直しを送らずに `resync` を送り、ブラウザに一覧を
  * 取り直させる (長く切れていたとき。途中までの埋め直しでは、抜けたものに気づけない)。
  */
-export const BACKLOG_LIMIT = 500;
+const BACKLOG_LIMIT = 500;
 
 /** SSE の 1 件。data は JSON にして 1 行で送る (JSON の中に改行は入らない) */
 export function sseFrame(f: {
@@ -20,10 +20,10 @@ export function sseFrame(f: {
   return `${out}data: ${JSON.stringify(f.data)}\n\n`;
 }
 
-export const eventFrame = (e: SonaeEvent) =>
+const eventFrame = (e: SonaeEvent) =>
   sseFrame({ id: e.seq, event: e.type, data: e.data });
 
-export const SSE_HEADERS = {
+const SSE_HEADERS = {
   "content-type": "text/event-stream; charset=utf-8",
   // no-transform: 途中で圧縮させない (圧縮すると溜めてから届く)
   "cache-control": "no-cache, no-transform",

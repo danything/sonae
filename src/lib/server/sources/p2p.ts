@@ -10,8 +10,8 @@ import { P2P_CODES, parseP2p } from "./p2p-json.ts";
 import { type Connect, runSocket, StatusTracker, USER_AGENT } from "./retry.ts";
 import type { Source, SourceContext } from "./types.ts";
 
-export const P2P_WS = "wss://api.p2pquake.net/v2/ws";
-export const P2P_HISTORY = "https://api.p2pquake.net/v2/history";
+const P2P_WS = "wss://api.p2pquake.net/v2/ws";
+const P2P_HISTORY = "https://api.p2pquake.net/v2/history";
 
 export interface P2pOptions {
   url?: string;

@@ -40,7 +40,7 @@ export const init: ServerInit = () => {
   }
   if (process.env.NODE_ENV === "production" && !process.env.PUBLIC_URL) {
     console.warn(
-      "PUBLIC_URL が空です。ログインの戻り先を要求の Host から組みます (本番では https://s.doany.io を入れてください)",
+      "PUBLIC_URL が空です。ログインの戻り先を要求の Host から組みます (本番では sonae を開く URL (例: https://sonae.example.com) を入れてください)",
     );
   }
   startVoice();

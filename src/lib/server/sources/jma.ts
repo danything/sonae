@@ -31,9 +31,9 @@ import type { Normalized, Source, SourceContext } from "./types.ts";
 
 const FEED_BASE = "https://www.data.jma.go.jp/developer/xml/feed";
 export const JMA_FEED = `${FEED_BASE}/eqvol.xml`;
-export const JMA_LONG_FEED = `${FEED_BASE}/eqvol_l.xml`;
-export const JMA_EXTRA_FEED = `${FEED_BASE}/extra.xml`;
-export const JMA_EXTRA_LONG_FEED = `${FEED_BASE}/extra_l.xml`;
+const JMA_LONG_FEED = `${FEED_BASE}/eqvol_l.xml`;
+const JMA_EXTRA_FEED = `${FEED_BASE}/extra.xml`;
+const JMA_EXTRA_LONG_FEED = `${FEED_BASE}/extra_l.xml`;
 
 export interface JmaOptions {
   feedUrl?: string;

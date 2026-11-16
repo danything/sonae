@@ -49,8 +49,8 @@ const DAY = 24 * 60 * 60 * 1000;
 /** eews の鍵。通常は地震識別番号のまま、訓練・試験は後ろに付けて分ける */
 const eewKey = (eventId: string, status: Status) =>
   status === "normal" ? eventId : `${eventId}-${status}`;
-/** 原文を残す期間 (docs/design.md の未決の点 11) */
-export const RAW_RETENTION_DAYS = 30;
+/** 原文を残す期間 (docs/design.md の 2.1。決めきっていない点は 9 章の 2) */
+const RAW_RETENTION_DAYS = 30;
 
 export class Store {
   constructor(
@@ -121,8 +121,6 @@ export class Store {
           now,
         );
         if (!next) return [];
-        // P2P だけの地震に気象庁の XML か Wolfx が来たら、地震識別番号を付ける
-        if (!next.eventId && item.eventId) next.eventId = item.eventId;
         this.db
           .query(
             `INSERT INTO quakes (id, event_id, status, origin_time, updated_at, data)
@@ -300,10 +298,10 @@ export class Store {
   }
 
   /** 新しい順の気象の報 */
-  weatherInfos(limit = 100, includeTraining = false): WeatherInfo[] {
+  weatherInfos(limit = 100): WeatherInfo[] {
     return this.db
       .query<{ data: string }, [number]>(
-        `SELECT data FROM weather_infos ${includeTraining ? "" : "WHERE status = 'normal'"}
+        `SELECT data FROM weather_infos WHERE status = 'normal'
          ORDER BY datetime(reported_at) DESC LIMIT ?`,
       )
       .all(limit)
@@ -566,10 +564,10 @@ export class Store {
     return this.longPeriod(eewKey(eventId, status));
   }
 
-  longPeriods(limit = 50, includeTraining = false): LongPeriod[] {
+  longPeriods(limit = 50): LongPeriod[] {
     return this.db
       .query<{ data: string }, [number]>(
-        `SELECT data FROM long_periods ${includeTraining ? "" : "WHERE status = 'normal'"}
+        `SELECT data FROM long_periods WHERE status = 'normal'
          ORDER BY datetime(reported_at) DESC LIMIT ?`,
       )
       .all(limit)
@@ -577,20 +575,20 @@ export class Store {
   }
 
   /** 新しい順の地震。発生の時刻が無いもの (震度速報だけ) は更新の時刻で並べる */
-  quakes(limit = 50, includeTraining = false): Quake[] {
+  quakes(limit = 50): Quake[] {
     return this.db
       .query<{ data: string }, [number]>(
-        `SELECT data FROM quakes ${includeTraining ? "" : "WHERE status = 'normal'"}
+        `SELECT data FROM quakes WHERE status = 'normal'
          ORDER BY datetime(COALESCE(origin_time, updated_at)) DESC LIMIT ?`,
       )
       .all(limit)
       .map((r) => JSON.parse(r.data) as Quake);
   }
 
-  tsunamis(limit = 20, includeTraining = false): Tsunami[] {
+  tsunamis(limit = 20): Tsunami[] {
     return this.db
       .query<{ data: string }, [number]>(
-        `SELECT data FROM tsunamis ${includeTraining ? "" : "WHERE status = 'normal'"}
+        `SELECT data FROM tsunamis WHERE status = 'normal'
          ORDER BY datetime(issued_at) DESC LIMIT ?`,
       )
       .all(limit)
@@ -617,10 +615,10 @@ export class Store {
   }
 
   /** 新しい順の火山の報 */
-  volcanoes(limit = 50, includeTraining = false): Volcano[] {
+  volcanoes(limit = 50): Volcano[] {
     return this.db
       .query<{ data: string }, [number]>(
-        `SELECT data FROM volcanoes ${includeTraining ? "" : "WHERE status = 'normal'"}
+        `SELECT data FROM volcanoes WHERE status = 'normal'
          ORDER BY datetime(reported_at) DESC LIMIT ?`,
       )
       .all(limit)
@@ -642,10 +640,10 @@ export class Store {
     return latestPerVolcano(rows);
   }
 
-  advisories(limit = 20, includeTraining = false): Advisory[] {
+  advisories(limit = 20): Advisory[] {
     return this.db
       .query<{ data: string }, [number]>(
-        `SELECT data FROM advisories ${includeTraining ? "" : "WHERE status = 'normal'"}
+        `SELECT data FROM advisories WHERE status = 'normal'
          ORDER BY datetime(reported_at) DESC LIMIT ?`,
       )
       .all(limit)
