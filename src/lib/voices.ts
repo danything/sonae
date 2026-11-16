@@ -61,7 +61,7 @@ export interface Voice {
 export interface SpeechInfo {
   /** VOICEVOX のエンジンにつながっている */
   available: boolean;
-  /** まだ選んでいないときの声 (`VOICEVOX_SPEAKER`) */
+  /** まだ選んでいないときの声 (剣崎雌雄、`DEFAULT_SPEAKER`) */
   defaultSpeaker: number;
   /** この家で読む声 (サーバーに 1 つ。全部の端末で同じ) */
   voice: number;

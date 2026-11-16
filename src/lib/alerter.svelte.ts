@@ -171,8 +171,9 @@ class Alerter {
   start(): () => void {
     const raw = readPref("alert");
     this.settings = parseAlertSettings(raw);
-    // 前は声を端末ごとに `voice` に持っていた。読まずに消す (読めた値だけで書き直す)
-    if (raw !== null && raw.includes('"voice"'))
+    // 前は声を端末ごとに `voice` に、「受信が切れたら知らせる」のスイッチを `outage` に持っていた。
+    // 読まずに消す (読めた値だけで書き直す)
+    if (raw !== null && (raw.includes('"voice"') || raw.includes('"outage"')))
       writePref("alert", JSON.stringify(this.settings));
     this.prefs = parseAlertPrefs(readPref("alert.prefs"));
     // 自動再生を許している (アプリとして入れた・サイトの設定で許した) ブラウザでは、押さなくても鳴らせる
@@ -290,11 +291,11 @@ class Alerter {
   /**
    * 画面への配信 (SSE) がつながっているか。`live.connect` がときどきと、変わったときに呼ぶ。
    * 切れたまま 30 秒続いたら「受信が切れました」、その後に戻ったら「受信が戻りました」を知らせる
-   * (`#lib/connection.ts` の OutageWatch)。スイッチ (`outage`) を切っていれば知らせない
+   * (`#lib/connection.ts` の OutageWatch)。止めるスイッチは無い (いつも知らせる。持ち主の決定、2026-11-16)
    */
   connection(connected: boolean): void {
     const signal = this.outage.update(connected, Date.now());
-    if (!signal || this.settings.outage === false) return;
+    if (!signal) return;
     // 同じ画面のタブが幾つあっても 1 つだけが知らせる (タブごとに見ているので、少し長めに持つ)
     void this.once(`connection:${signal}`, () => this.announce(signal), 60_000);
   }

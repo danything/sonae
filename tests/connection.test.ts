@@ -107,9 +107,9 @@ describe("受信が切れたことを知らせるか", () => {
     }
   });
 
-  test("スイッチの値を覚える (既定は知らせる)", () => {
-    expect(parseAlertSettings("{}").outage).toBeUndefined();
-    expect(parseAlertSettings('{"outage":false}').outage).toBe(false);
-    expect(parseAlertSettings('{"outage":"no"}').outage).toBeUndefined();
+  test("前のスイッチ (outage) は、保存済みの false も読まずに捨てる (いつも知らせる)", () => {
+    const s = parseAlertSettings('{"sound":true,"outage":false}');
+    expect(s).toEqual({ sound: true, speech: false });
+    expect("outage" in s).toBe(false);
   });
 });

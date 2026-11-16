@@ -8,8 +8,6 @@
    */
   import "@anyblades/blades/components/modal";
 
-  import { goto } from "$app/navigation";
-
   import { alerter } from "#lib/alerter.svelte.ts";
   import { EDGE_SLEEP_HINT, isDesktopEdge } from "#lib/awake.ts";
   import { byPrefecture, type Cities, homeOf } from "#lib/home.ts";
@@ -36,17 +34,7 @@
 
   import WebhookSettings from "./WebhookSettings.svelte";
 
-  let {
-    open = $bindable(false),
-    training,
-    trainingHref,
-  }: {
-    open?: boolean;
-    /** 一覧に緊急地震速報の訓練・試験も出しているか (URL の `training=1`) */
-    training: boolean;
-    /** 訓練・試験の出し入れを切り替えたリンク */
-    trainingHref: string;
-  } = $props();
+  let { open = $bindable(false) }: { open?: boolean } = $props();
 
   let dialog = $state<HTMLDialogElement>();
   let info = $state<PushInfo>();
@@ -486,16 +474,8 @@
         </select>
       </label>
       <p class="small muted">
-        警報以上には、危険警報・特別警報と、記録的短時間大雨情報・竜巻注意情報も入ります。開いているときは、現在地の気象にも同じ条件を使います。
+        警報以上には、危険警報・特別警報と、記録的短時間大雨情報・竜巻注意情報も入ります。開いているときは、現在地の気象にも同じ条件を使います。気象の特別警報は、どの地域に出ても知らせます。
       </p>
-      <label>
-        <input
-          type="checkbox"
-          role="switch"
-          bind:checked={prefs.weatherSpecial}
-        />
-        気象の特別警報は、どの地域に出ても知らせる
-      </label>
       <label>
         津波
         <select bind:value={prefs.tsunami}>
@@ -513,10 +493,9 @@
           <option value="off">知らせない</option>
         </select>
       </label>
-      <label>
-        <input type="checkbox" role="switch" bind:checked={prefs.advisory} />
-        南海トラフ地震臨時情報・後発地震注意情報
-      </label>
+      <p class="small muted">
+        南海トラフ地震臨時情報と後発地震注意情報は、いつも知らせます。
+      </p>
       {#if prefsMessage}
         <p class="small" role="status" data-testid="prefs-status">
           {prefsMessage}
@@ -631,20 +610,6 @@
         >
       </div>
     {/if}
-    <label>
-      <input
-        type="checkbox"
-        role="switch"
-        checked={alerter.settings.outage !== false}
-        onchange={(e) =>
-          alerter.setSettings({
-            ...alerter.settings,
-            outage: e.currentTarget.checked,
-          })}
-        data-testid="alert-outage"
-      />
-      受信が切れたら知らせる
-    </label>
     <p class="small muted">
       画面への配信が 30 秒続けて切れたら、上でオンにしたもの
       (通知・音・読み上げ)
@@ -674,21 +639,6 @@
           : "地図の現在地がオフか、まだ取れていません。住んでいる地域だけで知らせます。"}
       </p>
     {/if}
-
-    <h2 class="section-head">訓練・試験</h2>
-    <label>
-      <input
-        type="checkbox"
-        role="switch"
-        checked={training}
-        onchange={() => goto(trainingHref, { replace: true, reset: false })}
-        data-testid="show-training"
-      />
-      緊急地震速報の訓練・試験も一覧に出す
-    </label>
-    <p class="small muted">
-      一覧と地図に出すだけで、音・読み上げ・Web Push では知らせません。
-    </p>
 
     <h2 class="section-head">Web Push (タブを閉じていても届く)</h2>
     {#if !info}

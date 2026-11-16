@@ -44,7 +44,12 @@ export interface Home {
   ichiji: string | null;
 }
 
-/** 端末 (ブラウザの購読) ごとに選ぶ、何を知らせるか */
+/**
+ * 端末 (ブラウザの購読) ごとに選ぶ、何を知らせるか。
+ * 南海トラフ地震臨時情報等と、どこかの気象の特別警報は選ばせず、いつも知らせる
+ * (持ち主の決定、2026-11-16。docs/design.md の 2.4)。前に持っていた `advisory`・`weatherSpecial` は
+ * `normalizePrefs` が読まずに捨てる (DB・localStorage に残った false も効かない)
+ */
 export interface PushPrefs {
   eew: EewLevel;
   /** 最大震度がこれ以上の地震。"off" で送らない */
@@ -54,21 +59,17 @@ export interface PushPrefs {
   /** 住んでいる地域でこの震度以上なら、最大震度の条件に届かなくても送る */
   areaMinInt: Intensity;
   tsunami: TsunamiLevel;
-  /** 南海トラフ地震臨時情報・定例外の解説情報・後発地震注意情報 */
-  advisory: boolean;
   /** 火山 (噴火速報・噴火警報) */
   volcano: VolcanoLevel;
   /** 住んでいる地域の気象警報・注意報と、記録的短時間大雨情報・竜巻注意情報 */
   weather: WeatherLevel;
-  /** 気象の特別警報は、住んでいる地域でなくても知らせる */
-  weatherSpecial: boolean;
 }
 
 /**
  * 既定値。理由は docs/design.md の 2.4 (持ち主の決定、2026-11-13)。
- * 警報だけ・最大震度 4 以上・住んでいる地域で 3 以上・津波注意報以上・南海トラフ等はオン。
+ * 警報だけ・最大震度 4 以上・住んでいる地域で 3 以上・津波注意報以上。
  * 火山は噴火速報と噴火警報 (居住地域) だけ (2026-11-14 に足した。理由は同じ節)。
- * 気象は住んでいる地域の警報以上と、どこでも特別警報 (2026-11-14 に足した。注意報は既定で送らない)。
+ * 気象は住んでいる地域の警報以上 (2026-11-14 に足した。注意報は既定で送らない)。
  */
 export const DEFAULT_PREFS: PushPrefs = {
   eew: "warning",
@@ -76,10 +77,8 @@ export const DEFAULT_PREFS: PushPrefs = {
   home: null,
   areaMinInt: "3",
   tsunami: "watch",
-  advisory: true,
   volcano: "warning",
   weather: "warning",
-  weatherSpecial: true,
 };
 
 const code = (v: unknown, digits: number): string | null =>
@@ -121,7 +120,8 @@ export function normalizePrefs(input: unknown): PushPrefs {
     typeof input === "object" && input !== null
       ? (input as Record<string, unknown>)
       : {};
-  // 前の形の「現在地」(地震情報の細分区域だけ。area) は市町村等が分からないので読まない (選び直してもらう)
+  // 前の形の「現在地」(地震情報の細分区域だけ。area) は市町村等が分からないので読まない (選び直してもらう)。
+  // 前のスイッチ (advisory・weatherSpecial) も読まない (いつも知らせる。2026-11-16)
   return {
     eew: pick(EEW_LEVELS, o.eew, DEFAULT_PREFS.eew),
     quakeMinInt:
@@ -133,14 +133,8 @@ export function normalizePrefs(input: unknown): PushPrefs {
       ? o.areaMinInt
       : DEFAULT_PREFS.areaMinInt,
     tsunami: pick(TSUNAMI_LEVELS, o.tsunami, DEFAULT_PREFS.tsunami),
-    advisory:
-      typeof o.advisory === "boolean" ? o.advisory : DEFAULT_PREFS.advisory,
     volcano: pick(VOLCANO_LEVELS, o.volcano, DEFAULT_PREFS.volcano),
     weather: pick(WEATHER_LEVELS, o.weather, DEFAULT_PREFS.weather),
-    weatherSpecial:
-      typeof o.weatherSpecial === "boolean"
-        ? o.weatherSpecial
-        : DEFAULT_PREFS.weatherSpecial,
   };
 }
 

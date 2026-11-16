@@ -58,10 +58,9 @@ describe("通知の条件", () => {
         quakeMinInt: "8",
         home: { code: "x", name: "a" },
         tsunami: "major",
-        advisory: false,
         weather: "loud",
       }),
-    ).toEqual({ ...DEFAULT_PREFS, tsunami: "major", advisory: false });
+    ).toEqual({ ...DEFAULT_PREFS, tsunami: "major" });
     expect(
       normalizePrefs({
         home: {
@@ -88,18 +87,23 @@ describe("通知の条件", () => {
     ).toBeNull();
   });
 
-  test("既定は 警報だけ・最大震度 4 以上・津波注意報以上・南海トラフ等はオン・気象は地域の警報以上と特別警報", () => {
+  test("既定は 警報だけ・最大震度 4 以上・津波注意報以上・気象は地域の警報以上", () => {
     expect(DEFAULT_PREFS).toEqual({
       eew: "warning",
       quakeMinInt: "4",
       home: null,
       areaMinInt: "3",
       tsunami: "watch",
-      advisory: true,
       volcano: "warning",
       weather: "warning",
-      weatherSpecial: true,
     });
+  });
+
+  test("前のスイッチ (南海トラフ等・どこかの特別警報) は、保存済みの false も読まずに捨てる", () => {
+    const p = normalizePrefs({ advisory: false, weatherSpecial: false });
+    expect(p).toEqual(DEFAULT_PREFS);
+    expect("advisory" in p).toBe(false);
+    expect("weatherSpecial" in p).toBe(false);
   });
 });
 

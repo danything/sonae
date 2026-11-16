@@ -131,9 +131,9 @@ describe("自動で開くか (planOpen)", () => {
 });
 
 describe("開くリンク (openHref)", () => {
-  test("訓練・試験を出すかは残し、選ぶものは 1 つにする", () => {
-    const p = new URLSearchParams("training=1&q=old");
-    expect(openHref(p, eewTarget, false)).toBe("/?training=1&e=e1");
+  test("ほかの鍵は残し、選ぶものは 1 つにする", () => {
+    const p = new URLSearchParams("about=1&q=old");
+    expect(openHref(p, eewTarget, false)).toBe("/?about=1&e=e1");
   });
   test("窓を閉じるときは「出典と注意」も外す", () => {
     const p = new URLSearchParams("about=1");

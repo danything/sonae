@@ -9,7 +9,12 @@ import {
   type WeatherWarning,
 } from "#lib/model.ts";
 import { matches, noticeFor, noticeOf } from "#lib/notify.ts";
-import { DEFAULT_PREFS, type Home, type PushPrefs } from "#lib/push.ts";
+import {
+  DEFAULT_PREFS,
+  type Home,
+  normalizePrefs,
+  type PushPrefs,
+} from "#lib/push.ts";
 import {
   clean,
   isFixed,
@@ -115,7 +120,7 @@ describe("気象警報・注意報の通知", () => {
     expect(n && matches(n, prefs({ home: oki }))).toBe(false);
   });
 
-  test("特別警報は、住んでいる地域でなくても知らせる (切れる)", () => {
+  test("特別警報は、住んでいる地域でなくても知らせる (いつも)", () => {
     const far = home({ code: "1310100", name: "東京都千代田区" });
     const n = notice(special, prefs({ home: far }));
     expect(n?.tag).toBe("warning:special:320000:VPWW55");
@@ -126,8 +131,14 @@ describe("気象警報・注意報の通知", () => {
     expect(n && matches(n, prefs({ home: far }))).toBe(true);
     // 地域を選んでいなくても
     expect(notice(special, prefs())?.level).toBe(5);
-    // 切ってあれば知らせない
-    expect(notice(special, prefs({ weatherSpecial: false }))).toBeNull();
+    // 前のスイッチを切ってあった条件 (保存済みの false) でも知らせる
+    const old = normalizePrefs({
+      ...prefs({ home: far }),
+      weatherSpecial: false,
+    });
+    const m = notice(special, old);
+    expect(m?.level).toBe(5);
+    expect(m && matches(m, old)).toBe(true);
   });
 
   test("同じ府県予報区のほかの市町村に特別警報が出ていたら、住んでいる地域の tag のまま特別警報を言う", () => {
@@ -158,6 +169,8 @@ describe("気象警報・注意報の通知", () => {
     expect(n?.tag).toBe("warning:3220100:VPWW55");
     expect(n?.title).toBe("島根県松江市にレベル5大雨特別警報");
     expect(n?.sticky).toBe(true);
+    // 特別警報はいつも知らせるので、住んでいる地域の気象を「知らせない」にしてあっても知らせる
+    expect(n && matches(n, prefs({ home: home(), weather: "off" }))).toBe(true);
   });
 
   test("6 時間より古い報は知らせない (起動したときの埋め直し)", () => {

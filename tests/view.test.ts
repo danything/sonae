@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { monthGrid, monthLabel, stepMonth } from "#lib/calendar.ts";
 import { isTsunamiWarning, type TsunamiGrade } from "#lib/model.ts";
+import { showTraining } from "#lib/server/site.ts";
 import {
   dayKey,
   dayLabel,
@@ -24,7 +25,6 @@ describe("URL の query (readView)", () => {
   test("何も無ければ何も選んでいない", () => {
     expect(readView(p(""))).toEqual({
       selected: null,
-      training: false,
       about: false,
     });
   });
@@ -34,18 +34,29 @@ describe("URL の query (readView)", () => {
     expect(v.selected).toEqual({ kind: "tsunami", id: "abc" });
   });
 
-  test("訓練と出典の窓 (前の一覧の種類 k は読まない)", () => {
+  test("出典の窓 (前の一覧の種類 k と訓練・試験の印 training は読まない)", () => {
     const v = readView(p("k=eew&training=1&about=1"));
     expect(v).not.toHaveProperty("kind");
-    expect(v.training).toBe(true);
+    expect(v).not.toHaveProperty("training");
     expect(v.about).toBe(true);
+  });
+});
+
+describe("緊急地震速報の訓練・試験を一覧に出すか (SONAE_TRAINING)", () => {
+  test("既定は出さない。on のときだけ出す", () => {
+    expect(showTraining({})).toBe(false);
+    expect(showTraining({ SONAE_TRAINING: "" })).toBe(false);
+    expect(showTraining({ SONAE_TRAINING: "1" })).toBe(false);
+    expect(showTraining({ SONAE_TRAINING: "off" })).toBe(false);
+    expect(showTraining({ SONAE_TRAINING: "on" })).toBe(true);
+    expect(showTraining({ SONAE_TRAINING: " on " })).toBe(true);
   });
 });
 
 describe("リンク (viewHref・selectHref)", () => {
   test("選ぶものは 1 つだけ。ほかの選んだものは外す", () => {
-    expect(selectHref(p("t=x&training=1"), "quake", "a/b")).toBe(
-      "/?training=1&q=a%2Fb",
+    expect(selectHref(p("t=x&about=1"), "quake", "a/b")).toBe(
+      "/?about=1&q=a%2Fb",
     );
   });
 
@@ -57,7 +68,12 @@ describe("リンク (viewHref・selectHref)", () => {
   });
 
   test("ほかの鍵は残す", () => {
-    expect(viewHref(p("training=1&e=9"), { e: null })).toBe("/?training=1");
+    expect(viewHref(p("about=1&e=9"), { e: null })).toBe("/?about=1");
+  });
+
+  test("前の訓練・試験の印 training は外す (環境変数 SONAE_TRAINING に移した)", () => {
+    expect(viewHref(p("training=1&e=9"), { e: null })).toBe("/");
+    expect(selectHref(p("training=1"), "eew", "e1")).toBe("/?e=e1");
   });
 });
 
@@ -91,7 +107,7 @@ describe("前の画面の URL (legacyRedirect)", () => {
     ["/tsunami", "/"],
     ["/tsunami/", "/"],
     ["/eew", "/"],
-    ["/eew?training=1", "/?training=1"],
+    ["/eew?training=1", "/"],
     ["/map", "/"],
     ["/map?quake=q1", "/?q=q1"],
     ["/about", "/?about=1"],

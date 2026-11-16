@@ -1,7 +1,7 @@
 /**
  * VOICEVOX のエンジン (別のコンテナ) で読み上げの音を作る (docs/design.md の 2.4)。
  *
- * - 声はこの家で 1 つ (サーバーの DB に持つ。`settings.ts`)。選んでいなければ `VOICEVOX_SPEAKER` の既定の声。
+ * - 声はこの家で 1 つ (サーバーの DB に持つ。`settings.ts`)。選んでいなければ既定の声 (剣崎雌雄、`DEFAULT_SPEAKER`)。
  * - 事象を受けたら、読み上げの原稿 (`#lib/readout.ts`) の変わる文を、選んである声 1 つで合成して持つ。
  *   画面は原稿を自分で作り、文ごとに `POST /api/speech` で音を取りに来る。
  * - 冒頭の決まった文は、起動したとき・つながり直したとき・声を替えたときに、選んである声で合成しておく。
@@ -44,8 +44,6 @@ export interface VoiceStore {
 export interface VoicevoxOptions {
   /** エンジンの URL (`http://voicevox:50021`) */
   url: string;
-  /** まだ声を選んでいないときの声 (`VOICEVOX_SPEAKER`) */
-  defaultSpeaker?: number;
   fetch?: typeof fetch;
   /** 選んである声の置き場。無ければメモリにだけ持つ (テスト) */
   store?: VoiceStore;
@@ -103,7 +101,7 @@ export class Voicevox {
 
   constructor(o: VoicevoxOptions) {
     this.url = o.url.replace(/\/+$/, "");
-    this.defaultSpeaker = o.defaultSpeaker ?? DEFAULT_SPEAKER;
+    this.defaultSpeaker = DEFAULT_SPEAKER;
     this.f = o.fetch ?? fetch;
     this.now = o.now ?? Date.now;
     this.maxBytes = o.maxBytes ?? 64 * 1024 * 1024;
@@ -338,8 +336,7 @@ export class Voicevox {
   }
 
   /**
-   * 選べる声を `/speakers` から作る (規約を確かめたキャラクターだけ)。既定の声は、運用する人が
-   * `VOICEVOX_SPEAKER` で選んだものなので、一覧に無くても入れる (クレジットの名前に要る)
+   * 選べる声を `/speakers` から作る (規約を確かめたキャラクターだけ。既定の声の剣崎雌雄も入っている)
    */
   async loadVoices(): Promise<void> {
     const list = (await (await this.call("/speakers", {}, 10_000)).json()) as {
@@ -352,8 +349,7 @@ export class Voicevox {
         .filter(
           (st) =>
             (st.type ?? "talk").endsWith("talk") &&
-            (ALLOWED_SPEAKERS.has(s.speaker_uuid) ||
-              st.id === this.defaultSpeaker),
+            ALLOWED_SPEAKERS.has(s.speaker_uuid),
         )
         .map((st) => ({ id: st.id, name: s.name, style: st.name })),
     );
@@ -472,13 +468,12 @@ export function wavSeconds(wav: Uint8Array): number | undefined {
 
 /**
  * 環境変数から作る。`VOICEVOX_URL` が空なら作らない (画面は端末の読み上げで読む)。
- * 選んである声は DB (`d`) に持つ。`VOICEVOX_SPEAKER` は、まだ選んでいないときの既定の声
+ * 選んである声は DB (`d`) に持つ。まだ選んでいないときは剣崎雌雄 (`DEFAULT_SPEAKER`)。
+ * 前の `VOICEVOX_SPEAKER` は読まない (声は画面で選ぶ。持ち主の決定、2026-11-16)
  */
 export function voicevoxFromEnv(d: Database): Voicevox | undefined {
   const url = process.env.VOICEVOX_URL?.trim();
   if (!url) return undefined;
-  const raw = process.env.VOICEVOX_SPEAKER?.trim();
-  const sp = raw ? Number(raw) : Number.NaN;
   // 前は端末ごとの声を「使われている声」としてファイルに覚えていた。もう読まないので消す
   try {
     rmSync(join(process.env.SONAE_DATA || "./data", "voices.json"), {
@@ -487,11 +482,7 @@ export function voicevoxFromEnv(d: Database): Voicevox | undefined {
   } catch {
     // 消せなくても読まないだけ
   }
-  return new Voicevox({
-    url,
-    defaultSpeaker: Number.isInteger(sp) && sp >= 0 ? sp : DEFAULT_SPEAKER,
-    store: voiceStore(d),
-  });
+  return new Voicevox({ url, store: voiceStore(d) });
 }
 
 /**
