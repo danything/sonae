@@ -3,12 +3,30 @@ name: Build and Push Docker Image
 on:
   push:
     branches: [main]
-    # 画像タグを差し替える PR のマージは deploy/ しか変えない。ここで起動しないことで
-    # ビルド → 差し替えの PR → マージ → ビルド の輪を止める
+    # **イメージの中身に関わらない変更では組まず、image.tag も差し替えない。** 本番は Recreate なので、
+    # 差し替えるたびに数秒つながらない (docs/design.md の 8 章)。
+    # 並べるのは「Dockerfile のビルド (`bun run build`) が読まない」と言い切れるものだけ。
+    # 分からないもの (新しく足した設定のファイルなど) は組む側に倒す (組みすぎても入れ替わるだけで、
+    # 取りこぼすとコードの変更が出ない)。
+    # `*.md` はリポジトリの直下だけ (static/ の下の .md は build/ に入る)。
+    # **release.yml の images ジョブの `git log` の除外と同じものにする**
     paths-ignore:
+      # 画像タグを差し替える PR のマージは deploy/ しか変えない。ここで起動しないことで
+      # ビルド → 差し替えの PR → マージ → ビルド の輪を止める
       - "deploy/**"
       # chart だけの変更はイメージを変えない (Argo CD が chart を読んで当てる)
       - "charts/**"
+      - "docs/**"
+      - "tests/**"
+      # 下地のデータを作る道具。作ったもの (static/ の下) はイメージに入るので、そちらの変更で組む
+      - "tools/**"
+      - "*.md"
+      - "LICENSE"
+      - ".github/**"
+      - "install.sh"
+      - "install.ps1"
+      - "compose*.yml"
+      - "renovate.json"
   workflow_dispatch:
 
 # 続けてマージしたときは、いちばん新しいコミットだけを出せばよいので、古い実行は取り消す

@@ -15,7 +15,7 @@ name: Release
 #
 # chart のバージョン (Chart.yaml の version) とアプリのバージョン (appVersion) は、リリースのタグの
 # バージョン (`v` を落とす。`v0.1.0` → `0.1.0`) で上書きしてパッケージにする。リポジトリの Chart.yaml は書き戻さない。
-# chart の既定の image.tag は `latest` (main に入るたびに動く) なので、chart のバージョンを上げなくても中身は動く。
+# chart の既定の image.tag は `latest` (main に中身の変更が入るたびに動く) なので、chart のバージョンを上げなくても中身は動く。
 # 固定したい人は values で image.tag に sha のタグを書く。
 on:
   release:
@@ -35,12 +35,12 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  # **ビルドし直さない。** main に入るたびに docker-publish.yml がコミットの sha のタグで出しているので、
+  # **ビルドし直さない。** main に中身の変更が入るたびに docker-publish.yml がコミットの sha のタグで出しているので、
   # そのイメージにバージョンの名前を貼り足すだけ (試したものと出すものを同じにする)。
-  # タグのコミットが deploy/ か charts/ だけを変えたもの (イメージの差し替えの PR など) だとイメージが無いので、
-  # その前の、中身を変えた最後のコミットのイメージを使う (docker-publish.yml の paths-ignore と同じ)。
+  # タグのコミットがイメージに関わらないものだけを変えたもの (イメージの差し替えの PR・docs だけの PR など) だと
+  # イメージが無いので、その前の、中身を変えた最後のコミットのイメージを使う (docker-publish.yml の paths-ignore と同じ)。
   # タグを打つのは main に入れた直後のことが多いので、そのイメージが出るまで 30 分まで待つ。
-  # `latest` は動かさない (main に入るたびに docker-publish.yml が動かす。chart の既定が latest のため)
+  # `latest` は動かさない (main に中身の変更が入るたびに docker-publish.yml が動かす。chart の既定が latest のため)
   images:
     runs-on: ubuntu-latest
     steps:
@@ -61,7 +61,13 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          sha=$(git log -1 --format=%H HEAD -- . ':(exclude)deploy' ':(exclude)charts')
+          # docker-publish.yml の paths-ignore と同じもの。glob を付けて、`*` が `/` をまたがないようにする
+          # (`*.md` は直下だけ。static/ の下の .md はイメージに入る)
+          sha=$(git log -1 --format=%H HEAD -- . \
+            ':(exclude,glob)deploy/**' ':(exclude,glob)charts/**' ':(exclude,glob)docs/**' \
+            ':(exclude,glob)tests/**' ':(exclude,glob)tools/**' ':(exclude,glob)*.md' ':(exclude,glob)LICENSE' \
+            ':(exclude,glob).github/**' ':(exclude,glob)install.sh' ':(exclude,glob)install.ps1' \
+            ':(exclude,glob)compose*.yml' ':(exclude,glob)renovate.json')
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "series=${version%.*}" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"

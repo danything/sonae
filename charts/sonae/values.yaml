@@ -8,7 +8,7 @@
 
 image:
   repository: ghcr.io/danything/sonae
-  # main に入るたびに `latest` と `<コミットの sha>` が出る。固定するなら sha のタグを書き、pullPolicy は IfNotPresent でよい
+  # main に中身の変更が入るたびに `latest` と `<コミットの sha>` が出る。固定するなら sha のタグを書き、pullPolicy は IfNotPresent でよい
   tag: latest
   pullPolicy: Always
 
