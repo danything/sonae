@@ -166,9 +166,11 @@ export function bodyOf(
 ): Record<string, unknown> {
   const text = textOf(payload, url, origin);
   if (discord(url)) {
+    // 字 (コードポイント) で数えて切る。UTF-16 で切るとサロゲートペアの途中で切れ、Discord が断ることがある
+    const chars = Array.from(text);
     const content =
-      text.length > DISCORD_CONTENT_LIMIT
-        ? `${text.slice(0, DISCORD_CONTENT_LIMIT - 1)}…`
+      chars.length > DISCORD_CONTENT_LIMIT
+        ? `${chars.slice(0, DISCORD_CONTENT_LIMIT - 1).join("")}…`
         : text;
     return { content, allowed_mentions: { parse: [] } };
   }

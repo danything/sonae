@@ -126,6 +126,18 @@ describe("送る本文", () => {
     );
     expect(String(long.content)).toHaveLength(DISCORD_CONTENT_LIMIT);
     expect(String(long.content).endsWith("…")).toBe(true);
+    // サロゲートペアの字 (𩸽) を途中で切らない
+    const astral = bodyOf(
+      DISCORD,
+      { ...p, title: "", body: "𩸽".repeat(3000) },
+      undefined,
+      NOW,
+    );
+    const chars = Array.from(String(astral.content));
+    expect(chars).toHaveLength(DISCORD_CONTENT_LIMIT);
+    expect(chars.slice(0, -1).every((c) => c === "𩸽" || c === "\n")).toBe(
+      true,
+    );
   });
 
   test("Slack は text の & < > を逃がし、URL をリンクの形にする", () => {
