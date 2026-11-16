@@ -4,11 +4,13 @@ import type { Advisory, Volcano } from "#lib/model.ts";
 import { noticeOf } from "#lib/notify.ts";
 import {
   clean,
+  CONNECTION,
   FIXED_TEXTS,
   isFixed,
   listOf,
   OPENINGS,
   readoutOf,
+  sentences,
 } from "#lib/readout.ts";
 
 import { eew, NOW, quake, tsunami } from "./events.ts";
@@ -183,9 +185,25 @@ describe("読み上げの原稿", () => {
     expect(n && readoutOf(n)).toEqual([]);
   });
 
-  test("決まった文は冒頭の文と試しの文で、どれも 1 つの区切り", () => {
-    for (const t of FIXED_TEXTS) expect(isFixed(t)).toBe(true);
+  test("決まった文 (冒頭の文・現在地の文・試しの文・受信が切れた・戻ったときの文) は、2 文でも 1 つの区切りのまま読む", () => {
+    // 前もって合成した音をそのまま鳴らすので、文ごとに分けない
+    expect(sentences(OPENINGS.eewWarning)).toHaveLength(2);
+    expect(sentences(CONNECTION.down)).toHaveLength(2);
+    const parts = read(eew({ kind: "warning", warnAreas: ["日向灘"] }));
+    expect(parts.slice(0, 2)).toEqual([
+      OPENINGS.eewWarning,
+      OPENINGS.eewWarning,
+    ]);
+    // どれも文の終わりまで (句点で終わる)
+    for (const t of FIXED_TEXTS) expect(t).toMatch(/。$/);
+    // 決まった文でない文は、文ごとに区切る
     expect(isFixed("震源は日向灘です。")).toBe(false);
+    const q = read(
+      quake({ comments: ["この地震による津波の心配はありません。"] }),
+    );
+    expect(q).toContain("この地震による津波の心配はありません。");
+    for (const p of q.filter((x) => !isFixed(x)))
+      expect(sentences(p)).toEqual([p]);
   });
 
   test("字の整え: 全角の数字を半角に、括弧と記号は読ませない。多い地域は数で言う", () => {

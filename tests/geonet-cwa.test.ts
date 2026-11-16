@@ -11,22 +11,8 @@ import {
   geonetSource,
   parseGeonet,
 } from "#lib/server/sources/geonet.ts";
-import type { Incoming, SourceContext } from "#lib/server/sources/types.ts";
 
-import { fixture } from "./helpers.ts";
-
-function context() {
-  const got: Incoming[] = [];
-  const keys = new Set<string>();
-  const ctx: SourceContext = {
-    emit: (m) => {
-      got.push(m);
-      keys.add(`${m.source}:${m.key}`);
-    },
-    seen: (s, k) => keys.has(`${s}:${k}`),
-  };
-  return { ctx, got };
-}
+import { fixture, sourceContext as context } from "./helpers.ts";
 
 describe("GeoNet", () => {
   test("取り消された地震を除いて、海外の地震の発表に読む", () => {

@@ -1,8 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { validateStyleMin } from "@maplibre/maplibre-gl-style-spec";
-
-import { baseStyle, MAP_LEGEND } from "#lib/map/style.ts";
+import { MAP_LEGEND } from "#lib/map/style.ts";
 import type { SourceStatus } from "#lib/model.ts";
 import { CREDITS, creditText } from "#lib/notice.ts";
 import {
@@ -234,13 +232,4 @@ test("出典: ExpTech の授權頁の書き方と、非公式で中央氣象署�
   expect(all).toContain("通知では知らせません");
   const legend = MAP_LEGEND.find((l) => l.label.startsWith("台湾の観測点"));
   expect(legend?.note).toContain("非公式");
-});
-
-test("地図の style は MapLibre の決まりに合う (式の形の誤りで地図が出なくなるのを防ぐ)", () => {
-  for (const hazard of ["none", "flood", "faults"] as const) {
-    const errors = validateStyleMin(
-      baseStyle("https://s.example", hazard) as never,
-    );
-    expect(errors.map((e) => e.message)).toEqual([]);
-  }
 });

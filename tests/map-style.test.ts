@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 
+import { validateStyleMin } from "@maplibre/maplibre-gl-style-spec";
+
 import {
   baseStyle,
   BLUE_MARBLE_TILES,
@@ -345,4 +347,13 @@ test("長周期地震動の枠: 階級 1 以上の地域だけを、階級の色
     "rgba(0,0,0,0)",
   ]);
   expect(longPeriodLine([])).toBe("rgba(0,0,0,0)");
+});
+
+test("地図の style は MapLibre の決まりに合う (式の形の誤りで地図が出なくなるのを防ぐ)", () => {
+  for (const hazard of ["none", "flood", "faults"] as const) {
+    const errors = validateStyleMin(
+      baseStyle("https://s.example", hazard) as never,
+    );
+    expect(errors.map((e) => e.message)).toEqual([]);
+  }
 });

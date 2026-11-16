@@ -5,64 +5,19 @@ import { p2pSource } from "#lib/server/sources/p2p.ts";
 import {
   Backoff,
   runSocket,
-  type SocketLike,
   StatusTracker,
 } from "#lib/server/sources/retry.ts";
-import type { Incoming, SourceContext } from "#lib/server/sources/types.ts";
 import { wolfxSource } from "#lib/server/sources/wolfx.ts";
 
-import { fixture, json } from "./helpers.ts";
-
-/** 情報源のサーバーは立てない。WebSocket と fetch を差し替える */
-class FakeSocket implements SocketLike {
-  sent: string[] = [];
-  closed = false;
-  private on: Record<string, ((e: never) => void)[]> = {};
-  addEventListener(type: string, fn: (e: never) => void) {
-    (this.on[type] ??= []).push(fn);
-  }
-  fire(type: string, e?: unknown) {
-    for (const fn of this.on[type] ?? []) fn(e as never);
-  }
-  send(data: string) {
-    this.sent.push(data);
-  }
-  close() {
-    if (this.closed) return;
-    this.closed = true;
-    this.fire("close");
-  }
-}
-
-function context() {
-  const got: Incoming[] = [];
-  const keys = new Set<string>();
-  const ctx: SourceContext = {
-    emit: (m) => {
-      got.push(m);
-      keys.add(`${m.source}:${m.key}`);
-    },
-    seen: (s, k) => keys.has(`${s}:${k}`),
-  };
-  return { ctx, got };
-}
+// 情報源のサーバーは立てない。WebSocket と fetch を差し替える
+import {
+  FakeSocket,
+  fixture,
+  json,
+  sourceContext as context,
+} from "./helpers.ts";
 
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
-
-test("バックオフ: 1 秒から倍々で上限 30 秒、戻せる", () => {
-  const b = new Backoff(1000, 30_000, () => 1);
-  expect([
-    b.next(),
-    b.next(),
-    b.next(),
-    b.next(),
-    b.next(),
-    b.next(),
-    b.next(),
-  ]).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000]);
-  b.reset();
-  expect(b.next()).toBe(1000);
-});
 
 describe("気象庁のフィード", () => {
   test("条件付きで取り、304 なら何もしない。取る種別だけを、古い順に取る", async () => {

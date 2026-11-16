@@ -17,7 +17,7 @@ import {
 } from "#lib/server/webhook.ts";
 import { statusLabel } from "#lib/webhook.ts";
 
-import { NOW, prefs, quake } from "./events.ts";
+import { NOW, prefs, quake, tsunami } from "./events.ts";
 
 const DISCORD = "https://discord.com/api/webhooks/123/secret-token";
 const SLACK = "https://hooks.slack.com/services/T000/B000/secret";
@@ -178,7 +178,7 @@ describe("送り手", () => {
     };
     hooks.add("me", OTHER, prefs({ quake: "nearby", home: tokyo }));
     const first = quake({
-      areas: [{ code: "340", name: "千葉県北西部", int: "4" }],
+      areas: [{ code: "341", name: "千葉県北西部", int: "4" }],
     });
 
     expect(await hooks.handle(first)).toEqual(["ok"]);
@@ -188,6 +188,42 @@ describe("送り手", () => {
     // 震度 5 強に上がり、東京都２３区も震度 3 になったら、両方に送る
     expect(await hooks.handle(quake({ maxInt: "5+" }))).toEqual(["ok", "ok"]);
     expect(hooks.list("me").map((w) => w.lastStatus)).toEqual(["ok", "ok"]);
+  });
+
+  test("Web Push なら鳴らさずに置き換える続報 (震源が決まった・取消) も、新しい投稿として送る", async () => {
+    const { hooks, calls } = setup();
+    hooks.add("me", OTHER, prefs());
+    expect(await hooks.handle(quake())).toEqual(["ok"]);
+    // M が決まった続報 (重さは同じ)
+    expect(await hooks.handle(quake({ magnitude: 5.3 }))).toEqual(["ok"]);
+    expect(await hooks.handle(quake({ cancelled: true }))).toEqual(["ok"]);
+    expect(calls.map((c) => c.body.title)).toEqual([
+      "最大震度4 千葉県北西部",
+      "最大震度4 千葉県北西部",
+      "地震情報 (取消)",
+    ]);
+    expect(calls[1]?.body.body).toContain("M5.3");
+  });
+
+  test("解除は、前に送った Webhook にだけ送る", async () => {
+    const { hooks, calls } = setup();
+    hooks.add("me", DISCORD, prefs());
+    expect(await hooks.handle(tsunami())).toEqual(["ok"]);
+    // 津波注意報を送った後に足した Webhook には、解除を送らない
+    hooks.add("me", OTHER, prefs());
+    expect(await hooks.handle(tsunami({ ended: true }))).toEqual(["ok"]);
+    expect(calls.map((c) => c.url)).toEqual([DISCORD, DISCORD]);
+  });
+
+  test("404・410 が返っても Webhook を消さず、直近の結果に残す", async () => {
+    for (const status of [404, 410]) {
+      const { hooks } = setup(() => status);
+      hooks.add("me", OTHER, prefs());
+      expect(await hooks.handle(quake())).toEqual([String(status)]);
+      expect(hooks.list("me").map((w) => w.lastStatus)).toEqual([
+        String(status),
+      ]);
+    }
   });
 
   test("送れなかったら理由を残し、控えを消して次の続報で送り直す", async () => {

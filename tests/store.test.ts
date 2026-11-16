@@ -16,18 +16,8 @@ import {
   parseWolfxEqlist,
 } from "#lib/server/sources/wolfx-json.ts";
 
-import { codeOf, fixture, json, memoryStore } from "./helpers.ts";
+import { fixture, jmaIncoming as jma, json, memoryStore } from "./helpers.ts";
 
-const jma = (file: string): Incoming => {
-  const body = fixture(`jma/${file}`);
-  return {
-    source: "jma",
-    key: file,
-    code: codeOf(file),
-    body,
-    items: parseJmaXml(body, codeOf(file)),
-  };
-};
 const p2p = (value: Record<string, unknown>, id: string): Incoming => ({
   source: "p2p",
   key: id,
@@ -35,6 +25,29 @@ const p2p = (value: Record<string, unknown>, id: string): Incoming => ({
   body: JSON.stringify(value),
   items: parseP2p(value),
 });
+/** 岩手・宮城内陸地震の P2P の 551 (仕様書の例を、気象庁のサンプル電文の地震に書き換えたもの) */
+const p2pIwate = () => {
+  const v = json("p2p/spec-551.json");
+  v.issue = {
+    source: "気象庁",
+    time: "2008/06/14 08:50:00",
+    type: "ScaleAndDestination",
+    correct: "None",
+  };
+  v.earthquake = {
+    ...(v.earthquake as object),
+    time: "2008/06/14 08:43:00",
+    hypocenter: {
+      name: "岩手県内陸南部",
+      latitude: 39.1,
+      longitude: 140.9,
+      depth: 10,
+      magnitude: 6.9,
+    },
+    maxScale: 60,
+  };
+  return p2p(v, "p2p-q");
+};
 const wolfx = (value: Record<string, unknown>): Incoming => {
   const m = parseWolfx(value);
   if (m.type !== "eew") throw new Error("eew ではない");
@@ -147,26 +160,7 @@ describe("地震情報の新旧の判定", () => {
 
   test("P2P で先に受けたら仮に出し、XML が来たら置き換える", () => {
     const { store } = memoryStore();
-    const v = json("p2p/spec-551.json");
-    v.issue = {
-      source: "気象庁",
-      time: "2008/06/14 08:50:00",
-      type: "ScaleAndDestination",
-      correct: "None",
-    };
-    v.earthquake = {
-      ...(v.earthquake as object),
-      time: "2008/06/14 08:43:00",
-      hypocenter: {
-        name: "岩手県内陸南部",
-        latitude: 39.1,
-        longitude: 140.9,
-        depth: 10,
-        magnitude: 6.9,
-      },
-      maxScale: 60,
-    };
-    const [first] = store.ingest(p2p(v, "p2p-q"));
+    const [first] = store.ingest(p2pIwate());
     expect(dataOf<Quake>(first).provisional).toBe(true);
     expect(dataOf<Quake>(first).magnitude).toBe(6.9);
 
@@ -181,29 +175,6 @@ describe("地震情報の新旧の判定", () => {
   });
 
   describe("Wolfx の地震情報の一覧 (P2P の予備) も同じ地震にまとめる", () => {
-    /** 岩手・宮城内陸地震の P2P の 551 (上の試験と同じ) */
-    const p2pIwate = () => {
-      const v = json("p2p/spec-551.json");
-      v.issue = {
-        source: "気象庁",
-        time: "2008/06/14 08:50:00",
-        type: "ScaleAndDestination",
-        correct: "None",
-      };
-      v.earthquake = {
-        ...(v.earthquake as object),
-        time: "2008/06/14 08:43:00",
-        hypocenter: {
-          name: "岩手県内陸南部",
-          latitude: 39.1,
-          longitude: 140.9,
-          depth: 10,
-          magnitude: 6.9,
-        },
-        maxScale: 60,
-      };
-      return p2p(v, "p2p-q");
-    };
     /** 一覧のうち岩手・宮城内陸地震の行 (No1 は新しい順の先頭なので、古い順に返る並びの最後) */
     const wolfxIwate = (
       magnitude = "7.0",

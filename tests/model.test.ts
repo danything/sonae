@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 
 import { activeEews, EEW_SHOW_MS } from "#lib/eew.ts";
-import { depthText, magnitudeText } from "#lib/format.ts";
 import {
   type Eew,
   intensityLabel,
@@ -14,15 +13,6 @@ test("震度は「5弱」と字で書く", () => {
   expect(intensityLabel("5-")).toBe("5弱");
   expect(intensityLabel("6+")).toBe("6強");
   expect(intensityLabel("5-?")).toBe("5弱以上未入電");
-});
-
-test("深さと M の書き方", () => {
-  expect(depthText({ name: "x", depthKm: 0 })).toBe("ごく浅い");
-  expect(depthText({ name: "x" })).toBe("不明");
-  expect(magnitudeText({ magnitude: 7 })).toBe("M7.0");
-  expect(
-    magnitudeText({ magnitude: null, magnitudeText: "Ｍ８を超える巨大地震" }),
-  ).toBe("Ｍ８を超える巨大地震");
 });
 
 const tsunami = (
@@ -50,7 +40,7 @@ test("津波予報だけのものは 6 時間で「いま」から外す。注�
   expect(isTsunamiActive(tsunami("watch", at), later)).toBe(true);
 });
 
-test("緊急地震速報の帯は、訓練を出さず、時間がたったら下ろす", () => {
+test("いま出ている緊急地震速報: 訓練は入れず、時間がたったら外す", () => {
   const base: Eew = {
     eventId: "1",
     serial: 1,
