@@ -358,10 +358,41 @@ describe("Wolfx", () => {
     // 切れている間は問い合わせない
     s().close();
     const before = s().sent.length;
-    // 切れた接続に遅れて届いた一覧でも、問い合わせを置き直さない
+    // 切れた接続に遅れて届いた一覧でも、問い合わせを置き直さない (送っていないことを下で確かめる)
     s().fire("message", { data: list });
     await tick(100);
     expect(s().sent.length).toBe(before);
+    ac.abort();
+    await run;
+  });
+
+  test("閉じかけの接続で問い合わせが投げても落ちず、次の問い合わせを続ける", async () => {
+    const { ctx } = context();
+    const ac = new AbortController();
+    const logs: string[] = [];
+    let tries = 0;
+    let socket: FakeSocket | undefined;
+    const src = wolfxSource(ctx, {
+      log: (m) => logs.push(m),
+      eqlistPollMs: 20,
+      connect: () => {
+        const s = new FakeSocket();
+        s.send = () => {
+          tries++;
+          throw new Error("closing");
+        };
+        socket = s;
+        queueMicrotask(() => s.fire("open"));
+        return s;
+      },
+    });
+    const run = src.run(ac.signal);
+    await tick(50);
+    expect(tries).toBeGreaterThanOrEqual(2);
+    expect(logs.some((m) => m.includes("問い合わせられませんでした"))).toBe(
+      true,
+    );
+    expect(socket?.closed).toBe(false);
     ac.abort();
     await run;
   });
