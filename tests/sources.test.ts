@@ -129,6 +129,58 @@ describe("気象庁のフィード", () => {
     expect(src.status().state).toBe("stopped");
   });
 
+  test("取れなかった電文があれば控えず、次の回もフィードを読み直して取りに行く", async () => {
+    const { ctx, got } = context();
+    const feeds: Record<string, string>[] = [];
+    let failed = false;
+    const fakeFetch = (async (
+      input: string | URL | Request,
+      init?: RequestInit,
+    ) => {
+      const url = String(input);
+      if (url.endsWith("eqvol_l.xml"))
+        return new Response(null, { status: 304 });
+      if (url.endsWith("eqvol.xml")) {
+        const headers = (init?.headers ?? {}) as Record<string, string>;
+        feeds.push(headers);
+        // 控えた値で問い合わせたら 304 (変わっていない)
+        if (headers["if-none-match"])
+          return new Response(null, { status: 304 });
+        return new Response(fixture("jma/made-feed.xml"), {
+          headers: { etag: '"abc"' },
+        });
+      }
+      // 震源・震度に関する情報 (VXSE53) は、1 回目だけ 503
+      if (/_VXSE53_/.test(url) && !failed) {
+        failed = true;
+        return new Response("", { status: 503 });
+      }
+      return new Response(
+        "<Report><Control><Status>通常</Status></Control><Head><ReportDateTime>2008-06-14T08:00:00+09:00</ReportDateTime></Head></Report>",
+      );
+    }) as typeof fetch;
+    const ac = new AbortController();
+    let rounds = 0;
+    const src = jmaSource(ctx, {
+      feedUrl: "https://example.invalid/eqvol.xml",
+      longFeedUrl: "https://example.invalid/eqvol_l.xml",
+      fetch: fakeFetch,
+      log: () => {},
+      sleep: async () => {
+        if (++rounds >= 3) ac.abort();
+      },
+    });
+    await src.run(ac.signal);
+    // 1 回目は VXSE53 が取れず、控えないので 2 回目も読み直して取る。
+    // 取り終えたので、3 回目は条件付きで問い合わせる
+    expect(feeds.map((h) => h["if-none-match"])).toEqual([
+      undefined,
+      undefined,
+      '"abc"',
+    ]);
+    expect(got.filter((m) => m.code === "VXSE53")).toHaveLength(1);
+  });
+
   test("取れなければ retrying にして、次の回にまた取る", async () => {
     const { ctx } = context();
     const ac = new AbortController();
