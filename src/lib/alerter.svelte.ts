@@ -26,6 +26,7 @@
 
 import {
   ALERT_OFF,
+  type AlertGroup,
   type AlertSettings,
   autoplayAllowed,
   groupAlerts,
@@ -35,6 +36,7 @@ import {
   parseAlertSettings,
   type Permission,
   planAlerts,
+  planEntry,
 } from "./alert.ts";
 import { KeepAwake } from "./awake.ts";
 import { chimeWav } from "./chime.ts";
@@ -44,7 +46,7 @@ import {
   type OutageSignal,
   OutageWatch,
 } from "./connection.ts";
-import type { SonaeEvent } from "./model.ts";
+import type { SonaeEvent, WeatherWarning } from "./model.ts";
 import { contentOf, type Notice, type Sent } from "./notify.ts";
 import { readPref, writePref } from "./prefs.ts";
 import {
@@ -59,6 +61,8 @@ import { creditOf, type SpeechInfo } from "./voices.ts";
 
 /** 控えを持つ数の上限 (長く開いたままでも増え続けない) */
 const SENT_MAX = 200;
+/** 出た市町村等を覚えておく数 (解除・続報で通知を置き換える所) */
+const LEFT_MAX = 20;
 /** 音 (チャイムか OS の通知音) の後に読み上げるまでの間 (ミリ秒。音と声を重ねない) */
 const SPEAK_AFTER_MS = 750;
 /** チャイムが鳴り始めるのを待つ長さ。過ぎたら鳴らなかったとみなし、通知を OS の通知音で出す */
@@ -75,6 +79,10 @@ class Alerter {
    * 住んでいる地域に加えてここでも知らせる。メモリだけに持ち、サーバーに送らない。緯度・経度は持たない
    */
   here = $state<Home | null>(null);
+  /** 前にいた (もう出た) 市町村等。新しい順。そこで出した通知を、解除・続報で置き換える (メモリだけ) */
+  private left: Home[] = [];
+  /** 開いてから現在地の市町村等が取れたことがある (初めて取れた所のいまの警報は鳴らさない) */
+  private placed = false;
   /** 人がページを操作した (ブラウザが音を出させる) */
   activated = $state(false);
   /** 開いたときから自動再生を許している (操作の前でも `<audio>` を鳴らせる) */
@@ -377,14 +385,39 @@ class Alerter {
   handle(e: SonaeEvent): void {
     // オフの間も控えは付ける (オンにした直後に、前から続いている事象の続報で鳴らさない)
     const here = this.settings.here === false ? null : this.here;
-    const g = groupAlerts(
-      planAlerts(e, Date.now(), this.prefs, this.sent, here),
+    this.deliver(
+      groupAlerts(
+        planAlerts(e, Date.now(), this.prefs, this.sent, here, this.left),
+      ),
     );
-    while (this.sent.size > SENT_MAX) {
-      const oldest = this.sent.keys().next().value;
-      if (oldest === undefined) break;
-      this.sent.delete(oldest);
-    }
+  }
+
+  /**
+   * 地図の現在地が入る市町村等が替わった (`#lib/push-client.ts` の `trackHere` が呼ぶ。`warnings` は
+   * 画面が持ついまの気象警報・注意報)。別の市町村等に入ったら、そこにもう出ているものを 1 度知らせる
+   * (`planEntry`。同じ中身は控えで 1 度だけ)。開いてから初めて取れた市町村等は知らせず、控えだけ付ける
+   * (開いたときに出ているものは画面で見える。住んでいる地域と同じ。開き直すたびに鳴らさない)。
+   * 出た市町村等は `left` に残し、そこの解除・続報で出ている通知を置き換える
+   */
+  moveHere(next: Home | null, warnings: readonly WeatherWarning[]): void {
+    const prev = this.here;
+    if ((next?.code ?? null) === (prev?.code ?? null)) return;
+    if (prev)
+      this.left = [prev, ...this.left.filter((l) => l.code !== prev.code)];
+    if (next) this.left = this.left.filter((l) => l.code !== next.code);
+    this.left = this.left.slice(0, LEFT_MAX);
+    this.here = next;
+    if (!next) return;
+    const first = !this.placed;
+    this.placed = true;
+    const plans = planEntry(warnings, this.prefs, this.sent, next);
+    if (!first) this.deliver(groupAlerts(plans));
+    else this.trimSent();
+  }
+
+  /** 決めた通知を出し、鳴らすものは鳴らす (控えは付けてある) */
+  private deliver(g: AlertGroup): void {
+    this.trimSent();
     const notify = this.notifying;
     // 鳴らさない続報 (取消・解除・震源が決まった) は、この画面が出した通知が残っていれば置き換えるだけ
     if (notify) for (const n of g.replace) void this.replace(n);
@@ -394,6 +427,14 @@ class Alerter {
       void this.once(`${n.tag}\n${contentOf(n)}`, () =>
         this.ring(n, notify, g.also),
       );
+  }
+
+  private trimSent(): void {
+    while (this.sent.size > SENT_MAX) {
+      const oldest = this.sent.keys().next().value;
+      if (oldest === undefined) break;
+      this.sent.delete(oldest);
+    }
   }
 
   /** 試しに鳴らす (ダイアログのボタン。押した操作の中なので、鳴らせるようにもなる) */

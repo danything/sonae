@@ -10,6 +10,8 @@
  *   これはサーバーに送らず、端末にも覚えない
  */
 
+import { untrack } from "svelte";
+
 import { alerter } from "./alerter.svelte.ts";
 import {
   type AreaFeature,
@@ -19,6 +21,7 @@ import {
   homeOf,
   planHomeSave,
 } from "./home.ts";
+import { live } from "./live.svelte.ts";
 import { createQueue } from "./prefs-queue.ts";
 import {
   endpointBlock,
@@ -216,6 +219,7 @@ let hereSeq = 0;
 
 /**
  * 地図の現在地から、いる市町村等を `alerter.here` に入れる (開いているときの気象の通知に使う)。
+ * 別の市町村等に入ったら、そこにもう出ている警報・注意報を知らせる (`alerter.moveHere`)。
  * 位置が無い (地図の現在地がオフ・まだ取れない) か、「現在地の気象も知らせる」を切っていれば空にする。
  * 前の市町村等の中にいる間は面を引き直さない (`createHereFinder`)。
  * **緯度・経度はサーバーに送らず、覚えもしない** (住んでいる地域と同じ)。`alerter.here` もメモリだけ
@@ -225,7 +229,8 @@ export async function trackHere(
 ): Promise<void> {
   const seq = ++hereSeq;
   if (!at || alerter.settings.here === false) {
-    alerter.here = null;
+    // 地図の $effect の中から同期で呼ばれるので、読む状態を effect の依存にしない
+    untrack(() => alerter.moveHere(null, live.warnings));
     return;
   }
   try {
@@ -237,7 +242,10 @@ export async function trackHere(
     hereFinder ??= createHereFinder(features);
     const code = hereFinder(at.lat, at.lon);
     if (code === (alerter.here?.code ?? null)) return;
-    alerter.here = code ? homeOf(code, cities, quakeNames) : null;
+    alerter.moveHere(
+      code ? homeOf(code, cities, quakeNames) : null,
+      live.warnings,
+    );
   } catch {
     // 面を読めなければ、住んでいる地域だけで知らせる (次の位置で読み直す)
   }
