@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/24a0b5a8-9ba6-4722-bb65-c7baeda2827f
   <tr>
     <td align="center"><img src="docs/images/map.webp" alt="地図と一覧" width="380"><br><sub><b>地図と一覧</b> — 津波注意報の海岸と気象の警報・注意報を地図に、全部の種類を新しい順に 1 本の一覧に</sub></td>
     <td align="center"><img src="docs/images/detail.webp" alt="詳しい内容" width="380"><br><sub><b>詳しい内容</b> — 行を押すと、震源・M・各地域の震度。地図も各地の震度で塗る</sub></td>
-    <td align="center"><img src="docs/images/notify.webp" alt="通知の窓" width="380"><br><sub><b>通知</b> — 知らせる条件・音と読み上げ・読み上げの声・Web Push・Webhook</sub></td>
+    <td align="center"><img src="docs/images/notify.webp" alt="通知の窓を下まで巻いたところ。受信が切れたときの説明、現在地の気象も知らせるスイッチ、Web Push の「このブラウザで受ける」、Webhook の URL の欄と「追加」" width="380"><br><sub><b>通知</b> — 知らせる条件・音と読み上げ・読み上げの声・Web Push・Webhook</sub></td>
   </tr>
   <tr>
     <td align="center"><img src="docs/images/phone-map.webp" alt="スマホの地図" width="190"><br><sub><b>スマホ</b> — 地図が画面いっぱいに。下に選んだものの 1 行と 5 つのタブ</sub></td>
