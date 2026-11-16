@@ -18,7 +18,7 @@ services:
       - voicevox
     # 秘密と、手で足す環境変数 (docs/install.md の「環境変数を足す」)。install.sh が無いときだけ作り、
     # VAPID の鍵 (VAPID_PRIVATE_JWK) が無ければ足す。OIDC の 3 つ (OIDC_ISSUER・OIDC_CLIENT_ID・OIDC_CLIENT_SECRET) も
-    # ここに書く。揃うまで画面は開かず、/health だけ答える (docs/entra.md)
+    # ここに書く。揃うまで、信頼するネットワーク (TRUSTED_NETWORKS) の外からは画面は開かず、/health だけ答える (docs/entra.md)
     env_file:
       - path: ./sonae.env
         required: false

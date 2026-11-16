@@ -97,14 +97,18 @@ networkPolicy:
   # CNI が NetworkPolicy に対応していないと、出しても効かない
   voicevox: true
   # sonae の外向きを、DNS と公開のインターネット (プライベートでないアドレス) と VOICEVOX だけにする。
-  # 家の LAN とクラスタの中を閉じるためのもので、家の LAN にある Webhook の送り先 (Home Assistant など) にも
-  # 送れなくなる。DNS の Pod のラベルはクラスタで違うので、既定は false
+  # 家の LAN とクラスタの中を閉じるためのもので、家の LAN にある Webhook の送り先 (Home Assistant など) は
+  # `extraTo` に足したものだけに届く。DNS の Pod のラベルはクラスタで違うので、既定は false
   egress:
     enabled: false
     dns:
       namespace: kube-system
       podLabels:
         k8s-app: kube-dns
+    # 足して開ける宛先 (NetworkPolicy の `to` の並び。ポートは絞らない)。家の LAN の Webhook の送り先など
+    extraTo: []
+    #  - ipBlock:
+    #      cidr: 192.168.1.10/32
 
 persistence:
   # SQLite (WAL) の DB を置く。空ならクラスタの既定の StorageClass
