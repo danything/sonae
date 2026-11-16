@@ -49,25 +49,25 @@
 
   /**
    * **開いたり閉じたりするメニュー。** 画面のメニューはどれもこれ 1 つで作る
-   * (ヘッダーの利用者のメニュー・下のタブの「その他」・受信に問題があるときの注意の印)。denpa の `Menu.svelte` を写したもの。
+   * (ヘッダーの利用者のメニュー・下のタブの「その他」・受信に問題があるときの注意の印 (ヘッダーと dock)・
+   * カレンダー・地図のハザードマップの選択・地図のメニュー)。denpa の `Menu.svelte` を写し、sonae で使わない所を外したもの。
    *
    * 枠はブラウザの `popover` (`manual`)。最前面 (top layer) に出るので、後ろの行が透けたり
-   * (denpa#481)、全画面の舞台に隠れたりしない。引き金は `popovertarget` で結ぶので、
+   * (denpa#481)、ほかの重なりに隠れたりしない。引き金は `popovertarget` で結ぶので、
    * **ハイドレーション前でも開く**。
    *
    * **外を押したら閉じるだけで、その押下は下へ渡さない** (`swallowPress`)。`auto` の
-   * light dismiss に任せると、閉じると同時に下のボタンにも届く (denpa の録画の詳細で背景を押すと
-   * 詳細まで閉じる)。引き金は外に数えないので、押せば今までどおり開け閉めする。
+   * light dismiss に任せると、閉じると同時に下のボタンや地図にも届く。引き金は外に数えないので、
+   * 押せば今までどおり開け閉めする。
    *
-   * 位置は CSS anchor positioning (`app.css` の `.menu`)。**枠に収めたいとき (`boundary`) と、
-   * anchor positioning の無いブラウザでは JS で置く** (`place`)。
+   * 位置は CSS anchor positioning (`app.css` の `.menu`)。**anchor positioning の無いブラウザでは JS で置く**
+   * (`place`)。
    *
    * キーボード: 引き金で Enter / Space / ↓ (↑ なら末尾から)、中は ↑↓・Home・End で動き、
    * Enter で選ぶ (項目は `<button>` / `<a>`)、Esc で閉じて引き金へ戻る。
    *
    * **項目には `menu-item` の class を付ける** (↑↓で辿る先・見た目)。`role="menuitem"` も
-   * 呼び出し側が付ける。押せない項目は `data-disabled` と `aria-disabled="true"`、
-   * 押しても閉じない項目 (送り終えてから閉じるフォーム) は `data-keep-open`
+   * 呼び出し側が付ける
    */
   let {
     open = $bindable(false),
@@ -75,9 +75,7 @@
     children,
     side = "bottom",
     align = "start",
-    boundary,
     nav = false,
-    lazy = false,
     class: className = "",
     testid,
     onclosed,
@@ -91,22 +89,15 @@
     side?: "top" | "bottom";
     /** 引き金のどちら端に揃えるか */
     align?: "start" | "end";
-    /** この枠の中に収める (映像の舞台)。無ければ画面 */
-    boundary?: (() => HTMLElement | null) | undefined;
     /**
      * リンクを並べるだけのナビ。`menu` と読ませず (role を付けない)、Tab でそのまま外へ出られる
      */
     nav?: boolean;
-    /**
-     * 中身を開くまで作らない (`filled`)。一覧の行ごとに置くメニュー用。開かないメニューの中身まで、
-     * 一覧を開いた瞬間に作らないように。中身の状態を開く前から読むメニュー (⚙ など) では使わない
-     */
-    lazy?: boolean;
     class?: string;
     testid?: string | undefined;
     /**
      * 閉じ終えたとき (引っ込む動きが済んで、枠が消えてから)。中身を初めの姿に戻すのはここ。
-     * 閉じた瞬間に替えると、引っ込む間に替わった中身が一瞬見える (⚙ の選択肢の並びから閉じたとき)
+     * 閉じた瞬間に替えると、引っ込む間に替わった中身が一瞬見える
      */
     onclosed?: (() => void) | undefined;
     /**
@@ -126,12 +117,6 @@
   );
 
   let content = $state<HTMLElement | null>(null);
-  /**
-   * 中身を作ったか (`lazy`)。開きそうになったら (押し始め・キー・開けと言われた) 作り、
-   * 一度作ったら残す (閉じるたびに作り直さない)
-   */
-  // svelte-ignore state_referenced_locally
-  let filled = $state(!lazy);
   /** 指やマウスで開いたか。キーボードで開いたときだけ先頭の項目に入る (WAI-ARIA の menu button) */
   let byPointer = false;
   /** ↑で開いたら末尾の項目に入る */
@@ -144,11 +129,7 @@
   function items(): HTMLElement[] {
     return content === null
       ? []
-      : [
-          ...content.querySelectorAll<HTMLElement>(
-            ".menu-item:not([data-disabled])",
-          ),
-        ];
+      : [...content.querySelectorAll<HTMLElement>(".menu-item")];
   }
 
   /** 枠がいま開いているか (`beforetoggle` で写す)。`open` と食い違うときだけ枠を開け閉めする */
@@ -158,7 +139,6 @@
   $effect(() => {
     if (content === null || open === shown) return;
     if (open) {
-      filled = true;
       content.showPopover();
     } else content.hidePopover();
   });
@@ -176,9 +156,7 @@
     if (element === null) return;
     const onbefore = (event: Event) => {
       shown = (event as ToggleEvent).newState === "open";
-      if (shown) {
-        filled = true;
-      } else if (element.contains(document.activeElement)) {
+      if (!shown && element.contains(document.activeElement)) {
         // 中にいたフォーカスは引き金へ戻す (閉じる前に。閉じてからだと body に落ちている)。外の別のものを
         // 押して閉じたときは、そちらに任せる
         triggerElement()?.focus({ preventScroll: true });
@@ -221,7 +199,7 @@
    * 開いている間: 外を押したら閉じる・Esc で閉じる・画面が動いたら置き直す。
    *
    * **Esc はこちらで受けて `preventDefault` する。** ブラウザの popover に任せると keydown が
-   * 素通りして、舞台の全画面 (`fullscreen.svelte.ts`) まで一緒に閉じてしまう
+   * 素通りし、外側で Esc を受けるもの (開いている `<dialog>` など) まで一緒に閉じる
    */
   $effect(() => {
     if (!open) return;
@@ -246,7 +224,7 @@
         return;
       place();
     };
-    // 中身が入れ替わったら置き直す (⚙ の選択肢の並びに入ると高さが変わる)。**置いた直後の大きさと同じなら何もしない**。
+    // 中身が入れ替わったら置き直す (高さが変わる)。**置いた直後の大きさと同じなら何もしない**。
     // 置き直しが `max-height` を書き換えたぶんで、また置き直すことを繰り返さない
     const resized = new ResizeObserver(() => {
       if (content !== null && sizeOf(content) !== placed) place();
@@ -275,16 +253,15 @@
   const PADDING = 4;
 
   /**
-   * **JS で置く。** 収める枠 (`boundary`) があるときと、anchor positioning の無いブラウザだけ。
+   * **JS で置く。** anchor positioning の無いブラウザだけ。
    * 指定の側に入りきらず反対側のほうが広ければ反対へ出し、入らないぶんは中を巻き取る (`max-height`)。
    * 横は揃えた端から始め、枠からはみ出すなら内へずらす
    */
   function place(): void {
     const element = content;
     if (element === null || !element.matches(":popover-open")) return;
-    const area = boundary?.() ?? null;
     const style = element.style;
-    if (area === null && anchorSupported) {
+    if (anchorSupported) {
       for (const name of [
         "position-area",
         "position-try-fallbacks",
@@ -305,13 +282,11 @@
     const scrolled = element.scrollTop;
     const at = button.getBoundingClientRect();
     const root = document.documentElement;
-    const box =
-      area?.getBoundingClientRect() ??
-      new DOMRect(0, 0, root.clientWidth, root.clientHeight);
+    const box = new DOMRect(0, 0, root.clientWidth, root.clientHeight);
 
     style.setProperty("position-area", "none");
     // 入りきらないときに反対へ出すのはここで決める。CSS の `flip-block` を残すと、JS で置いた上下の位置を
-    // ブラウザがさらに裏返して、枠の外 (画面の下端) へ出していた (狭い枠で ⚙ の行が増えたとき)
+    // ブラウザがさらに裏返して、画面の外へ出すことがある
     style.setProperty("position-try-fallbacks", "none");
     style.setProperty("inset", "auto");
     style.setProperty("margin", "0");
@@ -345,7 +320,6 @@
   }
 
   function onTriggerKey(event: KeyboardEvent): void {
-    filled = true;
     if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
     event.preventDefault();
     fromEnd = event.key === "ArrowUp";
@@ -387,24 +361,16 @@
     next?.focus();
   }
 
-  /** 項目を押したら閉じる。押せない項目と、送り終えてから閉じる項目 (`data-keep-open`) はそのまま */
+  /** 項目を押したら閉じる */
   function onclick(event: MouseEvent): void {
-    const item = (event.target as Element).closest(".menu-item");
-    if (
-      item === null ||
-      item.hasAttribute("data-disabled") ||
-      item.hasAttribute("data-keep-open")
-    )
-      return;
+    if ((event.target as Element).closest(".menu-item") === null) return;
     open = false;
   }
 
   /** マウスを乗せた項目にフォーカスを移す (↑↓と同じ見た目になる)。外れたら枠へ */
   function onpointermove(event: PointerEvent): void {
     if (event.pointerType !== "mouse") return;
-    const item = (event.target as Element).closest<HTMLElement>(
-      ".menu-item:not([data-disabled])",
-    );
+    const item = (event.target as Element).closest<HTMLElement>(".menu-item");
     if (item !== null && item !== document.activeElement)
       item.focus({ preventScroll: true });
   }
@@ -428,7 +394,6 @@
   style: `anchor-name: ${anchor}`,
   onpointerdown: () => {
     byPointer = true;
-    filled = true;
   },
   onkeydown: onTriggerKey,
 })}
@@ -448,5 +413,5 @@
   {onpointermove}
   {onpointerleave}
 >
-  {#if filled}{@render children()}{/if}
+  {@render children()}
 </div>

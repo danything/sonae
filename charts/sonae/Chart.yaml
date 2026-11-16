@@ -1,6 +1,6 @@
 apiVersion: v2
 name: sonae
-description: 地震・津波・気象の情報を自分のサーバーで受けて、ブラウザと Web Push で知らせる sonae と、読み上げの VOICEVOX のエンジンの一式
+description: 地震・津波・気象の情報を自分のサーバーで受けて、ブラウザ・Web Push・Webhook で知らせる sonae と、読み上げに使う VOICEVOX のエンジンを合わせた一式
 type: application
 # chart 自体のバージョン。リリースのときは CI (release.yml) がリリースのバージョンで上書きしてパッケージにする
 version: 0.1.0

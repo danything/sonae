@@ -251,6 +251,71 @@ describe("気象警報・注意報の通知", () => {
     expect(t?.renotify).toBe(true);
   });
 
+  test("解除の後に同じ市町村・同じ種別でまた出たら、前と同じ段でも鳴らす (画面とサーバー)", () => {
+    const p = prefs({ home: home() });
+    /** 松江市の大雨の警報・注意報の解除 */
+    const lifted: WeatherWarning = {
+      ...advisory(),
+      areas: [],
+      released: [
+        {
+          code: "3220100",
+          name: "松江市",
+          kinds: [
+            {
+              code: "10",
+              name: "レベル２大雨注意報",
+              level: 2,
+              status: "解除",
+            },
+          ],
+        },
+      ],
+    };
+    const tomorrow = Date.parse("2024-11-03T09:00:00+09:00");
+    const again = advisory(
+      "VPWW55",
+      "レベル２大雨注意報",
+      "2024-11-03T00:00:00Z",
+    );
+    // 画面
+    const sent = new Map<string, Sent>();
+    expect(planAlert(ev(advisory()), SHIMANE_AT, p, sent)?.renotify).toBe(true);
+    expect(planAlert(ev(lifted), SHIMANE_AT + 60_000, p, sent)?.renotify).toBe(
+      false,
+    );
+    expect(planAlert(ev(again), tomorrow, p, sent)?.renotify).toBe(true);
+    // 警報も同じ (同じ日の 2 回目の大雨警報)
+    const warned = new Map<string, Sent>();
+    expect(planAlert(ev(shimane), SHIMANE_AT, p, warned)?.renotify).toBe(true);
+    planAlert(ev(lifted), SHIMANE_AT + 60_000, p, warned);
+    const second = { ...shimane, headline: "2 回目の大雨警報" };
+    expect(
+      planAlert(ev(second), SHIMANE_AT + 120_000, p, warned)?.renotify,
+    ).toBe(true);
+    // サーバー
+    const db = openDb(":memory:");
+    db.query(
+      "INSERT INTO push_subscriptions (endpoint, subject, p256dh, auth, prefs, label, created_at, updated_at) VALUES ('e1', 's', 'k', 'a', '{}', '', 0, 0)",
+    ).run();
+    const log = sentLog(db, "push_log");
+    const send = (w: WeatherWarning, now: number) => {
+      const base = noticeOf(ev(w), now);
+      if (!base) throw new Error("通知の元が無い");
+      return planSends(db, log, base, [{ prefs: p }], () => "e1", now);
+    };
+    expect(send(advisory(), SHIMANE_AT)[0]?.renotify).toBe(true);
+    expect(send(lifted, SHIMANE_AT + 60_000)[0]?.renotify).toBe(false);
+    expect(log.get("e1", "warning:3220100:VPWW55")?.level).toBe(0);
+    expect(send(again, tomorrow)[0]?.renotify).toBe(true);
+    // 解除ではない続報では、重さは大きいほうを残す (下がって戻っただけでは鳴らし直さない)
+    const raised = { ...shimane, reportedAt: again.reportedAt };
+    expect(send(raised, tomorrow + 60_000)[0]?.renotify).toBe(true);
+    expect(send(again, tomorrow + 120_000)[0]?.renotify).toBe(false);
+    expect(log.get("e1", "warning:3220100:VPWW55")?.level).toBe(3);
+    expect(send(raised, tomorrow + 180_000)[0]?.renotify).toBe(false);
+  });
+
   test("住んでいる地域の解除は、前に知らせた購読にだけ送る (閉じる通知)", () => {
     const oki = home({ code: "3252800" });
     const n = notice(shimane, prefs({ home: oki }));

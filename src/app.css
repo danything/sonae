@@ -51,7 +51,7 @@
   /* 重なりの段 (denpa と同じ並び) */
   --so-z-heading: 3; /* 貼り付く日付の見出し */
   --so-z-dock: 30; /* 下のタブのすぐ上に浮かせる操作の 1 行 */
-  --so-z-header: 40; /* ヘッダー・下のタブ・緊急地震速報の帯 */
+  --so-z-header: 40; /* 下のタブ */
   --so-z-skip: 70; /* 本文へ移動のリンク */
   --so-list-gap: 0.375rem;
   --so-item-h: 4rem;
@@ -317,6 +317,21 @@ table {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* 電文の文 (改行をそのまま出す) */
+.pre-line {
+  white-space: pre-line;
+}
+/* 印を付けない並び (詳しい内容の機関・地域の並び) */
+.plain {
+  margin: var(--so-space-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+/* 窓の中の節の見出し (「通知」の窓) */
+.section-head {
+  margin: var(--so-space-3) 0 0;
+  font-size: var(--so-text-base);
+}
 
 /* ---- ボタン (denpa の「ボタン」。強弱は層と字の太さで付け、色では塗らない) ---- */
 :root,
@@ -333,12 +348,10 @@ table {
   --so-btn-radius: var(--so-radius-full);
   --so-btn-h: 2.625rem;
   --so-btn-h-sm: 2.125rem;
-  --so-btn-h-xs: 1.625rem;
 }
 @media (pointer: coarse) {
   :root {
     --so-btn-h-sm: 2.5rem;
-    --so-btn-h-xs: 2.5rem;
   }
 }
 :where(
@@ -356,19 +369,19 @@ table {
   border-radius: var(--so-btn-radius);
 }
 /* 操作の層に乗せるのは主のボタンだけ (クラスが無いか、大きさのクラスだけのもの) */
-:where(button:not([class]), :is(button, a.button):is(.small, .xs)):where(
-    :not(.secondary, .outline, .ghost, [aria-pressed="true"])
+:where(button:not([class]), :is(button, a.button).small):where(
+    :not(.secondary, .ghost, [aria-pressed="true"])
   ):not(div) {
   --pico-box-shadow: var(--so-btn-lift);
   font-weight: var(--so-weight-bold);
 }
-:where(button:not([class]), :is(button, a.button):is(.small, .xs)):where(
-    :not(.secondary, .outline, .ghost, [aria-pressed="true"])
+:where(button:not([class]), :is(button, a.button).small):where(
+    :not(.secondary, .ghost, [aria-pressed="true"])
   ):not(div):where(:hover) {
   --pico-background-color: var(--so-btn-solid-hover);
 }
-:where(button:not([class]), :is(button, a.button):is(.small, .xs)):where(
-    :not(.secondary, .outline, .ghost, [aria-pressed="true"])
+:where(button:not([class]), :is(button, a.button).small):where(
+    :not(.secondary, .ghost, [aria-pressed="true"])
   ):not(div):where(:active) {
   scale: 0.97;
   transition: scale var(--so-duration) var(--so-ease);
@@ -401,10 +414,13 @@ a.button {
   text-decoration: none;
   cursor: pointer;
 }
-:where(button, [type="button"], [type="submit"], [role="button"], a.button):is(
-  .secondary,
-  .outline
-) {
+:where(
+  button,
+  [type="button"],
+  [type="submit"],
+  [role="button"],
+  a.button
+).secondary {
   --pico-background-color: var(--so-btn-tonal);
   --pico-color: var(--so-btn-text);
   --pico-box-shadow: none;
@@ -424,17 +440,12 @@ a.button {
 }
 :where(button, [type="button"], [type="submit"], [role="button"], a.button):is(
     .secondary,
-    .outline,
     .ghost
   ):where(:hover, :active) {
   --pico-background-color: var(--so-btn-tonal-hover);
   --pico-box-shadow: none;
 }
-:where(button, [type="button"], [type="submit"], a.button):is(
-  .small,
-  .xs,
-  .icon
-) {
+:where(button, [type="button"], [type="submit"], a.button):is(.small, .icon) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -445,11 +456,6 @@ a.button {
   min-height: var(--so-btn-h-sm);
   padding-inline: var(--so-space-3);
   font-size: var(--so-text-sm);
-}
-:where(button, [type="button"], [type="submit"], a.button).xs {
-  min-height: var(--so-btn-h-xs);
-  padding-inline: var(--so-space-2);
-  font-size: var(--so-text-xs);
 }
 :where(button, a.button).icon {
   width: var(--so-btn-h);
@@ -554,13 +560,19 @@ button[data-on] {
   background: color-mix(in srgb, var(--so-rec) 14%, var(--so-surface));
   color: var(--so-rec-text);
 }
-.tag.warning {
-  background: color-mix(in srgb, var(--so-warn) 14%, var(--so-surface));
-  color: var(--so-warn-text);
-}
 .tag.info {
   background: color-mix(in srgb, var(--so-info) 14%, var(--so-surface));
   color: var(--so-info-text);
+}
+
+/* ---- 段のラベル (津波の区分・火山の警戒の段・気象警報と注意報。地と字の色は描く側が段の色で付ける) ---- */
+.level-label {
+  border-radius: var(--so-radius-sm);
+  padding: 0 var(--so-space-2);
+  font-size: var(--so-text-xs);
+  font-weight: var(--so-weight-bold);
+  line-height: 1.75;
+  white-space: nowrap;
 }
 
 /* ---- 通知 (ページの中。淡い面に、種類は先頭のアイコンと言葉。地は状態の色で塗らない) ---- */
@@ -578,9 +590,6 @@ button[data-on] {
 }
 .notice.warning > svg {
   color: var(--so-warn-text);
-}
-.notice.error > svg {
-  color: var(--so-rec-text);
 }
 .notice.info > svg {
   color: var(--so-info-text);
@@ -644,15 +653,12 @@ button[data-on] {
 .chip .num {
   color: var(--so-muted);
 }
-.chip:is([aria-pressed="true"], [aria-current]:not([aria-current="false"])) {
+.chip[aria-pressed="true"] {
   --pico-color: var(--so-primary-text);
   color: var(--so-primary-text);
   font-weight: var(--so-weight-bold);
 }
-.chip:is(
-    [aria-pressed="true"],
-    [aria-current]:not([aria-current="false"])
-  )::after {
+.chip[aria-pressed="true"]::after {
   content: "";
   position: absolute;
   inset-inline: var(--so-space-3);
@@ -769,17 +775,11 @@ button[data-on] {
   font-weight: var(--so-weight-bold);
 }
 /* 選択肢の選んでいる項目は左の縦線と主の色の太字 */
-.menu-item:where(
-  [aria-current]:not([aria-current="false"]),
-  [role="menuitemradio"][aria-checked="true"]
-) {
+.menu-item:where([role="menuitemradio"][aria-checked="true"]) {
   color: var(--so-primary-text);
   font-weight: var(--so-weight-bold);
 }
-.menu-item:where(
-    [aria-current]:not([aria-current="false"]),
-    [role="menuitemradio"][aria-checked="true"]
-  )::before {
+.menu-item:where([role="menuitemradio"][aria-checked="true"])::before {
   content: "";
   position: absolute;
   inset-block: 0.5rem;
@@ -790,35 +790,6 @@ button[data-on] {
 }
 .menu .menu-gap {
   height: var(--so-space-2);
-}
-
-/* ---- オン/オフの印 (メニューの切り替え。押せるのは項目ぜんぶで、これは印だけ) ---- */
-.s-switch {
-  position: relative;
-  flex-shrink: 0;
-  width: 2.25rem;
-  height: 1.25rem;
-  margin-inline-start: auto;
-  border-radius: var(--so-radius-full);
-  background: var(--so-line-strong);
-  transition: background-color var(--so-duration) var(--so-ease);
-}
-.s-switch::after {
-  content: "";
-  position: absolute;
-  top: 0.125rem;
-  left: 0.125rem;
-  width: 1rem;
-  height: 1rem;
-  border-radius: var(--so-radius-full);
-  background: #fff;
-  transition: transform var(--so-duration-move) var(--so-ease-spring);
-}
-.s-switch.on {
-  background: var(--pico-primary-background);
-}
-.s-switch.on::after {
-  transform: translateX(1rem);
 }
 
 /* ---- 縦の並び (`.side-label`・`.side-list`・`.side-item`)。カレンダーの見出しと、メニューの中の状態に使う。地のまま、線を引かない ---- */
@@ -843,7 +814,6 @@ button[data-on] {
   box-shadow: none;
 }
 .side-item {
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -861,65 +831,6 @@ button[data-on] {
   font-weight: var(--so-weight);
   text-align: left;
   text-decoration: none;
-  transition: background-color var(--so-duration) var(--so-ease);
-}
-.side-item:hover {
-  background: var(--so-hover-soft);
-}
-/* 選んでいるものは主の色の左の縦線と太字。塗らない */
-.side-item:is(
-  [aria-current]:not([aria-current="false"]),
-  [aria-pressed="true"]
-) {
-  color: var(--so-primary-text);
-  font-weight: var(--so-weight-bold);
-}
-.side-item:is(
-    [aria-current]:not([aria-current="false"]),
-    [aria-pressed="true"]
-  )::before {
-  content: "";
-  position: absolute;
-  inset-block: 0.625rem;
-  left: 0;
-  width: var(--so-mark);
-  border-radius: var(--so-mark);
-  background: var(--pico-primary);
-}
-/* 選び直すと、左の縦線が前の場所から縦に滑る (並びの疑似要素 1 本を CSS のアンカーで付ける) */
-@supports (anchor-name: --a) {
-  .side-list {
-    position: relative;
-    anchor-scope: --side;
-  }
-  .side-list .side-item:is([aria-pressed="true"], [aria-current="true"]) {
-    anchor-name: --side;
-  }
-  .side-list
-    .side-item:is([aria-pressed="true"], [aria-current="true"])::before {
-    content: none;
-  }
-  .side-list:has(
-      .side-item:is([aria-pressed="true"], [aria-current="true"])
-    )::after {
-    content: "";
-    position: absolute;
-    position-anchor: --side;
-    top: calc(anchor(top) + 0.625rem);
-    bottom: calc(anchor(bottom) + 0.625rem);
-    left: anchor(left);
-    width: var(--so-mark);
-    border-radius: var(--so-mark);
-    background: var(--pico-primary);
-    pointer-events: none;
-    transition:
-      top var(--so-duration-move) var(--so-ease-spring),
-      bottom var(--so-duration-move) var(--so-ease-spring);
-  }
-}
-/* 見せるだけの行 (状態)。指を乗せても塗らない */
-.side-item.static:hover {
-  background: transparent;
 }
 .side-item .side-sub {
   display: inline-flex;

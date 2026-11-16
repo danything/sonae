@@ -122,7 +122,7 @@ spec:
               value: {{ . | quote }}
             {{- end }}
             {{- if .Values.secrets.name }}
-            # 台湾の中央氣象署 (CWA) のオープンデータの授権碼。Secret に無ければ環境変数が入らず、CWA の受信だけを
+            # 台湾の中央氣象署 (CWA) が出すオープンデータの授権碼。Secret に無ければ環境変数が入らず、CWA の受信だけを
             # 切って普通に動く (optional)。登録の手順と入れ方は docs/cwa.md
             - name: CWA_API_KEY
               valueFrom:
