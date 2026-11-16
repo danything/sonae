@@ -114,7 +114,7 @@ export function listOf(names: string[], unit = "地域"): string {
 }
 
 /** 「8時43分」(日本時間) */
-export function clockText(iso: string | undefined): string | undefined {
+function clockText(iso: string | undefined): string | undefined {
   if (!iso || !Number.isFinite(Date.parse(iso))) return undefined;
   const parts = new Intl.DateTimeFormat("ja-JP", {
     timeZone: "Asia/Tokyo",

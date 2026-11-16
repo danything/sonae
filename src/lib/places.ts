@@ -10,15 +10,15 @@ import { type Cities, prefectureOf } from "./home.ts";
 import type { OfficeTable } from "./map/style.ts";
 
 /** 国土地理院の住所検索。CORS は `*` (2026-11-15 に確かめた) */
-export const GSI_ADDRESS_SEARCH =
+const GSI_ADDRESS_SEARCH =
   "https://msearch.gsi.go.jp/address-search/AddressSearch";
 
 /** 外へ問い合わせるのは、この文字数から (1 文字では候補が多すぎて役に立たない) */
-export const REMOTE_MIN_CHARS = 2;
+const REMOTE_MIN_CHARS = 2;
 /** 打つのが止まってから問い合わせるまで (ミリ秒)。打つたびには送らない */
 export const REMOTE_DELAY_MS = 600;
 /** 候補の数の上限 */
-export const PLACE_LIMIT = 8;
+const PLACE_LIMIT = 8;
 
 export interface Place {
   /** 候補の鍵 (並びの中で一意) */
@@ -163,7 +163,7 @@ export function mergePlaces(
 }
 
 /** 住所・地名の候補に、少なくとも残す枠 */
-export const REMOTE_MIN_SLOTS = 3;
+const REMOTE_MIN_SLOTS = 3;
 
 /** 国土地理院の住所検索の URL (打った文字だけを送る) */
 export const gsiSearchUrl = (query: string): string =>

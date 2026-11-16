@@ -286,7 +286,7 @@ describe("画面の文", () => {
     );
     // 特別警報にあたるものは「知らせない」でも知らせる
     expect(scopeText("weather", "off")).toBe(
-      "どこに出た特別警報だけを知らせます。",
+      "特別警報だけを、どこに出ても知らせます。",
     );
     expect(scopeText("tsunami", "off")).toContain("大津波警報だけ");
     expect(scopeText("volcano", "off")).toContain(
