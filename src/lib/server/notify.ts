@@ -12,7 +12,7 @@ import {
   decideDaily,
   isAdvisoryOnly,
   type Notice,
-  noticeFor,
+  noticesFor,
   type Plan,
   type Sent,
 } from "#lib/notify.ts";
@@ -148,10 +148,12 @@ export function planSends<T extends { prefs: PushPrefs }>(
 ): Job<T>[] {
   const jobs: Job<T>[] = [];
   db.transaction(() => {
-    for (const target of targets) {
-      // 気象は住んでいる地域で中身が変わるので、送り先ごとに作る
-      const m = noticeFor(n, target.prefs);
-      if (!m) continue;
+    // 気象は住んでいる地域で中身が変わるので、送り先ごとに作る。府県予報区ごとに知らせる段が終わったことを
+    // 伝える通知も足す (閉じる通知なので、前にその tag で知らせた送り先にだけ送る。`noticesFor`)
+    const each = targets.flatMap((target) =>
+      noticesFor(n, target.prefs).map((m) => ({ target, m })),
+    );
+    for (const { target, m } of each) {
       const key = keyOf(target);
       const prev = log.get(key, m.tag);
       const qTag = advisoryQuotaTag(m);

@@ -75,7 +75,7 @@ export interface Notice {
   changeKey?: string;
   /**
    * 住んでいる地域でなく、府県予報区ごとに知らせる気象の通知 (どこかの特別警報はいつも、「全国」なら
-   * 危険警報から。`warningFor`)
+   * 危険警報から。`warningFor`)。その段が府県予報区から無くなったことを伝える通知 (`wideEndFor`) も
    */
   special?: boolean;
   /**
@@ -369,6 +369,47 @@ function weatherBase(event: SonaeEvent, at: number, ttl: number): Notice {
   };
 }
 
+/**
+ * どこに出ても府県予報区ごとに知らせる段。どこかの特別警報はいつも知らせる (選ばせない。持ち主の決定、2026-11-16)。
+ * 「全国」を選んでいれば危険警報 (レベル 4) から (2026-11-16。docs/design.md の 2.4 の表)
+ */
+const wideLevelOf = (prefs: PushPrefs): number =>
+  prefs.weather === "everywhere" ? WEATHER_WIDE_EVERYWHERE : 5;
+
+/** 府県予報区ごとに知らせる通知の tag (府県予報区と種別ごとに 1 つ) */
+const wideTag = (w: WeatherWarning) =>
+  `warning:special:${w.office.code}:${w.code}`;
+
+/**
+ * 府県予報区ごとに知らせる段 (`wideLevelOf`) が、その府県予報区のどの市町村等からも無くなったことを伝える
+ * 通知 (閉じる通知。前にその tag で知らせた送り先にだけ届く)。解除・警報以下への切り替え・訂正の
+ * どれでも、電文はその府県予報区のいまの状態をまるごと持つので、段の出ている市町村等が無いことで分かる。
+ * 控えの重さを戻し (`keptLevel`)、30 日の間に同じ府県予報区・同じ種別でまた出たときに鳴らすため。
+ * 中身は電文によらず決まった文にする (終わった後の続報ごとに送り直さないため)。まだ出ていれば null
+ */
+function wideEndFor(
+  n: Notice,
+  w: WeatherWarning,
+  prefs: PushPrefs,
+): Notice | null {
+  const wide = wideLevelOf(prefs);
+  if (w.areas.some((a) => areaLevel(a) >= wide)) return null;
+  const what = wide >= 5 ? "特別警報" : "危険警報・特別警報";
+  const below = wide >= 5 ? "危険警報" : "警報";
+  return {
+    ...n,
+    tag: wideTag(w),
+    level: 0,
+    title: `${w.office.name}の${WARNING_PHENOMENON[w.code]}の${what}は終わりました`,
+    body: `どの市町村も${below}以下になりました。`,
+    url: selectHref(NONE, "weather", `${OFFICE_PREFIX}${w.office.code}`),
+    urgency: "normal",
+    sticky: false,
+    closing: true,
+    special: true,
+  };
+}
+
 /** 気象警報・注意報の通知。住んでいる地域の段か、どこかの特別警報か */
 function warningFor(
   n: Notice,
@@ -410,9 +451,7 @@ function warningFor(
       ...(mine ? { area: mine } : {}),
     };
   }
-  // どこに出ても知らせる段。どこかの特別警報はいつも知らせる (選ばせない。持ち主の決定、2026-11-16)。
-  // 「全国」を選んでいれば危険警報 (レベル 4) から (2026-11-16。docs/design.md の 2.4 の表)
-  const wide = prefs.weather === "everywhere" ? WEATHER_WIDE_EVERYWHERE : 5;
+  const wide = wideLevelOf(prefs);
   const special = w.areas.filter((a) => areaLevel(a) >= wide);
   const homeLevel = homeNotice?.level ?? 0;
   // 同じ府県予報区のほかの市町村等にその段が出ているときは、そちらを先に言う
@@ -431,7 +470,7 @@ function warningFor(
   const where = `${cities.slice(0, 8).join("・")}${cities.length > 8 ? ` ほか ${cities.length - 8} 市町村` : ""}`;
   const sp: Notice = {
     ...n,
-    tag: `warning:special:${w.office.code}:${w.code}`,
+    tag: wideTag(w),
     level: top,
     title: `${w.office.name}に${names.join("・")}`,
     body: clip(where),
@@ -507,6 +546,27 @@ export function noticeFor(
     return { ...n, level, changeKey: `${contentOf(n)}\nnearby:${level}` };
   }
   return n;
+}
+
+/**
+ * 購読の条件で作る通知の全部 (Web Push・Webhook の `planSends` と、開いている画面の `planAlerts` が使う)。
+ * `noticeFor` の 1 つに、気象警報・注意報では府県予報区ごとに知らせる段が終わったことを伝える通知
+ * (`wideEndFor`) を足す。府県予報区ごとの通知が住んでいる地域の tag で出ていた後も、どこかの特別警報の
+ * tag の控えが残っていれば戻すので、`noticeFor` が住んでいる地域の通知を返すときも足す
+ */
+export function noticesFor(
+  n: Notice,
+  prefs: PushPrefs,
+  here: Home | null = null,
+): Notice[] {
+  const m = noticeFor(n, prefs, here);
+  const out = m ? [m] : [];
+  const e = n.event;
+  if (e.type === "warning") {
+    const end = wideEndFor(n, e.data, prefs);
+    if (end) out.push(end);
+  }
+  return out;
 }
 
 /**
@@ -699,9 +759,9 @@ export function decide(
 
 /**
  * 送った後に控えへ残す重さ。続報では大きいほうを残す (下がって戻っただけでは鳴らし直さない)。
- * 解除・取消 (`closing`) ではその重さに戻す。気象 (`warning:<市町村等>:<種別>`) と火山
- * (`volcano:<火山のコード>`) の tag は出来事ごとに分かれないので、戻さないと控えの残る 30 日の間、
- * 次に出た同じ段の注意報・警報が鳴らない
+ * 解除・取消 (`closing`) ではその重さに戻す。気象 (`warning:<市町村等>:<種別>`・どこかの特別警報の
+ * `warning:special:<府県予報区>:<種別>`) と火山 (`volcano:<火山のコード>`) の tag は出来事ごとに分かれないので、
+ * 戻さないと控えの残る 30 日の間、次に出た同じ段の注意報・警報が鳴らない
  */
 export const keptLevel = (prev: Sent | undefined, n: Notice): number =>
   n.closing ? n.level : Math.max(prev?.level ?? 0, n.level);

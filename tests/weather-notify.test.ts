@@ -31,7 +31,12 @@ import {
   sentences,
 } from "#lib/readout.ts";
 import { openDb } from "#lib/server/db.ts";
-import { planSends, sentLog, undoJob } from "#lib/server/notify.ts";
+import {
+  planSends,
+  type SentLog,
+  sentLog,
+  undoJob,
+} from "#lib/server/notify.ts";
 
 import { prefs, warningEvent as ev, weatherEvent } from "./events.ts";
 import {
@@ -555,5 +560,186 @@ describe("気象の読み上げ", () => {
       "埼玉県南部、北部は、竜巻などの激しい突風が発生しやすい気象状況になっています。",
     );
     expect(parts.at(-1)).toMatch(/^この情報は\d+時\d+分まで有効です。$/);
+  });
+});
+
+/** 電文の大雨警報を大雨危険警報に書き換える (危険警報のサンプル電文が無いため) */
+const toDanger = (s: string) =>
+  s.replace(
+    /<Name>レベル３大雨警報<\/Name>\s*<Code>03<\/Code>/g,
+    "<Name>レベル４大雨危険警報</Name><Code>43</Code>",
+  );
+/** 電文の時刻を替える */
+const reportedAt = (iso: string) => (s: string) =>
+  s.replace(
+    /<ReportDateTime>[^<]+<\/ReportDateTime>/,
+    `<ReportDateTime>${iso}</ReportDateTime>`,
+  );
+/** サンプル電文の大雨警報 (継続) の Kind */
+const WARNING_KIND =
+  /<Name>レベル３大雨警報<\/Name>\s*<Code>03<\/Code>\s*<Status>継続<\/Status>/g;
+/**
+ * 府県予報区から危険警報・特別警報が無くなる電文 (サンプル電文の大雨警報を書き換えた作り物)。
+ * R06 に取消は無く、誤って出したものは訂正の報で置き換わる
+ */
+const ENDINGS: Record<string, (s: string) => string> = {
+  解除: (s) =>
+    s.replace(
+      WARNING_KIND,
+      "<Name>レベル３大雨警報</Name><Code>03</Code><Status>解除</Status>",
+    ),
+  警報から注意報への切り替え: (s) =>
+    s.replace(
+      WARNING_KIND,
+      "<Name>レベル２大雨注意報</Name><Code>10</Code><Status>警報から注意報</Status>",
+    ),
+  訂正: (s) =>
+    s.replace("<InfoType>発表</InfoType>", "<InfoType>訂正</InfoType>"),
+};
+const lift = ENDINGS["解除"] ?? ((s: string) => s);
+
+describe("府県予報区ごとの通知 (どこかの特別警報・「全国」の危険警報) が終わったとき", () => {
+  const TAG = "warning:special:320000:VPWW55";
+  /** 東京都千代田区 (島根県の府県予報区の外) */
+  const far = home({ code: "1310100" });
+  const CASES = [
+    {
+      name: "「全国」の危険警報",
+      issue: toDanger,
+      p: prefs({ home: far, weather: "everywhere" }),
+    },
+    { name: "どこかの特別警報", issue: toSpecialRain, p: prefs({ home: far }) },
+    {
+      name: "どこかの特別警報 (住んでいる地域を選んでいない)",
+      issue: toSpecialRain,
+      p: prefs(),
+    },
+  ];
+  const T1 = "2024-11-02T15:00:00+09:00";
+  const T2 = "2024-11-02T18:00:00+09:00";
+  const T3 = "2024-11-12T09:00:00+09:00";
+
+  /** 画面・Web Push・Webhook のそれぞれで報を受ける */
+  function receivers(p: PushPrefs) {
+    const sent = new Map<string, Sent>();
+    const db = openDb(":memory:");
+    db.query(
+      "INSERT INTO push_subscriptions (endpoint, subject, p256dh, auth, prefs, label, created_at, updated_at) VALUES ('e1', 's', 'k', 'a', '{}', '', 0, 0)",
+    ).run();
+    db.query(
+      "INSERT INTO webhooks (id, subject, url, prefs, created_at, updated_at) VALUES (1, 's', 'https://example.com/hook', '{}', 0, 0)",
+    ).run();
+    const push = sentLog(db, "push_log");
+    const hook = sentLog(db, "webhook_log");
+    return {
+      /** 画面・Web Push・Webhook の順に、その tag で送るもの (送らなければ null) */
+      receive(w: WeatherWarning) {
+        const now = Date.parse(w.reportedAt) + 60_000;
+        const base = noticeOf(ev(w), now);
+        if (!base) throw new Error("通知の元が無い");
+        const page = planAlerts(ev(w), now, p, sent, null).filter(
+          (a) => a.notice.tag === TAG,
+        );
+        const server = (log: SentLog, key: string | number, r: boolean) =>
+          planSends(db, log, base, [{ prefs: p }], () => key, now, r).filter(
+            (j) => j.notice.tag === TAG,
+          );
+        const out = [page, server(push, "e1", true), server(hook, 1, false)];
+        for (const o of out) expect(o.length).toBeLessThanOrEqual(1);
+        return out.map((o) => o[0] ?? null);
+      },
+      /** 控えの重さ (画面・Web Push・Webhook) */
+      levels: () => [
+        sent.get(TAG)?.level,
+        push.get("e1", TAG)?.level,
+        hook.get(1, TAG)?.level,
+      ],
+    };
+  }
+
+  for (const c of CASES)
+    for (const [ending, end] of Object.entries(ENDINGS))
+      test(`${c.name} → ${ending} → 10 日後に同じ府県予報区・同じ種別でまた出たら鳴らす (画面・Web Push・Webhook)`, () => {
+        const r = receivers(c.p);
+        const first = weatherWarning(RAIN, "VPWW55", c.issue);
+        for (const s of r.receive(first)) expect(s?.renotify).toBe(true);
+        // 終わった: 前に知らせた所へ、鳴らさずに終わりを伝える (Webhook にも送る)
+        const ended = weatherWarning(RAIN, "VPWW55", (s) =>
+          end(reportedAt(T1)(s)),
+        );
+        for (const s of r.receive(ended)) {
+          expect(s?.renotify).toBe(false);
+          expect(s?.notice.closing).toBe(true);
+          expect(s?.notice.sticky).toBe(false);
+          expect(s?.notice.title).toBe(
+            c.issue === toDanger
+              ? "島根県の大雨の危険警報・特別警報は終わりました"
+              : "島根県の大雨の特別警報は終わりました",
+          );
+        }
+        expect(r.levels()).toEqual([0, 0, 0]);
+        // 終わった後の続報では、もう送らない (同じ中身)
+        const later = weatherWarning(RAIN, "VPWW55", (s) =>
+          end(reportedAt(T2)(s)),
+        );
+        expect(r.receive(later)).toEqual([null, null, null]);
+        // 30 日の間にまた出たら、前と同じ段でも鳴らす。同じ報を続けて受けても 1 度だけ
+        const again = weatherWarning(RAIN, "VPWW55", (s) =>
+          c.issue(reportedAt(T3)(s)),
+        );
+        for (const s of r.receive(again)) expect(s?.renotify).toBe(true);
+        expect(r.receive(again)).toEqual([null, null, null]);
+      });
+
+  test("知らせていない送り先には、終わりを送らない", () => {
+    // 「住んでいる地域と現在地」では「全国」の危険警報を知らせていないので、終わりも送らない
+    const r = receivers(prefs({ home: far }));
+    const first = weatherWarning(RAIN, "VPWW55", toDanger);
+    expect(r.receive(first)).toEqual([null, null, null]);
+    const ended = weatherWarning(RAIN, "VPWW55", (s) =>
+      lift(reportedAt(T1)(s)),
+    );
+    expect(r.receive(ended)).toEqual([null, null, null]);
+    expect(r.levels()).toEqual([undefined, undefined, undefined]);
+    // 「全国」でも、危険警報の出ていない府県予報区の電文 (警報・注意報だけ) では送らない
+    const wide = receivers(prefs({ home: far, weather: "everywhere" }));
+    expect(wide.receive(shimane)).toEqual([null, null, null]);
+    expect(wide.receive(ended)).toEqual([null, null, null]);
+    expect(wide.levels()).toEqual([undefined, undefined, undefined]);
+  });
+
+  test("「全国」で特別警報が危険警報に下がっただけでは終わりにせず、また上がっても鳴らし直さない", () => {
+    const r = receivers(prefs({ home: far, weather: "everywhere" }));
+    for (const s of r.receive(special)) expect(s?.renotify).toBe(true);
+    const lowered = weatherWarning(RAIN, "VPWW55", (s) =>
+      toDanger(reportedAt(T1)(s)),
+    );
+    for (const s of r.receive(lowered)) {
+      expect(s?.notice.closing).toBe(false);
+      expect(s?.renotify).toBe(false);
+    }
+    expect(r.levels()).toEqual([5, 5, 5]);
+    const raised = weatherWarning(RAIN, "VPWW55", (s) =>
+      toSpecialRain(reportedAt(T2)(s)),
+    );
+    for (const s of r.receive(raised)) expect(s?.renotify).toBe(false);
+  });
+
+  test("住んでいる地域が同じ府県予報区なら、住んでいる地域の通知だけで終わりを伝える (#210 のまま。二重に送らない)", () => {
+    const p = prefs({ home: home() });
+    const sent = new Map<string, Sent>();
+    const tags = (w: WeatherWarning) =>
+      planAlerts(ev(w), Date.parse(w.reportedAt) + 60_000, p, sent, null).map(
+        (a) => [a.notice.tag, a.renotify, a.notice.closing],
+      );
+    expect(tags(special)).toEqual([["warning:3220100:VPWW55", true, false]]);
+    const ended = weatherWarning(RAIN, "VPWW55", (s) =>
+      lift(reportedAt(T1)(s)),
+    );
+    expect(tags(ended)).toEqual([["warning:3220100:VPWW55", false, true]]);
+    const again = weatherWarning(RAIN, "VPWW55", (s) =>
+      toSpecialRain(reportedAt(T3)(s)),
+    );
+    expect(tags(again)).toEqual([["warning:3220100:VPWW55", true, false]]);
   });
 });
