@@ -1297,6 +1297,8 @@
         volcano={selVolcano}
         foreign={snap.foreignQuakes}
         foreignQuake={selForeign}
+        rtsStations={live.rtsStations}
+        rts={live.rts}
         warnings={snap.warnings}
         office={selOffice?.office.code ?? null}
         officeHref={(code) =>

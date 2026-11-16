@@ -35,6 +35,7 @@ https://github.com/user-attachments/assets/24a0b5a8-9ba6-4722-bb65-c7baeda2827f
 - 名前は「備え」から。地震を待つのではなく、来たときに慌てないためのもの。
 - [Zero Quake](https://github.com/0Quake/Zero-Quake) の機能を参考にした。コードは読んでも写してもいない (一から書いている)。
 - 地震・津波・火山 (噴火速報・噴火警報) の情報を気象庁 (防災情報 XML)・P2P地震情報・Wolfx Project から、海外の地震を USGS・EMSC・GeoNet・中央氣象署 (台湾、授権碼があるとき) から、太平洋の津波の参考情報を PTWC (米国) と気象庁ホームページ (国際津波関連情報) から受け、画面には必ず出典と「公式の情報を優先してください」という注意文を出す。気象庁の情報は加工して出しているので、その旨も書く。
+- 地図には、台湾の観測点のいまの揺れ (ExpTech の [TREM](https://exptech.dev) の RTS。非公式) を点の色で出す。地図に出すだけで、一覧・音・読み上げ・通知では知らせない。
 
 知らせる条件は、緊急地震速報・地震・津波・火山・気象のそれぞれで「全国のもの」「住んでいる地域と現在地のものだけ」「知らせない」から選ぶ。何の段から知らせるか (震度いくつ以上など) は決めてあり、選んだもので何を知らせるかを画面に 1 文で出す ([docs/design.md の 2.4](docs/design.md#24-web-push) の表)。
 
@@ -131,8 +132,12 @@ docker の代わりに `wslc-compose` でもよい。
 手元ではログインを飛ばす (`AUTH_DISABLED=1`、compose.yml)。本番のログインの設定は [docs/entra.md](docs/entra.md)。
 Web Push は VAPID の鍵が無ければ切って動く。鍵の作り方と入れ方は [docs/push.md](docs/push.md)。
 
-起動すると気象庁・P2P地震情報・Wolfx・USGS・PTWC・EMSC・気象庁ホームページ (国際津波)・GeoNet (と、授権碼があれば中央氣象署) に実際につなぐ。台湾の中央氣象署の授権碼の取り方は [docs/cwa.md](docs/cwa.md)。画面だけ触りたいときは `SONAE_RECEIVE=off` で止める。緊急地震速報の訓練・試験も一覧と地図に出すときは `SONAE_TRAINING=on` (知らせはしない)。
+起動すると気象庁・P2P地震情報・Wolfx・USGS・PTWC・EMSC・気象庁ホームページ (国際津波)・GeoNet・ExpTech TREM (と、授権碼があれば中央氣象署) に実際につなぐ。台湾の中央氣象署の授権碼の取り方は [docs/cwa.md](docs/cwa.md)。画面だけ触りたいときは `SONAE_RECEIVE=off` で止める。緊急地震速報の訓練・試験も一覧と地図に出すときは `SONAE_TRAINING=on` (知らせはしない)。
 
 ## ライセンス
 
 [AGPL-3.0](LICENSE)
+
+使っている情報源の条件は、それぞれの規約に従う ([docs/design.md の「情報源の判断」](docs/design.md#情報源の判断))。
+台湾の観測点の揺れ (ExpTech の TREM-RTS) は、ExpTech の[授權頁](https://exptech.dev/docs/api/start/license/)で「註明來源・不可商用」(出典を書けば非商用で使える) のデータです。
+**商用で立てる (有料のサービス・広告や課金のあるアプリ・サイトで使う) なら、ExpTech の同意が要ります。** 同意が無ければ、環境変数 `SONAE_TREM=off` で受信を切ってください。

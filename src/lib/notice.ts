@@ -25,6 +25,7 @@ const GSI_AFM = "https://www.gsi.go.jp/bousaichiri/active_fault.html";
 const GSI_VECTOR = "https://github.com/gsi-cyberjapan/optimal_bvmap";
 const GSI_MAPS = "https://maps.gsi.go.jp/";
 const CSIS_GEOCODE = "https://geocode.csis.u-tokyo.ac.jp/";
+const EXPTECH = "https://exptech.dev";
 const DISAPORTAL =
   "https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html";
 
@@ -145,6 +146,15 @@ export const CREDITS: Credit[] = [
   {
     label: "台湾付近の地震",
     parts: ["交通部中央氣象署 (政府資料開放授權條款 第 1 版)"],
+  },
+  {
+    // ExpTech の授權頁 (https://exptech.dev/docs/api/start/license/) の RTS の書き方のまま。続けて日本語で断る
+    label: "台湾の観測点の揺れ",
+    parts: [
+      "資料來源：ExpTech Studio TREM（",
+      { text: "exptech.dev", href: EXPTECH },
+      "）・非商業使用・非官方資訊，以中央氣象署發布為準。ExpTech の観測網 TREM-net の観測点の、いまの揺れ (計測震度) を地図の点の色で出しています。中央氣象署の発表ではない非公式の値で、遅れたり誤ったりすることがあります。中央氣象署の発表を優先してください。sonae はこの値を地図に出すだけで、一覧・音・読み上げ・通知では知らせません。避難などの判断の唯一の根拠にしないでください",
+    ],
   },
   {
     label: "太平洋の津波の参考情報",

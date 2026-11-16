@@ -36,6 +36,10 @@ export const PHOTO_ATTRIBUTION = [
   "GRUS画像 (© Axelspace)",
 ].join(" | ");
 
+/** 台湾の観測点の揺れ (TREM-RTS) の出典。授權頁の書き方 (全文は `#lib/notice.ts` の CREDITS) */
+export const RTS_ATTRIBUTION =
+  '資料來源：ExpTech Studio TREM（<a href="https://exptech.dev" target="_blank" rel="noopener">exptech.dev</a>）・非商業使用・非官方資訊，以中央氣象署發布為準';
+
 export const JMA_GIS_ATTRIBUTION =
   '<a href="https://www.data.jma.go.jp/developer/gis.html" target="_blank" rel="noopener">気象庁 予報区等 GIS データ</a> を加工';
 
@@ -381,6 +385,10 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "気象警報・注意報",
     note: "市町村等を段の色で塗ります。特別警報 黒・危険警報 紫・警報 赤・注意報 黄 (気象庁の配色)。塗った所を押すと、市町村の名前と出ている警報・注意報が出ます。一覧で府県予報区の警報・注意報を選ぶと、その府県予報区の市町村等を白い線で縁取ります",
+  },
+  {
+    label: "台湾の観測点の揺れ (非公式)",
+    note: "ExpTech の観測網 TREM-net の台湾の観測点。ふだんは小さな灰色の点で、地震の間だけ、揺れた観測点をいまの揺れ (計測震度) に当たる震度の色で塗ります。中央氣象署の発表ではない非公式の値で、地図に出すだけです。一覧・音・読み上げ・通知では知らせません。中央氣象署の発表を優先してください",
   },
   {
     label: "海外の地震",
@@ -778,6 +786,12 @@ export function baseStyle(
         data: { type: "FeatureCollection", features: [] },
         attribution: FOREIGN_ATTRIBUTION,
       },
+      // 台湾の観測点 (TREM-RTS)。点は画面が SSE で受けたものを差し込む (`#lib/rts.ts` の `rtsFeatures`)
+      rts: {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+        attribution: RTS_ATTRIBUTION,
+      },
       hypocenters: {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -942,6 +956,31 @@ export function baseStyle(
           "line-width": 2.5,
           "line-dasharray": [2, 1],
         },
+      },
+      // 台湾の観測点のいまの揺れ (TREM-RTS)。震源の丸の下に、小さな点で置く。ふだんは控えた灰色、
+      // 揺れの値が来た観測点だけ震度の色で少し大きく (大きい値ほど上)。押しても何も出さない
+      {
+        id: "rts",
+        type: "circle",
+        source: "rts",
+        paint: {
+          // ズームの補間は式の外側に 1 つだけ (MapLibre の決まり)。中で揺れているかで分ける
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            4,
+            ["case", ["get", "shaking"], 4, 2],
+            9,
+            ["case", ["get", "shaking"], 7, 3.5],
+          ],
+          "circle-color": ["get", "color"],
+          // 灰色の点も写真の上で見分けられる濃さに (震源の丸より小さく、縁は細く)
+          "circle-opacity": ["case", ["get", "shaking"], 0.95, 0.8],
+          "circle-stroke-color": "rgba(0,0,0,0.6)",
+          "circle-stroke-width": ["case", ["get", "shaking"], 1, 0.5],
+        },
+        layout: { "circle-sort-key": ["get", "order"] },
       },
       {
         id: "hypocenters",
