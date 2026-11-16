@@ -34,6 +34,13 @@ test("出典: 各機関の規約の例の文言", () => {
   // ハザードマップポータルサイトの出典の記載方法
   expect(all).toContain("出典：「ハザードマップポータルサイト」");
   expect(all).toContain("「ハザードマップポータルサイト」を加工して作成");
+  // 引いたときの Blue Marble: NASA Earth Observatory の頼みと GIBS の謝辞の文
+  expect(all).toContain("NASA Earth Observatory");
+  expect(all).toContain(
+    "We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS), part of NASA's Earth Science Data and Information System (ESDIS).",
+  );
+  // 写真の 8 以下 (世界衛星モザイク) は出さないので、その出典も書かない
+  expect(all).not.toContain("世界衛星モザイク");
   // USGS・EMSC
   expect(all).toContain("courtesy of the U.S. Geological Survey");
   expect(all).toContain(
@@ -63,7 +70,7 @@ test("地図の隅の短い出典: 映している層に合わせる", () => {
 test("GRUS 画像の範囲 (沖ノ鳥島のあたり) を映しているか", () => {
   // 沖ノ鳥島に寄せたところ (写真のタイル)
   expect(showsGrus([136.07, 20.42, 136.09, 20.43], 15)).toBe(true);
-  // 日本全体は範囲を含むが、写真のタイル (ズーム 14〜) ではなく衛星のモザイク
+  // 日本全体は範囲を含むが、写真のタイル (ズーム 14〜) ではなく Blue Marble
   expect(showsGrus([122, 20, 154, 46], 4)).toBe(false);
   // 寄せていても本州だけ
   expect(showsGrus([139.7, 35.6, 139.8, 35.7], 15)).toBe(false);

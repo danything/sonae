@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import {
   baseStyle,
+  BLUE_MARBLE_TILES,
   DEPTH_COLORS,
   eewFill,
   hazardCovers,
@@ -17,6 +18,7 @@ import {
   meFeatures,
   mergeShelters,
   overlayVisibility,
+  PHOTO_MIN_ZOOM,
   PLATE_COLOR,
   PLATES_URL,
   readHazard,
@@ -112,6 +114,51 @@ test("層はいつも全部出す。淡色地図の下地は無い", () => {
   ).toBe("none");
   expect(Object.keys(style.sources)).not.toContain("pale");
   expect(MAP_LEGEND.map((l) => l.label)).toContain("長周期地震動階級");
+});
+
+test("下地: 引いたときは Blue Marble、ズーム 9 から地理院の写真。境で 1 段重ねる", () => {
+  const style = baseStyle() as {
+    sources: Record<
+      string,
+      {
+        tiles?: string[];
+        minzoom?: number;
+        maxzoom?: number;
+        attribution?: string;
+      }
+    >;
+    layers: {
+      id: string;
+      minzoom?: number;
+      maxzoom?: number;
+      paint?: Record<string, unknown>;
+    }[];
+  };
+  const bm = style.sources["blue-marble"];
+  const photo = style.sources.photo;
+  expect(bm?.tiles).toEqual([BLUE_MARBLE_TILES]);
+  expect(bm?.maxzoom).toBe(8);
+  expect(bm?.attribution).toContain("NASA Earth Observatory");
+  // 写真の 8 以下 (世界衛星モザイク) は灰色の三角が焼き込まれているので読まない
+  expect(PHOTO_MIN_ZOOM).toBe(9);
+  expect(photo?.minzoom).toBe(PHOTO_MIN_ZOOM);
+  const ids = style.layers.map((l) => l.id);
+  // Blue Marble は写真の下で、写真の出始めより 1 段先まで残す (境で白く抜けない)
+  expect(ids.indexOf("blue-marble")).toBe(ids.indexOf("photo") - 1);
+  const bmLayer = style.layers.find((l) => l.id === "blue-marble");
+  const photoLayer = style.layers.find((l) => l.id === "photo");
+  expect(photoLayer?.minzoom).toBe(PHOTO_MIN_ZOOM);
+  expect(bmLayer?.maxzoom).toBeGreaterThan(PHOTO_MIN_ZOOM);
+  // 写真は境から半段かけて重ねる (海の色の段差を和らげる)
+  expect(photoLayer?.paint?.["raster-opacity"]).toEqual([
+    "interpolate",
+    ["linear"],
+    ["zoom"],
+    PHOTO_MIN_ZOOM,
+    0,
+    PHOTO_MIN_ZOOM + 0.5,
+    1,
+  ]);
 });
 
 test("プレート境界: 付加情報のいちばん下に細い破線で引き、震源の丸より目立たせない", async () => {

@@ -24,6 +24,7 @@ const GSI_SHELTERS = "https://www.gsi.go.jp/bousaichiri/hinanbasho.html";
 const GSI_AFM = "https://www.gsi.go.jp/bousaichiri/active_fault.html";
 const GSI_VECTOR = "https://github.com/gsi-cyberjapan/optimal_bvmap";
 const GSI_MAPS = "https://maps.gsi.go.jp/";
+const GIBS = "https://nasa-gibs.github.io/gibs-api-docs/";
 const CSIS_GEOCODE = "https://geocode.csis.u-tokyo.ac.jp/";
 const EXPTECH = "https://exptech.dev";
 const PB2002 = "https://github.com/fraxen/tectonicplates";
@@ -83,7 +84,16 @@ export const CREDITS: Credit[] = [
   {
     label: "写真",
     parts: [
-      "地理院タイル「写真」(シームレス空中写真。国土地理院)・Landsat8画像（GSI, TSIC, GEO Grid/AIST）・Landsat8画像（courtesy of the U.S. Geological Survey）・海底地形（GEBCO）・世界衛星モザイク画像（NASA LP DAAC, USGS/EROS Center）・GRUS画像（© Axelspace）",
+      "地理院タイル「写真」(シームレス空中写真。国土地理院。ズーム 9 から)・Landsat8画像（GSI, TSIC, GEO Grid/AIST）・Landsat8画像（courtesy of the U.S. Geological Survey）・海底地形（GEBCO）・GRUS画像（© Axelspace）",
+    ],
+  },
+  {
+    // NASA Earth Observatory の頼み (Blue Marble を使う人は「NASA Earth Observatory」と書く) と、GIBS の謝辞の文のまま
+    label: "引いたときの衛星画像",
+    parts: [
+      "Blue Marble: Next Generation (2004 年 8 月、陰影つき。NASA Earth Observatory。日本全体を見るような引いた縮尺 (ズーム 8 まで) で写真の代わりに出します)。We acknowledge the use of imagery provided by services from NASA's ",
+      { text: "Global Imagery Browse Services (GIBS)", href: GIBS },
+      ", part of NASA's Earth Science Data and Information System (ESDIS).",
     ],
   },
   {

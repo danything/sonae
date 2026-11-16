@@ -26,15 +26,30 @@ const GSI = "https://cyberjapandata.gsi.go.jp/xyz";
 const TILES = "https://maps.gsi.go.jp/development/ichiran.html";
 
 /**
+ * 地理院タイル「写真」を出し始めるズーム。これより引いているときは Blue Marble を出す (docs/map.md)。
+ * 写真の 8 以下 (世界衛星モザイク) は、画像の無い所が灰色の三角として焼き込まれ、海に継ぎ目の段差もあるため
+ */
+export const PHOTO_MIN_ZOOM = 9;
+
+/**
  * 写真の出典。地理院タイルの一覧の「写真」の備考のとおり、ズームの段ごとに元の衛星画像の出典も出す
- * (2〜8 は世界衛星モザイク、9〜13 は全国ランドサットモザイク、14〜18 はシームレス空中写真)
+ * (9〜13 は全国ランドサットモザイク、14〜18 はシームレス空中写真。2〜8 の世界衛星モザイクは使わない)
  */
 export const PHOTO_ATTRIBUTION = [
   `<a href="${TILES}" target="_blank" rel="noopener">国土地理院</a> (シームレス空中写真)`,
   "Landsat8画像 (GSI, TSIC, GEO Grid/AIST)・Landsat8画像 (courtesy of the U.S. Geological Survey)・海底地形 (GEBCO)",
-  "世界衛星モザイク画像: NASA LP DAAC, USGS/EROS Center",
   "GRUS画像 (© Axelspace)",
 ].join(" | ");
+
+/**
+ * 引いたとき (ズーム 8 まで) の下地。NASA GIBS の Blue Marble (2004 年 8 月、陰影つき)。
+ * 海は暗い紺で、地理院の写真 (9 から) の黒い海とつながる。GIBS は 8 までなので、9 からは引き伸ばす
+ */
+export const BLUE_MARBLE_TILES =
+  "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg";
+const GIBS = "https://nasa-gibs.github.io/gibs-api-docs/";
+/** Blue Marble の出典。NASA Earth Observatory の頼み (「NASA Earth Observatory」と書く) と、GIBS の謝辞の文 */
+export const BLUE_MARBLE_ATTRIBUTION = `Blue Marble: NASA Earth Observatory | <a href="${GIBS}" target="_blank" rel="noopener">NASA GIBS</a>`;
 
 /** 台湾の観測点の揺れ (TREM-RTS) の出典。授權頁の書き方 (全文は `#lib/notice.ts` の CREDITS) */
 export const RTS_ATTRIBUTION =
@@ -777,11 +792,19 @@ export function baseStyle(
         data: { type: "FeatureCollection", features: [] },
         attribution: SHELTER_ATTRIBUTION,
       },
+      "blue-marble": {
+        type: "raster",
+        tiles: [BLUE_MARBLE_TILES],
+        tileSize: 256,
+        minzoom: 0,
+        maxzoom: 8,
+        attribution: BLUE_MARBLE_ATTRIBUTION,
+      },
       photo: {
         type: "raster",
         tiles: [`${GSI}/seamlessphoto/{z}/{x}/{y}.jpg`],
         tileSize: 256,
-        minzoom: 2,
+        minzoom: PHOTO_MIN_ZOOM,
         maxzoom: 18,
         attribution: PHOTO_ATTRIBUTION,
       },
@@ -824,39 +847,29 @@ export function baseStyle(
       },
     },
     layers: [
+      // 引いたときの下地 (Blue Marble)。写真の出始め (9) から 1 段重ねて 10 まで残し、
+      // 境で写真のタイルを読んでいる間も白く抜けないようにする (写真は透かさない JPEG なので、重ね終われば上を覆う)
+      {
+        id: "blue-marble",
+        type: "raster",
+        source: "blue-marble",
+        maxzoom: PHOTO_MIN_ZOOM + 1,
+      },
+      // 写真は 9 から。陸の近くの海は Blue Marble の暗い紺より明るい青なので、半段かけて透かしから重ねる
       {
         id: "photo",
         type: "raster",
         source: "photo",
-        // ズーム 8 までの世界衛星モザイクは、海に撮った時期の違う画像の継ぎ目 (暗い筋と四角) が目立つ。
-        // 暗い所を少し持ち上げ、明暗の差と色を抑えて目立たなくする。陸の写真が細かくなる 10 からは元のまま
+        minzoom: PHOTO_MIN_ZOOM,
         paint: {
-          "raster-brightness-min": [
+          "raster-opacity": [
             "interpolate",
             ["linear"],
             ["zoom"],
-            8,
-            0.05,
-            10,
+            PHOTO_MIN_ZOOM,
             0,
-          ],
-          "raster-contrast": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            8,
-            -0.15,
-            10,
-            0,
-          ],
-          "raster-saturation": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            8,
-            -0.1,
-            10,
-            0,
+            PHOTO_MIN_ZOOM + 0.5,
+            1,
           ],
         },
       },
