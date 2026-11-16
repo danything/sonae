@@ -280,6 +280,75 @@ describe("地震情報の新旧の判定", () => {
       expect(store.ingest(wolfxIwate("7.1", later))).toEqual([]);
       expect(store.quakes()).toHaveLength(1);
     });
+
+    /** P2P の 551 の震度速報 (震源は無い。P2P の決まりで名前は空、深さ・M は -1) */
+    const p2pScaleOnly = () => {
+      const v = json("p2p/spec-551.json");
+      v.issue = {
+        source: "気象庁",
+        time: "2008/06/14 08:45:00",
+        type: "ScalePrompt",
+        correct: "None",
+      };
+      v.earthquake = {
+        ...(v.earthquake as object),
+        time: "2008/06/14 08:43:00",
+        hypocenter: {
+          name: "",
+          latitude: -200,
+          longitude: -200,
+          depth: -1,
+          magnitude: -1,
+        },
+        maxScale: 60,
+      };
+      // 震度速報の点は地域
+      v.points = [
+        { addr: "岩手県内陸南部", isArea: true, pref: "岩手県", scale: 60 },
+      ];
+      return p2p(v, "p2p-scale");
+    };
+
+    for (const [name, steps] of [
+      ["P2P → Wolfx → XML", [p2pScaleOnly, wolfxIwate, xml]],
+      ["Wolfx → P2P → XML", [wolfxIwate, p2pScaleOnly, xml]],
+    ] as [string, (() => Incoming)[]][]) {
+      test(`${name}: P2P が震度速報だけなら、震源・M・深さだけを Wolfx から補い、出典に残す`, () => {
+        const { store } = memoryStore();
+        const events = steps.slice(0, 2).flatMap((s) => store.ingest(s()));
+        const q = store.quakes()[0] as Quake;
+        expect(store.quakes()).toHaveLength(1);
+        expect(q).toMatchObject({
+          provisional: true,
+          hypocenter: { name: "岩手県内陸南部", depthKm: 10 },
+          magnitude: 7,
+          hypocenterSource: "wolfx",
+          // 震度は P2P のまま (Wolfx には地域ごとの震度が無い)
+          maxInt: "6+",
+        });
+        expect(q.areas).toEqual([
+          { name: "岩手県内陸南部", pref: "岩手県", int: "6+" },
+        ]);
+        // XML が来たら XML だけの姿になり、補った印は消える
+        events.push(...store.ingest(steps[2]?.() as Incoming));
+        const done = store.quakes()[0] as Quake;
+        expect(store.quakes()).toHaveLength(1);
+        expect(done.provisional).toBe(false);
+        expect(done.hypocenterSource).toBeUndefined();
+        // 通知は同じ事象 (同じ tag) で、二重に鳴らない
+        const tags = events.map((e) => noticeOf(e, NOW)?.tag);
+        expect(new Set(tags)).toEqual(new Set([`quake:${done.id}`]));
+      });
+    }
+
+    test("P2P に震源があれば、Wolfx の震源は使わない", () => {
+      const { store } = memoryStore();
+      store.ingest(wolfxIwate("7.1"));
+      store.ingest(p2pIwate());
+      const q = store.quakes()[0] as Quake;
+      expect(q.magnitude).toBe(6.9);
+      expect(q.hypocenterSource).toBeUndefined();
+    });
   });
 
   test("訓練の電文は別の地震として持ち、一覧には既定で出さない", () => {

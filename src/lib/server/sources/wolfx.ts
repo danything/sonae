@@ -4,18 +4,31 @@
  *
  * - 1 クライアント 1 接続。`all_eew` は Wolfx のすべての JSON API の配信を流すので、`type` で
  *   `jma_eew` と `jma_eqlist` だけを採り、ほか (中国の速報など) は捨てる
- * - つながったら `query_jmaeqlist` を 1 回送り、いまの一覧を受ける (切れていた間の分を埋める)
+ * - つながったら `query_jmaeqlist` を送り、いまの一覧を受ける (切れていた間の分を埋める)。
+ *   地震のときに Wolfx が一覧を自分から送ってくるかは確かめられていないので、つながっている間は
+ *   最後に一覧を受けてから 60 秒たつごとに問い合わせ直す (自分から送ってきたら、そこから数え直す)
  * - サーバーは約 1 分ごとに heartbeat を送る。応えて `ping` を送る (推奨されている)
  * - 原文 (`OriginalText`) は受けたら捨てる。raw_messages には鍵だけを残す
  */
 
 import { nowIso } from "#lib/server/time.ts";
 
-import { type Connect, runSocket, StatusTracker } from "./retry.ts";
+import {
+  type Connect,
+  runSocket,
+  type SocketLike,
+  StatusTracker,
+} from "./retry.ts";
 import type { Source, SourceContext } from "./types.ts";
 import { parseWolfx, parseWolfxEqlist } from "./wolfx-json.ts";
 
 export const WOLFX_WS = "wss://ws-api.wolfx.jp/all_eew";
+
+/**
+ * 地震情報の一覧を問い合わせ直す間隔。Wolfx の文書に回数の目安は無い (同じ接続を使い続け、つなぎ直しを
+ * 繰り返さないことだけが書かれている) ので、heartbeat と同じ 1 分にする。一覧は約 12KB で、1 日 17MB ほど
+ */
+export const EQLIST_POLL_MS = 60_000;
 
 export interface WolfxOptions {
   url?: string;
@@ -23,6 +36,8 @@ export interface WolfxOptions {
   log?: (m: string) => void;
   /** 地震情報の一覧の報の時刻 (受けた時刻)。テストで差し替える */
   now?: () => string;
+  /** 地震情報の一覧を問い合わせ直す間隔。テストで差し替える */
+  eqlistPollMs?: number;
 }
 
 export function wolfxSource(
@@ -31,6 +46,28 @@ export function wolfxSource(
 ): Source {
   const status = new StatusTracker("wolfx", ctx.onStatus);
   const now = opts.now ?? nowIso;
+  const pollMs = opts.eqlistPollMs ?? EQLIST_POLL_MS;
+  const log = opts.log ?? ((m: string) => console.log(m));
+  let poll: ReturnType<typeof setTimeout> | undefined;
+  /** いまつながっている接続。切れたら外す (切れた接続には問い合わせない) */
+  let current: SocketLike | undefined;
+
+  /** 次の問い合わせを pollMs 後に置き直す (問い合わせたときと、一覧を受けたとき) */
+  function schedule(ws: SocketLike) {
+    if (ws !== current) return;
+    clearTimeout(poll);
+    poll = setTimeout(() => query(ws), pollMs);
+  }
+  function query(ws: SocketLike) {
+    if (ws !== current) return;
+    try {
+      ws.send("query_jmaeqlist");
+    } catch (e) {
+      // 閉じかけの接続。close を受けたら止まり、つなぎ直したら onOpen から始め直す
+      log(`[wolfx] 地震情報の一覧を問い合わせられませんでした: ${e}`);
+    }
+    schedule(ws);
+  }
 
   /** 地震情報の一覧。一覧は毎回 50 件まるごと来るので、中身の変わった行だけを渡す */
   function eqlist(value: Record<string, unknown>) {
@@ -53,13 +90,22 @@ export function wolfxSource(
         connect: opts.connect,
         log: opts.log,
         onOpen(ws) {
-          ws.send("query_jmaeqlist");
+          current = ws;
+          query(ws);
+        },
+        onClose() {
+          // 切れている間は問い合わせない。つなぎ直したら onOpen から始め直す
+          current = undefined;
+          clearTimeout(poll);
+          poll = undefined;
         },
         onMessage(text, ws) {
           status.seen(false);
           const value = JSON.parse(text) as Record<string, unknown>;
           delete value.OriginalText;
           if (value.type === "jma_eqlist") {
+            // 問い合わせの答えでも、Wolfx が自分から送ってきたものでも、次の問い合わせはここから数える
+            schedule(ws);
             eqlist(value);
             return;
           }
