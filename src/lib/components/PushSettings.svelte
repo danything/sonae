@@ -352,12 +352,13 @@
         const sub = await (await registration()).pushManager.getSubscription();
         await sub?.unsubscribe();
       }
-      await fetch("/api/push", {
+      const res = await fetch("/api/push", {
         method: "DELETE",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ endpoint: target }),
       });
-      message = "解除しました";
+      // サーバーが消せなかったときは、解除できたと言わない (このブラウザの購読は外れていても、送り先が残る)
+      message = res.ok ? "解除しました" : `解除できませんでした (${res.status})`;
       await load();
     } catch (err) {
       message = `解除できませんでした: ${err}`;
@@ -384,6 +385,9 @@
             )?.message ??
             "試しの通知は続けて送れません。しばらくしてから送ってください")
           : `送れませんでした (${res.status})`;
+    } catch (err) {
+      // つながらないときも黙らない
+      message = `送れませんでした: ${err}`;
     } finally {
       busy = false;
     }
