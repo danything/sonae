@@ -7,31 +7,24 @@ import {
   planAlerts,
   quotaJson,
 } from "#lib/alert.ts";
-import { byPrefecture, type Cities, cityAt, homeOf } from "#lib/home.ts";
 import {
   areaLevel,
   type SonaeEvent,
   type WarningCode,
-  type WeatherInfo,
   type WeatherWarning,
 } from "#lib/model.ts";
 import {
   ADVISORY_QUOTA,
   isAdvisoryOnly,
+  jstDay,
   matches,
   noticeFor,
   noticeOf,
   type Sent,
 } from "#lib/notify.ts";
-import {
-  DEFAULT_PREFS,
-  type Home,
-  normalizePrefs,
-  type PushPrefs,
-} from "#lib/push.ts";
+import { type Home, normalizePrefs, type PushPrefs } from "#lib/push.ts";
 import {
   clean,
-  isFixed,
   OPENINGS,
   readoutCandidates,
   readoutOf,
@@ -39,47 +32,26 @@ import {
 } from "#lib/readout.ts";
 import { openDb } from "#lib/server/db.ts";
 import { planSends, sentLog, undoJob } from "#lib/server/notify.ts";
-import { parseWeatherXml } from "#lib/server/sources/jma-weather.ts";
 
-import { fixture } from "./helpers.ts";
+import { prefs, warningEvent as ev, weatherEvent } from "./events.ts";
+import {
+  homeAt,
+  toSpecialRain,
+  weatherInfo,
+  weatherWarning,
+} from "./helpers.ts";
 
-function warning(file: string, code: string, patch = (s: string) => s) {
-  const [item] = parseWeatherXml(patch(fixture(`jma/${file}`)), code);
-  if (item?.type !== "warning") throw new Error("警報・注意報ではありません");
-  return { ...item.warning, updatedAt: "" } as WeatherWarning;
-}
-function info(file: string, code: string) {
-  const [item] = parseWeatherXml(fixture(`jma/${file}`), code);
-  if (item?.type !== "weather") throw new Error("気象の報ではありません");
-  return { ...item.info, cancelled: false, updatedAt: "" } as WeatherInfo;
-}
-const ev = (data: WeatherWarning): SonaeEvent => ({
-  seq: 1,
-  type: "warning",
-  data,
-});
+const RAIN = "15_17_01_251222_VPWW55.xml";
 
 /** 島根県の大雨 (松江市にレベル３大雨警報、隠岐の島町はレベル２大雨注意報の解除) */
 const SHIMANE_AT = Date.parse("2024-11-02T11:30:00+09:00");
-const shimane = warning("15_17_01_251222_VPWW55.xml", "VPWW55");
+const shimane = weatherWarning(RAIN, "VPWW55");
 /** 同じ電文の大雨警報を大雨特別警報に書き換えた作り物 (特別警報のサンプル電文が無いため) */
-const special = warning("15_17_01_251222_VPWW55.xml", "VPWW55", (s) =>
-  s.replace(
-    /<Name>レベル３大雨警報<\/Name>\s*<Code>03<\/Code>/g,
-    "<Name>レベル５大雨特別警報</Name><Code>33</Code>",
-  ),
-);
+const special = weatherWarning(RAIN, "VPWW55", toSpecialRain);
 
+/** 住んでいる地域 (既定は松江市)。市町村等の表から引き、`patch` で上書きする */
 const home = (patch: Partial<Home> = {}): Home => ({
-  code: "3220100",
-  name: "島根県松江市",
-  quake: { code: "570", name: "島根県東部" },
-  office: "320000",
-  ichiji: "320010",
-  ...patch,
-});
-const prefs = (patch: Partial<PushPrefs> = {}): PushPrefs => ({
-  ...DEFAULT_PREFS,
+  ...homeAt(patch.code ?? "3220100"),
   ...patch,
 });
 
@@ -133,7 +105,7 @@ describe("気象警報・注意報の通知", () => {
       false,
     );
     // ほかの市町村の注意報は知らせない (全国の注意報は出さない)
-    const far = home({ code: "3220200", name: "島根県浜田市" });
+    const far = home({ code: "3220200" });
     expect(
       notice(advisory(), prefs({ home: far, weather: "everywhere" })),
     ).toBeNull();
@@ -225,6 +197,60 @@ describe("気象警報・注意報の通知", () => {
     expect(send(shimane, SHIMANE_AT + 180_000, false)[0]?.renotify).toBe(true);
   });
 
+  test("注意報の数を使い切った日も、解除・記録的短時間大雨情報・竜巻注意情報・特別警報は知らせる", () => {
+    const db = openDb(":memory:");
+    db.query(
+      "INSERT INTO push_subscriptions (endpoint, subject, p256dh, auth, prefs, label, created_at, updated_at) VALUES ('e1', 's', 'k', 'a', '{}', '', 0, 0)",
+    ).run();
+    const log = sentLog(db, "push_log");
+    /** その日の注意報の数を使い切ってから送る */
+    const send = (e: SonaeEvent, h: Home, now: number) => {
+      log.mark(
+        "e1",
+        ADVISORY_QUOTA.home,
+        { level: 0, digest: jstDay(now) },
+        now,
+      );
+      const base = noticeOf(e, now);
+      if (!base) throw new Error("通知の元が無い");
+      const target = { prefs: prefs({ home: h }) };
+      return planSends(db, log, base, [target], () => "e1", now);
+    };
+    // 使い切った日の注意報は送らない
+    expect(send(ev(advisory()), home(), SHIMANE_AT)).toEqual([]);
+    // 松江市の大雨警報を知らせた後に解除された
+    expect(send(ev(shimane), home(), SHIMANE_AT)[0]?.renotify).toBe(true);
+    const matsue = shimane.areas.find((a) => a.code === "3220100");
+    if (!matsue) throw new Error("松江市が無い");
+    const released: WeatherWarning = {
+      ...shimane,
+      areas: shimane.areas.filter((a) => a.code !== matsue.code),
+      released: [matsue],
+    };
+    const [end] = send(ev(released), home(), SHIMANE_AT + 60_000);
+    expect(end?.notice.closing).toBe(true);
+    expect(end?.renotify).toBe(false);
+    // どこかの特別警報
+    const [sp] = send(ev(special), home({ code: "1310100" }), SHIMANE_AT);
+    expect(sp?.notice.level).toBe(5);
+    expect(sp?.renotify).toBe(true);
+    // 記録的短時間大雨情報 (札幌市)・竜巻注意情報 (さいたま市)
+    const rain = weatherInfo("18_03_01_190412_VPOA50.xml", "VPOA50");
+    const [r] = send(
+      weatherEvent(rain),
+      homeAt("0110000"),
+      Date.parse(rain.reportedAt) + 60_000,
+    );
+    expect(r?.renotify).toBe(true);
+    const tornado = weatherInfo("19_08_03_250630_VPHW50.xml", "VPHW50");
+    const [t] = send(
+      weatherEvent(tornado),
+      homeAt("1110000"),
+      Date.parse("2015-07-17T09:30:00+09:00"),
+    );
+    expect(t?.renotify).toBe(true);
+  });
+
   test("解除の後に同じ市町村・同じ種別でまた出たら、前と同じ段でも鳴らす (画面とサーバー)", () => {
     const p = prefs({ home: home() });
     /** 松江市の大雨の警報・注意報の解除 */
@@ -291,7 +317,7 @@ describe("気象警報・注意報の通知", () => {
   });
 
   test("住んでいる地域の解除は、前に知らせた購読にだけ送る (閉じる通知)", () => {
-    const oki = home({ code: "3252800", name: "島根県隠岐の島町" });
+    const oki = home({ code: "3252800" });
     const n = notice(shimane, prefs({ home: oki }));
     expect(n?.closing).toBe(true);
     expect(n?.level).toBe(0);
@@ -300,7 +326,7 @@ describe("気象警報・注意報の通知", () => {
   });
 
   test("特別警報は、住んでいる地域でなくても知らせる (いつも)", () => {
-    const far = home({ code: "1310100", name: "東京都千代田区" });
+    const far = home({ code: "1310100" });
     const n = notice(special, prefs({ home: far }));
     expect(n?.tag).toBe("warning:special:320000:VPWW55");
     expect(n?.level).toBe(5);
@@ -322,7 +348,7 @@ describe("気象警報・注意報の通知", () => {
 
   test("同じ府県予報区のほかの市町村に特別警報が出ていたら、住んでいる地域の tag のまま特別警報を言う", () => {
     // 奥出雲町はレベル２大雨注意報、ほかの市町村に大雨特別警報
-    const okuizumo = home({ code: "3234300", name: "島根県奥出雲町" });
+    const okuizumo = home({ code: "3234300" });
     const n = notice(special, prefs({ home: okuizumo }));
     expect(n?.tag).toBe("warning:3234300:VPWW55");
     expect(n?.level).toBe(5);
@@ -332,7 +358,7 @@ describe("気象警報・注意報の通知", () => {
       true,
     );
     // 解除された市町村でも、特別警報を言いながら解除を添える (解除を落とさない)
-    const oki = home({ code: "3252800", name: "島根県隠岐の島町" });
+    const oki = home({ code: "3252800" });
     const m = notice(special, prefs({ home: oki }));
     expect(m?.tag).toBe("warning:3252800:VPWW55");
     expect(m?.body).toContain("大雨の警報・注意報は解除");
@@ -343,15 +369,19 @@ describe("気象警報・注意報の通知", () => {
     );
   });
 
-  test("「全国」なら、ほかの府県予報区の危険警報 (レベル 4) も府県予報区ごとに知らせる", () => {
+  test("「全国」なら、ほかの府県予報区の危険警報 (レベル 4) も府県予報区ごとに知らせる。警報 (レベル 3) は知らせない", () => {
     // 同じ電文の大雨警報を大雨危険警報に書き換えた作り物 (危険警報のサンプル電文が無いため)
-    const danger = warning("15_17_01_251222_VPWW55.xml", "VPWW55", (s) =>
+    const danger = weatherWarning(RAIN, "VPWW55", (s) =>
       s.replace(
         /<Name>レベル３大雨警報<\/Name>\s*<Code>03<\/Code>/g,
         "<Name>レベル４大雨危険警報</Name><Code>43</Code>",
       ),
     );
-    const far = home({ code: "1310100", name: "東京都千代田区" });
+    const far = home({ code: "1310100" });
+    // 島根県の大雨警報 (レベル 3) は、全国でも東京都千代田区には知らせない
+    expect(
+      notice(shimane, prefs({ home: far, weather: "everywhere" })),
+    ).toBeNull();
     const wide = notice(danger, prefs({ home: far, weather: "everywhere" }));
     expect(wide?.tag).toBe("warning:special:320000:VPWW55");
     expect(wide?.level).toBe(4);
@@ -409,23 +439,12 @@ describe("気象警報・注意報の通知", () => {
 });
 
 describe("記録的短時間大雨情報・竜巻注意情報の通知", () => {
-  const rain = info("18_03_01_190412_VPOA50.xml", "VPOA50");
+  const rain = weatherInfo("18_03_01_190412_VPOA50.xml", "VPOA50");
   const rainAt = Date.parse(rain.reportedAt) + 60_000;
-  const sapporo: Home = {
-    code: "0110000",
-    name: "北海道札幌市",
-    quake: { code: "101", name: "石狩地方北部" },
-    office: "016010",
-    ichiji: "016010",
-  };
-  const ev2 = (data: WeatherInfo): SonaeEvent => ({
-    seq: 1,
-    type: "weather",
-    data,
-  });
+  const sapporo = homeAt("0110000");
 
   test("住んでいる地域 (一次細分区域) が対象なら知らせる", () => {
-    const base = noticeOf(ev2(rain), rainAt);
+    const base = noticeOf(weatherEvent(rain), rainAt);
     if (!base) throw new Error("通知の元が無い");
     const n = noticeFor(base, prefs({ home: sapporo }));
     expect(n?.title).toBe("記録的短時間大雨情報 北海道札幌市");
@@ -438,81 +457,25 @@ describe("記録的短時間大雨情報・竜巻注意情報の通知", () => {
     expect(noticeFor(base, prefs({ home: home() }))).toBeNull();
   });
 
-  test("竜巻注意情報は有効期限を過ぎたら知らせない。洪水予報・熱中症・台風は知らせない", () => {
-    const tornado = info("19_08_03_250630_VPHW50.xml", "VPHW50");
+  test("竜巻注意情報は有効期限を過ぎたら知らせない。洪水予報・熱中症・台風・府県気象防災速報は知らせない", () => {
+    const tornado = weatherInfo("19_08_03_250630_VPHW50.xml", "VPHW50");
     const at = Date.parse("2015-07-17T09:30:00+09:00");
-    expect(noticeOf(ev2(tornado), at)).not.toBeNull();
+    expect(noticeOf(weatherEvent(tornado), at)).not.toBeNull();
     expect(
-      noticeOf(ev2(tornado), Date.parse("2015-07-17T10:31:00+09:00")),
+      noticeOf(weatherEvent(tornado), Date.parse("2015-07-17T10:31:00+09:00")),
     ).toBeNull();
-    const flood = info("16_09_01_260312_VXKOii.xml", "VXKO53");
-    expect(
-      noticeOf(ev2(flood), Date.parse(flood.reportedAt) + 60_000),
-    ).toBeNull();
-  });
-});
-
-describe("住んでいる地域を選ぶ", () => {
-  const cities: Cities = {
-    "3220100": ["松江市", "島根県松江市", "320000", "320010", "320011", "570"],
-    "3220300": ["出雲市", "島根県出雲市", "320000", "320010", "320012", "570"],
-    "1310100": [
-      "千代田区",
-      "東京都千代田区",
-      "130000",
-      "130010",
-      "130011",
-      "350",
-    ],
-  };
-  test("市町村等の表から、地震情報／細分区域と府県予報区を引く", () => {
-    expect(homeOf("3220100", cities, new Map([["570", "島根県東部"]]))).toEqual(
-      {
-        code: "3220100",
-        name: "島根県松江市",
-        quake: { code: "570", name: "島根県東部" },
-        office: "320000",
-        ichiji: "320010",
-        // 表に津波予報区の列が無ければ、海に面していないものとして空
-        tsunami: [],
-      },
-    );
-    expect(homeOf("9999999", cities, new Map())).toBeNull();
-  });
-  test("都道府県ごとに束ねる", () => {
-    expect(byPrefecture(cities).map((g) => [g.pref, g.cities.length])).toEqual([
-      ["東京都", 1],
-      ["島根県", 2],
-    ]);
-  });
-  test("位置が入る市町村等 (穴は外す)", () => {
-    const features = [
-      {
-        properties: { code: "1" },
-        geometry: {
-          type: "Polygon" as const,
-          coordinates: [
-            [
-              [0, 0],
-              [10, 0],
-              [10, 10],
-              [0, 10],
-              [0, 0],
-            ],
-            [
-              [4, 4],
-              [6, 4],
-              [6, 6],
-              [4, 6],
-              [4, 4],
-            ],
-          ] as [number, number][][],
-        },
-      },
-    ];
-    expect(cityAt(2, 2, features)).toBe("1");
-    expect(cityAt(5, 5, features)).toBeNull();
-    expect(cityAt(20, 20, features)).toBeNull();
+    for (const [file, code] of [
+      ["16_09_01_260312_VXKOii.xml", "VXKO53"], // 指定河川洪水予報
+      ["57_03_01_240401_VPFT50.xml", "VPFT50"], // 熱中症警戒アラート
+      ["10_04_07_170916_VPTW60.xml", "VPTW60"], // 台風解析・予報情報
+      ["82_01_01_260324_VPBS50.xml", "VPBS50"], // 府県気象防災速報 (線状降水帯)
+    ] as const) {
+      const i = weatherInfo(file, code);
+      // 古すぎて外れたのではないことを、出てすぐの時刻で確かめる
+      expect(
+        noticeOf(weatherEvent(i), Date.parse(i.reportedAt) + 60_000),
+      ).toBeNull();
+    }
   });
 });
 
@@ -531,23 +494,13 @@ describe("気象の読み上げ", () => {
   });
 
   test("土砂災害危険警報 (前の土砂災害警戒情報) は危険警報の決まった文", () => {
-    const sabo = warning("15_16_01_241031_VPWW56.xml", "VPWW56");
+    const sabo = weatherWarning("15_16_01_241031_VPWW56.xml", "VPWW56");
     const wakkanai = sabo.areas.find((a) => a.name === "稚内市");
     if (!wakkanai) throw new Error("稚内市が無い");
     const at = Date.parse(sabo.reportedAt) + 60_000;
     const base = noticeOf(ev(sabo), at);
     if (!base) throw new Error("通知の元が無い");
-    const n = noticeFor(
-      base,
-      prefs({
-        home: home({
-          code: wakkanai.code,
-          name: "北海道稚内市",
-          office: "011000",
-          ichiji: "011011",
-        }),
-      }),
-    );
+    const n = noticeFor(base, prefs({ home: home({ code: wakkanai.code }) }));
     if (!n) throw new Error("通知が無い");
     const parts = readoutOf(n);
     expect(parts.slice(0, 2)).toEqual([
@@ -568,24 +521,20 @@ describe("気象の読み上げ", () => {
     for (const p of parts) expect(all).toContain(p);
     // 特別警報の出ていない市町村に住んでいても、特別警報と自分の地域の文がどれも通る
     const other = special.areas.find((a) => areaLevel(a) < 5);
-    if (other) {
-      const mixed = notice(
-        special,
-        prefs({ home: home({ code: other.code }) }),
-      );
-      if (!mixed) throw new Error("通知が無い");
-      expect(mixed.special).toBe(true);
-      for (const p of readoutOf(mixed)) expect(all).toContain(p);
-    }
+    if (!other) throw new Error("特別警報の出ていない市町村が無い");
+    const mixed = notice(special, prefs({ home: home({ code: other.code }) }));
+    if (!mixed) throw new Error("通知が無い");
+    expect(mixed.special).toBe(true);
+    for (const p of readoutOf(mixed)) expect(all).toContain(p);
     // 地域を選んでいなくても、特別警報は読む
     const anywhere = notice(special, prefs());
     expect(anywhere && readoutOf(anywhere)[0]).toBe(OPENINGS.weatherSpecial);
   });
 
   test("記録的短時間大雨情報・竜巻注意情報は、決まった文と気象庁の見出しだけ。竜巻は有効期限を足す", () => {
-    const rain = info("18_03_01_190412_VPOA50.xml", "VPOA50");
+    const rain = weatherInfo("18_03_01_190412_VPOA50.xml", "VPOA50");
     const r = noticeOf(
-      { seq: 1, type: "weather", data: rain },
+      weatherEvent(rain),
       Date.parse(rain.reportedAt) + 60_000,
     );
     if (!r) throw new Error("通知が無い");
@@ -594,9 +543,9 @@ describe("気象の読み上げ", () => {
       ...sentences(clean(rain.headline)),
     ]);
     expect(readoutOf(r).join("")).toContain("札幌市中央区付近で約100ミリ");
-    const tornado = info("19_08_03_250630_VPHW50.xml", "VPHW50");
+    const tornado = weatherInfo("19_08_03_250630_VPHW50.xml", "VPHW50");
     const t = noticeOf(
-      { seq: 1, type: "weather", data: tornado },
+      weatherEvent(tornado),
       Date.parse("2015-07-17T09:30:00+09:00"),
     );
     if (!t) throw new Error("通知が無い");
@@ -606,17 +555,5 @@ describe("気象の読み上げ", () => {
       "埼玉県南部、北部は、竜巻などの激しい突風が発生しやすい気象状況になっています。",
     );
     expect(parts.at(-1)).toMatch(/^この情報は\d+時\d+分まで有効です。$/);
-  });
-
-  test("決まった文は前もって合成する文に入っている", () => {
-    for (const k of [
-      "weatherSpecial",
-      "weatherDanger",
-      "weatherWarning",
-      "weatherAdvisory",
-      "recordRain",
-      "tornado",
-    ] as const)
-      expect(isFixed(OPENINGS[k])).toBe(true);
   });
 });

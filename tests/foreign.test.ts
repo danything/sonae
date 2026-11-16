@@ -9,7 +9,6 @@ import {
 } from "#lib/model.ts";
 import { noticeOf } from "#lib/notify.ts";
 import { pollSource } from "#lib/server/sources/poll.ts";
-import type { Incoming, SourceContext } from "#lib/server/sources/types.ts";
 import {
   parseUsgs,
   USGS_DAY_FEED,
@@ -17,22 +16,9 @@ import {
   usgsSource,
 } from "#lib/server/sources/usgs.ts";
 
-import { fixture, memoryStore } from "./helpers.ts";
+import { fixture, memoryStore, sourceContext as context } from "./helpers.ts";
 
 const USGS = fixture("usgs/4.5_day.geojson");
-
-export function context() {
-  const got: Incoming[] = [];
-  const keys = new Set<string>();
-  const ctx: SourceContext = {
-    emit: (m) => {
-      got.push(m);
-      keys.add(`${m.source}:${m.key}`);
-    },
-    seen: (s, k) => keys.has(`${s}:${k}`),
-  };
-  return { ctx, got };
-}
 
 const report = (over: Partial<ForeignReport> = {}): ForeignReport => ({
   source: "usgs",

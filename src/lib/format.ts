@@ -68,7 +68,7 @@ export const STATUS_LABEL: Record<Status, string> = {
   test: "試験",
 };
 
-/** 情報源の名前 (状態・発表された情報・緊急地震速報の帯) */
+/** 情報源の名前 (受信の状態・詳しい内容・起動のログ) */
 export const SOURCE_LABEL: Record<SourceId, string> = {
   jma: "気象庁 防災情報 XML",
   "jma-weather": "気象庁 防災情報 XML (気象)",

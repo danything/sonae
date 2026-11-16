@@ -9,26 +9,12 @@ import {
   bosaiTsunamiText,
   parseBosaiTsunamiList,
 } from "#lib/server/sources/jma-bosai.ts";
-import type { Incoming, SourceContext } from "#lib/server/sources/types.ts";
 
-import { fixture, memoryStore } from "./helpers.ts";
+import { fixture, memoryStore, sourceContext as context } from "./helpers.ts";
 
 const LIST = fixture("jma-bosai/list.json");
 const FNAME = "20261025022014_0_WEPA40_RJTD.txt";
 const TEXT = fixture(`jma-bosai/${FNAME}`);
-
-function context() {
-  const got: Incoming[] = [];
-  const keys = new Set<string>();
-  const ctx: SourceContext = {
-    emit: (m) => {
-      got.push(m);
-      keys.add(`${m.source}:${m.key}`);
-    },
-    seen: (s, k) => keys.has(`${s}:${k}`),
-  };
-  return { ctx, got };
-}
 
 test("一覧: 新しい順。形の違う項目は飛ばし、配列でなければ例外", () => {
   const list = parseBosaiTsunamiList(LIST);

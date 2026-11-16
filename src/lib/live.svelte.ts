@@ -86,7 +86,7 @@ export class Live {
   connected = $state(false);
   /** ブラウザで load の中身を入れた (サーバーの描画では false のまま、load の data を使う) */
   seeded = $state(false);
-  /** いまの時刻 (緊急地震速報の帯を、時間が経ったら下ろすため。10 秒ごとに進める) */
+  /** いまの時刻 (有効期限と「いま出ている」の判定に使う。10 秒ごとに進める) */
   now = $state(Date.now());
   private lastSeq = 0;
   private source: EventSource | undefined;

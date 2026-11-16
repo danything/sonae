@@ -2,11 +2,10 @@ import { expect, test } from "bun:test";
 
 import type { ForeignQuake } from "#lib/model.ts";
 import { EMSC_WS, emscSource, parseEmsc } from "#lib/server/sources/emsc.ts";
-import { Backoff, type SocketLike } from "#lib/server/sources/retry.ts";
-import type { Incoming, SourceContext } from "#lib/server/sources/types.ts";
+import { Backoff } from "#lib/server/sources/retry.ts";
 import { parseUsgs } from "#lib/server/sources/usgs.ts";
 
-import { fixture, memoryStore } from "./helpers.ts";
+import { FakeSocket, fixture, memoryStore, sourceContext } from "./helpers.ts";
 
 const lines = fixture("emsc/made-messages.jsonl").trim().split("\n");
 const BIG = lines[0] ?? ""; // M4.8 パプアニューギニア (USGS の fixture と同じ地震)
@@ -59,30 +58,8 @@ test("USGS と同じ地震は 1 つにまとめる (重ねて出さない)", () 
   expect(store.foreignQuakes()).toHaveLength(3);
 });
 
-class FakeSocket implements SocketLike {
-  private on: Record<string, ((e: never) => void)[]> = {};
-  addEventListener(type: string, fn: (e: never) => void) {
-    (this.on[type] ??= []).push(fn);
-  }
-  fire(type: string, e?: unknown) {
-    for (const fn of this.on[type] ?? []) fn(e as never);
-  }
-  send() {}
-  close() {
-    this.fire("close");
-  }
-}
-
 test("つないで受け、読めない 1 通は捨て、切れたら間を置いて張り直す", async () => {
-  const got: Incoming[] = [];
-  const keys = new Set<string>();
-  const ctx: SourceContext = {
-    emit: (m) => {
-      got.push(m);
-      keys.add(m.key);
-    },
-    seen: (_s, k) => keys.has(k),
-  };
+  const { ctx, got } = sourceContext();
   const sockets: FakeSocket[] = [];
   const urls: string[] = [];
   const waits: number[] = [];

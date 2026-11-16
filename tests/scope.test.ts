@@ -1,4 +1,7 @@
-/** 通知の範囲 (全国 / 住んでいる地域と現在地 / 知らせない) のうち、津波と画面の文と表 (docs/design.md の 2.4) */
+/**
+ * 通知の範囲 (全国 / 住んでいる地域と現在地 / 知らせない) のうち、津波・地震の震度・緊急地震速報の予報の続報と、
+ * 画面の文と市町村等の表 (docs/design.md の 2.4)
+ */
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
@@ -8,8 +11,7 @@ import {
   planEntry,
   presentEvents,
 } from "#lib/alert.ts";
-import { type Cities, homeOf } from "#lib/home.ts";
-import type { Intensity } from "#lib/model.ts";
+import type { Intensity, SonaeEvent } from "#lib/model.ts";
 import type { Sent } from "#lib/notify.ts";
 import {
   homeNote,
@@ -19,25 +21,18 @@ import {
   scopeText,
 } from "#lib/notify.ts";
 import {
-  type Home,
   normalizePrefs,
+  type PushPrefs,
   quakeMinOf,
   SCOPE_KINDS,
   SCOPES,
   withQuakeMin,
 } from "#lib/push.ts";
+import { openDb } from "#lib/server/db.ts";
+import { planSends, sentLog } from "#lib/server/notify.ts";
 
-import { NOW, prefs, quake, tsunami } from "./events.ts";
-
-const cities = JSON.parse(
-  readFileSync(new URL("../static/areas/cities.json", import.meta.url), "utf8"),
-) as Cities;
-const quakeNames = new Map<string, string>();
-const at = (code: string): Home => {
-  const h = homeOf(code, cities, quakeNames);
-  if (!h) throw new Error(`市町村等 ${code} が表にありません`);
-  return h;
-};
+import { eew, NOW, prefs, quake, tsunami } from "./events.ts";
+import { cities, homeAt as at } from "./helpers.ts";
 
 describe("市町村等の表の津波予報区 (気象庁の市町村対応表から)", () => {
   test("沿岸の市町村等に予報区が付き、海に面していない所は空", () => {
@@ -190,23 +185,16 @@ describe("津波", () => {
 });
 
 describe("地震の震度", () => {
-  // 判定だけを見るので、地震情報／細分区域は直に書く
-  const place = (code: string, name: string, qc: string, qn: string): Home => ({
-    code,
-    name,
-    quake: { code: qc, name: qn },
-    office: null,
-    ichiji: null,
-  });
-  const chiba = place("1210000", "千葉県千葉市", "340", "千葉県北西部");
-  const kashiwa = place("1221700", "千葉県柏市", "340", "千葉県北西部");
-  const maebashi = place("1020100", "群馬県前橋市", "420", "群馬県南部");
+  // 千葉市と柏市は千葉県北西部、前橋市は群馬県南部
+  const chiba = at("1210000");
+  const kashiwa = at("1221700");
+  const maebashi = at("1020100");
   const q = (maxInt: Intensity, local: Intensity) =>
     noticeOf(
       quake({
         maxInt,
         areas: [
-          { code: "340", name: "千葉県北西部", int: local },
+          { code: "341", name: "千葉県北西部", int: local },
           { code: "100", name: "石狩地方北部", int: maxInt },
         ],
       }),
@@ -268,6 +256,44 @@ describe("地震の震度", () => {
   });
 });
 
+describe("緊急地震速報の予報の続報 (住んでいる地域と現在地)", () => {
+  // 柏市は千葉県北西部
+  const near = prefs({ eew: "nearby", home: at("1221700") });
+
+  /** サーバーの送り先 1 つ。送ると決めたら控える */
+  function server(p: PushPrefs) {
+    const db = openDb(":memory:");
+    db.query(
+      "INSERT INTO push_subscriptions (endpoint, subject, p256dh, auth, prefs, label, created_at, updated_at) VALUES ('e1', 's', 'k', 'a', '{}', '', 0, 0)",
+    ).run();
+    const log = sentLog(db, "push_log");
+    return (e: SonaeEvent) => {
+      const n = noticeOf(e, NOW);
+      if (!n) throw new Error("通知が無い");
+      return planSends(db, log, n, [{ prefs: p }], () => "e1", NOW);
+    };
+  }
+
+  test("地域の無い予報で知らせた後、同じ地震の続報で地域が付いても鳴らし直さない", () => {
+    const send = server(near);
+    expect(send(eew()).map((j) => j.renotify)).toEqual([true]);
+    expect(send(eew({ serial: 2, areas: ["千葉県北西部"] }))).toEqual([]);
+    // 住んでいる地域でない地域が付いても同じ
+    expect(send(eew({ serial: 3, areas: ["茨城県南部"] }))).toEqual([]);
+  });
+
+  test("地域が付いて初めて住んでいる地域が当たったら、初めての通知として鳴らす", () => {
+    const send = server(near);
+    // 初めの報はほかの地域だけが並び、知らせない
+    expect(send(eew({ areas: ["茨城県南部"] }))).toEqual([]);
+    expect(
+      send(eew({ serial: 2, areas: ["茨城県南部", "千葉県北西部"] })).map(
+        (j) => j.renotify,
+      ),
+    ).toEqual([true]);
+  });
+});
+
 describe("画面の文", () => {
   test("どの種類と範囲にも、何を知らせるかの 1 文がある", () => {
     for (const k of SCOPE_KINDS)
@@ -286,14 +312,20 @@ describe("画面の文", () => {
     );
     // 特別警報にあたるものは「知らせない」でも知らせる
     expect(scopeText("weather", "off")).toBe(
-      "どこに出た特別警報だけを知らせます。",
+      "特別警報だけを、どこに出ても知らせます。",
     );
     expect(scopeText("tsunami", "off")).toContain("大津波警報だけ");
     expect(scopeText("volcano", "off")).toContain(
       "噴火警報 (レベル 4・5) だけ",
     );
     expect(scopeText("eew", "everywhere")).toContain("予報");
-    expect(scopeText("weather", "nearby")).toContain("1 日 1 回");
+    // 気象の注意報は 1 日 1 回まで (全国でも住んでいる地域と現在地でも)
+    expect(scopeText("weather", "everywhere")).toContain(
+      "注意報だけの通知は 1 日 1 回までです。",
+    );
+    expect(scopeText("weather", "nearby")).toContain(
+      "注意報だけの通知は 1 日 1 回までです。",
+    );
     // 予想震度の数字は書かない
     for (const s of SCOPES) expect(scopeText("eew", s)).not.toMatch(/震度/);
   });

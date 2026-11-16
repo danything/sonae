@@ -128,8 +128,6 @@ test("登録が例外で止まったときも、訳と代わりの道を言う",
 });
 
 describe("通知の許可が無いときの文", () => {
-  const EDGE_ANDROID =
-    "Mozilla/5.0 (Linux; Android 15; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Mobile Safari/537.36 EdgA/143.0.3650.97";
   const EDGE_DESKTOP =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.3650.97";
 

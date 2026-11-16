@@ -1,6 +1,6 @@
 /**
  * 開いているときの通知・音・読み上げ (docs/design.md の 2.4)。SSE で受けたイベントを、Web Push と同じ判定
- * (`#lib/notify.ts` の noticeOf・decide) にかけ、鳴らすときだけ OS の通知と短い音 (`<audio>`) と読み上げをする。
+ * (`#lib/notify.ts` の noticeOf・decideDaily) にかけ、鳴らすときだけ OS の通知と短い音 (`<audio>`) と読み上げをする。
  *
  * - OS の通知 (`showNotification`) は、通知の許可があれば操作の前でも OS の通知音で鳴る。中身は Web Push と
  *   同じ (`pageNotification`)。同じ事象が Web Push でも届くときは、後から出すほうが鳴らさない (`isShown`)。

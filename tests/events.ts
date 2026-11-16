@@ -1,5 +1,12 @@
-/** 通知の判定のテストで使うイベントの組み立て (push.test.ts・alert.test.ts) */
-import type { Eew, Quake, SonaeEvent, Tsunami } from "#lib/model.ts";
+/** 通知・読み上げ・画面のテストで使うイベントと通知の条件の組み立て */
+import type {
+  Eew,
+  Quake,
+  SonaeEvent,
+  Tsunami,
+  WeatherInfo,
+  WeatherWarning,
+} from "#lib/model.ts";
 import { DEFAULT_PREFS, type PushPrefs } from "#lib/push.ts";
 
 export const NOW = Date.parse("2026-11-14T00:10:00Z");
@@ -14,7 +21,7 @@ export function quake(over: Partial<Quake> = {}): SonaeEvent {
     magnitude: 5.1,
     maxInt: "4",
     areas: [
-      { code: "340", name: "千葉県北西部", int: "4" },
+      { code: "341", name: "千葉県北西部", int: "4" },
       { code: "350", name: "東京都２３区", int: "3" },
     ],
     stations: [],
@@ -70,6 +77,18 @@ export function tsunami(over: Partial<Tsunami> = {}): SonaeEvent {
   };
   return { seq: 3, type: "tsunami", data: t };
 }
+
+export const warningEvent = (data: WeatherWarning): SonaeEvent => ({
+  seq: 1,
+  type: "warning",
+  data,
+});
+
+export const weatherEvent = (data: WeatherInfo): SonaeEvent => ({
+  seq: 1,
+  type: "weather",
+  data,
+});
 
 export const prefs = (over: Partial<PushPrefs> = {}): PushPrefs => ({
   ...DEFAULT_PREFS,

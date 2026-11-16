@@ -1,6 +1,6 @@
 /**
  * 開いているときの通知・音・読み上げの、DOM を使わない部分 (docs/design.md の 2.4)。
- * 知らせる判定は Web Push と同じ `#lib/notify.ts` の noticeOf・decide を使う。鳴らすのは `alerter.svelte.ts`。
+ * 知らせる判定は Web Push と同じ `#lib/notify.ts` の noticeOf・decideDaily (`decide` に注意報の 1 日 1 回を足したもの) を使う。鳴らすのは `alerter.svelte.ts`。
  */
 
 import {

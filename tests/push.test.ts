@@ -13,10 +13,9 @@ import {
 } from "#lib/server/notify.ts";
 import { parseSubscription, Pusher, vapidFromEnv } from "#lib/server/push.ts";
 import { RateLimit } from "#lib/server/rate.ts";
-import { parseJmaXml } from "#lib/server/sources/jma-xml.ts";
 
 import { eew, NOW, prefs, quake, tsunami } from "./events.ts";
-import { codeOf, fixture, memoryStore } from "./helpers.ts";
+import { jmaIncoming, memoryStore } from "./helpers.ts";
 
 const b64url = (b: ArrayBuffer | Uint8Array) =>
   Buffer.from(b instanceof Uint8Array ? b : new Uint8Array(b)).toString(
@@ -31,6 +30,16 @@ async function testJwk(): Promise<string> {
     ["sign", "verify"],
   );
   return JSON.stringify(await crypto.subtle.exportKey("jwk", pair.privateKey));
+}
+
+/** 試しの VAPID の鍵 (連絡先は PUBLIC_URL) */
+async function testVapid() {
+  const { vapid } = vapidFromEnv({
+    VAPID_PRIVATE_JWK: await testJwk(),
+    PUBLIC_URL: "https://s.example",
+  });
+  if (!vapid) throw new Error("鍵が無い");
+  return vapid;
 }
 
 /** ブラウザの購読の代わり (鍵は本物の P-256 の点) */
@@ -67,7 +76,7 @@ describe("通知の条件", () => {
         home: {
           code: "1221700",
           name: "千葉県柏市",
-          quake: { code: "340", name: "千葉県北西部" },
+          quake: { code: "341", name: "千葉県北西部" },
           office: "120000",
           ichiji: "120010",
           lat: 35.8,
@@ -76,7 +85,7 @@ describe("通知の条件", () => {
     ).toEqual({
       code: "1221700",
       name: "千葉県柏市",
-      quake: { code: "340", name: "千葉県北西部" },
+      quake: { code: "341", name: "千葉県北西部" },
       office: "120000",
       ichiji: "120010",
     });
@@ -84,7 +93,7 @@ describe("通知の条件", () => {
 
   test("前の形の「現在地」(地震情報の細分区域だけ) は読まない (選び直してもらう)", () => {
     expect(
-      normalizePrefs({ area: { code: "340", name: "千葉県北西部" } }).home,
+      normalizePrefs({ area: { code: "341", name: "千葉県北西部" } }).home,
     ).toBeNull();
   });
 
@@ -123,7 +132,7 @@ describe("通知の条件", () => {
       // 最大震度の段は、地震を知らせる震度として生かす (2026-11-16 に震度の選択を戻した)
     ).toEqual({ ...DEFAULT_PREFS, quakeMin: "5+" });
     expect(normalizePrefs({ tsunami: "warning" }).tsunami).toBe("everywhere");
-    // 「知らない」は知らせないのまま
+    // 「知らせない」は「知らせない」のまま
     expect(
       normalizePrefs({
         eew: "off",
@@ -191,7 +200,7 @@ describe("通知の条件", () => {
 });
 
 describe("何を知らせるか", () => {
-  test("最大震度が閾値に届けば通知し、届かなければ現在地の震度で見る", () => {
+  test("最大震度が閾値に届けば通知し、届かなければ住んでいる地域の震度で見る", () => {
     const n3 = noticeOf(
       quake({
         maxInt: "3",
@@ -269,7 +278,7 @@ describe("何を知らせるか", () => {
     const area = (name: string) => ({
       code: "1221700",
       name: "千葉県柏市",
-      quake: { code: "340", name },
+      quake: { code: "341", name },
       office: "120000",
       ichiji: "120010",
     });
@@ -294,7 +303,7 @@ describe("何を知らせるか", () => {
     const area = (name: string) => ({
       code: "1221700",
       name: "千葉県柏市",
-      quake: { code: "340", name },
+      quake: { code: "341", name },
       office: "120000",
       ichiji: "120010",
     });
@@ -493,11 +502,7 @@ describe("Service Worker に渡す形", () => {
 describe("送り手", () => {
   async function setup(status: (url: string) => number) {
     const db = openDb(":memory:");
-    const { vapid } = vapidFromEnv({
-      VAPID_PRIVATE_JWK: await testJwk(),
-      PUBLIC_URL: "https://s.example",
-    });
-    if (!vapid) throw new Error("鍵が無い");
+    const vapid = await testVapid();
     const calls: { url: string; headers: Headers }[] = [];
     const fakeFetch = (async (url: string, init?: RequestInit) => {
       calls.push({ url, headers: new Headers(init?.headers) });
@@ -529,7 +534,7 @@ describe("送り手", () => {
     };
     pusher.save("me", b, prefs({ quake: "nearby", home: tokyo }), "Firefox");
     const first = quake({
-      areas: [{ code: "340", name: "千葉県北西部", int: "4" }],
+      areas: [{ code: "341", name: "千葉県北西部", int: "4" }],
     });
 
     expect(await pusher.handle(first)).toEqual(["ok"]);
@@ -668,11 +673,7 @@ async function decrypt(
 }
 
 test("送った本文は RFC 8291 (aes128gcm) でブラウザが復号できる", async () => {
-  const { vapid } = vapidFromEnv({
-    VAPID_PRIVATE_JWK: await testJwk(),
-    PUBLIC_URL: "https://s.example",
-  });
-  if (!vapid) throw new Error("鍵が無い");
+  const vapid = await testVapid();
   const ua = await crypto.subtle.generateKey(
     { name: "ECDH", namedCurve: "P-256" },
     true,
@@ -748,11 +749,7 @@ test("緊急地震速報は報ごとに M が変わっても送り直さず、�
 
 test("前に届いた事象の続報が送れなかったら、控えを送る前に戻す (次の続報で鳴らし直さない)。持ち主が替わったら控えを捨てる", async () => {
   const db = openDb(":memory:");
-  const { vapid } = vapidFromEnv({
-    VAPID_PRIVATE_JWK: await testJwk(),
-    PUBLIC_URL: "https://s.example",
-  });
-  if (!vapid) throw new Error("鍵が無い");
+  const vapid = await testVapid();
   let status = 201;
   const fakeFetch = (async () =>
     new Response(null, { status })) as unknown as typeof fetch;
@@ -786,16 +783,8 @@ test("前に届いた事象の続報が送れなかったら、控えを送る�
 
 describe("震源が決まる前の通知の文言", () => {
   test("気象庁の震度速報 (VXSE51): 見出しは最大震度と最初の地域「など」、本文は検知の時刻 (分まで) と「頃」", () => {
-    const file = "32-35_01_01_100806_VXSE51.xml";
-    const body = fixture(`jma/${file}`);
     const { store } = memoryStore("2009-08-10T20:09:00Z");
-    const [e] = store.ingest({
-      source: "jma",
-      key: file,
-      code: codeOf(file),
-      body,
-      items: parseJmaXml(body, codeOf(file)),
-    });
+    const [e] = store.ingest(jmaIncoming("32-35_01_01_100806_VXSE51.xml"));
     if (!e) throw new Error("イベントが無い");
     const n = noticeOf(e, Date.parse("2009-08-10T20:10:00Z"));
     expect(n && { title: n.title, body: n.body, level: n.level }).toEqual({
@@ -870,11 +859,7 @@ describe("送れなかったことと続報が重なるとき", () => {
 
   async function setup() {
     const db = openDb(":memory:");
-    const { vapid } = vapidFromEnv({
-      VAPID_PRIVATE_JWK: await testJwk(),
-      PUBLIC_URL: "https://s.example",
-    });
-    if (!vapid) throw new Error("鍵が無い");
+    const vapid = await testVapid();
     const held = heldFetch();
     const pusher = new Pusher(db, vapid, { fetch: held.fetch, now: () => NOW });
     const sub = parseSubscription(

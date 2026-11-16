@@ -26,11 +26,13 @@ import {
   type Tsunami,
   type TsunamiGrade,
   tsunamiGradeLabel,
+  tsunamiTop,
   type Volcano,
   VOLCANO_RESIDENTIAL,
   volcanoTop,
   WARNING_PHENOMENON,
   type WarningArea,
+  warningLevelLabel,
   WEATHER_INFO_LABEL,
   type WeatherInfo,
   type WeatherWarning,
@@ -45,10 +47,10 @@ import {
 } from "#lib/push.ts";
 import { OFFICE_PREFIX, selectHref } from "#lib/view.ts";
 
-/** 押したときに開く所 (1 つの画面で、その件を選んだ URL。docs/ui.md) */
+/** 押したときに開く所 (`url`) を組む元の空の条件 (1 つの画面で、その件を選んだ URL。docs/ui.md) */
 const NONE = new URLSearchParams();
 
-/** 1 つのイベントから作る通知。購読ごとに matches で絞り、plan で鳴らすかを決める */
+/** 1 つのイベントから作る通知。送り先ごとに `matches` で絞り、`decideDaily` で鳴らすかを決める */
 export interface Notice {
   /** 事象の id。同じ事象の続報は、この tag で前の通知を置き換える */
   tag: string;
@@ -67,10 +69,14 @@ export interface Notice {
   at: number;
   /**
    * 続報を送り直すかを見る値。無ければ見出しと本文。緊急地震速報は 1 分ほどの間に報が何十も出て、
-   * 報ごとに M や震源が少しずつ変わるので、警報の地域が増えたときだけ送り直す
+   * 報ごとに M や震源が少しずつ変わるので、警報は警報の地域が増えたときだけ、予報は決まった値で送り直さない。
+   * 津波の「住んでいる地域と現在地」は、見出しと本文にそこの区分の重さを足す (`noticeFor`)
    */
   changeKey?: string;
-  /** 気象の特別警報を、住んでいる地域でなくても知らせるもの (いつも知らせる) */
+  /**
+   * 住んでいる地域でなく、府県予報区ごとに知らせる気象の通知 (どこかの特別警報はいつも、「全国」なら
+   * 危険警報から。`warningFor`)
+   */
   special?: boolean;
   /**
    * 気象警報・注意報の通知で、住んでいる地域に当たる市町村等 (電文の名前と、出ている種類)。
@@ -86,7 +92,7 @@ export interface Notice {
  * 送るのをやめる古さ。緊急地震速報は数分で意味が無くなる。地震は 1 時間、津波・お知らせ・火山・気象の警報は 6 時間。
  * 気象の報 (記録的短時間大雨情報・竜巻注意情報) は 1 時間 (竜巻注意情報の有効期限は約 1 時間)
  */
-export const FRESH_MS = {
+const FRESH_MS = {
   eew: 3 * 60_000,
   quake: 60 * 60_000,
   tsunami: 6 * 60 * 60_000,
@@ -126,9 +132,9 @@ const GRADE_RANK: Record<TsunamiGrade, number> = {
  * 地震の「全国」で、選んだ震度 (`quakeMinOf`) に加えて、住んでいる地域と現在地でこの震度から知らせる
  * (前の既定の、住んでいる地域で震度 3。全国を選んで自分の所の揺れが減らないように)
  */
-export const QUAKE_LOCAL_FLOOR: Intensity = "3";
+const QUAKE_LOCAL_FLOOR: Intensity = "3";
 /** 気象の「全国」: どこに出ても府県予報区ごとに知らせる段 (危険警報、レベル 4)。ほかの範囲は特別警報 (5) だけ */
-export const WEATHER_WIDE_EVERYWHERE = 4;
+const WEATHER_WIDE_EVERYWHERE = 4;
 
 /** 住んでいる地域と、開いている画面の現在地 (どちらも無いことがある) */
 const placesOf = (prefs: PushPrefs, here: Home | null): Home[] =>
@@ -166,13 +172,6 @@ function eewNearby(e: Eew, places: Home[]): boolean {
 /** 噴火速報・噴火警報の対象の市町村等に、住んでいる地域か現在地が入るか */
 const volcanoNearby = (v: Volcano, places: Home[]): boolean =>
   (v.cityCodes ?? []).some((c) => places.some((p) => p.code === c));
-
-function topGrade(t: Tsunami): TsunamiGrade {
-  let top: TsunamiGrade = "none";
-  for (const a of t.areas)
-    if (GRADE_RANK[a.grade] > GRADE_RANK[top]) top = a.grade;
-  return top;
-}
 
 function eewNotice(e: Eew, event: SonaeEvent): Notice {
   const place = e.hypocenter?.name;
@@ -258,7 +257,7 @@ function quakeNotice(q: Quake, event: SonaeEvent): Notice {
 }
 
 function tsunamiNotice(t: Tsunami, event: SonaeEvent): Notice {
-  const top = topGrade(t);
+  const top = tsunamiTop(t);
   const base = {
     tag: `tsunami:${t.id}`,
     url: selectHref(NONE, "tsunami", t.id),
@@ -370,9 +369,6 @@ function weatherBase(event: SonaeEvent, at: number, ttl: number): Notice {
   };
 }
 
-const levelName = (l: number) =>
-  l >= 5 ? "特別警報" : l >= 4 ? "危険警報" : l >= 3 ? "警報" : "注意報";
-
 /** 気象警報・注意報の通知。住んでいる地域の段か、どこかの特別警報か */
 function warningFor(
   n: Notice,
@@ -398,7 +394,7 @@ function warningFor(
       level,
       title:
         level > 0
-          ? `${home.name}に${kinds[0] ?? levelName(level)}`
+          ? `${home.name}に${kinds[0] ?? warningLevelLabel(level)}`
           : `${home.name}の${phenomenon}の警報・注意報の解除`,
       body: clip(
         level > 0
@@ -514,7 +510,7 @@ export function noticeFor(
 }
 
 /**
- * 現在地の市町村等の、気象の通知 (開いている画面だけが使う。docs/design.md の 2.4 の「現在地」)。
+ * 現在地の市町村等の、気象の通知 (開いている画面だけが使う。docs/design.md の 2.4 の範囲の「現在地」)。
  * 住んでいる地域の通知と同じ作り方で、地域の名前の前に「現在地の」を付け、`here` を立てる。
  * 気象のほかの種類と、現在地が入らないどこかの特別警報 (住んでいる地域の側で言う) は null。
  * `left` は前にいた (もう出た) 市町村等で、出ている通知を解除・続報で置き換えるためのもの。
@@ -731,7 +727,7 @@ export const advisoryQuotaTag = (n: Pick<Notice, "here">): string =>
   n.here ? ADVISORY_QUOTA.here : ADVISORY_QUOTA.home;
 
 /** 日本時間の暦日 (`2026-11-16`)。注意報の 1 日 1 回の区切り */
-export const jstDay = (t: number): string =>
+const jstDay = (t: number): string =>
   new Date(t + 9 * 60 * 60_000).toISOString().slice(0, 10);
 
 export type DailyPlan =
@@ -781,7 +777,7 @@ export function payloadOf(n: Notice, renotify: boolean): PushPayload {
  */
 export function homeNote(home: Home | null): string {
   if (!home)
-    return "選んでいないと、「住んでいる地域と現在地のものだけ」は、開いている画面で地図の現在地を出している間だけ知らせます。Web Push と Webhook には、どこに出ても知らせるもの (大津波警報・噴火警報・特別警報など) だけが届きます。";
+    return "選んでいないと、「住んでいる地域と現在地のものだけ」の種類は、開いている画面で地図の現在地を出している間だけ知らせます。その種類の Web Push と Webhook には、どこに出ても知らせるもの (大津波警報・噴火警報・特別警報など) だけが届きます。";
   const parts = [home.name];
   if (home.quake) parts.push(`地震は「${home.quake.name}」の震度で見ます`);
   if (home.tsunami)
@@ -818,7 +814,7 @@ const OFF_TEXT: Record<ScopeKind, string> = {
   quake: "知らせません。",
   tsunami: "特別警報にあたる大津波警報だけを知らせます。",
   volcano: "特別警報にあたる噴火警報 (レベル 4・5) だけを知らせます。",
-  weather: "どこに出た特別警報だけを知らせます。",
+  weather: "特別警報だけを、どこに出ても知らせます。",
 };
 
 /**
