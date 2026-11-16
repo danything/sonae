@@ -279,17 +279,24 @@ const kindNames = (a: WarningArea, min = 1) =>
     .map((k) => clean(kindText(k.name)));
 
 /**
- * 気象警報・注意報。住んでいる地域の段 (危険警報・警報・注意報) か、どこかの特別警報。
+ * 府県予報区ごとに言う段。どこかの特別警報と、「全国」の危険警報 (`Notice.special` の通知は、その段)。
+ * 住んでいる地域が特別警報のときも (通知は住んでいる地域の通知で言う)、特別警報として読む。無ければ 0
+ */
+const wideLevel = (n: Notice): number =>
+  n.special ? n.level : n.level >= 5 ? 5 : 0;
+
+/**
+ * 気象警報・注意報。住んでいる地域の段 (危険警報・警報・注意報) か、どこかの特別警報・危険警報。
  * 種類の名前と見出しは電文のまま読み、雨や風を予想する文は足さない (docs/design.md の 5 章)。
  * 地域は電文の市町村等の名前で読む (住んでいる地域の名前は端末ごとに違い、サーバーが前もって合成できないため)
  */
 function warningParts(n: Notice, w: WeatherWarning): string[] {
   const out: string[] = [];
-  // 住んでいる地域が特別警報のときも (通知は住んでいる地域の通知で言う)、特別警報として読む
-  const special = w.areas.filter((a) => areaLevel(a) === 5);
-  if ((n.special || n.level >= 5) && special.length > 0) {
-    const names = [...new Set(special.flatMap((a) => kindNames(a, 5)))];
-    out.push(OPENINGS.weatherSpecial);
+  const wide = wideLevel(n);
+  const special = wide >= 4 ? w.areas.filter((a) => areaLevel(a) >= wide) : [];
+  if (special.length > 0) {
+    const names = [...new Set(special.flatMap((a) => kindNames(a, wide)))];
+    out.push(wide >= 5 ? OPENINGS.weatherSpecial : OPENINGS.weatherDanger);
     out.push(`${clean(w.office.name)}に、${names.join("、")}が出ています。`);
     out.push(
       `対象の市町村は、${listOf(
@@ -344,12 +351,14 @@ export function readoutCandidates(n: Notice): string[] {
   const add = (m: Notice) => {
     for (const p of readoutOf(m)) out.add(p);
   };
-  const special = w.areas.some((a) => areaLevel(a) === 5);
-  if (special) add({ ...n, special: true, level: 5 });
+  // 府県予報区ごとに言う段 (特別警報と「全国」の危険警報) は、出ているいちばん高い段で言う (`warningFor`)
+  const top = Math.max(0, ...w.areas.map(areaLevel));
+  const wide = top >= 4 ? top : 0;
+  if (wide) add({ ...n, special: true, level: wide });
   for (const area of w.areas) {
     const level = areaLevel(area);
     add({ ...n, special: false, level, area });
-    if (special) add({ ...n, special: true, level: 5, area });
+    if (wide) add({ ...n, special: true, level: wide, area });
   }
   return [...out];
 }
