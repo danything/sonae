@@ -129,9 +129,10 @@ describe("気象庁のフィード", () => {
     expect(src.status().state).toBe("stopped");
   });
 
-  test("取れなかった電文があれば控えず、次の回もフィードを読み直して取りに行く", async () => {
+  /** 震源・震度に関する情報 (VXSE53) が 1 回目だけ `status` を返すとき、3 回まわして、フィードへの問い合わせの条件と受けた数を見る */
+  async function failOnce(status: number) {
     const { ctx, got } = context();
-    const feeds: Record<string, string>[] = [];
+    const feeds: (string | undefined)[] = [];
     let failed = false;
     const fakeFetch = (async (
       input: string | URL | Request,
@@ -141,19 +142,19 @@ describe("気象庁のフィード", () => {
       if (url.endsWith("eqvol_l.xml"))
         return new Response(null, { status: 304 });
       if (url.endsWith("eqvol.xml")) {
-        const headers = (init?.headers ?? {}) as Record<string, string>;
-        feeds.push(headers);
+        const etag = ((init?.headers ?? {}) as Record<string, string>)[
+          "if-none-match"
+        ];
+        feeds.push(etag);
         // 控えた値で問い合わせたら 304 (変わっていない)
-        if (headers["if-none-match"])
-          return new Response(null, { status: 304 });
+        if (etag) return new Response(null, { status: 304 });
         return new Response(fixture("jma/made-feed.xml"), {
           headers: { etag: '"abc"' },
         });
       }
-      // 震源・震度に関する情報 (VXSE53) は、1 回目だけ 503
       if (/_VXSE53_/.test(url) && !failed) {
         failed = true;
-        return new Response("", { status: 503 });
+        return new Response("", { status });
       }
       return new Response(
         "<Report><Control><Status>通常</Status></Control><Head><ReportDateTime>2008-06-14T08:00:00+09:00</ReportDateTime></Head></Report>",
@@ -171,14 +172,22 @@ describe("気象庁のフィード", () => {
       },
     });
     await src.run(ac.signal);
-    // 1 回目は VXSE53 が取れず、控えないので 2 回目も読み直して取る。
-    // 取り終えたので、3 回目は条件付きで問い合わせる
-    expect(feeds.map((h) => h["if-none-match"])).toEqual([
-      undefined,
-      undefined,
-      '"abc"',
-    ]);
-    expect(got.filter((m) => m.code === "VXSE53")).toHaveLength(1);
+    return { feeds, vxse53: got.filter((m) => m.code === "VXSE53").length };
+  }
+
+  test("取れなかった電文 (5xx) があれば控えず、次の回もフィードを読み直して取りに行く", async () => {
+    // 1 回目は VXSE53 が取れず、控えないので 2 回目も読み直して取る。取り終えたので、3 回目は条件付き
+    expect(await failOnce(503)).toEqual({
+      feeds: [undefined, undefined, '"abc"'],
+      vxse53: 1,
+    });
+  });
+
+  test("404 などの取り直しても取れない電文は取り残しに数えず、次の回から条件付きで問い合わせる", async () => {
+    expect(await failOnce(404)).toEqual({
+      feeds: [undefined, '"abc"', '"abc"'],
+      vxse53: 0,
+    });
   });
 
   test("取れなければ retrying にして、次の回にまた取る", async () => {
