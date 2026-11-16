@@ -7,6 +7,7 @@
    * 条件はブラウザごとに 1 つで、音・読み上げのために端末 (localStorage) に、Web Push のためにサーバー (購読) に持つ。
    * サーバーに VAPID の鍵が無いときは、Web Push の節にそう出すだけ (条件と、開いているときの知らせは使える)。
    */
+  import "@anyblades/blades/components/accordion";
   import "@anyblades/blades/components/modal";
 
   import { untrack } from "svelte";
@@ -359,7 +360,9 @@
         body: JSON.stringify({ endpoint: target }),
       });
       // サーバーが消せなかったときは、解除できたと言わない (このブラウザの購読は外れていても、送り先が残る)
-      message = res.ok ? "解除しました" : `解除できませんでした (${res.status})`;
+      message = res.ok
+        ? "解除しました"
+        : `解除できませんでした (${res.status})`;
       await load();
     } catch (err) {
       message = `解除できませんでした: ${err}`;
@@ -415,8 +418,8 @@
   <article class="modal-box stack">
     <h1 id="push-title">通知</h1>
     <p class="small muted">
-      条件はこのブラウザごとに覚え、開いているときの音・読み上げと Web Push
-      の両方に使います。訓練・試験は知らせません。
+      条件はこのブラウザごとに覚え、開いているときの通知・音・読み上げと、Web
+      Push・Webhook に使います。訓練・試験は知らせません。
     </p>
     <!-- 条件は変えたらすぐ覚える (change はここまで上がってくる) -->
     <div class="stack" onchange={() => savePrefs()}>
