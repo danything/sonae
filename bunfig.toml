@@ -12,4 +12,6 @@ ignorePatterns = [
   "static/areas/**",
   # 国土地理院のスタイルとスプライトから tools/gsi/build.ts で作るもの
   "static/map/gsi/**",
+  # プレート境界 (PB2002) から tools/plates/build.sh で作るもの
+  "static/plates/*.geojson",
 ]

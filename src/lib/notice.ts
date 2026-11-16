@@ -25,6 +25,8 @@ const GSI_AFM = "https://www.gsi.go.jp/bousaichiri/active_fault.html";
 const GSI_VECTOR = "https://github.com/gsi-cyberjapan/optimal_bvmap";
 const GSI_MAPS = "https://maps.gsi.go.jp/";
 const CSIS_GEOCODE = "https://geocode.csis.u-tokyo.ac.jp/";
+const PB2002 = "https://github.com/fraxen/tectonicplates";
+const ODC_BY = "https://opendatacommons.org/licenses/by/1-0/";
 const DISAPORTAL =
   "https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html";
 
@@ -89,6 +91,17 @@ export const CREDITS: Credit[] = [
       "地理院タイル「活断層図（都市圏活断層図）」(国土地理院。地図の右下のハザードマップで「活断層」を選んだときに重ねます)。調査者は図ごとに異なり、国土地理院の「",
       { text: "活断層図（都市圏活断層図）について", href: GSI_AFM },
       "」の各図に明記されています (例: 岡田篤正・廣内大助・松多信尚・宮内崇裕(2017):1:25,000都市圏活断層図「中津川」，国土地理院．)",
+    ],
+  },
+  {
+    // ODC Attribution License 1.0 の 4.3 の文のまま (データの名前と、ライセンスへのリンク)
+    label: "プレート境界",
+    parts: [
+      "Contains information from ",
+      { text: "PB2002", href: PB2002 },
+      " (Bird, 2003; Hugo Ahlenius, Nordpil) which is made available under the ",
+      { text: "ODC Attribution License", href: ODC_BY },
+      "。2003 年の研究の模型の線で、どの機関の公式の線でもありません。簡略化して表示しています",
     ],
   },
   {

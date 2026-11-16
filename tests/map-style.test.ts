@@ -17,6 +17,8 @@ import {
   meFeatures,
   mergeShelters,
   overlayVisibility,
+  PLATE_COLOR,
+  PLATES_URL,
   readHazard,
   SHOWN_UNDER_HAZARD,
   specialWarningFilter,
@@ -110,6 +112,43 @@ test("層はいつも全部出す。淡色地図の下地は無い", () => {
   ).toBe("none");
   expect(Object.keys(style.sources)).not.toContain("pale");
   expect(MAP_LEGEND.map((l) => l.label)).toContain("長周期地震動階級");
+});
+
+test("プレート境界: 付加情報のいちばん下に細い破線で引き、震源の丸より目立たせない", async () => {
+  const style = baseStyle() as {
+    sources: Record<string, { data?: unknown; attribution?: string }>;
+    layers: { id: string; type: string; paint?: Record<string, unknown> }[];
+  };
+  expect(style.sources.plates?.data).toBe(PLATES_URL);
+  expect(style.sources.plates?.attribution).toContain(
+    "https://opendatacommons.org/licenses/by/1-0/",
+  );
+  const ids = style.layers.map((l) => l.id);
+  const at = ids.indexOf("plate-boundaries");
+  // 写真とハザードマップのすぐ上、区域の塗りと震源より下
+  expect(at).toBeGreaterThan(ids.indexOf("photo"));
+  expect(at).toBeLessThan(ids.indexOf("warning-fill"));
+  expect(at).toBeLessThan(ids.indexOf("hypocenters"));
+  const plate = style.layers[at];
+  expect(plate?.type).toBe("line");
+  expect(plate?.paint?.["line-color"]).toBe(PLATE_COLOR);
+  expect(plate?.paint?.["line-dasharray"]).toBeDefined();
+  // 半分透かす (震源の丸は不透明度 0.8)
+  const alpha = Number(/,\s*([\d.]+)\)$/.exec(PLATE_COLOR)?.[1]);
+  expect(alpha).toBeLessThan(0.8);
+  expect(MAP_LEGEND.map((l) => l.label)).toContain("プレート境界");
+  // 配るファイルは線だけで、出典とライセンスの README が隣にある
+  const fc = (await Bun.file(`static${PLATES_URL}`).json()) as {
+    type: string;
+    features: { geometry: { type: string } }[];
+  };
+  expect(fc.type).toBe("FeatureCollection");
+  expect(fc.features.length).toBeGreaterThan(100);
+  for (const f of fc.features)
+    expect(["LineString", "MultiLineString"]).toContain(f.geometry.type);
+  const readme = await Bun.file("static/plates/README.md").text();
+  expect(readme).toContain("https://opendatacommons.org/licenses/by/1-0/");
+  expect(readme).toContain("Contains information from PB2002");
 });
 
 test("ハザードマップ: 選んだものだけ出す。既定と知らない値はなし", () => {

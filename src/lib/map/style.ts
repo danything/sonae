@@ -40,6 +40,19 @@ export const JMA_GIS_ATTRIBUTION =
   '<a href="https://www.data.jma.go.jp/developer/gis.html" target="_blank" rel="noopener">気象庁 予報区等 GIS データ</a> を加工';
 
 /**
+ * プレート境界 (PB2002。`tools/plates/build.sh` で簡略化した線)。ODC Attribution License 1.0 の 4.3 の文
+ * (「出典と注意」の窓の全文は `#lib/notice.ts` の CREDITS。docs/map.md)
+ */
+export const PLATES_URL = "/plates/pb2002-boundaries.geojson";
+export const PLATES_ATTRIBUTION =
+  'プレート境界: Contains information from PB2002 (Bird, 2003; Hugo Ahlenius, Nordpil) which is made available under the <a href="https://opendatacommons.org/licenses/by/1-0/" target="_blank" rel="noopener">ODC Attribution License</a>';
+/**
+ * プレート境界の線の色。写真の上で沈まず、震源の丸 (不透明度 0.8・黒い縁) より目立たない淡い橙を半分透かす。
+ * 深さの色 (赤・黄・緑・青) と津波の色 (紫・赤・黄) のどれとも違う色にする
+ */
+export const PLATE_COLOR = "rgba(255, 196, 150, 0.55)";
+
+/**
  * 地理院地図Vector (国土地理院最適化ベクトルタイル) の PMTiles。試験公開で URL が変わりうる (docs/map.md)。
  * 前の `{z}/{x}/{y}.pbf` の配信は 2023 年のデータで止まっているので、PMTiles の 1 ファイルを範囲で読む
  */
@@ -385,6 +398,10 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "海外の地震",
     note: "新しい 50 件。白い縁の丸 (色と大きさは震源と同じ)",
+  },
+  {
+    label: "プレート境界",
+    note: "淡い橙の破線。Peter Bird の研究の模型 PB2002 (2003 年) の線で、どの機関の公式の線でもありません。震源との位置の見当に使ってください",
   },
   {
     label: "火山",
@@ -773,6 +790,11 @@ export function baseStyle(
         type: "geojson",
         data: "/areas/warning-areas.geojson",
       },
+      plates: {
+        type: "geojson",
+        data: PLATES_URL,
+        attribution: PLATES_ATTRIBUTION,
+      },
       foreign: {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -836,6 +858,19 @@ export function baseStyle(
           },
         })),
       ),
+      // プレート境界 (PB2002)。付加情報のいちばん下に、細い破線で引く (震源の丸や区域の色を邪魔しない)。
+      // 研究の模型の線なので、寄せても太くしすぎない
+      {
+        id: "plate-boundaries",
+        type: "line",
+        source: "plates",
+        layout: { "line-join": "round" },
+        paint: {
+          "line-color": PLATE_COLOR,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 2, 0.8, 8, 1.6],
+          "line-dasharray": [3, 2],
+        },
+      },
       // 気象警報・注意報は震度の下に塗る (地震のときは震度を見せる)。ハザードマップを重ねている間は隠す
       {
         id: "warning-fill",
