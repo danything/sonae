@@ -30,7 +30,7 @@ https://github.com/user-attachments/assets/24a0b5a8-9ba6-4722-bb65-c7baeda2827f
 読み上げの声は「VOICEVOX:剣崎雌雄」([利用規約](https://frontier.creatia.cc/fanclubs/413/posts/4507))。
 動画の OS の通知は、撮ったブラウザ (ヘッドレス) に出す場所が無いので、sonae が出そうとした通知と同じ見出しと本文を、画面の右下に通知の形で描いている。
 
-**まだ作っている途中です。** 作りは [docs/design.md](docs/design.md)、画面は [docs/ui.md](docs/ui.md)、地図の層と出典は [docs/map.md](docs/map.md) に書いてある。
+作りは [docs/design.md](docs/design.md)、画面は [docs/ui.md](docs/ui.md)、地図の層と出典は [docs/map.md](docs/map.md) に書いてある。
 
 - 名前は「備え」から。地震を待つのではなく、来たときに慌てないためのもの。
 - [Zero Quake](https://github.com/0Quake/Zero-Quake) の機能を参考にした。コードは読んでも写してもいない (一から書いている)。
