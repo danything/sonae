@@ -70,17 +70,20 @@ export function localPlaces(
   if (q === "") return [];
   const hits: { rank: number; code: string; place: Place }[] = [];
   for (const [code, row] of Object.entries(cities)) {
-    const [name] = row;
-    // 2 列目は分けた市町村 (仙台市東部など) では説明の文なので、府県の名前を前に付けて作る (`homeOf` と同じ)
+    const [name, desc] = row;
+    // 2 列目は分けた市町村 (仙台市東部など) では説明の文なので、名前は府県の名前を前に付けて作る (`homeOf` と同じ)。
+    // 「神奈川県横浜市のうち鶴見区、…」の形の説明は区の名前で探せるよう、どこかに入るかの照らしにだけ使う
+    // (「気象庁予報警報規程…」の決まり文句の形は使わない)
     const full = `${prefectureOf(code)}${name}`;
     const n = normalize(name);
     const f = normalize(full);
+    const d = desc.startsWith("気象庁") ? "" : normalize(desc);
     const rank =
       n === q || f === q
         ? 0
         : n.startsWith(q) || f.startsWith(q)
           ? 1
-          : f.includes(q)
+          : f.includes(q) || d.includes(q)
             ? 2
             : -1;
     if (rank < 0) continue;
