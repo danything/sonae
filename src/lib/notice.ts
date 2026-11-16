@@ -126,6 +126,10 @@ export const CREDITS: Credit[] = [
     parts: ["P2P地震情報"],
   },
   {
+    label: "地震情報の速報 (P2P地震情報の予備)",
+    parts: ["Wolfx Project"],
+  },
+  {
     label: "海外の地震",
     parts: [
       "Earthquake data courtesy of the U.S. Geological Survey・EMSC-CSEM SeismicPortal, ",

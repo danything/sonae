@@ -11,7 +11,10 @@ import { noticeOf } from "#lib/notify.ts";
 import { parseJmaXml } from "#lib/server/sources/jma-xml.ts";
 import { parseP2p } from "#lib/server/sources/p2p-json.ts";
 import type { Incoming } from "#lib/server/sources/types.ts";
-import { parseWolfx } from "#lib/server/sources/wolfx-json.ts";
+import {
+  parseWolfx,
+  parseWolfxEqlist,
+} from "#lib/server/sources/wolfx-json.ts";
 
 import { codeOf, fixture, json, memoryStore } from "./helpers.ts";
 
@@ -175,6 +178,108 @@ describe("地震情報の新旧の判定", () => {
     expect(q.magnitude).toBe(7);
     expect(q.sources).toEqual(["p2p", "jma"]);
     expect(store.quakes()).toHaveLength(1);
+  });
+
+  describe("Wolfx の地震情報の一覧 (P2P の予備) も同じ地震にまとめる", () => {
+    /** 岩手・宮城内陸地震の P2P の 551 (上の試験と同じ) */
+    const p2pIwate = () => {
+      const v = json("p2p/spec-551.json");
+      v.issue = {
+        source: "気象庁",
+        time: "2008/06/14 08:50:00",
+        type: "ScaleAndDestination",
+        correct: "None",
+      };
+      v.earthquake = {
+        ...(v.earthquake as object),
+        time: "2008/06/14 08:43:00",
+        hypocenter: {
+          name: "岩手県内陸南部",
+          latitude: 39.1,
+          longitude: 140.9,
+          depth: 10,
+          magnitude: 6.9,
+        },
+        maxScale: 60,
+      };
+      return p2p(v, "p2p-q");
+    };
+    /** 一覧のうち岩手・宮城内陸地震の行 (No1 は新しい順の先頭なので、古い順に返る並びの最後) */
+    const wolfxIwate = (
+      magnitude = "7.0",
+      receivedAt = "2008-06-14T08:52:00+09:00",
+    ): Incoming => {
+      const v = json("wolfx/made-eqlist.json");
+      v.No1 = { ...(v.No1 as object), magnitude };
+      const row = parseWolfxEqlist(v, receivedAt).at(-1);
+      if (!row) throw new Error("行が無い");
+      return {
+        source: "wolfx",
+        key: row.key,
+        code: "jma_eqlist",
+        items: [row.item],
+      };
+    };
+    const xml = () => jma("32-35_06_04_240613_VXSE53.xml");
+    const NOW = Date.parse("2008-06-14T08:55:00+09:00");
+
+    const orders: [string, (() => Incoming)[]][] = [
+      ["Wolfx → P2P → XML", [wolfxIwate, p2pIwate, xml]],
+      ["Wolfx → XML → P2P", [wolfxIwate, xml, p2pIwate]],
+      ["P2P → Wolfx → XML", [p2pIwate, wolfxIwate, xml]],
+      ["P2P → XML → Wolfx", [p2pIwate, xml, wolfxIwate]],
+      ["XML → Wolfx → P2P", [xml, wolfxIwate, p2pIwate]],
+      ["XML → P2P → Wolfx", [xml, p2pIwate, wolfxIwate]],
+    ];
+    for (const [name, steps] of orders) {
+      test(`${name}: 一覧は 1 行、通知は同じ事象 (同じ tag) で、XML が来たら XML の姿`, () => {
+        const { store } = memoryStore();
+        const events = steps.flatMap((s) => store.ingest(s()));
+        const quakes = store.quakes();
+        expect(quakes).toHaveLength(1);
+        const q = quakes[0] as Quake;
+        expect(new Set(events.map((e) => dataOf<Quake>(e).id))).toEqual(
+          new Set([q.id]),
+        );
+        const tags = events.map((e) => noticeOf(e, NOW)?.tag);
+        expect(new Set(tags)).toEqual(new Set([`quake:${q.id}`]));
+        expect(q.eventId).toBe("20080614084350");
+        expect(q.provisional).toBe(false);
+        expect(q.magnitude).toBe(7);
+        expect(q.areas.length).toBeGreaterThan(0);
+        expect([...q.sources].sort()).toEqual(["jma", "p2p", "wolfx"]);
+      });
+    }
+
+    test("Wolfx だけなら仮の姿を出し、P2P が来たら P2P を、XML が来たら XML を正とする", () => {
+      const { store } = memoryStore();
+      const [a] = store.ingest(wolfxIwate("7.0"));
+      expect(dataOf<Quake>(a)).toMatchObject({
+        id: "20080614084350",
+        provisional: true,
+        magnitude: 7,
+        maxInt: "6+",
+        hypocenter: { name: "岩手県内陸南部" },
+        sources: ["wolfx"],
+      });
+      const [b] = store.ingest(p2pIwate());
+      expect(dataOf<Quake>(b)).toMatchObject({
+        provisional: true,
+        magnitude: 6.9,
+      });
+      // P2P があるうちは、Wolfx の続報で姿を変えない (地域・観測点の震度を持つ P2P が先)
+      const later = "2008-06-14T08:54:00+09:00";
+      const [c] = store.ingest(wolfxIwate("7.1", later));
+      expect(dataOf<Quake>(c).magnitude).toBe(6.9);
+      const [d] = store.ingest(xml());
+      expect(dataOf<Quake>(d)).toMatchObject({
+        provisional: false,
+        magnitude: 7,
+      });
+      // 中身の同じ一覧の行をもう一度受けても、何も変わらない
+      expect(store.ingest(wolfxIwate("7.1", later))).toEqual([]);
+      expect(store.quakes()).toHaveLength(1);
+    });
   });
 
   test("訓練の電文は別の地震として持ち、一覧には既定で出さない", () => {

@@ -267,13 +267,57 @@ describe("Wolfx", () => {
     const run = src.run(ac.signal);
     await tick(5);
     socket?.fire("message", { data: fixture("wolfx/made-heartbeat.json") });
-    expect(socket?.sent).toEqual(["ping"]);
+    expect(socket?.sent).toEqual(["query_jmaeqlist", "ping"]);
     socket?.fire("message", { data: fixture("wolfx/made-warning.json") });
     socket?.fire("message", { data: fixture("wolfx/made-warning.json") });
     expect(got).toHaveLength(1);
     expect(got[0]?.body).toBeUndefined();
     expect(JSON.stringify(got[0])).not.toContain("OriginalText");
     expect(src.status().lastMessageAt).toBeTruthy();
+    ac.abort();
+    await run;
+  });
+
+  test("同じ接続で地震情報の一覧を問い合わせ、中身の変わった行だけを渡す。ほかの速報は捨てる", async () => {
+    const { ctx, got } = context();
+    const ac = new AbortController();
+    const sockets: FakeSocket[] = [];
+    const src = wolfxSource(ctx, {
+      log: () => {},
+      now: () => "2008-06-14T08:55:00.000Z",
+      connect: (url) => {
+        expect(url).toBe("wss://ws-api.wolfx.jp/all_eew");
+        const s = new FakeSocket();
+        sockets.push(s);
+        queueMicrotask(() => s.fire("open"));
+        return s;
+      },
+    });
+    const run = src.run(ac.signal);
+    await tick(5);
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0]?.sent).toEqual(["query_jmaeqlist"]);
+    const list = fixture("wolfx/made-eqlist.json");
+    sockets[0]?.fire("message", { data: list });
+    expect(got.map((m) => m.code)).toEqual(["jma_eqlist", "jma_eqlist"]);
+    expect(got.every((m) => m.body === undefined)).toBe(true);
+    // 一覧はまるごと来る。同じ中身の行は渡さない
+    sockets[0]?.fire("message", { data: list });
+    expect(got).toHaveLength(2);
+    // 続報で 1 行だけ変わった
+    const v = JSON.parse(list) as Record<string, unknown>;
+    v.No1 = { ...(v.No1 as object), magnitude: "7.2" };
+    sockets[0]?.fire("message", { data: JSON.stringify(v) });
+    expect(got).toHaveLength(3);
+    expect(got[2]?.items[0]).toMatchObject({
+      type: "quake",
+      report: { magnitude: 7.2 },
+    });
+    // all_eew にはほかの国の速報も流れる
+    sockets[0]?.fire("message", {
+      data: JSON.stringify({ type: "cenc_eew", ID: 1 }),
+    });
+    expect(got).toHaveLength(3);
     ac.abort();
     await run;
   });
