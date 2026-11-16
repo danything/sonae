@@ -187,19 +187,6 @@ export function bodyOf(
   };
 }
 
-/** 押すと開く画面の origin (`PUBLIC_URL`)。無ければ本文に URL を付けない */
-export function originFromEnv(
-  env: Record<string, string | undefined> = process.env,
-): string | undefined {
-  const raw = env.PUBLIC_URL?.trim();
-  if (!raw) return undefined;
-  try {
-    return new URL(raw).origin;
-  } catch {
-    return undefined;
-  }
-}
-
 export class Webhooks {
   private readonly fetch: typeof fetch;
   private readonly now: () => number;
