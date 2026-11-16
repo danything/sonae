@@ -201,7 +201,9 @@ describe("通知", () => {
     const n3 = noticeOf(event(asama), at(asama));
     if (!n3) throw new Error("通知が無い");
     expect(matches(n3, DEFAULT_PREFS)).toBe(false);
-    expect(matches(n5, { ...DEFAULT_PREFS, volcano: "off" })).toBe(false);
+    // 噴火警報 (居住地域) は特別警報なので、「知らせない」でも知らせる。噴火速報は知らせない (2026-11-16)
+    expect(matches(n5, { ...DEFAULT_PREFS, volcano: "off" })).toBe(true);
+    expect(matches(n, { ...DEFAULT_PREFS, volcano: "off" })).toBe(false);
   });
 
   test("住んでいる地域と現在地: 対象の市町村等なら火口周辺警報も知らせ、噴火警報 (レベル 4・5) はどこでも", () => {

@@ -26,6 +26,8 @@ const GSI_VECTOR = "https://github.com/gsi-cyberjapan/optimal_bvmap";
 const GSI_MAPS = "https://maps.gsi.go.jp/";
 const CSIS_GEOCODE = "https://geocode.csis.u-tokyo.ac.jp/";
 const EXPTECH = "https://exptech.dev";
+const PB2002 = "https://github.com/fraxen/tectonicplates";
+const ODC_BY = "https://opendatacommons.org/licenses/by/1-0/";
 const DISAPORTAL =
   "https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html";
 
@@ -93,6 +95,17 @@ export const CREDITS: Credit[] = [
     ],
   },
   {
+    // ODC Attribution License 1.0 の 4.3 の文のまま (データの名前と、ライセンスへのリンク)
+    label: "プレート境界",
+    parts: [
+      "Contains information from ",
+      { text: "PB2002", href: PB2002 },
+      " (Bird, 2003; Hugo Ahlenius, Nordpil) which is made available under the ",
+      { text: "ODC Attribution License", href: ODC_BY },
+      "。2003 年の研究の模型の線で、どの機関の公式の線でもありません。簡略化して表示しています",
+    ],
+  },
+  {
     label: "場所の検索",
     parts: [
       "市町村は気象庁の予報区等 GIS データから作った手元の表で探します。住所・地名は国土地理院の「",
@@ -125,6 +138,10 @@ export const CREDITS: Credit[] = [
   {
     label: "地震情報・津波予報の速報",
     parts: ["P2P地震情報"],
+  },
+  {
+    label: "地震情報の速報 (P2P地震情報の予備)",
+    parts: ["Wolfx Project"],
   },
   {
     label: "海外の地震",

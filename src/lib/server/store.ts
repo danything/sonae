@@ -113,7 +113,7 @@ export class Store {
         const suffix = item.status === "normal" ? "" : `-${item.status}`;
         const id = item.eventId
           ? `${item.eventId}${suffix}`
-          : `p2p-${(item.report.originTime ?? item.report.reportedAt).replace(/[^0-9]/g, "").slice(0, 14)}${suffix}`;
+          : `${item.report.source}-${(item.report.originTime ?? item.report.reportedAt).replace(/[^0-9]/g, "").slice(0, 14)}${suffix}`;
         const next = mergeQuake(
           prev,
           item.report,
@@ -121,7 +121,7 @@ export class Store {
           now,
         );
         if (!next) return [];
-        // P2P だけの地震に気象庁の XML が来たら、地震識別番号を付ける
+        // P2P だけの地震に気象庁の XML か Wolfx が来たら、地震識別番号を付ける
         if (!next.eventId && item.eventId) next.eventId = item.eventId;
         this.db
           .query(

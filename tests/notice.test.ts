@@ -68,3 +68,12 @@ test("GRUS 画像の範囲 (沖ノ鳥島のあたり) を映しているか", ()
   // 寄せていても本州だけ
   expect(showsGrus([139.7, 35.6, 139.8, 35.7], 15)).toBe(false);
 });
+
+test("出典: プレート境界は ODC Attribution License の 4.3 の文とライセンスへのリンク", () => {
+  expect(all).toContain(
+    "プレート境界: Contains information from PB2002 (Bird, 2003; Hugo Ahlenius, Nordpil) which is made available under the ODC Attribution License",
+  );
+  expect(links).toContain("https://opendatacommons.org/licenses/by/1-0/");
+  // 研究の模型で、公式の線ではないことも添える
+  expect(all).toContain("公式の線でもありません");
+});
