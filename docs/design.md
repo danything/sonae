@@ -750,6 +750,11 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 - イメージ: main にマージすると `docker-publish.yml` が `ghcr.io/danything/sonae:<sha>` と `latest` を作り、`deploy/application.yaml` の `image.tag` を差し替える PR を作って自分でマージする。
 - chart: PR と main で `chart.yml` が `helm lint` と `helm template` (chart の既定値・家の値・Ingress と VOICEVOX 無し) を回す。リリースを作ると `release.yml` が chart を `oci://ghcr.io/danything/charts/sonae` に出す。
 - 実行のイメージは `oven/bun:<ver>-distroless` (シェル無し・uid 1000)。
+- **リリースの前に、この順で済ませる** (denpa の docs/development.md の「リリース」と同じ。持ち主の決定、2026-11-16)。
+  1. **矛盾と圧縮を点検して直す。** 前のリリースからの差分だけでなく、**毎回あらためて全体を**読む。docs・CSS とそのコメント・コード・chart を通して、今のコードやこの文書と食い違う説明を直し、使っていないもの・同じことを何か所にも書いたもの・回りくどい書き方を縮める。範囲ごとに PR に分けて出す。
+  2. **画面を変えたなら、README と docs の画像を撮り直す** (試験用のデータを入れ、明るいテーマで撮る。撮り方は #151・#178 の PR を見る)。
+  3. **上げる人が何かしないといけない変更 (環境変数・設定の消去や読み替え) を拾う。** リリースノートの先頭に「上げる前に」として書く。
+  4. main のイメージのビルドが通ったのを確かめて、リリースを作る。`gh release create vX.Y.Z --target main --generate-notes --title vX.Y.Z` (手で書いた要約は `--notes-file` で前に足す)。イメージは組み直さず、そのコミットのものにバージョンを貼る (`release.yml`)。
 - 外への接続は気象庁・P2P・Wolfx・USGS (earthquake.usgs.gov)・PTWC (www.tsunami.gov)・EMSC (www.seismicportal.eu の WebSocket)・気象庁ホームページ (www.jma.go.jp の bosai の国際津波)・GeoNet (api.geonet.org.nz)・中央氣象署 (opendata.cwa.gov.tw、授権碼があるときだけ)・Entra ID・Web Push の配信サービス (FCM・Mozilla・Apple・WNS) だけ。気象庁のフィードは地震火山と気象 (随時) の 2 つを 1 日 1440 回ずつ条件付きで取る。地震火山はほとんどが 304 で、随時の `extra.xml` (約 100KB) はほぼ毎分変わるので 1 日 150MB ほど。電文 (警報・注意報は 1 通 10〜40KB、1 日に数百通) を足しても、帯域の上限 (10GB/日) には遠い。
 
 ## 9. 未決の点
