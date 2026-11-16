@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
 import { parseP2p } from "#lib/server/sources/p2p-json.ts";
-import { parseWolfx } from "#lib/server/sources/wolfx-json.ts";
+import {
+  parseWolfx,
+  parseWolfxEqlist,
+  wolfxShindo,
+} from "#lib/server/sources/wolfx-json.ts";
 
 import { json } from "./helpers.ts";
 
@@ -179,5 +183,74 @@ describe("Wolfx (作った JSON)", () => {
 
   test("ほかのチャンネルの電文は捨てる", () => {
     expect(parseWolfx({ type: "sc_eew", ID: 1 }).type).toBe("unknown");
+  });
+});
+
+describe("Wolfx の地震情報の一覧 (作った JSON)", () => {
+  const AT = "2008-06-14T08:55:00.000Z";
+
+  test("古い順に、震源・M・最大震度・付加文を読む。報の時刻は受けた時刻", () => {
+    const [scale, detail] = parseWolfxEqlist(
+      json("wolfx/made-eqlist.json"),
+      AT,
+    );
+    expect(detail?.item).toEqual({
+      type: "quake",
+      eventId: "20080614084350",
+      status: "normal",
+      report: {
+        kind: "detail",
+        source: "wolfx",
+        infoType: "発表",
+        reportedAt: AT,
+        originTime: "2008-06-14T08:43:00+09:00",
+        hypocenter: {
+          name: "岩手県内陸南部",
+          lat: 39,
+          lon: 140.9,
+          depthKm: 10,
+        },
+        magnitude: 7,
+        maxInt: "6+",
+        areas: [],
+        stations: [],
+        comments: ["この地震による津波の心配はありません。"],
+      },
+    });
+    // 震度速報: 震源も M も無い
+    expect(scale?.item.report).toMatchObject({
+      kind: "scale",
+      maxInt: "3",
+      comments: [],
+    });
+    expect(scale?.item.report.hypocenter).toBeUndefined();
+    expect(scale?.item.report.magnitude).toBeUndefined();
+  });
+
+  test("鍵は中身が同じなら同じ、続報で中身が変われば別", () => {
+    const v = json("wolfx/made-eqlist.json");
+    const a = parseWolfxEqlist(v, AT).map((x) => x.key);
+    const b = parseWolfxEqlist(v, "2008-06-14T09:00:00.000Z").map((x) => x.key);
+    expect(b).toEqual(a);
+    const no1 = { ...(v.No1 as object), magnitude: "7.2" };
+    const c = parseWolfxEqlist({ ...v, No1: no1 }, AT).map((x) => x.key);
+    expect(c[0]).toBe(a[0] as string);
+    expect(c[1]).not.toBe(a[1] as string);
+    expect(a[1]).toStartWith("eqlist-20080614084350-");
+  });
+
+  test("震度の書き方の揺れ (5弱・５－・6強) を気象庁の書き方にする", () => {
+    expect(wolfxShindo("5弱")).toBe("5-");
+    expect(wolfxShindo("５－")).toBe("5-");
+    expect(wolfxShindo("6強")).toBe("6+");
+    expect(wolfxShindo("5+")).toBe("5+");
+    expect(wolfxShindo("不明")).toBeUndefined();
+    expect(wolfxShindo("")).toBeUndefined();
+  });
+
+  test("時刻の読めない行は捨てる", () => {
+    expect(
+      parseWolfxEqlist({ type: "jma_eqlist", No1: { Title: "震度速報" } }, AT),
+    ).toEqual([]);
   });
 });

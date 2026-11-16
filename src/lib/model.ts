@@ -124,7 +124,7 @@ export interface StationIntensity {
 export interface QuakeReport {
   kind: QuakeKind;
   code?: "VXSE51" | "VXSE52" | "VXSE53" | "VXSE61";
-  source: "jma" | "p2p";
+  source: "jma" | "p2p" | "wolfx";
   infoType: "発表" | "訂正" | "取消";
   reportedAt: string;
   /** 取消を受けて無効になった */
@@ -159,9 +159,9 @@ export interface Quake {
   comments: string[];
   foreign: boolean;
   cancelled: boolean;
-  /** 気象庁の XML を受けていない (P2P だけの仮の姿) */
+  /** 気象庁の XML を受けていない (P2P・Wolfx だけの仮の姿) */
   provisional: boolean;
-  sources: ("jma" | "p2p")[];
+  sources: ("jma" | "p2p" | "wolfx")[];
   reports: QuakeReport[];
   updatedAt: string;
 }
