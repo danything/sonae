@@ -3,12 +3,12 @@
  * どこからでも読むので、DOM や Worker にしか無いものは使わない。
  */
 
-import { isIntensity } from "./model.ts";
+import { type Intensity, isIntensity } from "./model.ts";
 
 /**
  * 種類ごとに選ぶ、どこのものを知らせるか (持ち主の決定、2026-11-16。docs/design.md の 2.4 の表)。
- * 全国のもの / 住んでいる地域と現在地のものだけ / 知らせない。何の段から知らせるか (震度いくつ以上・
- * 注意報も など) は選ばせず、`#lib/notify.ts` の既定値で決める
+ * 全国のもの / 住んでいる地域と現在地のものだけ / 知らせない。何の段から知らせるか (注意報も など) は
+ * 選ばせず、`#lib/notify.ts` の既定値で決める。地震の震度だけは選べる (`quakeMin`)
  */
 export const SCOPES = ["everywhere", "nearby", "off"] as const;
 export type Scope = (typeof SCOPES)[number];
@@ -59,6 +59,12 @@ export interface PushPrefs {
   home: Home | null;
   eew: Scope;
   quake: Scope;
+  /**
+   * 地震を知らせる震度 (範囲の下に 1 つだけ選ぶ。2026-11-16 に戻した)。「全国」ならどこかの最大震度、
+   * 「住んでいる地域と現在地」ならそこの震度で見る。選んでいなければ範囲ごとの既定
+   * (全国 4・地域 3。`#lib/notify.ts` の `quakeMinOf`)
+   */
+  quakeMin?: Intensity;
   tsunami: Scope;
   volcano: Scope;
   weather: Scope;
@@ -132,6 +138,44 @@ function scope(v: unknown, old: Record<string, Scope>, fallback: Scope): Scope {
     : fallback;
 }
 
+/** 範囲ごとの震度の既定 (前の既定の、最大震度 4 と住んでいる地域の震度 3) */
+export const QUAKE_MIN_DEFAULT: Record<"everywhere" | "nearby", Intensity> = {
+  everywhere: "4",
+  nearby: "3",
+};
+
+/**
+ * 地震の震度を読む。新しい形 (`quakeMin`) が無ければ、前の 2 つの段 (2026-11-16 の #180 より前の
+ * `quakeMinInt`・`areaMinInt`) から、読み替えた範囲で使っていたほうを読む。
+ * 範囲の既定と同じ値は持たない (既定のままなら、範囲を替えたときに替えた先の既定で見るように)。
+ * 「知らせない」のときは、選んであった値を残す (範囲を戻したときに使う)
+ */
+function readQuakeMin(
+  o: Record<string, unknown>,
+  quake: Scope,
+): Intensity | undefined {
+  if (quake === "off") return isIntensity(o.quakeMin) ? o.quakeMin : undefined;
+  const v = isIntensity(o.quakeMin)
+    ? o.quakeMin
+    : quake === "everywhere"
+      ? o.quakeMinInt
+      : o.areaMinInt;
+  return isIntensity(v) && v !== QUAKE_MIN_DEFAULT[quake] ? v : undefined;
+}
+
+/** 選んだ範囲で使う震度 (選んでいなければ範囲の既定) */
+export const quakeMinOf = (p: Pick<PushPrefs, "quake" | "quakeMin">) =>
+  p.quakeMin ??
+  QUAKE_MIN_DEFAULT[p.quake === "nearby" ? "nearby" : "everywhere"];
+
+/** 震度を選んだ値にする。範囲の既定と同じなら持たない (`readQuakeMin` と同じ決まり) */
+export function withQuakeMin(p: PushPrefs, v: Intensity): PushPrefs {
+  const { quakeMin: _, ...rest } = p;
+  return p.quake !== "off" && v === quakeMinOf({ quake: p.quake })
+    ? rest
+    : { ...rest, quakeMin: v };
+}
+
 /**
  * 外から来た値を、知っている形に直す。読めない項目は既定値に戻す。
  * DB の購読・Webhook・端末の localStorage・API の本文のどれもここを通すので、前の形の値もここで読み替える
@@ -152,15 +196,18 @@ export function normalizePrefs(input: unknown): PushPrefs {
       : isIntensity(o.quakeMinInt)
         ? "everywhere"
         : undefined;
+  const quake = scope(o.quake, {}, oldQuake ?? DEFAULT_PREFS.quake);
+  const quakeMin = readQuakeMin(o, quake);
   return {
     home: readHome(o.home),
-    // 前は 警報だけ / 予報も / 送らない。予報はもう知らせない (2.4)
+    // 前は 警報だけ / 予報も / 送らない。どちらの段も予報を知らせる「全国」にする (2.4)
     eew: scope(
       o.eew,
       { ...off, warning: "everywhere", all: "everywhere" },
       DEFAULT_PREFS.eew,
     ),
-    quake: scope(o.quake, {}, oldQuake ?? DEFAULT_PREFS.quake),
+    quake,
+    ...(quakeMin ? { quakeMin } : {}),
     // 前は 注意報以上 / 警報以上 / 大津波警報だけ / 送らない。どれも全国のものだった
     tsunami: scope(
       o.tsunami,
@@ -178,7 +225,7 @@ export function normalizePrefs(input: unknown): PushPrefs {
       { ...off, warning: "everywhere", all: "everywhere" },
       DEFAULT_PREFS.volcano,
     ),
-    // 前は住んでいる地域の 警報以上 / 注意報も / 送らない。注意報はもう知らせない (2.4)
+    // 前は住んでいる地域の 警報以上 / 注意報も / 送らない。どちらも注意報から知らせる「住んでいる地域と現在地」(2.4)
     weather: scope(
       o.weather,
       { ...off, warning: "nearby", all: "nearby" },

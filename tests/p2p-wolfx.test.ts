@@ -143,6 +143,26 @@ describe("Wolfx (作った JSON)", () => {
     if (m.type !== "eew") throw new Error("eew ではない");
     expect(m.report.kind).toBe("warning");
     expect(m.report.warnAreas).toEqual(["上川地方北部"]);
+    // 予報の地域も名前だけ取る (通知の「住んでいる地域と現在地」に使う。予想震度は持たない)
+    expect(m.report.areas).toEqual(["上川地方北部", "宗谷地方北部"]);
+    expect(JSON.stringify(m.report)).not.toContain("Shindo");
+  });
+
+  test("予報の地域: WarnArea の Forecast の地域も取る", () => {
+    const m = parseWolfx({
+      ...json("wolfx/made-forecast.json"),
+      WarnArea: [
+        {
+          Chiiki: "宗谷地方北部",
+          Shindo1: "4",
+          Shindo2: "3",
+          Type: "Forecast",
+        },
+      ],
+    });
+    if (m.type !== "eew") throw new Error("eew ではない");
+    expect(m.report.warnAreas).toEqual([]);
+    expect(m.report.areas).toEqual(["宗谷地方北部"]);
   });
 
   test("訓練と取消", () => {

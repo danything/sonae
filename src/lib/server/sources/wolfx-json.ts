@@ -33,6 +33,14 @@ export type WolfxMessage =
   | { type: "eew"; report: EewReport; key: string }
   | { type: "unknown" };
 
+/** `WarnArea` のうち、`keep` に合う地域の名前 (`Chiiki`) */
+const names = (v: unknown, keep: (a: Json) => boolean): string[] =>
+  (Array.isArray(v) ? v : [])
+    .map(obj)
+    .filter(keep)
+    .map((a) => str(a.Chiiki))
+    .filter((n): n is string => n !== undefined);
+
 /** WebSocket の 1 通 (または HTTP の jma_eew.json) を読む */
 export function parseWolfx(value: unknown): WolfxMessage {
   const o = obj(value);
@@ -68,11 +76,9 @@ export function parseWolfx(value: unknown): WolfxMessage {
       : undefined,
     // Magunitude は古い綴りで、同じ値 (いずれ無くなる)
     magnitude: num(o.Magnitude) ?? num(o.Magunitude),
-    warnAreas: (Array.isArray(o.WarnArea) ? o.WarnArea : [])
-      .map(obj)
-      .filter((a) => a.Type === "Warning")
-      .map((a) => str(a.Chiiki))
-      .filter((n): n is string => n !== undefined),
+    warnAreas: names(o.WarnArea, (a) => a.Type === "Warning"),
+    // 予報の地域も含めた全部 (名前だけ。Shindo1/2 は読まない)。通知の「住んでいる地域と現在地」の判定に使う
+    areas: names(o.WarnArea, () => true),
   };
   return {
     type: "eew",

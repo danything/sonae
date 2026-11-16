@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type { SonaeEvent } from "#lib/model.ts";
+import { contentOf, decide } from "#lib/notify.ts";
 import { DEFAULT_PREFS, normalizePrefs, toNotification } from "#lib/push.ts";
 import { openDb } from "#lib/server/db.ts";
 import {
@@ -119,7 +120,8 @@ describe("通知の条件", () => {
         volcano: "all",
         weather: "all",
       }),
-    ).toEqual(DEFAULT_PREFS);
+      // 最大震度の段は、地震を知らせる震度として生かす (2026-11-16 に震度の選択を戻した)
+    ).toEqual({ ...DEFAULT_PREFS, quakeMin: "5+" });
     expect(normalizePrefs({ tsunami: "warning" }).tsunami).toBe("everywhere");
     // 「知らない」は知らせないのまま
     expect(
@@ -136,10 +138,25 @@ describe("通知の条件", () => {
       volcano: "off",
       weather: "off",
     });
-    // 最大震度を「知らせない」にして住んでいる地域の震度だけで受けていたものは、住んでいる地域と現在地
-    expect(normalizePrefs({ quakeMinInt: "off", areaMinInt: "4" }).quake).toBe(
-      "nearby",
+    // 最大震度を「知らせない」にして住んでいる地域の震度だけで受けていたものは、住んでいる地域と現在地で、
+    // 住んでいる地域の震度の段を生かす
+    expect(normalizePrefs({ quakeMinInt: "off", areaMinInt: "4" })).toEqual({
+      ...DEFAULT_PREFS,
+      quake: "nearby",
+      quakeMin: "4",
+    });
+    // 範囲の既定と同じ震度は持たない (範囲を替えたら替えた先の既定で見る)
+    expect(
+      "quakeMin" in normalizePrefs({ quakeMinInt: "off", areaMinInt: "3" }),
+    ).toBe(false);
+    expect(
+      "quakeMin" in normalizePrefs({ quake: "nearby", quakeMin: "3" }),
+    ).toBe(false);
+    expect(normalizePrefs({ quake: "nearby", quakeMin: "4" }).quakeMin).toBe(
+      "4",
     );
+    // 読めない震度は捨てる
+    expect("quakeMin" in normalizePrefs({ quakeMin: "8" })).toBe(false);
     // 新しい形があればそちら
     expect(normalizePrefs({ quake: "off", quakeMinInt: "3" }).quake).toBe(
       "off",
@@ -232,10 +249,13 @@ describe("何を知らせるか", () => {
     expect(noticeOf(eew({ issuedAt: "2026-11-14T00:06:00Z" }), NOW)).toBeNull();
   });
 
-  test("緊急地震速報は警報だけ (予報は知らせない)。予想震度は書かない", () => {
+  test("緊急地震速報は警報と予報を知らせる。予想震度は書かない", () => {
     const f = noticeOf(eew(), NOW);
-    expect(f && matches(f, prefs())).toBe(false);
-    expect(f && matches(f, prefs({ eew: "nearby" }))).toBe(false);
+    if (!f) throw new Error("通知が無い");
+    expect(matches(f, prefs())).toBe(true);
+    expect(matches(f, prefs({ eew: "off" }))).toBe(false);
+    expect(f.title).toBe("緊急地震速報 (予報)");
+    expect(f.body).not.toMatch(/震度/);
     const w = noticeOf(
       eew({
         kind: "warning",
@@ -268,6 +288,68 @@ describe("何を知らせるか", () => {
     expect(w?.urgency).toBe("high");
     expect(w?.ttl).toBe(120);
     expect(w?.sticky).toBe(true);
+  });
+
+  test("緊急地震速報の予報の「住んでいる地域と現在地」: 電文の地域で照らし、地域の無い予報は全国と同じく知らせる", () => {
+    const area = (name: string) => ({
+      code: "1221700",
+      name: "千葉県柏市",
+      quake: { code: "340", name },
+      office: "120000",
+      ichiji: "120010",
+    });
+    const near = (name: string) => prefs({ eew: "nearby", home: area(name) });
+    // 予報で地域が並ぶとき (予報で震度 4 以上が予想される地域)
+    const listed = noticeOf(eew({ areas: ["千葉県北西部"] }), NOW);
+    if (!listed) throw new Error("通知が無い");
+    expect(matches(listed, near("千葉県北西部"))).toBe(true);
+    expect(matches(listed, near("東京都２３区"))).toBe(false);
+    // 現在地でも照らす
+    expect(
+      matches(listed, prefs({ eew: "nearby" }), area("千葉県北西部")),
+    ).toBe(true);
+    // 地域の無い予報 (最大予測震度 3 以下・地域を流さない情報源) は、どこに出たものも知らせる
+    const bare = noticeOf(eew(), NOW);
+    if (!bare) throw new Error("通知が無い");
+    expect(matches(bare, near("東京都２３区"))).toBe(true);
+    expect(matches(bare, prefs({ eew: "nearby" }))).toBe(true);
+    // 警報の電文で、予報の地域に住んでいる地域があれば知らせる
+    const w = noticeOf(
+      eew({
+        kind: "warning",
+        serial: 3,
+        warnAreas: ["茨城県南部"],
+        areas: ["茨城県南部", "千葉県北西部"],
+      }),
+      NOW,
+    );
+    if (!w) throw new Error("通知が無い");
+    expect(matches(w, near("千葉県北西部"))).toBe(true);
+    expect(matches(w, near("東京都２３区"))).toBe(false);
+  });
+
+  test("緊急地震速報の予報の続報は鳴らし直さず、警報に上がったら鳴らし直す", () => {
+    const p = prefs();
+    const first = noticeOf(eew(), NOW);
+    if (!first) throw new Error("通知が無い");
+    const d1 = contentOf(first);
+    expect(decide(first, p, undefined, d1)).toEqual({
+      send: true,
+      renotify: true,
+    });
+    const sent = { level: first.level, digest: d1 };
+    const next = noticeOf(eew({ serial: 2, magnitude: 5.9 }), NOW);
+    if (!next) throw new Error("通知が無い");
+    expect(decide(next, p, sent, contentOf(next))).toEqual({ send: false });
+    const warn = noticeOf(
+      eew({ kind: "warning", serial: 3, warnAreas: ["茨城県南部"] }),
+      NOW,
+    );
+    if (!warn) throw new Error("通知が無い");
+    expect(decide(warn, p, sent, contentOf(warn))).toEqual({
+      send: true,
+      renotify: true,
+    });
   });
 
   test("津波は一番重い区分で決め、解除は前に知らせた購読にだけ置き換えに行く", () => {

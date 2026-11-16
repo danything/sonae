@@ -88,6 +88,12 @@ export interface Eew {
   magnitude?: number;
   /** 警報の対象の地域名 (警報のときだけ) */
   warnAreas: string[];
+  /**
+   * 電文に並ぶ地域名 (警報の地域と、予報で震度 4 以上が予想される地域。Wolfx の `WarnArea` の全部)。
+   * 予想震度は持たない。「住んでいる地域と現在地」の通知の判定だけに使い、画面には出さない
+   * (docs/design.md の 2.4 と 5 章)。P2P は警報しか流さず、この並びは無い
+   */
+  areas?: string[];
   sources: ("wolfx" | "p2p")[];
   updatedAt: string;
 }

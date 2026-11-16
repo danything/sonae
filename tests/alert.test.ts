@@ -91,7 +91,7 @@ describe("開いているときに鳴らすか", () => {
 
   test("訓練・古すぎるもの・条件の外は鳴らさない", () => {
     const sent = new Map<string, Sent>();
-    expect(alertFor(eew(), NOW, prefs(), sent)).toBeNull(); // 予報は既定で知らせない
+    expect(alertFor(eew(), NOW, prefs({ eew: "off" }), sent)).toBeNull();
     expect(
       alertFor(
         eew({ kind: "warning", status: "training" }),

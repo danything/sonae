@@ -55,6 +55,7 @@ export function mergeEew(
       kind: prev.kind === "warning" ? "warning" : r.kind,
       final: r.final || prev.final,
       warnAreas: union(prev.warnAreas, r.warnAreas),
+      areas: union(prev.areas ?? [], r.areas ?? []),
       sources: union(prev.sources, [source]),
       updatedAt: now,
     };
@@ -68,12 +69,14 @@ export function mergeEew(
           : "forecast",
       final: prev.final || r.final,
       warnAreas: union(prev.warnAreas, r.warnAreas),
+      areas: union(prev.areas ?? [], r.areas ?? []),
       sources: union(prev.sources, [source]),
     };
     const changed =
       next.kind !== prev.kind ||
       next.final !== prev.final ||
       next.warnAreas.length !== prev.warnAreas.length ||
+      (next.areas?.length ?? 0) !== (prev.areas?.length ?? 0) ||
       next.sources.length !== prev.sources.length;
     return changed ? { ...next, updatedAt: now } : null;
   }

@@ -28,6 +28,7 @@ import {
   type SentLog,
   sentLog,
   topicOf,
+  undoJob,
 } from "./notify.ts";
 
 export interface Vapid {
@@ -266,7 +267,7 @@ export class Pusher {
       topic: topicOf(n.tag),
     });
     // 送れなかったら控えを送る前に戻す (404・410 は購読ごと消えている)
-    if (r === "error") this.log.undo(sub.endpoint, n, j.prev);
+    if (r === "error") undoJob(this.log, sub.endpoint, j);
     return r;
   }
 

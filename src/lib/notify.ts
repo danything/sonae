@@ -35,12 +35,13 @@ import {
   type WeatherInfo,
   type WeatherWarning,
 } from "#lib/model.ts";
-import type {
-  Home,
-  PushPayload,
-  PushPrefs,
-  Scope,
-  ScopeKind,
+import {
+  type Home,
+  type PushPayload,
+  type PushPrefs,
+  quakeMinOf,
+  type Scope,
+  type ScopeKind,
 } from "#lib/push.ts";
 import { OFFICE_PREFIX, selectHref } from "#lib/view.ts";
 
@@ -121,10 +122,11 @@ const GRADE_RANK: Record<TsunamiGrade, number> = {
  * 既定値 (持ち主の決定、2026-11-16。理由は docs/design.md の 2.4 の表)。
  * 「全国」は「住んでいる地域と現在地」で知らせるものに、どこのものでも知らせる段を足したもの
  */
-/** 地震の「全国」: どこでもこの最大震度から (前の既定の震度 4) */
-export const QUAKE_EVERYWHERE_MIN: Intensity = "4";
-/** 地震の住んでいる地域と現在地: その地震情報／細分区域でこの震度から (前の既定の震度 3) */
-export const QUAKE_NEARBY_MIN: Intensity = "3";
+/**
+ * 地震の「全国」で、選んだ震度 (`quakeMinOf`) に加えて、住んでいる地域と現在地でこの震度から知らせる
+ * (前の既定の、住んでいる地域で震度 3。全国を選んで自分の所の揺れが減らないように)
+ */
+export const QUAKE_LOCAL_FLOOR: Intensity = "3";
 /** 気象の「全国」: どこに出ても府県予報区ごとに知らせる段 (危険警報、レベル 4)。ほかの範囲は特別警報 (5) だけ */
 export const WEATHER_WIDE_EVERYWHERE = 4;
 
@@ -147,6 +149,18 @@ function nearbyTsunamiRank(t: Tsunami, places: Home[]): number {
     if (hit) top = Math.max(top, GRADE_RANK[a.grade]);
   }
   return top;
+}
+
+/**
+ * 緊急地震速報の「住んでいる地域と現在地」(docs/design.md の 2.4)。住んでいる地域か現在地の
+ * 地震情報／細分区域が、警報の地域か電文に並ぶ地域 (予報で震度 4 以上が予想される地域を含む) にあるとき。
+ * 予報で地域が 1 つも無いとき (気象庁は最大予測震度 3 以下なら地域を出さない。地域を流さない
+ * 情報源もある) は、どこが揺れるかを自分で見積もらず、全国と同じく知らせる (安全側)
+ */
+function eewNearby(e: Eew, places: Home[]): boolean {
+  const listed = [...e.warnAreas, ...(e.areas ?? [])];
+  if (e.kind === "forecast" && listed.length === 0) return true;
+  return places.some((p) => p.quake !== null && listed.includes(p.quake.name));
 }
 
 /** 噴火速報・噴火警報の対象の市町村等に、住んでいる地域か現在地が入るか */
@@ -584,22 +598,25 @@ export function matches(
   const places = placesOf(prefs, here);
   switch (e.type) {
     case "eew":
-      // 警報だけ (予報は知らせない)。「住んでいる地域と現在地」は、その地震情報／細分区域が警報の対象のとき
-      // (警報の地域は細分区域の名前で届く)
-      if (prefs.eew === "off" || e.data.kind !== "warning") return false;
-      return (
-        prefs.eew === "everywhere" ||
-        places.some((p) => p.quake && e.data.warnAreas.includes(p.quake.name))
-      );
+      // 警報と予報 (2026-11-16 に予報を戻した。docs/design.md の 2.4)
+      if (prefs.eew === "off") return false;
+      return prefs.eew === "everywhere" || eewNearby(e.data, places);
     case "quake": {
       if (prefs.quake === "off") return false;
       const q = e.data;
+      const min = quakeMinOf(prefs);
       if (
         prefs.quake === "everywhere" &&
         q.maxInt &&
-        intensityRank(q.maxInt) >= intensityRank(QUAKE_EVERYWHERE_MIN)
+        intensityRank(q.maxInt) >= intensityRank(min)
       )
         return true;
+      // 住んでいる地域と現在地は選んだ震度から。「全国」なら、選んだ震度が高くても震度 3 から
+      const local =
+        prefs.quake === "everywhere" &&
+        intensityRank(QUAKE_LOCAL_FLOOR) < intensityRank(min)
+          ? QUAKE_LOCAL_FLOOR
+          : min;
       // 住んでいる地域と現在地が入る地震情報／細分区域。P2P の震度速報には地域のコードが無いので、名前でも見る
       return places.some((p) => {
         const area = p.quake;
@@ -608,35 +625,39 @@ export function matches(
           q.areas.some(
             (a) =>
               (a.code === area.code || (!a.code && a.name === area.name)) &&
-              intensityRank(a.int) >= intensityRank(QUAKE_NEARBY_MIN),
+              intensityRank(a.int) >= intensityRank(local),
           )
         );
       });
     }
     case "tsunami":
-      // 津波注意報以上。「住んでいる地域と現在地」の重さは noticeFor がそこの予報区の区分にしてある
+      // 大津波警報は特別警報なので、どの範囲でも (「知らせない」でも) 知らせる (2026-11-16)。
+      // ほかは津波注意報以上。「住んでいる地域と現在地」の重さは noticeFor がそこの予報区の区分にしてある
+      if (n.level >= GRADE_RANK.major) return true;
       return prefs.tsunami !== "off" && n.level >= GRADE_RANK.watch;
     case "advisory":
       // 南海トラフ地震臨時情報等はいつも知らせる (選ばせない。持ち主の決定、2026-11-16)
       return true;
     case "volcano": {
+      // 噴火警報 (居住地域。レベル 4・5) は特別警報なので、どこに出ても、「知らせない」でも知らせる (2026-11-16)
+      if (e.data.code !== "VFVO56" && n.level >= VOLCANO_RESIDENTIAL)
+        return true;
       if (prefs.volcano === "off") return false;
       const near = volcanoNearby(e.data, places);
       // 噴火速報は、全国ならどこでも、地域なら対象の市町村等のとき
       if (e.data.code === "VFVO56")
         return prefs.volcano === "everywhere" || near;
-      // 噴火警報 (居住地域。レベル 4・5) は特別警報なので、どこに出ても知らせる。
       // 火口周辺警報 (レベル 2・3) は、住んでいる地域か現在地が対象のときだけ
-      return n.level >= VOLCANO_RESIDENTIAL || (near && n.level >= 2);
+      return near && n.level >= 2;
     }
     case "warning":
       // 特別警報はどこに出ても (住んでいる地域でも、「知らせない」にしてあっても) 知らせる。
       // 府県予報区ごとに知らせる通知 (special) は、「全国」なら危険警報から (warningFor が作る)。
-      // ほかは住んでいる地域 (と現在地) の警報以上
+      // ほかは住んでいる地域 (と現在地) の注意報以上 (注意報だけの通知は 1 日 1 回まで。`decideDaily`)
       if (n.level >= 5) return true;
       if (n.special) return prefs.weather === "everywhere";
       if (prefs.weather === "off") return false;
-      return n.level >= 3;
+      return n.level >= 2;
     case "weather":
       // 住んでいる地域の記録的短時間大雨情報・竜巻注意情報 (地域は noticeFor で絞ってある)
       return prefs.weather !== "off";
@@ -678,6 +699,55 @@ export function decide(
   if (!prev) return ok ? { send: true, renotify: true } : { send: false };
   if (prev.digest === digest) return { send: false };
   return { send: true, renotify: ok && n.level > prev.level };
+}
+
+/**
+ * 注意報だけの通知 (気象警報・注意報の通知で、いちばん高い段が注意報のもの)。1 日 1 回まで知らせる
+ * (持ち主の決定、2026-11-16。docs/design.md の 2.4)。警報以上に上がったもの・解除は入らない
+ */
+export const isAdvisoryOnly = (n: Notice): boolean =>
+  n.event.type === "warning" && !n.closing && n.level === 2;
+
+/**
+ * 注意報だけの通知を数える控えの tag。送り先ごとの控え (サーバーは push_log・webhook_log、
+ * 画面はメモリと localStorage) に、この tag で最後に数えた日 (日本時間の暦日) を digest として持つ。
+ * 住んでいる地域と現在地は別に数える (サーバーは現在地を知らないので、住んでいる地域の数をそろえるため)
+ */
+export const ADVISORY_QUOTA = {
+  home: "quota:advisory",
+  here: "quota:advisory:here",
+} as const;
+
+export const advisoryQuotaTag = (n: Pick<Notice, "here">): string =>
+  n.here ? ADVISORY_QUOTA.here : ADVISORY_QUOTA.home;
+
+/** 日本時間の暦日 (`2026-11-16`)。注意報の 1 日 1 回の区切り */
+export const jstDay = (t: number): string =>
+  new Date(t + 9 * 60 * 60_000).toISOString().slice(0, 10);
+
+export type DailyPlan =
+  { send: false } | { send: true; renotify: boolean; day?: string };
+
+/**
+ * `decide` に、注意報だけの通知の 1 日 1 回の決まりを足したもの (サーバーと画面で同じ)。
+ * 注意報だけの通知を新しく知らせる (前に送っていないか、鳴らし直す) ときだけ数え、`quota` (その送り先の
+ * 数えた日の控え) の日が今日なら送らない (一覧と地図に出るだけ)。送るなら `day` を返すので、
+ * 呼ぶ側が控えをその日に書き直す。前に知らせた注意報の続報 (鳴らさずに置き換える) は数えない
+ */
+export function decideDaily(
+  n: Notice,
+  prefs: PushPrefs,
+  prev: Sent | undefined,
+  digest: string,
+  here: Home | null,
+  quota: Sent | undefined,
+  now: number,
+): DailyPlan {
+  const p = decide(n, prefs, prev, digest, here);
+  if (!p.send || !isAdvisoryOnly(n) || (prev && !p.renotify)) return p;
+  const day = jstDay(now);
+  if (quota?.digest === day) return { send: false };
+  return { ...p, day };
 }
 
 /**
@@ -731,24 +801,43 @@ export const SCOPE_OPTION: Record<Scope, string> = {
 };
 
 /**
- * 選んでいる範囲で何を知らせるかの 1 文 (選択のすぐ下に出す)。段は選ばせない既定値なので、ここで言う。
- * 判定 (`matches`) と同じことを言うよう、決まりを変えたらここも直す
+ * 「知らせない」の 1 文。特別警報にあたるもの (気象の特別警報・大津波警報・噴火警報 (居住地域)) は、
+ * 「知らせない」でも知らせる (2026-11-16。docs/design.md の 2.4)
  */
-export function scopeText(kind: ScopeKind, scope: Scope): string {
-  if (scope === "off")
-    return kind === "weather"
-      ? "どこに出た特別警報だけを知らせます。"
-      : "知らせません。";
+const OFF_TEXT: Record<ScopeKind, string> = {
+  eew: "知らせません。",
+  quake: "知らせません。",
+  tsunami: "特別警報にあたる大津波警報だけを知らせます。",
+  volcano: "特別警報にあたる噴火警報 (レベル 4・5) だけを知らせます。",
+  weather: "どこに出た特別警報だけを知らせます。",
+};
+
+/**
+ * 選んでいる範囲で何を知らせるかの 1 文 (選択のすぐ下に出す)。段は選ばせない既定値なので、ここで言う
+ * (地震だけは選んだ震度 `quakeMin` で言う)。判定 (`matches`) と同じことを言うよう、決まりを変えたらここも直す
+ */
+export function scopeText(
+  kind: ScopeKind,
+  scope: Scope,
+  quakeMin?: Intensity,
+): string {
+  if (scope === "off") return OFF_TEXT[kind];
   const q = (i: Intensity) => `震度${intensityLabel(i)}以上`;
+  const min = quakeMinOf({ quake: scope, quakeMin });
+  const floor =
+    intensityRank(QUAKE_LOCAL_FLOOR) < intensityRank(min)
+      ? `と、住んでいる地域か現在地で${q(QUAKE_LOCAL_FLOOR)}の地震`
+      : "";
+  const advisory = "注意報だけの通知は 1 日 1 回までです。";
   const texts: Record<ScopeKind, Record<"everywhere" | "nearby", string>> = {
     eew: {
-      everywhere: "どこに出た警報も知らせます。予報は知らせません。",
+      everywhere: "どこに出た警報と予報も知らせます。",
       nearby:
-        "住んでいる地域か現在地が対象の警報だけを知らせます。予報は知らせません。",
+        "住んでいる地域か現在地が対象の警報と予報を知らせます。対象の地域が書かれていない予報は、どこに出たものも知らせます。",
     },
     quake: {
-      everywhere: `最大${q(QUAKE_EVERYWHERE_MIN)}の地震と、住んでいる地域か現在地で${q(QUAKE_NEARBY_MIN)}の地震を知らせます。`,
-      nearby: `住んでいる地域か現在地で${q(QUAKE_NEARBY_MIN)}の地震だけを知らせます。`,
+      everywhere: `最大${q(min)}の地震${floor}を知らせます。`,
+      nearby: `住んでいる地域か現在地で${q(min)}の地震だけを知らせます。`,
     },
     tsunami: {
       everywhere: "どこに出た津波注意報・津波警報・大津波警報も知らせます。",
@@ -762,10 +851,8 @@ export function scopeText(kind: ScopeKind, scope: Scope): string {
         "住んでいる地域か現在地が対象の噴火速報・火口周辺警報と、どこに出た噴火警報 (レベル 4・5) も知らせます。",
     },
     weather: {
-      everywhere:
-        "住んでいる地域か現在地の警報以上と記録的短時間大雨情報・竜巻注意情報に加え、どこに出た危険警報 (レベル 4) と特別警報も知らせます。",
-      nearby:
-        "住んでいる地域か現在地の警報以上と記録的短時間大雨情報・竜巻注意情報、どこに出た特別警報を知らせます。注意報は知らせません。",
+      everywhere: `住んでいる地域か現在地の注意報以上と記録的短時間大雨情報・竜巻注意情報に加え、どこに出た危険警報 (レベル 4) と特別警報も知らせます。${advisory}`,
+      nearby: `住んでいる地域か現在地の注意報以上と記録的短時間大雨情報・竜巻注意情報、どこに出た特別警報を知らせます。${advisory}`,
     },
   };
   return texts[kind][scope];

@@ -25,6 +25,7 @@ import {
   planSends,
   type SentLog,
   sentLog,
+  undoJob,
 } from "./notify.ts";
 
 /** 1 人が持てる Webhook の数 */
@@ -282,6 +283,8 @@ export class Webhooks {
       this.list(),
       (w) => w.id,
       this.now(),
+      // 前の投稿を置き換えられないので、注意報だけの通知の鳴らさない続報は送らない
+      false,
     );
     return Promise.all(jobs.map((j) => this.deliver(j)));
   }
@@ -289,7 +292,7 @@ export class Webhooks {
   private async deliver(j: Job<Webhook>): Promise<string> {
     const r = await this.send(j.target, payloadOf(j.notice, j.renotify));
     // 送れなかったら控えを送る前に戻す (次の続報で送り直せるように)
-    if (r !== "ok") this.log.undo(j.target.id, j.notice, j.prev);
+    if (r !== "ok") undoJob(this.log, j.target.id, j);
     return r;
   }
 

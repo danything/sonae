@@ -30,6 +30,7 @@ import {
   type AlertSettings,
   autoplayAllowed,
   groupAlerts,
+  loadQuota,
   notifyOn,
   pageNotification,
   parseAlertPrefs,
@@ -39,6 +40,8 @@ import {
   planEntry,
   type Present,
   presentEvents,
+  QUOTA_KEY,
+  quotaJson,
 } from "./alert.ts";
 import { KeepAwake } from "./awake.ts";
 import { chimeWav } from "./chime.ts";
@@ -49,7 +52,7 @@ import {
   OutageWatch,
 } from "./connection.ts";
 import type { SonaeEvent } from "./model.ts";
-import { contentOf, type Notice, type Sent } from "./notify.ts";
+import { ADVISORY_QUOTA, contentOf, type Notice, type Sent } from "./notify.ts";
 import { readPref, writePref } from "./prefs.ts";
 import {
   DEFAULT_PREFS,
@@ -394,9 +397,43 @@ class Alerter {
     // オフの間も控えは付ける (オンにした直後に、前から続いている事象の続報で鳴らさない)
     this.deliver(
       groupAlerts(
-        planAlerts(e, Date.now(), this.prefs, this.sent, this.here, this.left),
+        this.counted(() =>
+          planAlerts(
+            e,
+            Date.now(),
+            this.prefs,
+            this.sent,
+            this.here,
+            this.left,
+          ),
+        ),
       ),
     );
+  }
+
+  /**
+   * 注意報を数えた日を localStorage から読んでから決め、決めた後に書く (注意報だけの通知の 1 日 1 回を、
+   * 開き直しても、ほかのタブとも共有する。docs/design.md の 2.4)
+   */
+  private counted<T>(run: () => T): T {
+    loadQuota(readPref(QUOTA_KEY), this.sent);
+    const out = run();
+    const next = quotaJson(this.sent);
+    if (next !== "{}") writePref(QUOTA_KEY, next);
+    return out;
+  }
+
+  /** 控えだけを付け、注意報を数えた日は決める前のままにする */
+  private uncounted<T>(run: () => T): T {
+    const before = Object.values(ADVISORY_QUOTA).map(
+      (tag) => [tag, this.sent.get(tag)] as const,
+    );
+    const out = run();
+    for (const [tag, s] of before) {
+      if (s) this.sent.set(tag, s);
+      else this.sent.delete(tag);
+    }
+    return out;
   }
 
   /**
@@ -418,12 +455,10 @@ class Alerter {
     const first = !this.placed;
     this.placed = true;
     const now = Date.now();
-    const plans = planEntry(
-      presentEvents(present, now),
-      this.prefs,
-      this.sent,
-      next,
-    );
+    const plan = () =>
+      planEntry(presentEvents(present, now), this.prefs, this.sent, next, now);
+    // 初めて取れた市町村等は知らせないので、注意報の 1 日 1 回も数えない (数えた日を戻す)
+    const plans = first ? this.uncounted(plan) : this.counted(plan);
     if (!first) this.deliver(groupAlerts(plans));
     else this.trimSent();
   }

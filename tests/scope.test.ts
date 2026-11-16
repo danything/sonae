@@ -9,6 +9,7 @@ import {
   presentEvents,
 } from "#lib/alert.ts";
 import { type Cities, homeOf } from "#lib/home.ts";
+import type { Intensity } from "#lib/model.ts";
 import type { Sent } from "#lib/notify.ts";
 import {
   homeNote,
@@ -17,9 +18,16 @@ import {
   noticeOf,
   scopeText,
 } from "#lib/notify.ts";
-import { type Home, SCOPE_KINDS, SCOPES } from "#lib/push.ts";
+import {
+  type Home,
+  normalizePrefs,
+  quakeMinOf,
+  SCOPE_KINDS,
+  SCOPES,
+  withQuakeMin,
+} from "#lib/push.ts";
 
-import { NOW, prefs, tsunami } from "./events.ts";
+import { NOW, prefs, quake, tsunami } from "./events.ts";
 
 const cities = JSON.parse(
   readFileSync(new URL("../static/areas/cities.json", import.meta.url), "utf8"),
@@ -110,6 +118,10 @@ describe("津波", () => {
     if (!major) throw new Error("通知が無い");
     const mj = noticeFor(major, near);
     expect(mj && matches(mj, near)).toBe(true);
+    // 「知らせない」でも、大津波警報だけは知らせる (2026-11-16)。津波注意報は知らせない
+    const off = prefs({ tsunami: "off", home: kashiwa });
+    expect(matches(major, off)).toBe(true);
+    expect(matches(tokyoBay, off)).toBe(false);
   });
 
   test("その予報区の区分が上がったら鳴らし直す (重さはその予報区の区分)", () => {
@@ -177,6 +189,85 @@ describe("津波", () => {
   });
 });
 
+describe("地震の震度", () => {
+  // 判定だけを見るので、地震情報／細分区域は直に書く
+  const place = (code: string, name: string, qc: string, qn: string): Home => ({
+    code,
+    name,
+    quake: { code: qc, name: qn },
+    office: null,
+    ichiji: null,
+  });
+  const chiba = place("1210000", "千葉県千葉市", "340", "千葉県北西部");
+  const kashiwa = place("1221700", "千葉県柏市", "340", "千葉県北西部");
+  const maebashi = place("1020100", "群馬県前橋市", "420", "群馬県南部");
+  const q = (maxInt: Intensity, local: Intensity) =>
+    noticeOf(
+      quake({
+        maxInt,
+        areas: [
+          { code: "340", name: "千葉県北西部", int: local },
+          { code: "100", name: "石狩地方北部", int: maxInt },
+        ],
+      }),
+      Date.parse("2026-11-14T09:10:00+09:00"),
+    );
+
+  test("既定は前と同じ (全国は最大震度 4 以上と住んでいる地域で震度 3 以上、地域は震度 3 以上)", () => {
+    const n4 = q("4", "1");
+    const n3 = q("3", "3");
+    const n2 = q("2", "2");
+    if (!n4 || !n3 || !n2) throw new Error("通知が無い");
+    const all = prefs({ home: chiba });
+    expect(quakeMinOf(all)).toBe("4");
+    expect(matches(n4, all)).toBe(true);
+    expect(matches(n3, all)).toBe(true); // 住んでいる地域で震度 3
+    expect(matches(n3, prefs({ home: kashiwa }))).toBe(true); // 柏市も千葉県北西部
+    expect(matches(n3, prefs({ home: maebashi }))).toBe(false);
+    expect(matches(n2, all)).toBe(false);
+    const near = prefs({ quake: "nearby", home: chiba });
+    expect(quakeMinOf(near)).toBe("3");
+    expect(matches(n4, near)).toBe(false); // 千葉県北西部は震度 1
+    expect(matches(n3, near)).toBe(true);
+  });
+
+  test("選んだ震度は、選んだ範囲に使う。全国でも住んでいる地域は震度 3 から", () => {
+    const n5 = q("5-", "1");
+    const n4 = q("4", "3");
+    if (!n5 || !n4) throw new Error("通知が無い");
+    const all = prefs({ home: chiba, quakeMin: "5-" });
+    expect(matches(n5, all)).toBe(true);
+    expect(matches(n4, all)).toBe(true); // 住んでいる地域で震度 3
+    expect(matches(n4, prefs({ home: maebashi, quakeMin: "5-" }))).toBe(false);
+    // 住んでいる地域と現在地: そこの震度で見る
+    const near = prefs({ quake: "nearby", home: chiba, quakeMin: "4" });
+    expect(matches(n4, near)).toBe(false);
+    expect(matches(n5, near)).toBe(false);
+    const n4here = q("4", "4");
+    if (!n4here) throw new Error("通知が無い");
+    expect(matches(n4here, near)).toBe(true);
+    // 全国で震度 2 にすれば、どこかで震度 2 以上
+    const n2 = q("2", "1");
+    if (!n2) throw new Error("通知が無い");
+    expect(matches(n2, prefs({ quakeMin: "2" }))).toBe(true);
+  });
+
+  test("既定のままの震度は、範囲を替えたら替えた先の既定になる。選んだ値は残す", () => {
+    const all = prefs();
+    expect(withQuakeMin(all, "4")).toEqual(all); // 既定と同じなら持たない
+    const nearby = normalizePrefs({
+      ...withQuakeMin(all, "4"),
+      quake: "nearby",
+    });
+    expect(quakeMinOf(nearby)).toBe("3");
+    const picked = withQuakeMin(all, "5+");
+    expect(picked.quakeMin).toBe("5+");
+    expect(quakeMinOf(normalizePrefs({ ...picked, quake: "nearby" }))).toBe(
+      "5+",
+    );
+  });
+});
+
 describe("画面の文", () => {
   test("どの種類と範囲にも、何を知らせるかの 1 文がある", () => {
     for (const k of SCOPE_KINDS)
@@ -184,10 +275,27 @@ describe("画面の文", () => {
     expect(scopeText("quake", "everywhere")).toBe(
       "最大震度4以上の地震と、住んでいる地域か現在地で震度3以上の地震を知らせます。",
     );
-    // 気象の特別警報は「知らせない」でも知らせる
+    expect(scopeText("quake", "everywhere", "2")).toBe(
+      "最大震度2以上の地震を知らせます。",
+    );
+    expect(scopeText("quake", "nearby")).toBe(
+      "住んでいる地域か現在地で震度3以上の地震だけを知らせます。",
+    );
+    expect(scopeText("quake", "nearby", "5-")).toBe(
+      "住んでいる地域か現在地で震度5弱以上の地震だけを知らせます。",
+    );
+    // 特別警報にあたるものは「知らせない」でも知らせる
     expect(scopeText("weather", "off")).toBe(
       "どこに出た特別警報だけを知らせます。",
     );
+    expect(scopeText("tsunami", "off")).toContain("大津波警報だけ");
+    expect(scopeText("volcano", "off")).toContain(
+      "噴火警報 (レベル 4・5) だけ",
+    );
+    expect(scopeText("eew", "everywhere")).toContain("予報");
+    expect(scopeText("weather", "nearby")).toContain("1 日 1 回");
+    // 予想震度の数字は書かない
+    for (const s of SCOPES) expect(scopeText("eew", s)).not.toMatch(/震度/);
   });
 
   test("住んでいる地域の文は、照らすものと、選んでいないときの扱いを言う", () => {
