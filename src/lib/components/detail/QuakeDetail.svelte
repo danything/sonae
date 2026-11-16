@@ -1,6 +1,4 @@
 <script lang="ts">
-  import "@anyblades/blades/components/accordion";
-
   import ExternalLink from "~icons/lucide/external-link";
 
   import {

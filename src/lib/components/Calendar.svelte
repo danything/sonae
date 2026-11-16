@@ -11,7 +11,7 @@
    * 月のカレンダー (denpa の `HomeCalendar` と同じ形)。広い形の一覧の列の上のボタンから、メニューで開く。
    *
    * - 一覧に行のある日は本文の字。押すとその日の見出しへ送る。行の無い日は控えた字で押せない
-   * - 今日は赤い点。選んでいる日 (いま見ている行の日) は主の色の下線と太字
+   * - 今日は赤い点。選んでいる日 (いま見ている行の日) は主の色の下線と太字 (今日を選んでいるときは、点を下線の右に出す)
    * - ‹ › は行のある月と今月だけを行き来する
    */
   let {
@@ -181,7 +181,8 @@
     color: var(--so-muted);
     cursor: default;
   }
-  .cal-day.today::after {
+  /* 今日の点は ::before (選んでいる日の下線 ::after と重ねて出せるように) */
+  .cal-day.today::before {
     content: "";
     position: absolute;
     bottom: 0.3125rem;
@@ -209,5 +210,10 @@
     border-radius: var(--so-mark);
     background: var(--pico-primary);
     transform: translateX(-50%);
+  }
+  /* 今日を選んでいるときは、点を下線の右に寄せる */
+  .cal-day.today.pinned::before {
+    bottom: 0.1875rem;
+    left: calc(50% + 0.875rem);
   }
 </style>

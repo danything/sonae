@@ -652,14 +652,16 @@
         : selEew
           ? dayKey(selEew.issuedAt)
           : selVolcano
-            ? dayKey(selVolcano.reportedAt)
-            : selWeather
-              ? dayKey(selWeather.reportedAt)
-              : selInfo
-                ? dayKey(selInfo.reportedAt)
-                : selForeign
-                  ? dayKey(selForeign.originTime)
-                  : picked,
+            ? dayKey(selVolcano.eventTime ?? selVolcano.reportedAt)
+            : selOffice
+              ? dayKey(selOffice.reportedAt)
+              : selWeather
+                ? dayKey(selWeather.reportedAt)
+                : selInfo
+                  ? dayKey(selInfo.reportedAt)
+                  : selForeign
+                    ? dayKey(selForeign.originTime)
+                    : picked,
   );
   let calMenu = $state(false);
   async function pickDay(day: string) {
@@ -939,6 +941,12 @@
 {/snippet}
 
 {#snippet rowItem(r: RowData)}
+  <!-- 状態のバッジは、あるときだけ渡す (空の入れ物が行の間隔を広げないよう) -->
+  {#snippet stateTags()}
+    {#each r.states as s (s.label)}
+      <span class="tag {s.tone}">{s.label}</span>
+    {/each}
+  {/snippet}
   <li>
     <Row
       href={r.href}
@@ -946,6 +954,7 @@
       time={r.time}
       title={r.title}
       meta={r.meta}
+      tags={r.states.length > 0 ? stateTags : undefined}
     >
       {#snippet lead()}
         {#if r.quake}
@@ -957,11 +966,6 @@
         {:else if r.warning}
           <WarningLevel level={r.warning.level} label={r.warning.label} />
         {/if}
-      {/snippet}
-      {#snippet tags()}
-        {#each r.states as s (s.label)}
-          <span class="tag {s.tone}">{s.label}</span>
-        {/each}
       {/snippet}
     </Row>
   </li>
@@ -1111,7 +1115,7 @@
 
   <!-- 広い形のヘッダー (スマホの形では出さない) -->
   <header class="navbar">
-    <a class="logo" href="/" aria-label="sonae (地震の一覧へ)">
+    <a class="logo" href="/" aria-label="sonae (一覧へ)">
       {@render logo()}
       <span>sonae</span>
     </a>
@@ -1143,6 +1147,7 @@
         <button
           type="button"
           class="ghost small"
+          aria-haspopup="dialog"
           onclick={() => (pushOpen = true)}
           data-testid="push-open">通知</button
         >
