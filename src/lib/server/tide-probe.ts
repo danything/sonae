@@ -269,7 +269,7 @@ export class TideProbe {
         if (signal.aborted) break;
         failures++;
         this.lastOkAt = undefined;
-        this.log(`[tide-probe] 取れませんでした: ${err}`);
+        this.log(`[tide-probe] 測れませんでした: ${err}`);
       }
       const delay =
         failures === 0

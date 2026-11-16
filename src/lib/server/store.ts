@@ -588,6 +588,17 @@ export class Store {
       .map((r) => JSON.parse(r.data) as Quake);
   }
 
+  /** 発生 (無ければ更新) の時刻が since 以後の地震。数で切らない (大きな地震の後に続く余震で押し出さない) */
+  quakesSince(since: string): Quake[] {
+    return this.db
+      .query<{ data: string }, [string]>(
+        `SELECT data FROM quakes WHERE status = 'normal'
+         AND datetime(COALESCE(origin_time, updated_at)) >= datetime(?)`,
+      )
+      .all(since)
+      .map((r) => JSON.parse(r.data) as Quake);
+  }
+
   tsunamis(limit = 20): Tsunami[] {
     return this.db
       .query<{ data: string }, [number]>(

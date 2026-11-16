@@ -19,6 +19,8 @@ import {
   tsunamiComment,
 } from "#lib/server/tide-probe.ts";
 
+import { memoryStore } from "./helpers.ts";
+
 const NOW = Date.parse("2026-11-16T10:30:00Z");
 
 const tsunami = (grade: TsunamiGrade, o: Partial<Tsunami> = {}): Tsunami => ({
@@ -328,7 +330,7 @@ test("失敗しても輪は止まらず、ログに出力して間隔を空け�
   await probe.run(ctrl.signal);
   expect(waits).toEqual([60_000, 120_000, 60_000]);
   expect(
-    logs.filter((l) => l.startsWith("[tide-probe] 取れませんでした")),
+    logs.filter((l) => l.startsWith("[tide-probe] 測れませんでした")),
   ).toHaveLength(2);
   expect(logs.some((l) => l.startsWith("tide-latency "))).toBe(true);
 });
@@ -356,4 +358,36 @@ test(`残すのは ${KEEP_ROWS} 行と 90 日まで`, async () => {
     )
     .get();
   expect(count).toEqual({ n: KEEP_ROWS, old: 0 });
+});
+
+test("quakesSince: 時刻で切り、数では切らない。発生の時刻が無ければ更新の時刻で見る", () => {
+  const { store } = memoryStore();
+  const insert = store.db.query(
+    `INSERT INTO quakes (id, event_id, status, origin_time, updated_at, data)
+     VALUES (?, NULL, ?, ?, ?, ?)`,
+  );
+  const add = (id: string, status: string, origin: string | null) =>
+    insert.run(
+      id,
+      status,
+      origin,
+      "2026-11-16T09:00:00Z",
+      JSON.stringify(quake({ id })),
+    );
+  add("main", "normal", "2026-11-16T08:40:00Z");
+  for (let i = 0; i < 60; i++)
+    add(
+      `after${i}`,
+      "normal",
+      `2026-11-16T09:${String(i).padStart(2, "0")}:00Z`,
+    );
+  add("old", "normal", "2026-11-16T08:00:00Z");
+  add("training", "training", "2026-11-16T09:00:00Z");
+  add("noOrigin", "normal", null);
+  const ids = store.quakesSince("2026-11-16T08:30:00.000Z").map((q) => q.id);
+  expect(ids).toHaveLength(62);
+  expect(ids).toContain("main");
+  expect(ids).toContain("noOrigin");
+  expect(ids).not.toContain("old");
+  expect(ids).not.toContain("training");
 });

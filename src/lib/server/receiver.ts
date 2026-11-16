@@ -24,7 +24,7 @@ import type { Incoming, Source, SourceContext } from "./sources/types.ts";
 import { usgsSource } from "./sources/usgs.ts";
 import { wolfxSource } from "./sources/wolfx.ts";
 import { Store } from "./store.ts";
-import { TideProbe } from "./tide-probe.ts";
+import { QUAKE_WINDOW_MS, TideProbe } from "./tide-probe.ts";
 import { type Voicevox, voicevoxFromEnv } from "./voicevox.ts";
 import { Webhooks } from "./webhook.ts";
 
@@ -162,7 +162,9 @@ export function startReceiving(): void {
       new TideProbe(a.store.db, {
         state: () => ({
           tsunamis: a.store.tsunamis(20),
-          quakes: a.store.quakes(50),
+          quakes: a.store.quakesSince(
+            new Date(Date.now() - QUAKE_WINDOW_MS).toISOString(),
+          ),
           warnings: a.store.warnings(),
         }),
       })
