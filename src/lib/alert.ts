@@ -12,8 +12,10 @@ import {
   type WeatherWarning,
 } from "./model.ts";
 import {
+  ADVISORY_QUOTA,
+  advisoryQuotaTag,
   contentOf,
-  decide,
+  decideDaily,
   hereNoticeFor,
   type Notice,
   noticeFor,
@@ -170,25 +172,71 @@ export function planAlerts(
     // 記録的短時間大雨情報・竜巻注意情報は、地域が違っても同じ tag (先に並ぶほうだけ)
     if (seen.has(n.tag)) continue;
     seen.add(n.tag);
-    const p = mark(n, prefs, sent, here);
+    const p = mark(n, prefs, sent, here, now);
     if (p) plans.push(quiet ? { ...p, renotify: false } : p);
   }
   return plans;
 }
 
-/** 知らせるかを決め、知らせるなら控える (Web Push の push_log と同じく、重さは大きいほうを残す) */
+/**
+ * 知らせるかを決め、知らせるなら控える (Web Push の push_log と同じく、重さは大きいほうを残す)。
+ * 注意報だけの通知は 1 日 1 回まで (`decideDaily`。数えた日も `sent` に、`ADVISORY_QUOTA` の tag で持つ)
+ */
 function mark(
   n: Notice,
   prefs: PushPrefs,
   sent: Map<string, Sent>,
   here: Home | null,
+  now: number,
 ): AlertPlan | null {
   const prev = sent.get(n.tag);
   const digest = contentOf(n);
-  const p = decide(n, prefs, prev, digest, here);
+  const qTag = advisoryQuotaTag(n);
+  const p = decideDaily(n, prefs, prev, digest, here, sent.get(qTag), now);
   if (!p.send) return null;
   sent.set(n.tag, { level: Math.max(prev?.level ?? 0, n.level), digest });
+  if (p.day) {
+    // 古い控えから捨てる (`trimSent`) ときに残るよう、いちばん新しい所へ置き直す
+    sent.delete(qTag);
+    sent.set(qTag, { level: 0, digest: p.day });
+  }
   return { notice: n, renotify: p.renotify };
+}
+
+/**
+ * 端末に注意報を数えた日を持つ localStorage の鍵 (`readPref` の形。`sonae.alert.quota`)。
+ * 開き直しても、タブをまたいでも 1 日 1 回にする
+ */
+export const QUOTA_KEY = "alert.quota";
+
+/** localStorage の値から、数えた日を控えに入れる (控えの日のほうが新しければそのまま) */
+export function loadQuota(raw: string | null, sent: Map<string, Sent>): void {
+  let o: Record<string, unknown> = {};
+  try {
+    const v: unknown = JSON.parse(raw ?? "{}");
+    if (typeof v === "object" && v !== null) o = v as Record<string, unknown>;
+  } catch {
+    return;
+  }
+  for (const tag of Object.values(ADVISORY_QUOTA)) {
+    const day = o[tag];
+    if (typeof day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+    const mine = sent.get(tag)?.digest;
+    if (mine === undefined || mine < day) {
+      sent.delete(tag);
+      sent.set(tag, { level: 0, digest: day });
+    }
+  }
+}
+
+/** 控えから、localStorage に書く値を作る */
+export function quotaJson(sent: Map<string, Sent>): string {
+  const o: Record<string, string> = {};
+  for (const tag of Object.values(ADVISORY_QUOTA)) {
+    const day = sent.get(tag)?.digest;
+    if (day) o[tag] = day;
+  }
+  return JSON.stringify(o);
 }
 
 /** 画面が持ついまの状態のうち、現在地に入ったときに見るもの */
@@ -237,7 +285,7 @@ function timeOf(e: SonaeEvent): number {
 /**
  * 現在地が別の市町村等に替わったとき、そこにもう出ているものを知らせるかを決めて控える
  * (`events` は `presentEvents` で作った、いま出ているもの)。
- * - 気象警報・注意報は、現在地の通知 (`hereNoticeFor`) を作る。段は `planAlerts` と同じ (警報以上)
+ * - 気象警報・注意報は、現在地の通知 (`hereNoticeFor`) を作る。段は `planAlerts` と同じ (注意報以上。注意報だけの通知は 1 日 1 回まで)
  * - 津波・火山は全国と同じ通知 (同じ tag) で、範囲の判定に現在地を使う。まだ知らせていなければ、ここで初めて知らせる
  *
  * 同じ中身は控えで 1 度だけなので、境目で行き来しても、戻ってきても鳴らし直さない。出たままのものは、
@@ -249,6 +297,7 @@ export function planEntry(
   prefs: PushPrefs,
   sent: Map<string, Sent>,
   here: Home,
+  now: number = Date.now(),
 ): AlertPlan[] {
   if (here.code === prefs.home?.code) return [];
   const plans: AlertPlan[] = [];
@@ -261,7 +310,7 @@ export function planEntry(
         ? hereNoticeFor(base, prefs, here)
         : noticeFor(base, prefs, here);
     if (!n || n.closing) continue;
-    const p = mark(n, prefs, sent, here);
+    const p = mark(n, prefs, sent, here, now);
     // 津波・火山の控えが前からあり中身も同じなら、mark が null を返す (もう知らせている)
     if (p) plans.push(p);
   }

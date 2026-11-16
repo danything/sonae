@@ -20,6 +20,7 @@
   import { alerter } from "#lib/alerter.svelte.ts";
   import { EDGE_SLEEP_HINT, isDesktopEdge } from "#lib/awake.ts";
   import { byPrefecture, type Cities, homeOf } from "#lib/home.ts";
+  import { INTENSITIES, intensityLabel } from "#lib/model.ts";
   import {
     homeNote,
     SCOPE_LABEL,
@@ -46,8 +47,10 @@
     DEFAULT_PREFS,
     normalizePrefs,
     type PushPrefs,
+    quakeMinOf,
     SCOPE_KINDS,
     SCOPES,
+    withQuakeMin,
   } from "#lib/push.ts";
   import { voiceLabel } from "#lib/voices.ts";
   import { syncWebhookPrefs } from "#lib/webhook-client.ts";
@@ -202,6 +205,8 @@
    * 続けて変えたときに前の送信と追い越さないよう、送るのは 1 つずつ順に (`queuePrefs`。地図のメニューと同じ列)
    */
   function savePrefs(note = ""): void {
+    // 範囲を替えたら、震度が既定のままなら替えた先の既定にする (`normalizePrefs` が既定と同じ値を外す)
+    prefs = normalizePrefs($state.snapshot(prefs));
     alerter.setPrefs(prefs);
     // Webhook にも同じ条件を使う (この人の Webhook 全部。無ければ送らない)
     void syncWebhookPrefs($state.snapshot(prefs)).then((failed) => {
@@ -474,12 +479,30 @@
             {/each}
           </select>
         </label>
+        {#if kind === "quake" && prefs.quake !== "off"}
+          <label>
+            地震を知らせる震度
+            <select
+              bind:value={
+                () => quakeMinOf(prefs), (v) => (prefs = withQuakeMin(prefs, v))
+              }
+              aria-describedby="scope-quake"
+              data-testid="quake-min"
+            >
+              {#each INTENSITIES as i (i)}
+                <option value={i}>震度{intensityLabel(i)}以上</option>
+              {/each}
+            </select>
+          </label>
+        {/if}
         <p class="small muted" id={`scope-${kind}`}>
-          {scopeText(kind, prefs[kind])}
+          {scopeText(kind, prefs[kind], prefs.quakeMin)}
         </p>
       {/each}
       <p class="small muted">
-        気象の特別警報、南海トラフ地震臨時情報と後発地震注意情報は、いつも知らせます。
+        特別警報にあたるもの (気象の特別警報・大津波警報・噴火警報 (レベル
+        4・5))
+        と、南海トラフ地震臨時情報・後発地震注意情報は、「知らせない」を選んでもいつも知らせます。
       </p>
       {#if prefsMessage}
         <p class="small" role="status" data-testid="prefs-status">
