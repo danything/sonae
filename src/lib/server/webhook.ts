@@ -3,7 +3,8 @@
  * Discord や Slack の Incoming Webhook へ、Web Push と同じ報を同じ見出しと本文で送る。
  * 作りは denpa の `src/lib/server/webhook.ts` にそろえる。
  *
- * - 鳴らすかどうかは Web Push と同じ判定と控え (`planSends`)。条件は Webhook ごとに持つ
+ * - 鳴らすかどうかは Web Push と同じ判定と控え (`planSends`)。条件は Webhook の行ごとに持つが、
+ *   足したときは「通知」の条件で、その後に条件を変えると、その人の Webhook 全部を同じ条件に替える (`setPrefs`)
  * - **URL は秘密** (知っていれば誰でも投稿できる)。画面にも記録にもホストだけを出す。
  *   送れなかった理由も、HTTP の状態か決まった言葉だけにする (例外の文には URL が入りうる)
  * - **宛先のアドレスは縛らない。** 家の中の Home Assistant のような LAN の送り先がふつうにあり、
