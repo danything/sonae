@@ -20,8 +20,8 @@ irm https://raw.githubusercontent.com/danything/sonae/main/install.ps1 | iex
 ## していること
 
 1. 最新のリリースの `sonae-<バージョン>-windows-x64.zip` と `.sha256` を取って照らす。中身は bun (公式のリリースの baseline。AVX2 の無い CPU でも動く)・ビルドしたアプリ・VOICEVOX の取り方 (`voicevox.txt`)・ライセンス
-2. `voicevox.txt` の版の VOICEVOX のエンジン (`voicevox_engine-windows-cpu-<版>.vvpp`) を
-   [VOICEVOX/voicevox_engine のリリース](https://github.com/VOICEVOX/voicevox_engine/releases) から取り、sha256 を照らして開く (2 GB ほど。入っている版と同じなら取らない)
+2. `voicevox.txt` のバージョンの VOICEVOX のエンジン (`voicevox_engine-windows-cpu-<バージョン>.vvpp`) を
+   [VOICEVOX/voicevox_engine のリリース](https://github.com/VOICEVOX/voicevox_engine/releases) から取り、sha256 を照らして開く (2 GB ほど。入っているバージョンと同じなら取らない)
 3. **揃ってから止める** (取ってこられなかったら、動いているものに触らない)。`server\` (と、取り直したときは `voicevox\`) を入れ替える
 4. `%ProgramData%\sonae` を SYSTEM と管理者だけにし、`sonae.env` が無ければ雛形を作り、VAPID の鍵が無ければ配布物の bun で作る
 5. タスク (`sonae`・`sonae-voicevox`) を載せ、ファイアウォールでポート 3030 をプライベートとドメインのネットワークにだけ開ける。`/health` が答えるまで待って、ログインしている人のブラウザで開く
@@ -29,7 +29,7 @@ irm https://raw.githubusercontent.com/danything/sonae/main/install.ps1 | iex
 | 場所                             | 中身                                                                                        |
 | -------------------------------- | ------------------------------------------------------------------------------------------- |
 | `%ProgramFiles%\sonae\server\`   | `bun.exe`・`app\` (package.json と build\)・`voicevox.txt`・`licenses\`                     |
-| `%ProgramFiles%\sonae\voicevox\` | VOICEVOX のエンジン (`run.exe` と model\ など)・入れた版 (`VERSION`)                        |
+| `%ProgramFiles%\sonae\voicevox\` | VOICEVOX のエンジン (`run.exe` と model\ など)・入れたバージョン (`VERSION`)                |
 | `%ProgramData%\sonae\`           | `sonae.db`・`sonae.env`・起こす `sonae.cmd` と `voicevox.cmd`・`logs\`。SYSTEM と管理者だけ |
 
 - `.cmd` は落ちたら 5 秒置いて起こし直します。`sonae.env` は起こすたびに読み直します
