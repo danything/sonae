@@ -21,6 +21,7 @@ import {
   type Notice,
   noticeFor,
   noticeOf,
+  noticesFor,
   payloadOf,
   type Sent,
 } from "./notify.ts";
@@ -149,15 +150,17 @@ export function planAlerts(
   const base = noticeOf(e, now);
   if (!base) return [];
   // 気象は住んでいる地域で中身が変わる (Web Push と同じく、条件ごとに作る)。気象のほかの種類は
-  // 通知が 1 つで、「住んでいる地域と現在地」の判定に現在地も使う (mark が decide に渡す)
-  const home = noticeFor(base, prefs, here);
-  const notices: { notice: Notice; quiet: boolean }[] = home
-    ? [{ notice: home, quiet: false }]
-    : [];
+  // 通知が 1 つで、「住んでいる地域と現在地」の判定に現在地も使う (mark が decide に渡す)。
+  // 府県予報区ごとに知らせる段が終わったことを伝える通知も足す (Web Push と同じ `noticesFor`)
+  const own = noticesFor(base, prefs, here);
+  const notices: { notice: Notice; quiet: boolean }[] = own.map((notice) => ({
+    notice,
+    quiet: false,
+  }));
   if (
     here &&
     here.code !== prefs.home?.code &&
-    !(e.type === "weather" && home)
+    !(e.type === "weather" && own.length > 0)
   ) {
     const h = hereNoticeFor(base, prefs, here);
     if (h) notices.push({ notice: h, quiet: false });
