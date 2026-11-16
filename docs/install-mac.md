@@ -13,8 +13,8 @@ curl -fsSL https://raw.githubusercontent.com/danything/sonae/main/install.sh | s
 ## していること
 
 1. 最新のリリースの `sonae-<バージョン>-darwin-<arm64|x64>.tar.gz` と `.sha256` を取って照らす。中身は bun (公式のリリース)・ビルドしたアプリ・VOICEVOX の取り方 (`voicevox.txt`)・ライセンス
-2. `voicevox.txt` の版の VOICEVOX のエンジン (Mac の CPU 版の vvpp。Apple Silicon は 1 つ、Intel は 2 つに分けたもの) を
-   [VOICEVOX/voicevox_engine のリリース](https://github.com/VOICEVOX/voicevox_engine/releases) から取り、sha256 を照らして開く (2 GB ほど。入っている版と同じなら取らない)
+2. `voicevox.txt` のバージョンの VOICEVOX のエンジン (Mac の CPU 版の vvpp。Apple Silicon は 1 つ、Intel は 2 つに分けたもの) を
+   [VOICEVOX/voicevox_engine のリリース](https://github.com/VOICEVOX/voicevox_engine/releases) から取り、sha256 を照らして開く (2 GB ほど。入っているバージョンと同じなら取らない)
 3. **揃ってから止める** (取ってこられなかったら、動いているものに触らない)。`server/` (と、取り直したときは `voicevox/`) を入れ替える
 4. `data/sonae.env` が無ければ雛形を作り、VAPID の鍵が無ければ配布物の bun で作る
 5. LaunchDaemon を載せて、`/health` が答えるまで待つ。ログインしている人のブラウザで開く
@@ -22,7 +22,7 @@ curl -fsSL https://raw.githubusercontent.com/danything/sonae/main/install.sh | s
 | 場所                                                              | 中身                                                                              |
 | ----------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | `/Library/Application Support/sonae/server/`                      | `bun`・`app/` (package.json と build/)・`voicevox.txt`・`licenses/`               |
-| `/Library/Application Support/sonae/voicevox/`                    | VOICEVOX のエンジン (`run` と model/ など)・入れた版 (`VERSION`)                  |
+| `/Library/Application Support/sonae/voicevox/`                    | VOICEVOX のエンジン (`run` と model/ など)・入れたバージョン (`VERSION`)          |
 | `/Library/Application Support/sonae/data/`                        | `sonae.db`・`sonae.env`・本体を起こす `sonae.sh`。root だけが読み書きできる (700) |
 | `/Library/LaunchDaemons/io.github.danything.sonae.plist`          | sonae 本体 (`sonae.sh`)。起動したら起こし、落ちたら起こし直す                     |
 | `/Library/LaunchDaemons/io.github.danything.sonae-voicevox.plist` | VOICEVOX のエンジン (`run --host 127.0.0.1 --port 50121`)                         |
