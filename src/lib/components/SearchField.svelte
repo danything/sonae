@@ -266,7 +266,8 @@
       {#if remoteState === "loading"}
         住所を探しています…
       {:else if remoteState === "failed"}
-        住所を探せませんでした (地理院地図の地名検索API)。市町村だけを出しています
+        住所を探せませんでした
+        (地理院地図の地名検索API)。市町村だけを出しています
       {:else if remote && remote.query === value.trim()}
         住所: 地理院地図の地名検索APIを利用
       {:else if shouldQuery(value)}
