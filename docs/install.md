@@ -1,7 +1,6 @@
 # 立てる
 
-README の「1 行で入れる」の細かいところ。OS ごとの入れ方と置き場、上げ方と外し方、ログイン・環境変数・VOICEVOX のこと。
-Mac と Windows の中身は [install-mac.md](install-mac.md) と [install-windows.md](install-windows.md) に。Kubernetes (Helm chart) は [README](../README.md#kubernetes-に立てる-helm-chart)。
+Mac と Windows でインストーラがすることと置き場は [install-mac.md](install-mac.md) と [install-windows.md](install-windows.md)。Kubernetes (Helm chart) は [README](../README.md#kubernetes-に立てる-helm-chart)。
 
 ## 1 行で入れる
 
@@ -38,7 +37,7 @@ irm https://raw.githubusercontent.com/danything/sonae/main/install.ps1 | iex   #
 - **入口は [genkan](https://github.com/danything/genkan)** (Linux。ホスト名でコンテナに振り分けるリバースプロキシ)。
   動いていればそれを使い、無ければ 80 と 443 が空いているときだけ `~/genkan` に入れて <http://sonae.localhost> で開きます。
   `*.localhost` はブラウザが安全な文脈として扱うので、そのマシンのブラウザなら Web Push も使えます。LAN のほかの機器からは `http://<IP>:3030`
-- ポートは **3030** (denpa などがよく使う 3000 と重ねない)。どの OS でも LAN に開きます (Linux は Docker が公開するので ufw などのファイアウォールを素通りし、Windows はプライベートとドメインのネットワークだけ開ける)。ログイン (OIDC) を書くまでは `/health` しか答えません。VOICEVOX のエンジンは外に出しません (Linux は compose のネットワークの中だけ、Mac と Windows はループバックの 50121。VOICEVOX のアプリの 50021 とも重ねない)
+- ポートは **3030** (denpa などがよく使う 3000 と重ねない)。どの OS でも LAN に開きます (Linux は Docker が公開するので ufw などのファイアウォールを素通りし、Windows はプライベートとドメインのネットワークだけ開ける)。誰が開けるかは下の「ログイン」。VOICEVOX のエンジンは外に出しません (Linux は compose のネットワークの中だけ、Mac と Windows はループバックの 50121。VOICEVOX のアプリの 50021 とも重ねない)
 - イメージの `ghcr.io/danything/sonae` は amd64 だけなので、Linux は x86_64 だけです
 
 ### 置き場
@@ -55,12 +54,12 @@ irm https://raw.githubusercontent.com/danything/sonae/main/install.ps1 | iex   #
 
 ### インストーラの環境変数
 
-| 名前                                                             | 中身                                                                                                                |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `SONAE_VERSION`                                                  | 入れるバージョン (`v0.1.0`)。既定は最新のリリース。Linux は `main` などの git の ref も渡せる (イメージは `latest`) |
-| `SONAE_HOME`                                                     | Linux の置き場 (既定 `~/sonae`)                                                                                     |
-| `SONAE_VAPID_SUBJECT`                                            | Web Push の連絡先 (`mailto:…` か `https://…`)。初めて入れるときだけ使う。既定はこのリポジトリの URL                 |
-| `SONAE_COMPOSE_FILE`・`SONAE_SERVER_TARBALL`・`SONAE_SERVER_ZIP` | 手元の compose ファイル・配布物を使う (CI と開発用)                                                                 |
+| 名前                                                                            | 中身                                                                                                                |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `SONAE_VERSION`                                                                 | 入れるバージョン (`v0.1.0`)。既定は最新のリリース。Linux は `main` などの git の ref も渡せる (イメージは `latest`) |
+| `SONAE_HOME`                                                                    | Linux の置き場 (既定 `~/sonae`)                                                                                     |
+| `SONAE_VAPID_SUBJECT`                                                           | Web Push の連絡先 (`mailto:…` か `https://…`)。初めて入れるときだけ使う。既定はこのリポジトリの URL                 |
+| `SONAE_COMPOSE_FILE`・`SONAE_IMAGE`・`SONAE_SERVER_TARBALL`・`SONAE_SERVER_ZIP` | 手元の compose ファイル・イメージ・配布物を使う (CI と開発用)                                                       |
 
 Mac で渡すときは `sudo -E` にします (sudo は環境変数を落とす)。
 
@@ -95,7 +94,8 @@ Linux の genkan は、[danything/genkan](https://github.com/danything/genkan) �
   ログインなしで通すのは、IP の直書き・`localhost`・ドットの無い名前 (`nas:3030`)・家の中だけの名前 (`.localhost`・`.local`・`.lan`・`.home.arpa`・`.internal`) と、`ALLOWED_HOSTS` に書いた名前 (カンマ区切り。`.example.com` でその下も) だけです。
   自分のドメインや Tailscale の名前 (`.tail1234.ts.net`) で開くなら `ALLOWED_HOSTS` に書きます
 - **Docker のネットワーク (`172.16.0.0/12`) は入れません。** 前段 (genkan など) 越しの人が全員当たってしまうためです。前段の後ろに置くなら、前段のアドレスを `TRUSTED_PROXIES` に書きます
-  (直の相手がそこのときだけ `X-Forwarded-For` を読む)。genkan に登録したときは、install.sh が `compose.override.yml` に書きます
+  (直の相手がそこのときだけ `X-Forwarded-For` を読む)。genkan に登録したときは、install.sh が `compose.override.yml` に書きます。
+  adapter-bun の `ADDRESS_HEADER` を書くと、信頼するネットワークは効きません (そのヘッダは誰でも名乗れるため)
 - 断ったときは 403 と理由 (接続元のアドレス) を返します。LAN が別の範囲 (`172.16.0.0/12` など) なら、その範囲を足します
 
 **家の外からも開くなら、ログイン (OIDC) を足します。** 3 つ (`OIDC_ISSUER`・`OIDC_CLIENT_ID`・`OIDC_CLIENT_SECRET`) が揃うと、信頼するネットワークの外の人はログインして開きます (中の人はログインなしのまま)。
@@ -114,16 +114,20 @@ Linux の genkan は、[danything/genkan](https://github.com/danything/genkan) �
 Windows は cmd が読むので、値に `"`・`&`・`^`・`%` を入れると崩れることがあります (OIDC のクライアントシークレットに入っていたら、作り直すのが確か)。
 
 置き場・ポート・VOICEVOX の宛先はインストーラが決めるので、書いても効きません (Linux は `compose.override.yml` で変えられる)。
-使える名前は [charts/sonae/values.yaml](../charts/sonae/values.yaml) のコメントと [push.md](push.md)・[cwa.md](cwa.md)・[entra.md](entra.md)。
-ほかに、画面の出し方と受信を変える名前があります。
 
-| 名前                | 中身                                                                                                                                                     |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SONAE_TRAINING=on` | 緊急地震速報の訓練・試験も一覧と地図に出す。既定は出さない。出しても音・読み上げ・通知・Web Push・Webhook では知らせない ([design.md の 2.2](design.md)) |
-| `SONAE_RECEIVE=off` | 情報源につながない (画面だけ触りたいとき)                                                                                                                |
+| 名前                                                       | 中身                                                                                                                                                     |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TRUSTED_NETWORKS`・`ALLOWED_HOSTS`・`TRUSTED_PROXIES`     | ログインなしで開ける範囲 (上の「ログイン」)                                                                                                              |
+| `OIDC_ISSUER`・`OIDC_CLIENT_ID`・`OIDC_CLIENT_SECRET` など | ログイン ([entra.md](entra.md))                                                                                                                          |
+| `PUBLIC_URL`                                               | 外から https で開くときの URL。ログインの戻り先と Webhook の本文のリンクに使う                                                                           |
+| `VAPID_PRIVATE_JWK`・`VAPID_SUBJECT`                       | Web Push の鍵と連絡先 (下の「Web Push の鍵」と [push.md](push.md))                                                                                       |
+| `CWA_API_KEY`                                              | 台湾の中央氣象署の授権碼 ([cwa.md](cwa.md))。無ければ中央氣象署の受信だけを切る                                                                          |
+| `SONAE_TRAINING=on`                                        | 緊急地震速報の訓練・試験も一覧と地図に出す。既定は出さない。出しても音・読み上げ・通知・Web Push・Webhook では知らせない ([design.md の 2.2](design.md)) |
+| `SONAE_TREM=off`                                           | 台湾の観測点の揺れ (ExpTech の TREM-RTS) を受けない。商用で立てて ExpTech の同意が無いときは切る ([README の「ライセンス」](../README.md#ライセンス))    |
+| `SONAE_RECEIVE=off`                                        | 情報源につながない (画面だけ触りたいとき)                                                                                                                |
 
-読み上げの声は環境変数では選びません。画面の「通知」で選び、まだ選んでいなければ剣崎雌雄で読みます。
-前の環境変数 `VOICEVOX_SPEAKER` (chart の `sonae.voicevoxSpeaker`) は 2026-11-16 から読みません。入れていて画面で声を選んでいなければ、上げ直すと剣崎雌雄に替わるので、同じ声を使い続けるなら「通知」で一度選びます。
+読み上げの声と通知の条件・Webhook は環境変数では決めず、画面の「通知」で選びます (声を選んでいなければ剣崎雌雄で読む)。
+前の `VOICEVOX_SPEAKER` (chart の `sonae.voicevoxSpeaker`) は読みません。
 
 ## Web Push の鍵
 
@@ -131,26 +135,25 @@ Windows は cmd が読むので、値に `"`・`&`・`^`・`%` を入れると�
 Linux は sonae のイメージの bun で、Mac と Windows は配布物の bun で作るので、ほかに何も入れません。
 **一度作ったら替えません** (替えると、どのブラウザの購読にも送れなくなる)。
 
-連絡先 (`VAPID_SUBJECT`) は、既定ではこのリポジトリの URL を書きます。`PUBLIC_URL` が `http://localhost` のままだと配信サービスが受けないためです。
+連絡先 (`VAPID_SUBJECT`) は、既定ではこのリポジトリの URL を書きます。sonae は `VAPID_SUBJECT` が無ければ `PUBLIC_URL` を使いますが、`http://localhost` では配信サービスが受けないためです。
 自分の `mailto:…` に替えてかまいません。
 
-Web Push はブラウザが安全な文脈 (https か localhost) でないと使えません。LAN のほかの機器から `http://<IP>:3030` で開いても、通知の登録はできません。
-家の外やスマホで受けるなら、https の前段を置いて `PUBLIC_URL` を書きます。
+家の外やスマホで受けるなら、https の前段を置いて `PUBLIC_URL` を書きます (`http://<IP>:3030` では通知を登録できない。上の「ログイン」)。
 
 ## VOICEVOX
 
 読み上げの声は、sonae と一緒に動かす [VOICEVOX](https://voicevox.hiroshiba.jp/) のエンジンで作ります ([design.md の 2.4](design.md))。
 既定の声は「VOICEVOX:剣崎雌雄」で、画面で替えられます。エンジンが止まっているときは、ブラウザの読み上げで同じ文を読みます。
 
-| OS      | 入れるもの                                                                                                  | 取り方                                                                                                   |
-| ------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Linux   | 公式のイメージ `voicevox/voicevox_engine:<版>` (バージョンだけのタグは CPU 用)                              | `docker compose pull`                                                                                    |
-| Mac     | 公式のエンジンの Mac 用 CPU 版 (`voicevox_engine-macos-arm64-<版>.vvpp`、Intel は `macos-x64` の分けたもの) | [VOICEVOX/voicevox_engine のリリース](https://github.com/VOICEVOX/voicevox_engine/releases) から直に取る |
-| Windows | 公式のエンジンの Windows 用 CPU 版 (`voicevox_engine-windows-cpu-<版>.vvpp`)                                | 同じ                                                                                                     |
+| OS      | 入れるもの                                                                                                          | 取り方                                                                                                   |
+| ------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| Linux   | 公式のイメージ `voicevox/voicevox_engine:<バージョン>` (バージョンだけのタグは CPU 用)                              | `docker compose pull`                                                                                    |
+| Mac     | 公式のエンジンの Mac 用 CPU 版 (`voicevox_engine-macos-arm64-<バージョン>.vvpp`、Intel は `macos-x64` の分けたもの) | [VOICEVOX/voicevox_engine のリリース](https://github.com/VOICEVOX/voicevox_engine/releases) から直に取る |
+| Windows | 公式のエンジンの Windows 用 CPU 版 (`voicevox_engine-windows-cpu-<バージョン>.vvpp`)                                | 同じ                                                                                                     |
 
-- **版は 1 か所で決まります。** [compose.prod.yml](../compose.prod.yml) の `voicevox/voicevox_engine` のタグ (Renovate が上げる。compose.yml と chart の values.yaml もそろえる)。
-  Mac と Windows の配布物を組むときに、その版の vvpp の名前と sha256 (GitHub がリリースの添付に付けている digest) を配布物の `voicevox.txt` に書き、
-  インストーラはそれを見て取ってきて照らします。いまの版は 0.26.2
+- **バージョンは 1 か所で決まります。** [compose.prod.yml](../compose.prod.yml) の `voicevox/voicevox_engine` のタグ (Renovate が上げる。compose.yml と chart の values.yaml もそろえる)。
+  Mac と Windows の配布物を組むときに、そのバージョンの vvpp の名前と sha256 (GitHub がリリースの添付に付けている digest) を配布物の `voicevox.txt` に書き、
+  インストーラはそれを見て取ってきて照らします。いまのバージョンは 0.26.2
 - vvpp は VOICEVOX のプラグインの形で、中身はエンジン (`run`・`run.exe`) をそのまま zip にしたものです。2 GB ほどあり、開くのに 6 GB ほど空きが要ります
 - **sonae は VOICEVOX を再配布しません。** 配布物にエンジンは入れず、利用者の機械が公式のリリースから直に取ります
 - エンジンは CPU で合成します (GPU 版は使わない)。ユーザー辞書 (地名の読み) は sonae がつながるたびに足します
