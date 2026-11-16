@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { openDb } from "#lib/server/db.ts";
 import { noticeOf, payloadOf } from "#lib/server/notify.ts";
+import { publicOrigin, publicUrlBroken } from "#lib/server/site.ts";
 import {
   bodyOf,
   discord,
@@ -9,7 +10,6 @@ import {
   failure,
   hostOf,
   MAX_WEBHOOKS,
-  originFromEnv,
   slack,
   textOf,
   Webhooks,
@@ -85,11 +85,15 @@ describe("送り先の URL", () => {
   });
 
   test("PUBLIC_URL から押すと開く画面の origin を作る", () => {
-    expect(originFromEnv({ PUBLIC_URL: "https://s.example/" })).toBe(
+    expect(publicOrigin({ PUBLIC_URL: "https://s.example/" })).toBe(
       "https://s.example",
     );
-    expect(originFromEnv({})).toBeUndefined();
-    expect(originFromEnv({ PUBLIC_URL: "nope" })).toBeUndefined();
+    expect(publicOrigin({})).toBeUndefined();
+    expect(publicOrigin({ PUBLIC_URL: "nope" })).toBeUndefined();
+    // 入っているのに読めないときだけ、起動したときに警告する
+    expect(publicUrlBroken({ PUBLIC_URL: "nope" })).toBe(true);
+    expect(publicUrlBroken({ PUBLIC_URL: "https://s.example" })).toBe(false);
+    expect(publicUrlBroken({})).toBe(false);
   });
 
   test("直近の結果の文", () => {

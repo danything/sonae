@@ -1,11 +1,35 @@
 /**
- * このサイトの origin。PUBLIC_URL (sonae を開く URL) があればそれを使い、無ければ要求の origin。
+ * `PUBLIC_URL` (sonae を開く URL) の origin。空か URL として読めなければ undefined。
+ * ログインの戻り先・Webhook の本文に付ける URL に使う
+ */
+export function publicOrigin(
+  env: Record<string, string | undefined> = process.env,
+): string | undefined {
+  const raw = env.PUBLIC_URL?.trim();
+  if (!raw) return undefined;
+  try {
+    return new URL(raw).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+/** `PUBLIC_URL` が入っているのに URL として読めない (起動したときに警告を出す) */
+export const publicUrlBroken = (
+  env: Record<string, string | undefined> = process.env,
+): boolean => Boolean(env.PUBLIC_URL?.trim()) && !publicOrigin(env);
+
+/**
+ * このサイトの origin。PUBLIC_URL があればそれを使い、無ければ要求の origin。
  * ログインの戻り先 (リダイレクト URI) を要求の Host から組むと、Host を書き換えた要求で
- * 別のドメインへ戻させられるので、本番では PUBLIC_URL を入れる。
+ * 別のドメインへ戻させられるので、本番では PUBLIC_URL を入れる。入っているのに読めないときは、
+ * 要求の Host に戻さずに失敗させる (起動したときに警告を出す)
  */
 export function siteOrigin(url: URL): string {
-  const fixed = process.env.PUBLIC_URL?.trim().replace(/\/+$/, "");
-  return fixed ? new URL(fixed).origin : url.origin;
+  if (!process.env.PUBLIC_URL?.trim()) return url.origin;
+  const fixed = publicOrigin();
+  if (!fixed) throw new Error("PUBLIC_URL を URL として読めません");
+  return fixed;
 }
 
 /**

@@ -494,11 +494,14 @@ export class Store {
 
   /** 地震識別番号が重なる津波、無ければ (P2P だけの) いま続いている津波に結ぶ */
   private findTsunami(r: TsunamiReport): Tsunami | undefined {
+    // 時刻の書き方 (+09:00 と Z) が混ざるので、文字のままではなく datetime() で比べる
+    const at = ms(r.reportedAt);
+    if (!Number.isFinite(at)) return undefined;
     const recent = this.db
       .query<{ data: string }, [string, string]>(
-        "SELECT data FROM tsunamis WHERE status = ? AND issued_at >= ? ORDER BY issued_at DESC",
+        "SELECT data FROM tsunamis WHERE status = ? AND datetime(issued_at) >= datetime(?) ORDER BY datetime(issued_at) DESC",
       )
-      .all(r.status, new Date(ms(r.reportedAt) - 2 * DAY).toISOString())
+      .all(r.status, new Date(at - 2 * DAY).toISOString())
       .map((row) => JSON.parse(row.data) as Tsunami);
     if (r.eventIds.length > 0) {
       const byId = recent.find((t) =>

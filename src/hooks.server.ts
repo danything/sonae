@@ -4,6 +4,7 @@ import type { Handle, ServerInit } from "@sveltejs/kit/hooks";
 import { enabled } from "#lib/server/oidc.ts";
 import { startReceiving, startVoice } from "#lib/server/receiver.ts";
 import { COOKIE, find, SESSION_TTL } from "#lib/server/session.ts";
+import { publicUrlBroken } from "#lib/server/site.ts";
 import {
   checkTrusted,
   crossSiteWrite,
@@ -41,6 +42,11 @@ export const init: ServerInit = () => {
   if (process.env.NODE_ENV === "production" && !process.env.PUBLIC_URL) {
     console.warn(
       "PUBLIC_URL が空です。ログインの戻り先を要求の Host から組みます (本番では sonae を開く URL (例: https://sonae.example.com) を入れてください)",
+    );
+  }
+  if (publicUrlBroken()) {
+    console.warn(
+      `PUBLIC_URL (${process.env.PUBLIC_URL}) を URL として読めません。ログインできず、Webhook の本文にも URL を付けません (例: https://sonae.example.com)`,
     );
   }
   startVoice();

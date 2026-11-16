@@ -369,6 +369,28 @@ describe("津波", () => {
     expect(store.ingest(p2p(later, "p2p-t2"))).toEqual([]);
   });
 
+  test("P2P だけの津波を結ぶのは 2 日以内。日本時間の書き方の時刻でも、時刻で比べる", () => {
+    const { store } = memoryStore();
+    const at = (time: string, key: string) =>
+      store.ingest(
+        p2p(
+          {
+            ...json("p2p/spec-552.json"),
+            issue: { source: "気象庁", time, type: "Focus" },
+          },
+          key,
+        ),
+      );
+    // 3/11 03:00 (日本時間) = 3/10 18:00 (UTC)。2 日後の 3/13 06:00 (日本時間) = 3/12 21:00 (UTC) から見ると
+    // 2 日と 3 時間前。字のままだと "2011-03-11T03:00+09:00" >= "2011-03-10T21:00Z" で窓に入ってしまう
+    const [a] = at("2011/03/11 03:00:00", "p2p-t1");
+    const [b] = at("2011/03/13 06:00:00", "p2p-t2");
+    expect(dataOf<Tsunami>(b).id).not.toBe(dataOf<Tsunami>(a).id);
+    // 2 日以内なら結ぶ
+    const [c] = at("2011/03/13 07:00:00", "p2p-t3");
+    expect(dataOf<Tsunami>(c).id).toBe(dataOf<Tsunami>(b).id);
+  });
+
   test("P2P の 552 には訓練の印が無いので、P2P だけの津波は normal。番号の無い訓練の津波は id で分ける", () => {
     const { store } = memoryStore();
     const v = {

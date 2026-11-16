@@ -11,6 +11,7 @@ import type { SourceStatus } from "#lib/model.ts";
 import { Broker } from "./broker.ts";
 import { db } from "./db.ts";
 import { Pusher, vapidFromEnv } from "./push.ts";
+import { publicOrigin } from "./site.ts";
 import { cwaSource } from "./sources/cwa.ts";
 import { emscSource } from "./sources/emsc.ts";
 import { geonetSource } from "./sources/geonet.ts";
@@ -24,7 +25,7 @@ import { usgsSource } from "./sources/usgs.ts";
 import { wolfxSource } from "./sources/wolfx.ts";
 import { Store } from "./store.ts";
 import { type Voicevox, voicevoxFromEnv } from "./voicevox.ts";
-import { originFromEnv, Webhooks } from "./webhook.ts";
+import { Webhooks } from "./webhook.ts";
 
 interface App {
   store: Store;
@@ -62,7 +63,7 @@ export function app(): App {
       sources: [],
       off: [],
       pusher: vapid ? new Pusher(d, vapid) : undefined,
-      webhooks: new Webhooks(d, { origin: originFromEnv() }),
+      webhooks: new Webhooks(d, { origin: publicOrigin() }),
       rts: new RtsBoard(),
       voice: voicevoxFromEnv(d),
     };
