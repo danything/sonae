@@ -12,6 +12,6 @@
 | 画面 (components・routes・CSS) | [docs/ui.md](docs/ui.md)・[docs/map.md](docs/map.md) と、denpa の [design.md](https://github.com/danything/denpa/blob/main/docs/design.md)・[screens.md](https://github.com/danything/denpa/blob/main/docs/screens.md) (見た目の決まり) |
 | Web Push・Webhook              | [docs/push.md](docs/push.md)                                                                                                                                                                                                            |
 | 立てる手順                     | [docs/install.md](docs/install.md) と `install-*.md`、[docs/entra.md](docs/entra.md)                                                                                                                                                    |
-| リリース                       | [docs/design.md](docs/design.md) の 8 章「リリースの前に」。**出す前に毎回、全体を読み直して矛盾と圧縮を点検する**                                                                                                                      |
+| リリース                       | [docs/design.md](docs/design.md) の 8 章「家のクラスタへの載せ方」にある「リリースの前に」。**出す前に毎回、全体を読み直して矛盾と圧縮を点検する**                                                                                      |
 
 Zero Quake のコードは読みません (README は可)。sonae は一から書いています ([README](README.md))。
