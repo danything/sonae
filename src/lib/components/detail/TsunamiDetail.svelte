@@ -26,7 +26,7 @@
     <p class="small muted">この津波予報は終わりました。</p>
   {/if}
   {#if t.headline}
-    <p class="small headline">{t.headline}</p>
+    <p class="small pre-line">{t.headline}</p>
   {/if}
 
   {#if areas.length > 0}
@@ -87,9 +87,6 @@
 </div>
 
 <style>
-  .headline {
-    white-space: pre-line;
-  }
   table {
     margin-top: var(--so-space-2);
   }

@@ -31,7 +31,7 @@
   </header>
 
   {#if v.headline}
-    <p class="small text">{v.headline}</p>
+    <p class="small pre-line">{v.headline}</p>
   {/if}
 
   {#if v.volcanoes.length > 0}
@@ -82,26 +82,18 @@
   {#if v.activity}
     <section>
       <h2>火山活動の状況</h2>
-      <p class="small text">{v.activity}</p>
+      <p class="small pre-line">{v.activity}</p>
     </section>
   {/if}
   {#if v.prevention}
     <section>
       <h2>防災上の警戒事項等</h2>
-      <p class="small text">{v.prevention}</p>
+      <p class="small pre-line">{v.prevention}</p>
     </section>
   {/if}
 </div>
 
 <style>
-  .text {
-    white-space: pre-line;
-  }
-  .plain {
-    margin: var(--so-space-2) 0 0;
-    padding: 0;
-    list-style: none;
-  }
   .volcano {
     display: flex;
     align-items: baseline;

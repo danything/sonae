@@ -38,7 +38,7 @@
   {/if}
 
   {#if a.headline}
-    <p class="small text">{a.headline}</p>
+    <p class="small pre-line">{a.headline}</p>
   {/if}
 
   {#if a.counts && a.counts.length > 0}
@@ -65,7 +65,7 @@
   {#if a.text}
     <section>
       <h2>本文</h2>
-      <p class="small text">{a.text}</p>
+      <p class="small pre-line">{a.text}</p>
     </section>
   {/if}
   {#if a.next}
@@ -81,9 +81,6 @@
 </div>
 
 <style>
-  .text {
-    white-space: pre-line;
-  }
   table {
     margin-top: var(--so-space-2);
   }

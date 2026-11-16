@@ -26,10 +26,7 @@
     </dd>
   </div>
   {#each statuses as s (s.id)}
-    <div
-      class="side-item static"
-      title={s.lastError ? `${s.lastError}` : undefined}
-    >
+    <div class="side-item static" title={s.lastError || undefined}>
       <dt>{SOURCE_LABEL[s.id] ?? s.id}</dt>
       <dd class="side-sub num" class:bad={sourceInTrouble(s)}>
         {sourceStateText(s)}

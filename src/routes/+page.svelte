@@ -584,7 +584,7 @@
   // 地震 (震央の ×・震度の塗りと数字・長周期地震動の枠) は、選んだときだけ出す。何も選んでいないときに
   // いちばん新しい地震を出すと、いま起きていることのように見えるため (持ち主の声「詳細開いてないときは
   // 地震情報表示しなくていいかも」)。いま出ている緊急地震速報・津波・特別警報と気象の警報・注意報の塗りは、
-  // 選んでいなくても出す (docs/ui.md の「何も選んでいないときの地図」)
+  // 選んでいなくても出す (docs/map.md の「何も選んでいないとき」)
   const mapQuake = $derived(selQuake ?? undefined);
   const mapLongPeriod = $derived(selQuake ? selLongPeriod : null);
   const mapTsunamis = $derived(selTsunami ? [selTsunami] : activeTsunamis);
@@ -1008,7 +1008,7 @@
 {#snippet pinnedNotices()}
   <div class="alerts-in-list stack" data-testid="pinned">
     {#each pinnedEews as e (e.eventId)}
-      <!-- 出ている緊急地震速報。帯 (画面の上) と同じものを、一覧からも詳しい内容へ移れるように置く -->
+      <!-- 出ている緊急地震速報。自動で開く詳しい内容から離れても、一覧から移れるように置く -->
       <a
         class="notice warning notice-link"
         href={selectHref(params, "eew", e.eventId)}
@@ -1541,7 +1541,7 @@
   /*
    * ブラウザが音を止めている間の帯 (広い形はヘッダーのすぐ下、スマホの形は画面の上の端)。
    * 中身に重ねず押し下げるので、地図や一覧を隠さない。淡い面に注意の色のアイコンと見出しで、地は塗らない
-   * (塗るのは緊急地震速報 (警報) の帯だけ。design.md の 6.2)。右の「音を出す」は主のボタンと同じく操作の層に浮かせる。
+   * (状態の赤で塗るのは、いま出ている緊急地震速報 (警報) の詳しい内容の箱と dock の 1 行だけ。design.md の 6.2)。右の「音を出す」は主のボタンと同じく操作の層に浮かせる。
    * 帯のどこを押しても鳴らせるようになる
    */
   .mute-band {
@@ -1667,7 +1667,7 @@
     flex: 1 1 0%;
     min-width: 0;
   }
-  .list-bar :global(.icon) {
+  .list-bar .icon {
     flex-shrink: 0;
   }
   :global(.menu.cal-menu) {
@@ -1884,8 +1884,7 @@
     .tabbar:not(:has(:focus-visible)) {
     transform: translateY(calc(100% + 0.5rem + env(safe-area-inset-bottom)));
   }
-  .tabbar .tab,
-  .tab-more :global(.tab) {
+  .tabbar .tab {
     position: relative;
     display: flex;
     flex-direction: column;
@@ -1909,7 +1908,7 @@
   }
   @media (hover: hover) {
     .tabbar .tab:hover,
-    .tab-more :global(.tab:is(:hover, [aria-expanded="true"])) {
+    .tabbar .tab[aria-expanded="true"] {
       background: var(--so-hover-soft);
     }
   }
