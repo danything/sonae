@@ -24,7 +24,7 @@ const num = (v: unknown) =>
 const str = (v: unknown) => (typeof v === "string" ? v : undefined);
 
 /** GeoJSON の 1 つの地震を、海外の地震の発表に読む。地震でないもの (爆破など) と読めないものは null */
-export function readUsgsFeature(f: unknown): ForeignReport | null {
+function readUsgsFeature(f: unknown): ForeignReport | null {
   if (typeof f !== "object" || f === null) return null;
   const o = f as Record<string, unknown>;
   const p = (o.properties ?? {}) as Record<string, unknown>;

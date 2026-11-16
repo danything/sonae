@@ -49,7 +49,7 @@ export type Normalized =
   | { type: "longperiod"; report: LongPeriodReport }
   | { type: "warning"; warning: Omit<WeatherWarning, "updatedAt"> }
   | { type: "weather"; info: Omit<WeatherInfo, "updatedAt" | "cancelled"> }
-  /** 保存だけする電文 (地震の活動状況・地震回数・長周期地震動など) */
+  /** 原文を保存するだけで、読まない電文 (取る種別のうち、中身を使わないもの) */
   | { type: "other"; code: string };
 
 /** 長周期地震動に関する観測情報の 1 つの報。まとめ方は store.ts */
@@ -58,10 +58,10 @@ export type LongPeriodReport = Omit<
   "id" | "cancelled" | "updatedAt"
 >;
 
-/** 情報源から受けたもの。raw は原文 (Wolfx は原文を残さないので body が無い) */
+/** 情報源から受けたもの。body は原文 (Wolfx は原文を残さないので body が無い) */
 export interface Incoming {
   source: SourceId;
-  /** 情報源の中での重複の除去の鍵 (気象庁は Atom の id、P2P は id、Wolfx は EventID と報数) */
+  /** 情報源の中での重複の除去の鍵 (気象庁は Atom の id、P2P は id、Wolfx の緊急地震速報は EventID と報数 (取消は後ろに -cancel)、地震情報の一覧は eqlist-<番号>-<要約>) */
   key: string;
   code: string;
   body?: string;

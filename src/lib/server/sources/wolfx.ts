@@ -22,13 +22,13 @@ import {
 import type { Source, SourceContext } from "./types.ts";
 import { parseWolfx, parseWolfxEqlist } from "./wolfx-json.ts";
 
-export const WOLFX_WS = "wss://ws-api.wolfx.jp/all_eew";
+const WOLFX_WS = "wss://ws-api.wolfx.jp/all_eew";
 
 /**
  * 地震情報の一覧を問い合わせ直す間隔。Wolfx の文書に回数の目安は無い (同じ接続を使い続け、つなぎ直しを
  * 繰り返さないことだけが書かれている) ので、heartbeat と同じ 1 分にする。一覧は約 12KB で、1 日 17MB ほど
  */
-export const EQLIST_POLL_MS = 60_000;
+const EQLIST_POLL_MS = 60_000;
 
 export interface WolfxOptions {
   url?: string;

@@ -103,7 +103,7 @@ const byTime = (a: QuakeReport, b: QuakeReport) =>
 const QUAKE_SOURCE_ORDER = ["jma", "p2p", "wolfx"] as const;
 
 /** 報の並びから、いまの姿を組む。気象庁の XML の報があれば、そちらを正とする */
-export function summarizeQuake(
+function summarizeQuake(
   base: Pick<Quake, "id" | "eventId" | "status" | "updatedAt">,
   reports: QuakeReport[],
 ): Quake {
@@ -194,7 +194,7 @@ export function mergeQuake(
 
 /**
  * 番号が合わないときに同じ地震とみなす、発生の時刻 (震度速報は TargetDateTime) の差の上限。
- * 気象庁の文書に結び方の規則は無い (番号がずれうることだけが書かれている。docs/design.md の 9 章の 9)
+ * 気象庁の文書に結び方の規則は無い (番号がずれうることだけが書かれている。docs/design.md の 2.2)
  * ので、自前の値。震度速報の TargetDateTime は最初に検知した時刻で分までしか意味が無く
  * (地震火山関連 解説資料 Ⅰ-2)、震度速報は発生の約 1 分半後に出る (気象庁の解説)。
  * 分の切り捨て (最大 59 秒) と検知までの遅れを足しても収まる幅として 90 秒。

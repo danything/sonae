@@ -122,7 +122,7 @@ export function parseSubscription(input: unknown): Subscription | null {
 }
 
 /** 1 人が持てる購読の数 (ブラウザ・端末の数) */
-export const MAX_PER_USER = 20;
+const MAX_PER_USER = 20;
 /** 送った控え (同じ事象で鳴らし直さないため) を残す日数 */
 const LOG_DAYS = 30;
 

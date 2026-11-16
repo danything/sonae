@@ -368,7 +368,7 @@ export function allowed(
   return { ok: false, reason: `ロール ${c.role} を持っていません` };
 }
 
-export const displayName = (c: Claims) =>
+const displayName = (c: Claims) =>
   c.name ?? c.preferred_username ?? c.email ?? "";
 
 export async function complete(

@@ -70,7 +70,7 @@ export function app(): App {
   return g.__sonae;
 }
 
-/** VOICEVOX につなぎ始める (受信を止めていても、試しに聞けるように)。hooks の init から 1 回だけ */
+/** VOICEVOX につなぎ始める (受信を止めていても、「試しに鳴らす」で読み上げられるように)。hooks の init から 1 回だけ */
 export function startVoice(): void {
   const a = app();
   if (!a.voice) {

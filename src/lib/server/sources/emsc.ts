@@ -19,7 +19,7 @@ import type { Incoming, Source, SourceContext } from "./types.ts";
 
 export const EMSC_WS = "wss://www.seismicportal.eu/standing_order/websocket";
 /** 受ける M の下限 (USGS の 4.5_hour と同じ) */
-export const EMSC_MIN_MAGNITUDE = 4.5;
+const EMSC_MIN_MAGNITUDE = 4.5;
 
 const num = (v: unknown) =>
   typeof v === "number" && Number.isFinite(v)
@@ -46,7 +46,7 @@ export function parseEmsc(text: string): Incoming | null {
   const mag = num(p.mag);
   if (!unid || !time || lat === undefined || lon === undefined) return null;
   if (!Number.isFinite(Date.parse(time))) return null;
-  // ke は地震 (known earthquake)。爆破 (km・kx) などは採らない。印が無ければ地震とみなす
+  // ke は地震 (known earthquake)、se は地震らしいもの (suspected earthquake)。爆破 (km・kx) などは採らない。印が無ければ地震とみなす
   const evtype = str(p.evtype);
   if (evtype && evtype !== "ke" && evtype !== "se") return null;
   if (mag === undefined || mag < EMSC_MIN_MAGNITUDE) return null;
