@@ -92,11 +92,11 @@ function feedSource(
   const cache = new Map<string, { etag?: string; modified?: string }>();
   const tag = `[${kind.id}]`;
 
-  /** フィードを取る。変わっていなければ null */
-  async function feed(
-    url: string,
-    signal: AbortSignal,
-  ): Promise<FeedEntry[] | null> {
+  /**
+   * フィードを取り、まだ取っていない電文を渡す。電文を全部取れてから控える (途中で失敗したら、次も
+   * 304 にならず読み直して、取り残しを取りに行く。`pollSource` と同じ)
+   */
+  async function feed(url: string, signal: AbortSignal): Promise<void> {
     const c = cache.get(url) ?? {};
     const headers: Record<string, string> = { "user-agent": USER_AGENT };
     if (c.etag) headers["if-none-match"] = c.etag;
@@ -105,31 +105,39 @@ function feedSource(
       headers,
       signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
     });
-    if (res.status === 304) return null;
+    if (res.status === 304) return;
     if (!res.ok) throw new Error(`フィードが ${res.status} を返しました`);
+    if (!(await take(parseFeed(await res.text()), signal))) return;
     cache.set(url, {
       etag: res.headers.get("etag") ?? undefined,
       modified: res.headers.get("last-modified") ?? undefined,
     });
-    return parseFeed(await res.text());
   }
 
-  /** まだ取っていない電文を、古い順に取って渡す */
-  async function take(entries: FeedEntry[], signal: AbortSignal) {
+  /** まだ取っていない電文を、古い順に取って渡す。取れなかった電文があれば false */
+  async function take(
+    entries: FeedEntry[],
+    signal: AbortSignal,
+  ): Promise<boolean> {
     const todo = latestSnapshots(
       entries.filter((e) => kind.wanted.has(e.code)),
       kind.snapshot,
     )
       .filter((e) => !ctx.seen(kind.id, e.id))
       .reverse();
+    let all = true;
     for (const e of todo) {
-      if (signal.aborted) return;
+      if (signal.aborted) return false;
       const res = await doFetch(e.url, {
         headers: { "user-agent": USER_AGENT },
         signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
       });
       if (!res.ok) {
         log(`${tag} ${e.url} が ${res.status} を返しました`);
+        // 取り直すのは、待てば取れそうなもの (5xx・408・429) だけ。404・410 などは取り直しても
+        // 取れないので、取り残しに数えない (毎回フィードを読み直さない)
+        if (res.status >= 500 || res.status === 408 || res.status === 429)
+          all = false;
         continue;
       }
       const body = await res.text();
@@ -155,6 +163,7 @@ function feedSource(
       }
       status.seen(true);
     }
+    return all;
   }
 
   return {
@@ -164,15 +173,9 @@ function feedSource(
       let lastOk = 0;
       while (!signal.aborted) {
         try {
-          if (Date.now() - lastOk > GAP_MS) {
-            const long = await feed(
-              opts.longFeedUrl ?? kind.longFeedUrl,
-              signal,
-            );
-            if (long) await take(long, signal);
-          }
-          const entries = await feed(opts.feedUrl ?? kind.feedUrl, signal);
-          if (entries) await take(entries, signal);
+          if (Date.now() - lastOk > GAP_MS)
+            await feed(opts.longFeedUrl ?? kind.longFeedUrl, signal);
+          await feed(opts.feedUrl ?? kind.feedUrl, signal);
           lastOk = Date.now();
           status.seen(false);
           status.set("connected");
