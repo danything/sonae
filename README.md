@@ -1,7 +1,7 @@
 # sonae
 
-地震・津波の情報を家のサーバーで受けて、ブラウザで見たり、Web Push や Discord・Slack の Webhook で通知を受けたりするアプリ。
-いまは持ち主 1 人で使う (ログインで閉じる。Entra のアプリロールで絞り、既定は `admin`。家族と共有するときは family 用のロールに替える)。ホスト名は `s.doany.io`。
+地震・津波・火山・気象の情報を家のサーバーで受けて、ブラウザで見たり、Web Push や Discord・Slack の Webhook で通知を受けたりするアプリ。
+自分と家族のために、自分のサーバーに 1 つ立てて使う (セルフホスト)。家の LAN からはログインなしで、外からは OIDC のログインで開く。
 
 <p align="center">
   <img src="docs/images/demo-anim.avif" alt="緊急地震速報 (警報) を受けると、右の列が詳しい内容に替わって先頭に赤い箱が出て、地図が震源と警報の地域を示し、OS の通知が出る。出ている間が過ぎると一覧へ戻り、続いて地震の情報を読み上げ始めると、詳しい内容が開いて地図が各地の震度で塗られる" width="720">
@@ -37,17 +37,19 @@ https://github.com/user-attachments/assets/24a0b5a8-9ba6-4722-bb65-c7baeda2827f
 - 地震・津波・火山 (噴火速報・噴火警報) の情報を気象庁 (防災情報 XML)・P2P地震情報・Wolfx Project から、海外の地震を USGS・EMSC・GeoNet・中央氣象署 (台湾、授権碼があるとき) から、太平洋の津波の参考情報を PTWC (米国) と気象庁ホームページ (国際津波関連情報) から受け、画面には必ず出典と「公式の情報を優先してください」という注意文を出す。気象庁の情報は加工して出しているので、その旨も書く。
 - 地図には、台湾の観測点のいまの揺れ (ExpTech の [TREM](https://exptech.dev) の RTS。非公式) を点の色で出す。地図に出すだけで、一覧・音・読み上げ・通知では知らせない。
 
-知らせる条件は、緊急地震速報・地震・津波・火山・気象のそれぞれで「全国のもの」「住んでいる地域と現在地のものだけ」「知らせない」から選ぶ。何の段から知らせるか (震度いくつ以上など) は決めてあり、選んだもので何を知らせるかを画面に 1 文で出す ([docs/design.md の 2.4](docs/design.md#24-web-push) の表)。
+知らせる条件は、緊急地震速報・地震・津波・火山・気象のそれぞれで「全国のものを知らせる」「住んでいる地域と現在地のものだけ」「知らせない」から選ぶ。地震は、知らせる震度も選ぶ。
+ほかの段 (注意報も知らせるかなど) は決めてあり、選んだもので何を知らせるかを画面に 1 文で出す ([docs/design.md の 2.4](docs/design.md#24-web-push) の表)。
+特別警報にあたるもの (気象の特別警報・大津波警報・噴火警報 (レベル 4・5)) と、南海トラフ地震臨時情報・後発地震注意情報は、「知らせない」を選んでもいつも知らせる。
 
 開いている画面では、条件に合う情報を短い音と読み上げで知らせる (「オフ」「通知音だけ」「読み上げも」から選ぶ)。読み上げの声は、sonae と一緒に動かす [VOICEVOX](https://voicevox.hiroshiba.jp/) のエンジンで作る (既定の声は「VOICEVOX:剣崎雌雄」。声は画面で選べ、この家の全部の端末で同じ声になる)。
-VOICEVOX は公式のイメージを別のコンテナで動かし (理由は [docs/design.md の 2.4](docs/design.md))、`docker compose up` でも Helm chart でも sonae と一緒に起きる。
-VOICEVOX が止まっているときは、ブラウザの読み上げで同じ文を読む。
+エンジンは sonae とは別のプロセスで動かし (理由は [docs/design.md の 2.4](docs/design.md))、1 行のインストーラでも `docker compose up` でも Helm chart でも sonae と一緒に起きる。
+エンジンが止まっているときは、ブラウザの読み上げで同じ文を読む。
 
 タブを閉じていても、条件に合う情報を Web Push でブラウザに届ける。Discord や Slack の Incoming Webhook の URL を「通知」に足せば、同じ情報を同じ見出しと本文でチャンネルにも送る (Home Assistant のような、JSON を受ける送り先にも送れる。[docs/push.md の「Webhook」](docs/push.md#webhook))。
 
 ## 1 行で入れる
 
-sonae は、使う人が自分のサーバーに立てて使う (セルフホスト)。**1 行で、sonae と VOICEVOX のエンジンが立ち上がり、ブラウザが開く。** clone は要らない。
+**1 行で、sonae と VOICEVOX のエンジンが立ち上がり、ブラウザが開く。** clone は要らない。
 
 ```sh
 # Linux (x86_64。Docker Compose で動かす。Docker は先に入れておく)
@@ -61,10 +63,10 @@ curl -fsSL https://raw.githubusercontent.com/danything/sonae/main/install.sh | s
 irm https://raw.githubusercontent.com/danything/sonae/main/install.ps1 | iex
 ```
 
-- Linux は Docker Compose で sonae と VOICEVOX (公式のイメージ) を動かす。Mac と Windows はコンテナを使わず、配布物の bun とアプリ、公式の VOICEVOX のエンジン (CPU 版) をそのまま動かす (Mac は root の LaunchDaemon、Windows は SYSTEM のタスク)
-- 開くのは <http://localhost:3030> (Linux は genkan があれば <http://sonae.localhost>)
-- もう一度流せば最新に上げ直す。`--uninstall` (Windows は `-Uninstall`) で止めて外す (DB と設定は残す)。Web Push の VAPID の鍵は、無ければ作る
-- **家の LAN (とそのマシンのブラウザ) からは、ログインなしで開ける** (`sonae.env` の `TRUSTED_NETWORKS`)。その中の誰でも設定を変えられるので、家の外からも開くならログイン (OIDC) を足す。http の LAN の IP で開いた端末では Web Push は使えない。書き場所と、OS ごとの置き場・VOICEVOX の版と規約は [docs/install.md](docs/install.md) ([Mac](docs/install-mac.md)・[Windows](docs/install-windows.md))
+- Linux は Docker Compose で動かす。Mac と Windows はコンテナを使わず、配布物の bun とアプリ、公式の VOICEVOX のエンジン (CPU 版) をそのまま動かす (Mac は root の LaunchDaemon、Windows は SYSTEM のタスク)
+- 開くのは <http://localhost:3030> (Linux は genkan があれば <http://sonae.localhost>)。もう一度流せば最新に上げ直し、`--uninstall` (Windows は `-Uninstall`) で止めて外す (DB と設定は残す)
+- **家の LAN (とそのマシンのブラウザ) からは、ログインなしで開ける** (`sonae.env` の `TRUSTED_NETWORKS`)。その中の誰でも設定を変えられるので、家の外からも開くならログイン (OIDC) を足す。http の LAN の IP で開いた端末では Web Push は使えない
+- 置き場・環境変数・ログイン・VOICEVOX のバージョンと規約は [docs/install.md](docs/install.md) ([Mac](docs/install-mac.md)・[Windows](docs/install-windows.md))
 
 ## Kubernetes に立てる (Helm chart)
 
@@ -106,14 +108,14 @@ chart はリリースのたびに `oci://ghcr.io/danything/charts/sonae` に出�
    ```
 
 - 公開の URL (`PUBLIC_URL`・`ORIGIN`) は、書かなければ `httpRoute.hostnames` か `ingress.hosts` の先頭に `https://` を付けたもの。違うときは `sonae.publicUrl` に書く。
-- OIDC の 3 つ (issuer・client id・Secret の `oidc-client-secret`) が揃わないと、画面は開かず `/health` だけ答える。
+- OIDC の 3 つ (issuer・client id・Secret の `oidc-client-secret`) が揃わないと、画面は開かず `/health` だけ答える。chart は `TRUSTED_NETWORKS` を書かない (書くなら `sonae.extraEnv`。[docs/install.md の「ログイン」](docs/install.md#ログイン))。
 - VAPID の鍵が無ければ Web Push を切って動く。授権碼が無ければ中央氣象署の受信だけを切って動く。
 - 既定の `image.tag` は `latest` (main に中身の変更が入るたびに動く)。固定するなら `ghcr.io/danything/sonae` のコミットの sha のタグを書く。
 - Ingress を使うなら `ingress.enabled: true` と `ingress.hosts`。SSE (`/api/stream`) が切れないよう、前段の読み込みのタイムアウトを長くする。
 - PVC は既定で Argo CD に消させない注釈が付く (`persistence.protectFromPruning`)。
 - 外向きを絞る NetworkPolicy (`networkPolicy.egress.enabled`) は既定で出さない。DNS の Pod のラベルがクラスタで違うため。
 
-このリポジトリ自身の本番 (家の Talos のクラスタ) も同じ chart で出している。値は [deploy/application.yaml](deploy/application.yaml) の `helm.valuesObject`。
+このリポジトリの持ち主の本番 (`s.doany.io`。家の Talos のクラスタ) も同じ chart で出している。値は [deploy/application.yaml](deploy/application.yaml) の `helm.valuesObject`。
 
 ## 開発
 
