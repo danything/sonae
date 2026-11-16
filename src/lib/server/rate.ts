@@ -38,3 +38,6 @@ export class RateLimit {
  * (押し間違いや、画面の不具合で繰り返したときの歯止め)
  */
 export const pushTestLimit = new RateLimit(5, 10 * 60_000);
+
+/** Webhook の試しの通知 (`POST /api/webhooks/test`) も 1 人 10 分に 5 回まで (送り先に続けて投稿させない) */
+export const webhookTestLimit = new RateLimit(5, 10 * 60_000);

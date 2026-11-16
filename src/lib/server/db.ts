@@ -187,6 +187,33 @@ const MIGRATIONS: string[] = [
     updated_at INTEGER NOT NULL
   );
   `,
+  `
+  -- Webhook の送り先 (2.4)。subject は登録した人 (IdP の sub)、prefs は通知の条件 (JSON)。
+  -- url は秘密 (知っていれば誰でも投稿できる) なので、画面と記録にはホストだけを出す。
+  -- last_status は最後に送った結果 (ok か、HTTP の状態・決まった言葉の理由)
+  CREATE TABLE webhooks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject TEXT NOT NULL,
+    url TEXT NOT NULL,
+    prefs TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    last_status TEXT,
+    last_sent_at INTEGER
+  );
+  CREATE INDEX webhooks_subject ON webhooks (subject);
+
+  -- Webhook ごとに、事象 (tag) へ最後に送ったもの (push_log と同じ形)
+  CREATE TABLE webhook_log (
+    webhook_id INTEGER NOT NULL REFERENCES webhooks (id) ON DELETE CASCADE,
+    tag TEXT NOT NULL,
+    level INTEGER NOT NULL,
+    digest TEXT NOT NULL,
+    sent_at INTEGER NOT NULL,
+    PRIMARY KEY (webhook_id, tag)
+  );
+  CREATE INDEX webhook_log_sent ON webhook_log (sent_at);
+  `,
 ];
 
 export function openDb(path: string): Database {

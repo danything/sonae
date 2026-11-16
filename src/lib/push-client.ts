@@ -34,6 +34,7 @@ import {
   registerFailedText,
 } from "./push-support.ts";
 import { base64UrlToBytes, type Home, type PushPrefs } from "./push.ts";
+import { syncWebhookPrefs } from "./webhook-client.ts";
 
 export interface Registered {
   endpoint: string;
@@ -267,10 +268,15 @@ export async function saveHome(home: Home): Promise<string> {
   }
   const plan = planHomeSave(state, alerter.prefs, home);
   alerter.setPrefs(plan.prefs);
+  // Webhook にも同じ条件を使う (「通知」の窓で変えたときと同じ)
+  const hook = syncWebhookPrefs(plan.prefs);
   const key = plan.publicKey;
-  if (key === null) return plan.note;
-  const result = await queuePrefs(() => sendPrefs(key, plan.prefs));
-  return result === null || result === "保存しました"
-    ? plan.note
-    : `${plan.note}。${result}`;
+  const result =
+    key === null ? null : await queuePrefs(() => sendPrefs(key, plan.prefs));
+  const failed = await hook;
+  const note =
+    result === null || result === "保存しました"
+      ? plan.note
+      : `${plan.note}。${result}`;
+  return failed ? `${note}。${failed}` : note;
 }
