@@ -47,15 +47,25 @@ export function wolfxSource(
   const status = new StatusTracker("wolfx", ctx.onStatus);
   const now = opts.now ?? nowIso;
   const pollMs = opts.eqlistPollMs ?? EQLIST_POLL_MS;
+  const log = opts.log ?? ((m: string) => console.log(m));
   let poll: ReturnType<typeof setTimeout> | undefined;
+  /** いまつながっている接続。切れたら外す (切れた接続には問い合わせない) */
+  let current: SocketLike | undefined;
 
   /** 次の問い合わせを pollMs 後に置き直す (問い合わせたときと、一覧を受けたとき) */
   function schedule(ws: SocketLike) {
+    if (ws !== current) return;
     clearTimeout(poll);
     poll = setTimeout(() => query(ws), pollMs);
   }
   function query(ws: SocketLike) {
-    ws.send("query_jmaeqlist");
+    if (ws !== current) return;
+    try {
+      ws.send("query_jmaeqlist");
+    } catch (e) {
+      // 閉じかけの接続。close を受けたら止まり、つなぎ直したら onOpen から始め直す
+      log(`[wolfx] 地震情報の一覧を問い合わせられませんでした: ${e}`);
+    }
     schedule(ws);
   }
 
@@ -80,10 +90,12 @@ export function wolfxSource(
         connect: opts.connect,
         log: opts.log,
         onOpen(ws) {
+          current = ws;
           query(ws);
         },
         onClose() {
           // 切れている間は問い合わせない。つなぎ直したら onOpen から始め直す
+          current = undefined;
           clearTimeout(poll);
           poll = undefined;
         },

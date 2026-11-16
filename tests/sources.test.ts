@@ -358,6 +358,8 @@ describe("Wolfx", () => {
     // 切れている間は問い合わせない
     s().close();
     const before = s().sent.length;
+    // 切れた接続に遅れて届いた一覧でも、問い合わせを置き直さない
+    s().fire("message", { data: list });
     await tick(100);
     expect(s().sent.length).toBe(before);
     ac.abort();
