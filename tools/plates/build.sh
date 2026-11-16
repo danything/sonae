@@ -15,16 +15,22 @@ set -eu
 # 元のリポジトリの決まったコミット (2014-10-06。それ以降は更新されていない)
 REV=339b0c56563c118307b1f4542703047f5f698fae
 URL="https://raw.githubusercontent.com/fraxen/tectonicplates/$REV/GeoJSON/PB2002_boundaries.json"
+# 取ったファイルの SHA-256。違えば止める (作り直しても同じ線になるように)
+SHA256=42b3e0876a7e40f133e958ba7ab85f8851b5c693a046fbc3b138e7751863d92a
 OUT=$(dirname "$0")/../../static/plates
 MAPSHAPER="bunx mapshaper@0.7.101"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
 bun -e '
-  const res = await fetch(process.argv[1]);
-  if (!res.ok) throw new Error(`${res.status} ${process.argv[1]}`);
-  await Bun.write(process.argv[2], res);
-' "$URL" "$WORK/boundaries.json"
+  const [url, out, want] = process.argv.slice(1);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${res.status} ${url}`);
+  const body = new Uint8Array(await res.arrayBuffer());
+  const got = new Bun.CryptoHasher("sha256").update(body).digest("hex");
+  if (got !== want) throw new Error(`SHA-256 が違います: ${got}`);
+  await Bun.write(out, body);
+' "$URL" "$WORK/boundaries.json" "$SHA256"
 
 mkdir -p "$OUT"
 # 境界の線は 1 本ずつの区間 (約 230 本)。2 km 間隔に間引き、座標は 0.01 度 (約 1 km) に丸める
