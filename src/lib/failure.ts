@@ -17,7 +17,7 @@ export function failureReason(err: unknown): string {
   if (unreachable(err)) return "つながりません";
   if (err instanceof SyntaxError) return "応答を読めません";
   if (err instanceof Error)
-    return err.name === "Error" ? err.message : err.name;
+    return err.name === "Error" && err.message ? err.message : err.name;
   return String(err);
 }
 

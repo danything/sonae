@@ -26,6 +26,8 @@ test("応答を読めない・ブラウザの例外・自分で投げた文", ()
   expect(failureText("Webhook を読めませんでした", new Error("500"))).toBe(
     "Webhook を読めませんでした (500)",
   );
+  // 文の無い Error は空の括弧にしない
+  expect(failureReason(new Error())).toBe("Error");
   expect(failureReason("x")).toBe("x");
 });
 
