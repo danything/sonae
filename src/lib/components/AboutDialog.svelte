@@ -36,6 +36,7 @@
 
 <dialog
   bind:this={dialog}
+  closedby="any"
   aria-labelledby="about-title"
   onclose={() => open && onclose()}
 >
@@ -55,6 +56,7 @@
         緊急地震速報の予想震度・到達予想時刻は表示しません。気象庁も警報では予想震度の数字を出さず「強い揺れ」と伝えています
         (<a
           href="https://www.jma.go.jp/jma/kishou/know/jishin/eew/shikumi/shousai.html"
+          target="_blank"
           rel="noopener">緊急地震速報 (警報) 及び (予報) について</a
         >)。sonae は、地点ごとの震度や到達時刻を自分で予想しません。
       </p>
@@ -106,68 +108,92 @@
         <li>
           <a
             href="https://www.data.jma.go.jp/developer/xml/feed/"
+            target="_blank"
             rel="noopener">気象庁防災情報 XML</a
           >
           (<a
             href="https://www.jma.go.jp/jma/kishou/info/coment.html"
+            target="_blank"
             rel="noopener">気象庁ホームページの利用規約</a
           >)
         </li>
         <li>
-          <a href="https://www.p2pquake.net/" rel="noopener">P2P地震情報</a>
+          <a href="https://www.p2pquake.net/" target="_blank" rel="noopener"
+            >P2P地震情報</a
+          >
         </li>
-        <li><a href="https://wolfx.jp/" rel="noopener">Wolfx Project</a></li>
         <li>
-          <a href="https://earthquake.usgs.gov/" rel="noopener"
+          <a href="https://wolfx.jp/" target="_blank" rel="noopener"
+            >Wolfx Project</a
+          >
+        </li>
+        <li>
+          <a href="https://earthquake.usgs.gov/" target="_blank" rel="noopener"
             >USGS Earthquake Hazards Program</a
           >
           (<a
             href="https://www.usgs.gov/information-policies-and-instructions/copyrights-and-credits"
+            target="_blank"
             rel="noopener">利用条件</a
           >)
         </li>
         <li>
-          <a href="https://www.seismicportal.eu/" rel="noopener"
+          <a href="https://www.seismicportal.eu/" target="_blank" rel="noopener"
             >EMSC-CSEM SeismicPortal</a
           >
-          (<a href="https://www.seismicportal.eu/terms.html" rel="noopener"
-            >利用条件</a
+          (<a
+            href="https://www.seismicportal.eu/terms.html"
+            target="_blank"
+            rel="noopener">利用条件</a
           >、<a
             href="https://creativecommons.org/licenses/by/4.0/deed.ja"
+            target="_blank"
             rel="noopener">CC BY 4.0</a
           >)
         </li>
         <li>
-          <a href="https://www.geonet.org.nz/" rel="noopener">GeoNet</a>
-          (<a href="https://www.geonet.org.nz/policy" rel="noopener">利用条件</a
+          <a href="https://www.geonet.org.nz/" target="_blank" rel="noopener"
+            >GeoNet</a
+          >
+          (<a
+            href="https://www.geonet.org.nz/policy"
+            target="_blank"
+            rel="noopener">利用条件</a
           >、<a
             href="https://creativecommons.org/licenses/by/3.0/nz/"
+            target="_blank"
             rel="noopener">CC BY 3.0 NZ</a
           >)
         </li>
         <li>
-          <a href="https://www.cwa.gov.tw/" rel="noopener">中央氣象署 (台湾)</a>
-          (<a href="https://data.gov.tw/license" rel="noopener"
+          <a href="https://www.cwa.gov.tw/" target="_blank" rel="noopener"
+            >中央氣象署 (台湾)</a
+          >
+          (<a href="https://data.gov.tw/license" target="_blank" rel="noopener"
             >政府資料開放授權條款</a
           >)
         </li>
         <li>
-          <a href="https://www.tsunami.gov/" rel="noopener"
+          <a href="https://www.tsunami.gov/" target="_blank" rel="noopener"
             >tsunami.gov (PTWC)</a
           >
-          (<a href="https://www.weather.gov/disclaimer" rel="noopener"
-            >利用条件</a
+          (<a
+            href="https://www.weather.gov/disclaimer"
+            target="_blank"
+            rel="noopener">利用条件</a
           >)
         </li>
         <li>
           <a
             href="https://www.gsi.go.jp/kikakuchousei/kikakuchousei40182.html"
+            target="_blank"
             rel="noopener">国土地理院コンテンツ利用規約</a
           >
         </li>
         <li>
           <a
             href="https://disaportal.gsi.go.jp/hazardmap/copyright/copyright.html"
+            target="_blank"
             rel="noopener">ハザードマップポータルサイトの利用規約</a
           >
         </li>

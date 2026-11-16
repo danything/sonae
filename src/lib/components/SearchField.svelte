@@ -300,8 +300,10 @@
     outline: 2px solid var(--pico-primary);
     outline-offset: 2px;
   }
+  /* Blades の `[aria-controls] { cursor: pointer }` (combobox の欄にも当たる) を打つ欄の形に戻す */
   .search-field input {
     flex: 1 1 0%;
+    cursor: text;
     min-width: 0;
     height: auto;
     margin: 0;

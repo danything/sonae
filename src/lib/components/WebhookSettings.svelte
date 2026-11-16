@@ -53,6 +53,8 @@
       if (!failed) url = "";
       message = failed ?? "追加しました。上の条件で送ります";
       await load();
+    } catch (err) {
+      message = `追加できませんでした: ${err}`;
     } finally {
       busy = false;
     }
@@ -63,6 +65,8 @@
     try {
       message = (await removeWebhook(id)) ?? "解除しました";
       await load();
+    } catch (err) {
+      message = `解除できませんでした: ${err}`;
     } finally {
       busy = false;
     }
@@ -73,6 +77,8 @@
     try {
       message = await testWebhook(id);
       await load();
+    } catch (err) {
+      message = `送れませんでした: ${err}`;
     } finally {
       busy = false;
     }

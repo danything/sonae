@@ -32,7 +32,7 @@
 </script>
 
 <svelte:head>
-  <meta name="description" content="地震・津波の情報" />
+  <meta name="description" content="地震・津波・火山・気象の情報" />
 </svelte:head>
 
 {@render children()}
