@@ -119,9 +119,33 @@ Wolfx の利用規約は 2026-11-14 23:02 (日本時間) に改訂された (Wol
   - `https://www.jma.go.jp/bosai/tidelevel/data/tide/tide_obs_<YYYYMMDD>_<検潮所>.json`: その日の 0 時からの値 (`time`・`station_code`・`interval` (15 秒)・`tide` (cm)・`departure` (潮位偏差、cm))。1 日の終わりに 5760 個、約 30KB
   - どれも `Cache-Control: max-age=60`・ETag・Last-Modified が付く
 - 遅れ: `tide_time.json` を 1 分ごとに 16 回取った。更新は 10 分ごと (10:27:20・10:37:20・10:47:16 UTC) で、どの回も最新の値は更新の約 12 分半前 (12 分 31〜35 秒) のもの (19:14:45・19:24:45・19:34:45)。そのため手元に届く値は、いつ見ても 12 分半から 22 分半古い (CDN の 60 秒を足せば最大 23 分半)。港湾局の検潮所 (室蘭) はさらに 5 分古かった。輪島港のように欠測で空の並びのものもある
-- 津波の間に更新が速くなるかは分からない (津波の無いときにしか測れていない)。津波の警報・注意報が出たときに `tide_time.json` を測り直し、15 分より新しければ入れ直しを考える
+- 津波の間に更新が速くなるかは分からない (津波の無いときにしか測れていない)。サーバーが津波・大きな地震・波浪警報の間に自動で測り直す (下の「測り直し」)。15 分より新しければ入れ直しを考える
 - 規約は気象庁ホームページのもので利用は可。ただし公式の API ではなく、予告なく変わる (国際津波の pacifictsunami と同じ)
 - 入れるなら考えておいたこと: 取るのはサーバーの 1 本だけ (2.3)・窓の間だけ・検潮所は VTSE51 に出る観測点の名前に合わせ、無ければ予報区のいちばん近いもの。値で知らせない・「上がっている」などの判断を書かない (気象業務法)。気象庁が更新を速くしたら測り直す
+
+**測り直し** (`src/lib/server/tide-probe.ts`、2026-11-16 に足した)
+
+サーバーは、次のどれかに当たる間だけ `tide_time.json` を 1 分ごとに取って、更新ごとの遅れを残す。
+画面・通知・「受信の状態」には出さない。失敗してもログに出力するだけで、ほかの受信には響かない (続けて失敗したら間隔を倍々に空け、上限 15 分)。
+環境変数 `SONAE_TIDE_PROBE=off` で切る。
+
+- 動かす理由 (1 分ごとに、DB のいまの状態から決める。訓練・試験は数えない)
+  - `tsunami`: 大津波警報・津波警報・津波注意報のどれかが、どこかの予報区に出ている (終わった・取り消された津波と、津波予報だけのものは数えない)
+  - `quake`: 最大震度 5 弱以上 (5 弱以上未入電も) か、津波に触れたコメントのある地震の発生から 2 時間 (発生の時刻が無ければ更新の時刻から)。津波に触れたコメントは「津波」か「海面変動」を含む文で、「津波の心配はありません」「津波の影響はありません」を除く
+  - `wave`: 波浪 (VPWW59) の警報以上 (波浪警報・波浪特別警報) が、どこかの市町村等に出ている
+- 取るのは `tide_time.json` だけ (`If-None-Match`・`If-Modified-Since` を付ける)。検潮所ごとの値は取らない
+- 中の時刻が前の行と変われば、表 `tide_latency` に 1 行を足し、`tide-latency` で始まる 1 行をログに出力する。304 と、中の時刻が同じ 200 は残さない。表は 90 日と 1 万行まで残す
+- 列: `fetched_at` (取った時刻)・`data_time` (`tide_time.json` の時刻)・`last_modified` (応答の Last-Modified)・`fetch_delay_s` (取った時刻 − 中の時刻、秒)・`modified_delay_s` (Last-Modified − 中の時刻、秒)・`triggers` (動かした理由をカンマで)・`after_gap`。時刻は UTC の ISO 8601
+- `after_gap` が 1 の行は、前に取れた回から 90 秒より空いている (起動・動き始め・失敗の後)。この行の `fetch_delay_s` は更新の時刻を表さないので、`modified_delay_s` だけを見る。`after_gap` が 0 の行の `fetch_delay_s` は、更新から 1 分以内に取った遅れ
+
+読み方 (家のクラスタ。イメージにシェルと sqlite3 が無いので、bun で読む):
+
+```sh
+kubectl -n sonae logs deploy/sonae | grep tide-latency
+kubectl -n sonae exec deploy/sonae -- bun -e 'import { Database } from "bun:sqlite"; console.table(new Database("/data/sonae.db").query("SELECT data_time, fetch_delay_s, modified_delay_s, triggers, after_gap FROM tide_latency ORDER BY id DESC LIMIT 50").all())'
+```
+
+平時の値は `modified_delay_s` が約 755 秒 (12 分半)。`modified_delay_s` が 900 秒 (15 分) を下回る行が続くか、`data_time` の間が 10 分より短くなれば、上の決定を見直す。
 
 **入れない**
 
@@ -584,6 +608,7 @@ VOICEVOX が止まっている・つながらないときは、画面が端末�
 | `settings`                                    | この家の設定 (key ごとに JSON の値と、替えた人)。いまは読み上げの声  | 無期限                                             |
 | `push_subscriptions` / `push_log`             | ブラウザごとの購読と通知の条件 / 事象ごとに最後に送ったもの (2.4)    | 控えは 30 日                                       |
 | `webhooks` / `webhook_log`                    | Webhook の送り先 (URL は秘密)・条件・直近の結果 / 同じく控え (2.4)   | 控えは 30 日                                       |
+| `tide_latency`                                | 潮位観測情報の更新ごとの遅れ (1 章の「測り直し」)                    | 90 日・1 万行まで                                  |
 
 ### 2.6 認証
 
@@ -859,7 +884,7 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
   2. **画面を変えたなら、README と docs の画像を撮り直す** (試験用のデータを入れ、明るいテーマで撮る。撮り方は #151・#178 の PR を見る)。
   3. **上げる人が何かしないといけない変更 (環境変数・設定の消去や読み替え) を拾う。** リリースノートの先頭に「上げる前に」として書く。
   4. main のイメージのビルド (docs だけのコミットなどでは動かないので、中身を変えた最後のコミットのもの) が通ったのを確かめて、リリースを作る。`gh release create vX.Y.Z --target main --generate-notes --title vX.Y.Z` (手で書いた要約は `--notes-file` で前に足す)。イメージは組み直さず、そのコミットのものにバージョンを貼る (`release.yml`)。
-- 外への接続は気象庁・P2P・Wolfx・USGS (earthquake.usgs.gov)・PTWC (www.tsunami.gov)・EMSC (www.seismicportal.eu の WebSocket)・気象庁ホームページ (www.jma.go.jp の bosai の国際津波)・GeoNet (api.geonet.org.nz)・中央氣象署 (opendata.cwa.gov.tw、授権碼があるときだけ)・ExpTech (api.lb.exptech.dev の SSE と static.core-tnn1.exptech.dev・static.core-tyo1.exptech.dev の観測点の表)・Entra ID・Web Push の配信サービス (FCM・Mozilla・Apple・WNS)・登録した Webhook の送り先だけ (chart の外向きの NetworkPolicy (`networkPolicy.egress`) はプライベートのアドレスを閉じるので、LAN の Webhook の送り先は `networkPolicy.egress.extraTo` に足したものだけに届く。家の値は足していない)。気象庁のフィードは地震火山と気象 (随時) の 2 つを 1 日 1440 回ずつ条件付きで取る。地震火山はほとんどが 304 で、随時の `extra.xml` (約 100KB) はほぼ毎分変わるので 1 日 150MB ほど。電文 (警報・注意報は 1 通 10〜40KB、1 日に数百通) を足しても、帯域の上限 (10GB/日) には遠い。
+- 外への接続は気象庁・P2P・Wolfx・USGS (earthquake.usgs.gov)・PTWC (www.tsunami.gov)・EMSC (www.seismicportal.eu の WebSocket)・気象庁ホームページ (www.jma.go.jp の bosai の国際津波と、津波などの間だけ潮位観測情報の `tide_time.json`)・GeoNet (api.geonet.org.nz)・中央氣象署 (opendata.cwa.gov.tw、授権碼があるときだけ)・ExpTech (api.lb.exptech.dev の SSE と static.core-tnn1.exptech.dev・static.core-tyo1.exptech.dev の観測点の表)・Entra ID・Web Push の配信サービス (FCM・Mozilla・Apple・WNS)・登録した Webhook の送り先だけ (chart の外向きの NetworkPolicy (`networkPolicy.egress`) はプライベートのアドレスを閉じるので、LAN の Webhook の送り先は `networkPolicy.egress.extraTo` に足したものだけに届く。家の値は足していない)。気象庁のフィードは地震火山と気象 (随時) の 2 つを 1 日 1440 回ずつ条件付きで取る。地震火山はほとんどが 304 で、随時の `extra.xml` (約 100KB) はほぼ毎分変わるので 1 日 150MB ほど。電文 (警報・注意報は 1 通 10〜40KB、1 日に数百通) を足しても、帯域の上限 (10GB/日) には遠い。
 
 ## 9. 未決の点
 

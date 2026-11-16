@@ -124,6 +124,7 @@ Windows は cmd が読むので、値に `"`・`&`・`^`・`%` を入れると�
 | `CWA_API_KEY`                                              | 台湾の中央氣象署の授権碼 ([cwa.md](cwa.md))。無ければ中央氣象署の受信だけを切る                                                                          |
 | `SONAE_TRAINING=on`                                        | 緊急地震速報の訓練・試験も一覧と地図に出す。既定は出さない。出しても音・読み上げ・通知・Web Push・Webhook では知らせない ([design.md の 2.2](design.md)) |
 | `SONAE_TREM=off`                                           | 台湾の観測点の揺れ (ExpTech の TREM-RTS) を受けない。商用で立てて ExpTech の同意が無いときは切る ([README の「ライセンス」](../README.md#ライセンス))    |
+| `SONAE_TIDE_PROBE=off`                                     | 津波・大きな地震・波浪警報の間に、気象庁の潮位観測情報の遅れを測らない ([design.md の「測り直し」](design.md))                                           |
 | `SONAE_RECEIVE=off`                                        | 情報源につながない (画面だけ触りたいとき)                                                                                                                |
 
 読み上げの声と通知の条件・Webhook は環境変数では決めず、画面の「通知」で選びます (声を選んでいなければ剣崎雌雄で読む)。
