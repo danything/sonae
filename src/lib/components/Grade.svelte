@@ -9,17 +9,6 @@
   const c = $derived(TSUNAMI_COLORS[grade]);
 </script>
 
-<span class="grade" style:background={c?.bg} style:color={c?.fg}
+<span class="level-label" style:background={c?.bg} style:color={c?.fg}
   >{label ?? tsunamiGradeLabel(grade)}</span
 >
-
-<style>
-  .grade {
-    border-radius: var(--so-radius-sm);
-    padding: 0 var(--so-space-2);
-    font-size: var(--so-text-xs);
-    font-weight: var(--so-weight-bold);
-    line-height: 1.75;
-    white-space: nowrap;
-  }
-</style>

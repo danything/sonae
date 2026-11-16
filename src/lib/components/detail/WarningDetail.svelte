@@ -33,20 +33,12 @@
     <section>
       <h2>{WARNING_PHENOMENON[h.code]}</h2>
       <p class="small muted">{jstFull(h.reportedAt)} 発表</p>
-      <p class="small text">{h.text}</p>
+      <p class="small pre-line">{h.text}</p>
     </section>
   {/each}
 </div>
 
 <style>
-  .text {
-    white-space: pre-line;
-  }
-  .plain {
-    margin: var(--so-space-2) 0 0;
-    padding: 0;
-    list-style: none;
-  }
   .kind {
     display: flex;
     flex-direction: column;
