@@ -140,7 +140,7 @@
 
   /**
    * 声は選んだらすぐサーバーに保存する (この家の全部の端末で同じ声になる)。保存している間は、
-   * 選択と「試しに聞く」を止める (前の声で試しに聞かないように)
+   * 選択と「試しに鳴らす」を止める (読み上げもなら、前の声で試しの文を読まないように)
    */
   async function setVoice(select: HTMLSelectElement): Promise<void> {
     voiceSaving = true;
@@ -602,21 +602,16 @@
           {voiceMessage}
         </p>
       {/if}
-      <div class="cluster">
-        <button
-          type="button"
-          class="secondary"
-          disabled={voiceSaving}
-          onclick={() => alerter.previewVoice()}>試しに聞く</button
-        >
-      </div>
     {/if}
     {#if alerter.settings.sound || alerter.settings.speech}
+      <!-- いまの選択どおりに鳴らす (読み上げもなら、選んである声で試しの文も読む)。声の保存中は止める -->
       <div class="cluster">
         <button
           type="button"
           class="secondary"
-          onclick={() => alerter.preview()}>試しに鳴らす</button
+          disabled={alerter.settings.speech && voiceSaving}
+          onclick={() => alerter.preview()}
+          data-testid="alert-preview">試しに鳴らす</button
         >
       </div>
     {/if}
