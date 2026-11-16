@@ -3,7 +3,8 @@
 # **ここは「誰の環境でも動く」値にしてある。** 自分の環境の値 (ホスト名・OIDC・入口・PVC) は別の values
 # ファイルで上書きする (このリポジトリ自身の本番は `deploy/application.yaml` の `helm.valuesObject`)。
 #
-# **OIDC を設定しないと画面は開かない** (`/health` だけ答える。docs/design.md の 2.6)。
+# **OIDC を設定しないと画面は開かない** (`/health` だけ答える。docs/design.md の 2.6)。ログインなしで通す
+# 信頼するネットワーク (`TRUSTED_NETWORKS`) を使うなら `sonae.extraEnv` で渡す (docs/install.md の「ログイン」)。
 # 最低限、`sonae.publicUrl` (か入口のホスト名) と `sonae.oidc` と `secrets.name` を書く。
 
 image:
@@ -34,10 +35,13 @@ sonae:
   # Web Push の連絡先 (VAPID の subject。mailto: か https:)。空なら publicUrl。
   # 秘密鍵は下の `secrets` の Secret から読む (docs/push.md)
   vapidSubject: ""
-  # 緊急地震速報の訓練・試験も一覧と地図に出す。true で SONAE_TRAINING=on。出しても音・読み上げ・通知では知らせない
-  # (docs/design.md の 2.2)。読み上げの声は画面で選び (サーバーの DB に持つ)、まだ選んでいなければ剣崎雌雄
+  # 緊急地震速報の訓練・試験も一覧と地図に出す。true で SONAE_TRAINING=on。出しても音・読み上げ・Web Push・
+  # Webhook では知らせない (docs/design.md の 2.2)
   training: false
-  # 追加の環境変数。そのまま container.env に入る
+  # 追加の環境変数。そのまま container.env に入る。例: 信頼するネットワークの `TRUSTED_NETWORKS`・`TRUSTED_PROXIES`・
+  # `ALLOWED_HOSTS` (docs/install.md の「ログイン」)、商用で立てるときに台湾の TREM-RTS の受信を切る `SONAE_TREM=off` (README)
+  #   - name: SONAE_TREM
+  #     value: "off"
   extraEnv: []
   resources: {}
   nodeSelector: {}
@@ -57,7 +61,7 @@ secrets:
     oidcClientSecret: oidc-client-secret
     # Web Push の VAPID の秘密鍵 (JWK の JSON)。任意。無ければ Web Push を切って動く (docs/push.md)
     vapidPrivateJwk: vapid-private-jwk
-    # 台湾の中央氣象署 (CWA) のオープンデータの授権碼。任意。無ければ CWA の受信だけを切って動く (docs/cwa.md)
+    # 台湾の中央氣象署 (CWA) が出すオープンデータの授権碼。任意。無ければ CWA の受信だけを切って動く (docs/cwa.md)
     cwaApiKey: cwa-api-key
 
 # 読み上げの声を作る VOICEVOX のエンジン (docs/design.md の 2.4)。公式のイメージを別の Pod で動かす。
@@ -75,7 +79,8 @@ voicevox:
   # エンジン自身の既定 (0 か未指定) は論理 CPU の半分 (VOICEVOX ENGINE 0.26 の cpu_execution.py) で、
   # 全部にはならないので、chart はエンジンに 0 を渡さない
   cpuThreads: 0
-  # メモリはモデルを読んだ声の数で増える (3 人を読んで 1.9 GiB)。sonae が合成するのは、画面で選んである声 1 つだけ。
+  # メモリはモデルを読んだ声の数で増える (3 人を読んで 1.9 GiB)。sonae が合成するのは、画面で選んである声
+  # 1 つだけ (まだ選んでいなければ剣崎雌雄)。
   # **CPU の limits は付けない** (絞ると合成が遅くなる)。requests.cpu は、ほかの Pod と取り合ったときの取り分
   resources:
     requests:
@@ -92,7 +97,8 @@ networkPolicy:
   # CNI が NetworkPolicy に対応していないと、出しても効かない
   voicevox: true
   # sonae の外向きを、DNS と公開のインターネット (プライベートでないアドレス) と VOICEVOX だけにする。
-  # 家の LAN とクラスタの中を閉じるためのもの。DNS の Pod のラベルはクラスタで違うので、既定は false
+  # 家の LAN とクラスタの中を閉じるためのもので、家の LAN にある Webhook の送り先 (Home Assistant など) にも
+  # 送れなくなる。DNS の Pod のラベルはクラスタで違うので、既定は false
   egress:
     enabled: false
     dns:
