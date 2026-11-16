@@ -1,6 +1,6 @@
 # sonae
 
-地震・津波の情報を家のサーバーで受けて、ブラウザで見たり、Web Push で通知を受けたりするアプリ。
+地震・津波の情報を家のサーバーで受けて、ブラウザで見たり、Web Push や Discord・Slack の Webhook で通知を受けたりするアプリ。
 いまは持ち主 1 人で使う (ログインで閉じる。Entra のアプリロールで絞り、既定は `admin`。家族と共有するときは family 用のロールに替える)。ホスト名は `s.doany.io`。
 
 <p align="center">
@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/24a0b5a8-9ba6-4722-bb65-c7baeda2827f
   <tr>
     <td align="center"><img src="docs/images/map.webp" alt="地図と一覧" width="380"><br><sub><b>地図と一覧</b> — 津波注意報の海岸と気象の警報・注意報を地図に、全部の種類を新しい順に 1 本の一覧に</sub></td>
     <td align="center"><img src="docs/images/detail.webp" alt="詳しい内容" width="380"><br><sub><b>詳しい内容</b> — 行を押すと、震源・M・各地域の震度。地図も各地の震度で塗る</sub></td>
-    <td align="center"><img src="docs/images/notify.webp" alt="通知の窓" width="380"><br><sub><b>通知</b> — 知らせる条件・音と読み上げ・読み上げの声・Web Push</sub></td>
+    <td align="center"><img src="docs/images/notify.webp" alt="通知の窓" width="380"><br><sub><b>通知</b> — 知らせる条件・音と読み上げ・読み上げの声・Web Push・Webhook</sub></td>
   </tr>
   <tr>
     <td align="center"><img src="docs/images/phone-map.webp" alt="スマホの地図" width="190"><br><sub><b>スマホ</b> — 地図が画面いっぱいに。下に選んだものの 1 行と 5 つのタブ</sub></td>
@@ -39,6 +39,8 @@ https://github.com/user-attachments/assets/24a0b5a8-9ba6-4722-bb65-c7baeda2827f
 開いている画面では、条件に合う情報を短い音と読み上げで知らせる。読み上げの声は、sonae と一緒に動かす [VOICEVOX](https://voicevox.hiroshiba.jp/) のエンジンで作る (既定の声は「VOICEVOX:剣崎雌雄」。声は画面で選べ、この家の全部の端末で同じ声になる)。
 VOICEVOX は公式のイメージを別のコンテナで動かし (理由は [docs/design.md の 2.4](docs/design.md))、`docker compose up` でも Helm chart でも sonae と一緒に起きる。
 VOICEVOX が止まっているときは、ブラウザの読み上げで同じ文を読む。
+
+タブを閉じていても、条件に合う情報を Web Push でブラウザに届ける。Discord や Slack の Incoming Webhook の URL を「通知」に足せば、同じ情報を同じ見出しと本文でチャンネルにも送る (Home Assistant のような、JSON を受ける送り先にも送れる。[docs/push.md の「Webhook」](docs/push.md#webhook))。
 
 ## 1 行で入れる
 

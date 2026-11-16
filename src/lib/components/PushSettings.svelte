@@ -32,6 +32,9 @@
   } from "#lib/push-support.ts";
   import { DEFAULT_PREFS, normalizePrefs, type PushPrefs } from "#lib/push.ts";
   import { voiceLabel } from "#lib/voices.ts";
+  import { syncWebhookPrefs } from "#lib/webhook-client.ts";
+
+  import WebhookSettings from "./WebhookSettings.svelte";
 
   let {
     open = $bindable(false),
@@ -192,6 +195,10 @@
    */
   function savePrefs(note = ""): void {
     alerter.setPrefs(prefs);
+    // Webhook にも同じ条件を使う (この人の Webhook 全部。無ければ送らない)
+    void syncWebhookPrefs($state.snapshot(prefs)).then((failed) => {
+      if (failed) prefsMessage = `${note}${failed}`;
+    });
     if (!registered) {
       prefsMessage = `${note}保存しました`;
       return;
@@ -742,6 +749,7 @@
     {#if message}
       <p class="small" role="status">{message}</p>
     {/if}
+    <WebhookSettings {open} {prefs} />
     <!-- 通知が出せないときに、ブラウザが答えている状態をそのまま見せる (設定の画面と食い違うときの手がかり) -->
     <details ontoggle={(e) => e.currentTarget.open && void readDiag()}>
       <summary class="small">ブラウザの通知の状態 (うまくいかないとき)</summary>

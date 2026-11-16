@@ -119,7 +119,8 @@ ProjectBS には問い合わせない (文書が認証の後ろにあり、使�
             ┌──────────── サーバー (Bun 1 プロセス、SvelteKit + adapter-bun) ────────────┐
 気象庁 Atom ─┤ jmaSource ────┐                                                              │
 P2P ws ──────┤ p2pSource ────┼─▶ 正規化 ─▶ 重複の除去・新旧の判定 ─▶ SQLite ─▶ Broker ─┬─▶ SSE ─────▶ ブラウザ
-Wolfx ws ────┤ wolfxSource ──┘                                                       └─▶ Pusher ─▶ Web Push
+Wolfx ws ────┤ wolfxSource ──┘                                                       ├─▶ Pusher ─▶ Web Push
+             │                                                                        └─▶ Webhooks ─▶ Discord・Slack など
              └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -331,6 +332,14 @@ devDependencies に入れ、Vite がサーバーに束ねる。テスト (`tests
   wslc run --rm -v "$PWD:/w" -w /w debian:trixie-slim sh tools/icons/build.sh
   ```
 
+- **Webhook** (2026-11-16 に足した。issue #167「Web Push だけでなく、Discord や Slack などの Incoming Webhook エンドポイントへの通知があると便利」): Web Push と同じ報を、同じ見出しと本文で Discord・Slack などへ送る (`src/lib/server/webhook.ts`)。作りは denpa の `src/lib/server/webhook.ts` にそろえた。登録と送る本文は [push.md の「Webhook」](push.md#webhook)。
+  - **鳴らす判定と控えは Web Push と同じ** (`planSends`・`sentLog`。控えは `webhook_log`)。初めてと重さが上がった続報は送り、中身が同じなら送らない。Web Push が鳴らさずに置き換える続報 (取消・解除・震源が決まった) は、チャンネルでは置き換えられないので、新しい投稿として送る。送れなかったら控えを戻し、送り直しはしない
+  - **条件は Webhook ごとに持つが、画面は増やさない。** 「通知」の条件をそのまま使い、足したときの条件で送る。その後に条件を変えると (「通知」の窓・地図のメニュー)、その人の Webhook 全部に送る (`PUT /api/webhooks`)。条件の欄を Webhook ごとに並べると窓が倍になるため。ブラウザごとに条件が違うときは、最後に変えたものになる
+  - **URL は秘密** (知っていれば誰でも投稿できる)。DB には持つが、API は返さず (一覧はホストだけ)、記録にもホストだけを出す。送れなかった理由も、HTTP の状態か決まった言葉 (「時間切れです」「つながりませんでした (ECONNREFUSED)」) だけにする (例外の文には URL が入りうる)
+  - **宛先のアドレスは縛らない** (Web Push の配信サービスの表とは違う)。家の中の Home Assistant のような LAN の送り先がふつうにあり、送り先を足せるのはログインした人だけだから (denpa と同じ考え方)。代わりに、送り先を足がかりに別の所を覗かせない。リダイレクトは追わず、相手の本文は読まずに捨て、画面にも返さない
+  - Discord は `content` (メンションは飛ばさない)、Slack とほかは `text` で受けるので、URL で見分けて形を変える (`discord`・`slack`)。押すとその報を開く URL (`PUBLIC_URL` があるとき) は、Discord と Slack では `<...>` で囲む (Discord は画面がログインの後ろなので、ページの見本を出さない)
+  - API は `GET`・`POST`・`PUT`・`DELETE /api/webhooks` と `POST /api/webhooks/test` (1 人 10 分に 5 回まで)。どれもログインが要り、本文は `application/json` だけ受ける (415)。1 人 10 まで。VAPID の鍵が無くても使える
+  - 送るのは待たない (10 秒で切る)。相手が遅くても、ほかの送り先と Web Push は待たない
 - **開いているとき:** SSE で受けたら、OS の通知と、短い音 (`<audio>`) と読み上げで知らせる (`src/lib/alerter.svelte.ts`)。読み上げの声は VOICEVOX で作る (下の「読み上げ」)。
   - **OS の通知も出す** (2026-11-15 に足した。持ち主の声「警報聞き逃しはまずいから開いてるときは通知ならして」)。ブラウザは操作の前だと `<audio>` も読み上げも鳴らさないが、`ServiceWorkerRegistration.showNotification` は通知の許可があれば操作なしで OS の通知音が鳴る。
     鳴らすと決めた事象 (`alertFor` と同じ所。`planAlert` の `renotify`) で出す。中身は Web Push と同じ関数で作る (`payloadOf` → `toNotification`。見出し・本文・tag・`renotify`・閉じるまで残すか (`requireInteraction`)・押したときの URL)。押したときは Service Worker の `notificationclick` がその事象の画面へ移す。
@@ -447,6 +456,7 @@ VOICEVOX が止まっている・つながらないときは、画面が端末�
 | `users` / `sessions`                          | ログインした人とセッション                                           |              |
 | `settings`                                    | この家の設定 (key ごとに JSON の値と、替えた人)。いまは読み上げの声  | 無期限       |
 | `push_subscriptions` / `push_log`             | ブラウザごとの購読と通知の条件 / 事象ごとに最後に送ったもの (2.4)    | 控えは 30 日 |
+| `webhooks` / `webhook_log`                    | Webhook の送り先 (URL は秘密)・条件・直近の結果 / 同じく控え (2.4)   | 控えは 30 日 |
 | `source_status`                               | 情報源ごとの最後の受信・エラー                                       |              |
 
 ### 2.6 認証
@@ -462,7 +472,7 @@ VOICEVOX が止まっている・つながらないときは、画面が端末�
   - 書いていなければ誰も通さない (いままでどおり)。本番 (家の Talos のクラスタ) と chart の既定は書かず、OIDC だけ。インストーラ (install.sh・install.ps1) は家の LAN とそのマシンのブラウザを書く ([install.md の「ログイン」](install.md#ログイン))
   - **アドレスに加えて名前も見る** (DNS リバインディング除け)。通すのは IP の直書き・localhost・ドットの無い名前・家の中だけの名前 (`.localhost`・`.local`・`.lan`・`.home.arpa`・`.internal`)・`ALLOWED_HOSTS` だけ
   - 接続元は、直の相手が前段 (`TRUSTED_PROXIES`) のときだけ `X-Forwarded-For` を右から読む。adapter-bun の `ADDRESS_HEADER` を設定していたら、信頼するネットワークは使わない (誰でも名乗れるため)
-  - 通した人は全員 1 人の利用者 (`trusted-network`、「家のネットワーク」) として扱う。**その中の誰でも、読み上げの声・通知の条件・Web Push の購読を変えられる**
+  - 通した人は全員 1 人の利用者 (`trusted-network`、「家のネットワーク」) として扱う。**その中の誰でも、読み上げの声・通知の条件・Web Push の購読・Webhook を変えられる**
   - OIDC と一緒に使える (外の人はログイン、中の人はログインなし)。OIDC が無いとき、外の人には 403 と接続元を返す
   - **ログインなしの経路では、ほかのサイトから送らせた書き込みを断る** (`crossSiteWrite`)。Cookie の SameSite が効かず、LAN の人が開いた悪いサイトが `http://<LAN の IP>:3030/api/...` へ送らせることができるため。
     GET・HEAD・OPTIONS 以外は、`Sec-Fetch-Site` が same-origin (か none) のときだけ通す。`Sec-Fetch-Site` を付けない古いブラウザは `Origin` が自分のオリジンのときだけ。どちらも無い、ブラウザでない道具は通す

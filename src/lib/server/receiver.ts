@@ -22,6 +22,7 @@ import { usgsSource } from "./sources/usgs.ts";
 import { wolfxSource } from "./sources/wolfx.ts";
 import { Store } from "./store.ts";
 import { type Voicevox, voicevoxFromEnv } from "./voicevox.ts";
+import { originFromEnv, Webhooks } from "./webhook.ts";
 
 interface App {
   store: Store;
@@ -31,6 +32,8 @@ interface App {
   off: SourceStatus[];
   /** Web Push の送り手。VAPID の鍵が無ければ無い (機能を切る) */
   pusher?: Pusher;
+  /** Webhook (Discord・Slack など) の送り手。鍵は要らないので、いつもある */
+  webhooks: Webhooks;
   /** 読み上げの音を作る VOICEVOX。`VOICEVOX_URL` が無ければ無い (画面は端末の読み上げで読む) */
   voice?: Voicevox;
   stopVoice?: () => void;
@@ -52,6 +55,7 @@ export function app(): App {
       sources: [],
       off: [],
       pusher: vapid ? new Pusher(d, vapid) : undefined,
+      webhooks: new Webhooks(d, { origin: originFromEnv() }),
       voice: voicevoxFromEnv(d),
     };
   }
@@ -137,6 +141,15 @@ export function startReceiving(): void {
           );
       })
     : undefined;
+  // 受けたものを Webhook (Discord・Slack など) にも送る (登録が無ければ何もしない)
+  const webhooks = a.webhooks;
+  const unhook = a.broker.subscribe((e) => {
+    webhooks
+      .handle(e)
+      .catch((err: unknown) =>
+        console.warn(`[webhook] 知らせられませんでした: ${err}`),
+      );
+  });
   // 読み上げの音を前もって作る (VOICEVOX が無ければ何もしない)
   const voice = a.voice;
   const unvoice = voice
@@ -147,11 +160,12 @@ export function startReceiving(): void {
       ? "[push] Web Push を送ります"
       : "[push] VAPID の鍵 (VAPID_PRIVATE_JWK) が無いので、Web Push は切ってあります",
   );
-  // 古い原文と、Web Push の送った控えを捨てる (1 時間ごと)
+  // 古い原文と、Web Push・Webhook の送った控えを捨てる (1 時間ごと)
   const prune = setInterval(() => {
     try {
       a.store.prune();
       a.pusher?.prune();
+      a.webhooks.prune();
     } catch (err) {
       console.warn(`[store] 古い原文を捨てられませんでした: ${err}`);
     }
@@ -160,6 +174,7 @@ export function startReceiving(): void {
     controller.abort();
     clearInterval(prune);
     unpush?.();
+    unhook();
     unvoice?.();
     a.stop = undefined;
   };

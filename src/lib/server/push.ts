@@ -21,13 +21,12 @@ import {
 } from "#lib/push.ts";
 
 import {
-  digestOf,
-  type Notice,
-  noticeFor,
+  type Job,
   noticeOf,
   payloadOf,
-  plan,
-  type Sent,
+  planSends,
+  type SentLog,
+  sentLog,
   topicOf,
 } from "./notify.ts";
 
@@ -157,12 +156,14 @@ export type SendResult = "ok" | "gone" | "error";
 export class Pusher {
   private readonly fetch: typeof fetch;
   private readonly now: () => number;
+  private readonly log: SentLog;
 
   constructor(
     readonly db: Database,
     readonly vapid: Vapid,
     opts: { fetch?: typeof fetch; now?: () => number } = {},
   ) {
+    this.log = sentLog(db, "push_log");
     this.fetch = opts.fetch ?? fetch;
     this.now = opts.now ?? Date.now;
   }
@@ -246,74 +247,26 @@ export class Pusher {
   handle(e: SonaeEvent): Promise<SendResult[]> {
     const n = noticeOf(e, this.now());
     if (!n) return Promise.resolve([]);
-    const jobs: {
-      sub: StoredSubscription;
-      notice: Notice;
-      renotify: boolean;
-      prev: Sent | undefined;
-    }[] = [];
-    this.db.transaction(() => {
-      for (const sub of this.list()) {
-        // 気象は住んでいる地域で中身が変わるので、購読ごとに作る
-        const m = noticeFor(n, sub.prefs);
-        if (!m) continue;
-        const prev = this.sent(sub.endpoint, m.tag);
-        const p = plan(m, sub.prefs, prev);
-        if (!p.send) continue;
-        this.db
-          .query(
-            `INSERT INTO push_log (endpoint, tag, level, digest, sent_at) VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT (endpoint, tag) DO UPDATE SET level = max(level, excluded.level),
-               digest = excluded.digest, sent_at = excluded.sent_at`,
-          )
-          .run(sub.endpoint, m.tag, m.level, digestOf(m), this.now());
-        jobs.push({ sub, notice: m, renotify: p.renotify, prev });
-      }
-    })();
-    return Promise.all(
-      jobs.map((j) => this.deliver(j.sub, j.notice, j.renotify, j.prev)),
+    const jobs = planSends(
+      this.db,
+      this.log,
+      n,
+      this.list(),
+      (s) => s.endpoint,
+      this.now(),
     );
+    return Promise.all(jobs.map((j) => this.deliver(j)));
   }
 
-  private sent(endpoint: string, tag: string): Sent | undefined {
-    return (
-      this.db
-        .query<Sent, [string, string]>(
-          "SELECT level, digest FROM push_log WHERE endpoint = ? AND tag = ?",
-        )
-        .get(endpoint, tag) ?? undefined
-    );
-  }
-
-  private async deliver(
-    sub: StoredSubscription,
-    n: Notice,
-    renotify: boolean,
-    prev: Sent | undefined,
-  ): Promise<SendResult> {
-    const r = await this.send(sub, payloadOf(n, renotify), {
+  private async deliver(j: Job<StoredSubscription>): Promise<SendResult> {
+    const { target: sub, notice: n } = j;
+    const r = await this.send(sub, payloadOf(n, j.renotify), {
       ttl: n.ttl,
       urgency: n.urgency,
       topic: topicOf(n.tag),
     });
-    // 送れなかったら控えを送る前に戻す。初めての通知なら控えを消し、次の続報を「初めて」として
-    // 扱う (通知が一度も出ないことを避ける)。前に届いていたなら、その時の控えに戻す (鳴らし直さない)。
-    // 待つ間に後の続報が控えを書き換えていたら、そちらを残す
-    if (r === "error") {
-      if (prev) {
-        this.db
-          .query(
-            "UPDATE push_log SET level = ?, digest = ? WHERE endpoint = ? AND tag = ? AND digest = ?",
-          )
-          .run(prev.level, prev.digest, sub.endpoint, n.tag, digestOf(n));
-      } else {
-        this.db
-          .query(
-            "DELETE FROM push_log WHERE endpoint = ? AND tag = ? AND digest = ?",
-          )
-          .run(sub.endpoint, n.tag, digestOf(n));
-      }
-    }
+    // 送れなかったら控えを送る前に戻す (404・410 は購読ごと消えている)
+    if (r === "error") this.log.undo(sub.endpoint, n, j.prev);
     return r;
   }
 
@@ -376,8 +329,6 @@ export class Pusher {
 
   /** 古い控えを捨てる */
   prune(days = LOG_DAYS): number {
-    return this.db
-      .query("DELETE FROM push_log WHERE sent_at < ?")
-      .run(this.now() - days * 24 * 60 * 60_000).changes;
+    return this.log.prune(this.now() - days * 24 * 60 * 60_000);
   }
 }
