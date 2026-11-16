@@ -7,7 +7,7 @@ test("オフを選んでいなければ、許可があるときは自動で始�
   expect(autoLocate(null, "granted")).toBe("start");
 });
 
-test("まだ選んでいない端末は、許可をまだ聞いていなければ初めの 1 度だけ聞く", () => {
+test("まだ選んでいない端末は、許可をまだ聞いていなければ聞く (断られたらオフを覚える)", () => {
   expect(autoLocate(null, "prompt")).toBe("ask");
   expect(autoLocate(null, "unknown")).toBe("ask");
 });

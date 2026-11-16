@@ -583,7 +583,7 @@
   }
 
   // 開いたとき: オフを選んでいなければ (既定はオン)、位置の許可がもうあれば自動で始める。まだ選んでいない
-  // 端末は初めの 1 度だけ許可を聞く。人がオンにした端末で許可が消えていたら、押すのを待つ。
+  // 端末は許可を聞く (断られたらオフを覚える)。人がオンにした端末で許可が消えていたら、押すのを待つ。
   // 許可が変わったら (サイトの設定で変えたとき) 合わせる。拒まれたらオフを覚える (聞き直さない)
   $effect(() => {
     const choice = readLocate(readPref(LOCATE_PREF));
@@ -591,10 +591,8 @@
     let status: PermissionStatus | undefined;
     let gone = false;
     const apply = (p: GeoPermission) => {
-      const next = autoLocate(
-        remembered ? readLocate(readPref(LOCATE_PREF)) : "off",
-        p,
-      );
+      // 覚えた選択は、許可が変わったときにも読み直す (押して選び直していることがある)
+      const next = autoLocate(readLocate(readPref(LOCATE_PREF)), p);
       if ((next === "start" || next === "ask") && locating === "off")
         startLocating(false);
       else if (next === "forget") {

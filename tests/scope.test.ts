@@ -2,7 +2,12 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import { groupAlerts, planEntry, presentEvents } from "#lib/alert.ts";
+import {
+  groupAlerts,
+  planAlerts,
+  planEntry,
+  presentEvents,
+} from "#lib/alert.ts";
 import { type Cities, homeOf } from "#lib/home.ts";
 import type { Sent } from "#lib/notify.ts";
 import {
@@ -121,6 +126,28 @@ describe("津波", () => {
     if (!a || !b) throw new Error("通知が無い");
     expect(noticeFor(a, near)?.level).toBe(2);
     expect(noticeFor(b, near)?.level).toBe(3);
+  });
+
+  test("見出しと本文が同じでも、住んでいる地域か現在地の区分が上がれば鳴らし直す", () => {
+    // 岩手県が津波警報、東京湾内湾が注意報。見出し (いちばん重い区分) と本文 (その区分の地域) は変わらない
+    const t = tsunami({
+      areas: [
+        { code: "210", name: "岩手県", grade: "warning", kindName: "" },
+        { code: "312", name: "東京湾内湾", grade: "watch", kindName: "" },
+        { code: "311", name: "千葉県内房", grade: "warning", kindName: "" },
+      ],
+    });
+    const near = prefs({ tsunami: "nearby", home: chiba });
+    const sent = new Map<string, Sent>();
+    // 住んでいる地域 (千葉市。東京湾内湾の注意報) で 1 度鳴らす
+    const first = groupAlerts(planAlerts(t, NOW, near, sent, null)).ring;
+    expect(first?.level).toBe(2);
+    // 津波警報の千葉県内房 (館山市) に入ったら鳴らし直す
+    const tateyama = at("1220500");
+    expect(tateyama.tsunami?.map((x) => x.code)).toEqual(["311"]);
+    const g = groupAlerts(planEntry([t], near, sent, tateyama));
+    expect(g.ring?.tag).toBe(first?.tag);
+    expect(g.ring?.level).toBe(3);
   });
 
   test("前の形の住んでいる地域 (津波予報区が無い) は、どの予報区でも当たるとみなす", () => {

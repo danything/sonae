@@ -490,10 +490,11 @@ export function noticeFor(
   if (e.type === "weather") return weatherInfoFor(n, e.data, prefs);
   if (e.type === "tsunami" && prefs.tsunami === "nearby" && !n.closing) {
     const near = nearbyTsunamiRank(e.data, placesOf(prefs, here));
-    return {
-      ...n,
-      level: n.level === GRADE_RANK.major ? n.level : Math.min(near, n.level),
-    };
+    const level =
+      n.level === GRADE_RANK.major ? n.level : Math.min(near, n.level);
+    // 見出しと本文は全国と同じなので、重さも中身の値に入れる。そうしないと、住んでいる地域か現在地の
+    // 区分だけが上がった (見出しと本文は変わらない) ときに、同じ中身として鳴らし直さない
+    return { ...n, level, changeKey: `${contentOf(n)}\nnearby:${level}` };
   }
   return n;
 }

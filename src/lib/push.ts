@@ -87,7 +87,8 @@ function readTsunamiAreas(
   v: unknown,
 ): { code: string; name: string }[] | undefined {
   if (!Array.isArray(v)) return undefined;
-  return v.slice(0, 8).flatMap((a) => {
+  // 1 つの市町村等に当たるのは多くて 2〜3。外から来た値の長さは、予報区の数 (66) までに抑える
+  return v.slice(0, 66).flatMap((a) => {
     const o =
       typeof a === "object" && a !== null ? (a as Record<string, unknown>) : {};
     const c = code(o.code, 3);
