@@ -702,6 +702,15 @@ export function decide(
 }
 
 /**
+ * 送った後に控えへ残す重さ。続報では大きいほうを残す (下がって戻っただけでは鳴らし直さない)。
+ * 解除・取消 (`closing`) ではその重さに戻す。気象 (`warning:<市町村等>:<種別>`) と火山
+ * (`volcano:<火山のコード>`) の tag は出来事ごとに分かれないので、戻さないと控えの残る 30 日の間、
+ * 次に出た同じ段の注意報・警報が鳴らない
+ */
+export const keptLevel = (prev: Sent | undefined, n: Notice): number =>
+  n.closing ? n.level : Math.max(prev?.level ?? 0, n.level);
+
+/**
  * 注意報だけの通知 (気象警報・注意報の通知で、いちばん高い段が注意報のもの)。1 日 1 回まで知らせる
  * (持ち主の決定、2026-11-16。docs/design.md の 2.4)。警報以上に上がったもの・解除は入らない
  */

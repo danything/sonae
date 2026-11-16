@@ -17,6 +17,7 @@ import {
   contentOf,
   decideDaily,
   hereNoticeFor,
+  keptLevel,
   type Notice,
   noticeFor,
   noticeOf,
@@ -179,7 +180,7 @@ export function planAlerts(
 }
 
 /**
- * 知らせるかを決め、知らせるなら控える (Web Push の push_log と同じく、重さは大きいほうを残す)。
+ * 知らせるかを決め、知らせるなら控える (重さは Web Push の push_log と同じく `keptLevel`)。
  * 注意報だけの通知は 1 日 1 回まで (`decideDaily`。数えた日も `sent` に、`ADVISORY_QUOTA` の tag で持つ)
  */
 function mark(
@@ -194,7 +195,7 @@ function mark(
   const qTag = advisoryQuotaTag(n);
   const p = decideDaily(n, prefs, prev, digest, here, sent.get(qTag), now);
   if (!p.send) return null;
-  sent.set(n.tag, { level: Math.max(prev?.level ?? 0, n.level), digest });
+  sent.set(n.tag, { level: keptLevel(prev, n), digest });
   if (p.day) {
     // 古い控えから捨てる (`trimSent`) ときに残るよう、いちばん新しい所へ置き直す
     sent.delete(qTag);
