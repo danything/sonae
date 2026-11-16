@@ -113,7 +113,7 @@ chart はリリースのたびに `oci://ghcr.io/danything/charts/sonae` に出�
 - 既定の `image.tag` は `latest` (main に中身の変更が入るたびに動く)。固定するなら `ghcr.io/danything/sonae` のコミットの sha のタグを書く。
 - Ingress を使うなら `ingress.enabled: true` と `ingress.hosts`。SSE (`/api/stream`) が切れないよう、前段の読み込みのタイムアウトを長くする。
 - PVC は既定で Argo CD に消させない注釈が付く (`persistence.protectFromPruning`)。
-- 外向きを絞る NetworkPolicy (`networkPolicy.egress.enabled`) は既定で出さない。DNS の Pod のラベルがクラスタで違うため。
+- 外向きを絞る NetworkPolicy (`networkPolicy.egress.enabled`) は既定で出さない。DNS の Pod のラベルがクラスタで違うため。出すとプライベートのアドレスを閉じるので、家の LAN の Webhook の送り先 (Home Assistant など) は `networkPolicy.egress.extraTo` に足す。
 
 このリポジトリの持ち主の本番 (`s.doany.io`。家の Talos のクラスタ) も同じ chart で出している。値は [deploy/application.yaml](deploy/application.yaml) の `helm.valuesObject`。
 

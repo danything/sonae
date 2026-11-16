@@ -29,7 +29,8 @@ spec:
 # sonae の外向きを、DNS と公開のインターネットと VOICEVOX だけにする (docs/design.md の 8)。
 # 外へ出る宛先は情報源・OIDC の IdP・Web Push の配信サービス・Webhook の送り先 (一覧も同じ 8 章)。
 # 地図のタイル・下地 (NASA GIBS)・住所の検索はブラウザが直接取るので、ここは通らない。
-# プライベートアドレスは閉じるので、家の LAN にある Webhook の送り先にも送れない。受ける側は絞らない
+# プライベートアドレスは閉じるので、家の LAN にある Webhook の送り先には、`networkPolicy.egress.extraTo` で
+# 足した宛先にだけ送れる。受ける側は絞らない
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -82,4 +83,9 @@ spec:
               - fc00::/7
               - fe80::/10
               - ::1/128
+    {{- with .Values.networkPolicy.egress.extraTo }}
+    # values で足した宛先 (家の LAN の Webhook の送り先など)。ポートは絞らない
+    - to:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
 {{- end }}

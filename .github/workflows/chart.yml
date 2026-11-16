@@ -1,7 +1,8 @@
 name: Chart
 
 # Helm chart (charts/sonae) を lint して、値の組ごとに描けるかを確かめる。
-# 描く組は、chart の既定値・この家の本番の値 (deploy/application.yaml の helm.valuesObject)・Ingress と VOICEVOX 無しの 3 つ
+# 描く組は、chart の既定値・外向きの宛先を足した値・この家の本番の値 (deploy/application.yaml の helm.valuesObject)・
+# Ingress と VOICEVOX 無し
 on:
   pull_request:
     paths:
@@ -38,6 +39,17 @@ jobs:
 
       - name: Render with the chart defaults
         run: helm template sonae charts/sonae -n sonae > /dev/null
+
+      # 外向きの NetworkPolicy に宛先を足したとき (`extraTo`)。足した宛先が to の並びに入ること
+      - name: Render with extra egress destinations
+        run: |
+          set -eu
+          helm template sonae charts/sonae -n sonae \
+            --set networkPolicy.egress.enabled=true \
+            --set 'networkPolicy.egress.extraTo[0].ipBlock.cidr=192.168.1.10/32' \
+            > "$RUNNER_TEMP/egress.yaml"
+          got=$(yq -N 'select(.metadata.name == "sonae-egress") | .spec.egress[].to[].ipBlock.cidr' "$RUNNER_TEMP/egress.yaml")
+          echo "$got" | grep -qx '192.168.1.10/32' || { echo "extraTo の宛先が描かれていません" >&2; exit 1; }
 
       # deploy/application.yaml の helm.valuesObject を取り出して、同じ値で描く。
       # 取り出しは yq (ランナーに入っている mikefarah/yq)

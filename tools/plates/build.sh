@@ -7,7 +7,7 @@
 # 元: Peter Bird (2003) の PB2002 を Hugo Ahlenius (Nordpil) が整え、GeoJSON にしたもの
 #   https://github.com/fraxen/tectonicplates (GeoJSON/PB2002_boundaries.json)
 #   ODC Attribution License 1.0 (https://opendatacommons.org/licenses/by/1-0/)。
-#   研究の模型 (2003) で、どの機関の公式の線でもない。出典の書き方は static/plates/README.md と docs/map.md
+#   研究のモデル (2003) で、どの機関の公式の線でもない。出典の書き方は static/plates/README.md と docs/map.md
 #
 # 出力 (static/plates/):
 #   - pb2002-boundaries.geojson … プレート境界の線 (属性は持たない)。日本全体を見る大きさで形が分かれば足りる
