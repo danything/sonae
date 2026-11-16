@@ -214,6 +214,21 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX webhook_log_sent ON webhook_log (sent_at);
   `,
+  `
+  -- 潮位観測情報 (tide_time.json) の更新ごとの遅れ (tide-probe.ts)。時刻は ISO 8601 の UTC、遅れは秒。
+  -- triggers は測った理由 (tsunami・quake・wave をカンマで)。after_gap は前に取れた回から 90 秒より空いた回
+  CREATE TABLE tide_latency (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fetched_at TEXT NOT NULL,
+    data_time TEXT NOT NULL,
+    last_modified TEXT,
+    fetch_delay_s INTEGER NOT NULL,
+    modified_delay_s INTEGER,
+    triggers TEXT NOT NULL,
+    after_gap INTEGER NOT NULL
+  );
+  CREATE INDEX tide_latency_fetched ON tide_latency (fetched_at);
+  `,
 ];
 
 export function openDb(path: string): Database {

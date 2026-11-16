@@ -24,6 +24,7 @@ import type { Incoming, Source, SourceContext } from "./sources/types.ts";
 import { usgsSource } from "./sources/usgs.ts";
 import { wolfxSource } from "./sources/wolfx.ts";
 import { Store } from "./store.ts";
+import { QUAKE_WINDOW_MS, TideProbe } from "./tide-probe.ts";
 import { type Voicevox, voicevoxFromEnv } from "./voicevox.ts";
 import { Webhooks } from "./webhook.ts";
 
@@ -149,6 +150,31 @@ export function startReceiving(): void {
     s.run(controller.signal).catch((err: unknown) =>
       console.error(`[${s.id}] 受信が止まりました: ${err}`),
     );
+  }
+  // 潮位観測情報の遅れを、津波・大きな地震・波浪警報の間だけ測る (docs/design.md)。情報源ではないので
+  // 「受信の状態」には並べない。`SONAE_TIDE_PROBE=off` で切る
+  if (process.env.SONAE_TIDE_PROBE?.trim().toLowerCase() === "off")
+    console.log(
+      "[tide-probe] SONAE_TIDE_PROBE=off なので、潮位観測情報の遅れは測りません",
+    );
+  else {
+    try {
+      new TideProbe(a.store.db, {
+        state: () => ({
+          tsunamis: a.store.tsunamis(20),
+          quakes: a.store.quakesSince(
+            new Date(Date.now() - QUAKE_WINDOW_MS).toISOString(),
+          ),
+          warnings: a.store.warnings(),
+        }),
+      })
+        .run(controller.signal)
+        .catch((err: unknown) =>
+          console.error(`[tide-probe] 測るのが止まりました: ${err}`),
+        );
+    } catch (err) {
+      console.error(`[tide-probe] 測り始められませんでした: ${err}`);
+    }
   }
   // 受けたものを Web Push でも知らせる (鍵が無ければ何もしない)
   const pusher = a.pusher;
