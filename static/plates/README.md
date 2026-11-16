@@ -14,5 +14,5 @@ Contains information from PB2002 (Bird, 2003; Hugo Ahlenius, Nordpil) which is m
 
 > This collection of data is made available under the Open Data Commons Attribution License: [http://opendatacommons.org/licenses/by/1.0/](http://opendatacommons.org/licenses/by/1.0/)
 
-PB2002 は 2003 年の研究の模型で、どの機関の公式の線でもありません。境界の位置は模型の推定で、いまの研究と違う所もあります。
+PB2002 は 2003 年の研究のモデルで、どの機関の公式の線でもありません。境界の位置はモデルの推定で、いまの研究と違う所もあります。
 このファイルは上のライセンスのまま使えます。sonae のコードのライセンス (AGPL-3.0) はこのファイルには及びません。
