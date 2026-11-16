@@ -27,9 +27,9 @@ spec:
 {{- if .Values.networkPolicy.egress.enabled }}
 ---
 # sonae の外向きを、DNS と公開のインターネットと VOICEVOX だけにする (docs/design.md の 8)。
-# 外へ出るのは公開の宛先だけ (気象庁・P2P地震情報・Wolfx・USGS・EMSC・GeoNet・PTWC・気象庁ホームページ・
-# 中央氣象署・OIDC の IdP・Web Push の配信サービス)。地図のタイルはブラウザが直接取るので、ここは通らない。
-# クラスタの中と家の LAN には用が無いので、プライベートアドレスは閉じる。受ける側は絞らない
+# 外へ出る宛先は情報源・OIDC の IdP・Web Push の配信サービス・Webhook の送り先 (一覧も同じ 8 章)。
+# 地図のタイル・下地 (NASA GIBS)・住所の検索はブラウザが直接取るので、ここは通らない。
+# プライベートアドレスは閉じるので、家の LAN にある Webhook の送り先にも送れない。受ける側は絞らない
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

@@ -56,7 +56,7 @@ export const topicOf = (tag: string) =>
 export interface SentLog {
   /** 前に送ったもの。無ければ undefined */
   get(key: string | number, tag: string): Sent | undefined;
-  /** 送ると決めた通知を控える (重さは上がったときだけ上げる) */
+  /** 送ると決めた通知を控える (重さは `keptLevel` と同じ。続報では上がったときだけ上げ、解除・取消で戻す) */
   put(key: string | number, n: Notice, at: number): void;
   /**
    * 送れなかった通知の控えを、送る前に戻す。初めての通知なら消し (次の続報を「初めて」として扱い、
@@ -106,9 +106,10 @@ export function sentLog(db: Database, table: keyof typeof LOG_TABLES): SentLog {
     put(key, n, at) {
       db.query(
         `INSERT INTO ${table} (${col}, tag, level, digest, sent_at) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT (${col}, tag) DO UPDATE SET level = max(level, excluded.level),
+         ON CONFLICT (${col}, tag) DO UPDATE SET
+           level = CASE WHEN ? THEN excluded.level ELSE max(level, excluded.level) END,
            digest = excluded.digest, sent_at = excluded.sent_at`,
-      ).run(key, n.tag, n.level, digestOf(n), at);
+      ).run(key, n.tag, n.level, digestOf(n), at, n.closing ? 1 : 0);
     },
     undo(key, n, prev) {
       unmark(key, n.tag, prev, digestOf(n));
