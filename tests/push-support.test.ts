@@ -127,6 +127,16 @@ test("登録が例外で止まったときも、訳と代わりの道を言う",
   expect(registerFailedText("x")).toStartWith("登録できませんでした (x)");
 });
 
+test("登録でサーバーにつながらないときは、ブラウザの英語を出さない", () => {
+  const t = registerFailedText(new TypeError("Failed to fetch"));
+  expect(t).toStartWith(
+    "登録できませんでした (つながりません)。つながってから、もう一度押してください。",
+  );
+  expect(t).not.toContain("Failed to fetch");
+  // ほかのブラウザに替えても変わらないので、勧めない
+  expect(t).not.toContain("ほかのブラウザ");
+});
+
 describe("通知の許可が無いときの文", () => {
   const EDGE_DESKTOP =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.3650.97";

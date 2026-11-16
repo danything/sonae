@@ -21,6 +21,7 @@
   } from "#lib/alert.ts";
   import { alerter } from "#lib/alerter.svelte.ts";
   import { EDGE_SLEEP_HINT, isDesktopEdge } from "#lib/awake.ts";
+  import { failureText } from "#lib/failure.ts";
   import { byPrefecture, type Cities, homeOf } from "#lib/home.ts";
   import { INTENSITIES, intensityLabel } from "#lib/model.ts";
   import {
@@ -187,7 +188,7 @@
     try {
       state = await readPushState();
     } catch (err) {
-      message = String(err instanceof Error ? err.message : err);
+      message = failureText("Web Push の登録を読めませんでした", err);
       return;
     }
     info = state.info;
@@ -286,7 +287,7 @@
               "いまの位置が入る市町村が見つかりませんでした。一覧から選んでください。";
           }
         } catch (err) {
-          message = `市町村を探せませんでした: ${err}`;
+          message = failureText("市町村を探せませんでした", err);
         } finally {
           locating = false;
         }
@@ -319,7 +320,9 @@
     if (!dialog) return;
     if (open && !dialog.open) {
       dialog.showModal();
-      load().catch((err: unknown) => (message = `読めませんでした: ${err}`));
+      load().catch(
+        (err: unknown) => (message = failureText("読めませんでした", err)),
+      );
     } else if (!open && dialog.open) dialog.close();
   });
 
@@ -365,7 +368,7 @@
         : `解除できませんでした (${res.status})`;
       await load();
     } catch (err) {
-      message = `解除できませんでした: ${err}`;
+      message = failureText("解除できませんでした", err);
     } finally {
       busy = false;
     }
@@ -391,7 +394,7 @@
           : `送れませんでした (${res.status})`;
     } catch (err) {
       // つながらないときも黙らない
-      message = `送れませんでした: ${err}`;
+      message = failureText("送れませんでした", err);
     } finally {
       busy = false;
     }

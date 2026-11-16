@@ -33,7 +33,7 @@ async function reason(res: Response): Promise<string> {
 
 export async function readWebhooks(): Promise<WebhookView[]> {
   const res = await fetch("/api/webhooks");
-  if (!res.ok) throw new Error(`Webhook を読めませんでした (${res.status})`);
+  if (!res.ok) throw new Error(String(res.status));
   const { webhooks } = (await res.json()) as { webhooks: WebhookView[] };
   count = webhooks.length;
   return webhooks;

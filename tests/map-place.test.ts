@@ -72,7 +72,7 @@ test("条件を送る列: 順に送り、結果は最後の 1 つだけ返す", 
   expect(order).toEqual(["a", "b"]);
   // 失敗しても列は止まらない
   const c = q.push(() => Promise.reject(new Error("落ちた")));
-  expect(await c).toBe("保存できませんでした: Error: 落ちた");
+  expect(await c).toBe("保存できませんでした (落ちた)");
   const d = q.push(job("d", 1));
   expect(await d).toBe("d 済み");
   await q.settled();

@@ -4,6 +4,7 @@
  * ブラウザの名前は文に添える一言にだけ使う。
  */
 
+import { unreachable } from "./failure.ts";
 import { pushEndpointOk } from "./push.ts";
 
 /** ブラウザにある機能 */
@@ -78,10 +79,14 @@ export function pushBlockText(block: PushBlock, userAgent: string): string {
 
 /**
  * 登録 (許可・subscribe・送信) が例外で止まったときの文。ブラウザが配信サービスにつながらないときも
- * ここに来る (Android の Edge の古い版や、配信サービスの無い Chromium)。訳と、代わりの道を言う
+ * ここに来る (Android の Edge の古い版や、配信サービスの無い Chromium)。訳と、代わりの道を言う。
+ * sonae のサーバーにつながらなかった (`fetch` の `TypeError`) ときは、ブラウザの英語を出さず、つながってから
+ * 押し直すことを言う (ほかのブラウザに替えても変わらないため)
  */
 export const registerFailedText = (err: unknown): string =>
-  `登録できませんでした (${err instanceof Error ? `${err.name}: ${err.message}` : String(err)})。このブラウザの配信サービスにつながらないことがあります。ほかのブラウザ (Chrome・Firefox・Safari) で試してください。${OPEN_NOTE}`;
+  unreachable(err)
+    ? `登録できませんでした (つながりません)。つながってから、もう一度押してください。${OPEN_NOTE}`
+    : `登録できませんでした (${err instanceof Error ? `${err.name}: ${err.message}` : String(err)})。このブラウザの配信サービスにつながらないことがあります。ほかのブラウザ (Chrome・Firefox・Safari) で試してください。${OPEN_NOTE}`;
 
 /** 許可を聞いてから、これより早く「拒否」が返ったら、ブラウザが窓を出さずに断ったとみなす (人が押せる速さではない) */
 export const QUIET_DENY_MS = 400;
