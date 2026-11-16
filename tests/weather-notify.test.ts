@@ -701,6 +701,11 @@ describe("府県予報区ごとの通知 (どこかの特別警報・「全国�
     );
     expect(r.receive(ended)).toEqual([null, null, null]);
     expect(r.levels()).toEqual([undefined, undefined, undefined]);
+    // 「全国」でも、危険警報の出ていない府県予報区の電文 (警報・注意報だけ) では送らない
+    const wide = receivers(prefs({ home: far, weather: "everywhere" }));
+    expect(wide.receive(shimane)).toEqual([null, null, null]);
+    expect(wide.receive(ended)).toEqual([null, null, null]);
+    expect(wide.levels()).toEqual([undefined, undefined, undefined]);
   });
 
   test("「全国」で特別警報が危険警報に下がっただけでは終わりにせず、また上がっても鳴らし直さない", () => {
