@@ -1,14 +1,28 @@
 import { describe, expect, test } from "bun:test";
 
-import { alertFor } from "#lib/alert.ts";
+import {
+  alertFor,
+  loadQuota,
+  planAlert,
+  planAlerts,
+  quotaJson,
+} from "#lib/alert.ts";
 import { byPrefecture, type Cities, cityAt, homeOf } from "#lib/home.ts";
 import {
   areaLevel,
   type SonaeEvent,
+  type WarningCode,
   type WeatherInfo,
   type WeatherWarning,
 } from "#lib/model.ts";
-import { matches, noticeFor, noticeOf } from "#lib/notify.ts";
+import {
+  ADVISORY_QUOTA,
+  isAdvisoryOnly,
+  matches,
+  noticeFor,
+  noticeOf,
+  type Sent,
+} from "#lib/notify.ts";
 import {
   DEFAULT_PREFS,
   type Home,
@@ -23,6 +37,8 @@ import {
   readoutOf,
   sentences,
 } from "#lib/readout.ts";
+import { openDb } from "#lib/server/db.ts";
+import { planSends, sentLog, undoJob } from "#lib/server/notify.ts";
 import { parseWeatherXml } from "#lib/server/sources/jma-weather.ts";
 
 import { fixture } from "./helpers.ts";
@@ -67,6 +83,27 @@ const prefs = (patch: Partial<PushPrefs> = {}): PushPrefs => ({
   ...patch,
 });
 
+/** 松江市に注意報だけが出ている作り物 (種別のコードを替えると別の tag になる) */
+function advisory(
+  code: WarningCode = "VPWW55",
+  name = "レベル２大雨注意報",
+  reportedAt = shimane.reportedAt,
+): WeatherWarning {
+  return {
+    ...shimane,
+    code,
+    reportedAt,
+    released: [],
+    areas: [
+      {
+        code: "3220100",
+        name: "松江市",
+        kinds: [{ code: "10", name, level: 2, status: "発表" }],
+      },
+    ],
+  };
+}
+
 function notice(w: WeatherWarning, p: PushPrefs, now = SHIMANE_AT) {
   const base = noticeOf(ev(w), now);
   if (!base) throw new Error("通知の元が無い");
@@ -84,33 +121,108 @@ describe("気象警報・注意報の通知", () => {
     expect(notice(shimane, prefs())).toBeNull();
   });
 
-  test("注意報は、どの範囲でも知らせない", () => {
-    const w: WeatherWarning = {
-      ...shimane,
-      areas: [
-        {
-          code: "3220100",
-          name: "松江市",
-          kinds: [
-            {
-              code: "10",
-              name: "レベル２大雨注意報",
-              level: 2,
-              status: "発表",
-            },
-          ],
-        },
-      ],
-    };
-    const n = notice(w, prefs({ home: home() }));
+  test("住んでいる地域の注意報は、「全国」でも「住んでいる地域と現在地」でも知らせる", () => {
+    const n = notice(advisory(), prefs({ home: home() }));
     expect(n?.level).toBe(2);
-    expect(n && matches(n, prefs({ home: home() }))).toBe(false);
+    expect(n && isAdvisoryOnly(n)).toBe(true);
+    expect(n && matches(n, prefs({ home: home() }))).toBe(true);
     expect(
       n && matches(n, prefs({ home: home(), weather: "everywhere" })),
-    ).toBe(false);
+    ).toBe(true);
     expect(n && matches(n, prefs({ home: home(), weather: "off" }))).toBe(
       false,
     );
+    // ほかの市町村の注意報は知らせない (全国の注意報は出さない)
+    const far = home({ code: "3220200", name: "島根県浜田市" });
+    expect(
+      notice(advisory(), prefs({ home: far, weather: "everywhere" })),
+    ).toBeNull();
+  });
+
+  test("注意報だけの通知は日本時間の 1 日 1 回まで。警報に上がったものと続報は数えない (開いている画面)", () => {
+    const p = prefs({ home: home() });
+    const sent = new Map<string, Sent>();
+    const plan = (w: WeatherWarning, now: number) =>
+      planAlert(ev(w), now, p, sent);
+    // 1 回目は鳴らす
+    expect(plan(advisory(), SHIMANE_AT)?.renotify).toBe(true);
+    expect(sent.get(ADVISORY_QUOTA.home)?.digest).toBe("2024-11-02");
+    // 同じ注意報の続報 (見出しが変わった) は鳴らさずに置き換える (数えない)
+    const again = plan(
+      { ...advisory(), headline: "続報の見出し" },
+      SHIMANE_AT + 60_000,
+    );
+    expect(again?.renotify).toBe(false);
+    // 同じ日の別の注意報は知らせない (一覧と地図に出るだけ)
+    expect(
+      plan(advisory("VPWW57", "レベル２高潮注意報"), SHIMANE_AT + 3_600_000),
+    ).toBeNull();
+    // 警報に上がったものは数に入れず、いつもどおり鳴らす
+    expect(plan(shimane, SHIMANE_AT + 7_200_000)?.renotify).toBe(true);
+    // 日本時間で日付が変わったら、また 1 回鳴らす (2024-11-03 00:00 JST)
+    const tomorrow = Date.parse("2024-11-03T00:00:00+09:00");
+    expect(
+      plan(advisory("VPWW59", "波浪注意報", "2024-11-02T15:00:00Z"), tomorrow)
+        ?.renotify,
+    ).toBe(true);
+    expect(sent.get(ADVISORY_QUOTA.home)?.digest).toBe("2024-11-03");
+  });
+
+  test("数えた日は localStorage の値で持ち越し、住んでいる地域と現在地は別に数える", () => {
+    const sent = new Map<string, Sent>();
+    loadQuota(JSON.stringify({ [ADVISORY_QUOTA.home]: "2024-11-02" }), sent);
+    const p = prefs({ home: home() });
+    expect(planAlert(ev(advisory()), SHIMANE_AT, p, sent)).toBeNull();
+    // 現在地 (住んでいる地域と別の市町村等) の注意報は、別に 1 回鳴らす
+    const here = home({ code: "3220100", name: "島根県松江市" });
+    const away = prefs({
+      home: home({ code: "1310100", name: "東京都千代田区", office: "130000" }),
+    });
+    const plans = planAlerts(ev(advisory()), SHIMANE_AT, away, sent, here);
+    expect(plans.map((x) => [x.notice.here, x.renotify])).toEqual([
+      [true, true],
+    ]);
+    expect(JSON.parse(quotaJson(sent))).toEqual({
+      [ADVISORY_QUOTA.home]: "2024-11-02",
+      [ADVISORY_QUOTA.here]: "2024-11-02",
+    });
+    // 壊れた値は読まない
+    const empty = new Map<string, Sent>();
+    loadQuota("{", empty);
+    loadQuota(JSON.stringify({ [ADVISORY_QUOTA.home]: "きのう" }), empty);
+    expect(empty.size).toBe(0);
+  });
+
+  test("サーバー: 送り先ごとに 1 日 1 回。Webhook には注意報の鳴らさない続報を送らない。送れなかったら数えた日も戻す", () => {
+    const db = openDb(":memory:");
+    db.query(
+      "INSERT INTO push_subscriptions (endpoint, subject, p256dh, auth, prefs, label, created_at, updated_at) VALUES ('e1', 's', 'k', 'a', '{}', '', 0, 0)",
+    ).run();
+    const log = sentLog(db, "push_log");
+    const target = { prefs: prefs({ home: home() }) };
+    const send = (w: WeatherWarning, now: number, replaceable = true) => {
+      const base = noticeOf(ev(w), now);
+      if (!base) throw new Error("通知の元が無い");
+      return planSends(db, log, base, [target], () => "e1", now, replaceable);
+    };
+    const [first] = send(advisory(), SHIMANE_AT);
+    expect(first?.renotify).toBe(true);
+    expect(first?.quota?.day).toBe("2024-11-02");
+    expect(log.get("e1", ADVISORY_QUOTA.home)?.digest).toBe("2024-11-02");
+    // 送れなかったら控えも数えた日も戻し、次の注意報を 1 回目として送る
+    if (first) undoJob(log, "e1", first);
+    expect(log.get("e1", ADVISORY_QUOTA.home)).toBeUndefined();
+    expect(send(advisory(), SHIMANE_AT)[0]?.renotify).toBe(true);
+    // 同じ日の別の注意報は送らない
+    expect(
+      send(advisory("VPWW57", "レベル２高潮注意報"), SHIMANE_AT + 60_000),
+    ).toEqual([]);
+    // 前に送った注意報の続報: Web Push は鳴らさずに置き換え、Webhook は送らない
+    const update = { ...advisory(), headline: "続報の見出し" };
+    expect(send(update, SHIMANE_AT + 120_000, false)).toEqual([]);
+    expect(send(update, SHIMANE_AT + 120_000)[0]?.renotify).toBe(false);
+    // 警報は数えずに送る
+    expect(send(shimane, SHIMANE_AT + 180_000, false)[0]?.renotify).toBe(true);
   });
 
   test("住んでいる地域の解除は、前に知らせた購読にだけ送る (閉じる通知)", () => {
