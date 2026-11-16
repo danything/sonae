@@ -108,7 +108,7 @@ chart はリリースのたびに `oci://ghcr.io/danything/charts/sonae` に出�
 - 公開の URL (`PUBLIC_URL`・`ORIGIN`) は、書かなければ `httpRoute.hostnames` か `ingress.hosts` の先頭に `https://` を付けたもの。違うときは `sonae.publicUrl` に書く。
 - OIDC の 3 つ (issuer・client id・Secret の `oidc-client-secret`) が揃わないと、画面は開かず `/health` だけ答える。
 - VAPID の鍵が無ければ Web Push を切って動く。授権碼が無ければ中央氣象署の受信だけを切って動く。
-- 既定の `image.tag` は `latest` (main に入るたびに動く)。固定するなら `ghcr.io/danything/sonae` のコミットの sha のタグを書く。
+- 既定の `image.tag` は `latest` (main に中身の変更が入るたびに動く)。固定するなら `ghcr.io/danything/sonae` のコミットの sha のタグを書く。
 - Ingress を使うなら `ingress.enabled: true` と `ingress.hosts`。SSE (`/api/stream`) が切れないよう、前段の読み込みのタイムアウトを長くする。
 - PVC は既定で Argo CD に消させない注釈が付く (`persistence.protectFromPruning`)。
 - 外向きを絞る NetworkPolicy (`networkPolicy.egress.enabled`) は既定で出さない。DNS の Pod のラベルがクラスタで違うため。
