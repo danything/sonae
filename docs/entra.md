@@ -1,9 +1,10 @@
 # Entra ID の設定
 
-sonae のログインは doany.io の Entra ID の**共用のアプリ登録 `Main`** (アプリケーション ID `b0fa498f-7e6a-4fe1-a1c6-16fbbb6f397e`) を使い回す。新しくアプリは登録しない。
+持ち主の本番 (`s.doany.io`) のログインは、doany.io の Entra ID の**共用のアプリ登録 `Main`** (アプリケーション ID `b0fa498f-7e6a-4fe1-a1c6-16fbbb6f397e`) を使い回す。新しくアプリは登録しない。
+自分の Entra ID で立てるなら、アプリを登録してリダイレクト URI `<開く URL>/auth/callback` とアプリロール `admin` を足し、下の表の値を自分のものに替える。
 
 - リダイレクト URI `https://s.doany.io/auth/callback` は、gitops の `pulumi/entra.ts` で `Main` に足してある (ashi と同じパス)。
-- 通すロールは `OIDC_ROLE` で決め、既定は `admin` (`Main` のアプリロールはいま `admin` だけ)。
+- `Main` のアプリロールはいま `admin` だけ。
 
 ## sonae に渡す環境変数
 
@@ -21,11 +22,10 @@ sonae のログインは doany.io の Entra ID の**共用のアプリ登録 `Ma
 
 ## 家族と共有するとき
 
-1. `Main` に family 用のアプリロールを足す (gitops の `pulumi/entra.ts`)。
-2. 家族を B2B のゲストとして招待し、エンタープライズ アプリケーション → `Main` → ユーザーとグループで、そのロールを割り当てる。テナントに P1 が無いので、グループではなく人ごとに割り当てる。
-3. sonae の `OIDC_ROLE` をそのロールの値にする。持ち主にも同じロールを割り当てる (sonae が通すロールは 1 つ)。
-
 コードの変更は要らない。
+
+1. 家族を B2B のゲストとして招待し、エンタープライズ アプリケーション → `Main` → ユーザーとグループで、sonae が通すロール (`OIDC_ROLE`) を割り当てる。テナントに P1 が無いので、グループではなく人ごとに割り当てる。
+2. `admin` を家族に渡したくなければ、`Main` に family 用のアプリロールを足し (gitops の `pulumi/entra.ts`)、`OIDC_ROLE` をその値にする。sonae が通すロールは 1 つなので、持ち主にも同じロールを割り当てる。
 
 ## 確かめ方
 
