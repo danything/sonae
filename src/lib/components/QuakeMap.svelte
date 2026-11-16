@@ -75,6 +75,7 @@
   import type { Place } from "#lib/places.ts";
   import { readPref, writePref } from "#lib/prefs.ts";
   import { homeAt, saveHome, trackHere } from "#lib/push-client.ts";
+  import { rtsFeatures, type RtsFrame, type RtsStation } from "#lib/rts.ts";
 
   /**
    * 地図 (docs/map.md)。下地は国土地理院のシームレス空中写真。その上に層をいつも全部重ねる (オン・オフは無い)。
@@ -90,6 +91,8 @@
     volcano = null,
     foreign = [],
     foreignQuake = null,
+    rtsStations = [],
+    rts = null,
     warnings = [],
     office = null,
     officeHref,
@@ -119,6 +122,9 @@
     /** 海外の地震 (点) と、選んだ海外の地震 (震央の × と寄せ先) */
     foreign?: ForeignQuake[];
     foreignQuake?: ForeignQuake | null;
+    /** 台湾の観測点 (TREM-RTS) の位置と、いまの揺れ (点の色だけ。docs/design.md の 2.9) */
+    rtsStations?: RtsStation[];
+    rts?: RtsFrame | null;
     /** 地図が見えているか (スマホの形で一覧の面が上にある間は false) */
     shown?: boolean;
     /** 検索の欄で選んだ場所 (寄せて印を置く。`n` が替わるたびに寄せる) */
@@ -406,6 +412,16 @@
     const fsrc = map.getSource("foreign");
     if (fsrc && "setData" in fsrc)
       (fsrc as { setData(d: unknown): void }).setData(foreignFeatures(foreign));
+  });
+
+  // 台湾の観測点 (TREM-RTS)。地震の間は 0.5 秒ごとに替わるので、この点だけを差し替える
+  $effect(() => {
+    if (!map) return;
+    const src = map.getSource("rts");
+    if (src && "setData" in src)
+      (src as { setData(d: unknown): void }).setData(
+        rtsFeatures(rtsStations, rts),
+      );
   });
 
   // 震度のラベル・震央の印 (字を描くのに地図用の字体を落とさないよう、DOM の印で置く)

@@ -16,7 +16,8 @@ export type SourceId =
   | "wolfx"
   | ForeignSource
   | "ptwc"
-  | "jma-bosai";
+  | "jma-bosai"
+  | "trem";
 
 /** 震度の階級。気象庁の XML の書き方 (`5-` は 5 弱) に合わせる */
 export const INTENSITIES = [

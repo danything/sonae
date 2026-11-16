@@ -20,6 +20,12 @@ import type {
   WeatherWarning,
 } from "./model.ts";
 import { latestPerVolcano } from "./model.ts";
+import {
+  RTS_STALE_MS,
+  type RtsFrame,
+  type RtsStation,
+  type RtsStations,
+} from "./rts.ts";
 
 export interface Snapshot {
   lastSeq: number;
@@ -70,6 +76,13 @@ export class Live {
   warnings = $state<WeatherWarning[]>([]);
   weatherInfos = $state<WeatherInfo[]>([]);
   statuses = $state<SourceStatus[]>([]);
+  /**
+   * 台湾の観測点 (TREM-RTS) の位置と、いまの揺れ (docs/design.md の 2.9)。地図の点の色だけに使い、
+   * 一覧にも知らせ (音・読み上げ・通知) にも使わない。揺れは `RTS_STALE_MS` 届かなければ消す
+   */
+  rtsStations = $state.raw<RtsStation[]>([]);
+  rts = $state.raw<RtsFrame | null>(null);
+  private rtsTimer: ReturnType<typeof setTimeout> | undefined;
   connected = $state(false);
   /** ブラウザで load の中身を入れた (サーバーの描画では false のまま、load の data を使う) */
   seeded = $state(false);
@@ -201,6 +214,14 @@ export class Live {
     }
   }
 
+  /** いまの揺れを入れ、`RTS_STALE_MS` 次が届かなければ消す (揺れが収まると送られてこなくなるため) */
+  setRts(frame: RtsFrame | null): void {
+    clearTimeout(this.rtsTimer);
+    this.rts = frame && Array.isArray(frame.points) ? frame : null;
+    if (this.rts)
+      this.rtsTimer = setTimeout(() => (this.rts = null), RTS_STALE_MS);
+  }
+
   /**
    * `onResync`: 長く切れていて、埋め直しが上限を超えたときに呼ぶ (サーバーが `event: resync` を送る)。
    * 一覧を取り直す (load を走らせ直し、seed で入れ替える)。
@@ -282,6 +303,16 @@ export class Live {
           .voice;
         if (typeof v === "number" && Number.isInteger(v)) onVoice(v);
       });
+      // 台湾の観測点の表といまの揺れ (番号は無い。いまの値だけ。地図の点の色にだけ使う)
+      es.addEventListener("rts-stations", (m) => {
+        seen();
+        const d = JSON.parse((m as MessageEvent).data) as Partial<RtsStations>;
+        if (Array.isArray(d.stations)) this.rtsStations = d.stations;
+      });
+      es.addEventListener("rts", (m) => {
+        seen();
+        this.setRts(JSON.parse((m as MessageEvent).data) as RtsFrame);
+      });
       es.addEventListener("resync", () => {
         seen();
         onResync();
@@ -336,6 +367,7 @@ export class Live {
       clearInterval(watch);
       clearTimeout(retry);
       clearTimeout(stable);
+      this.setRts(null);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("pageshow", onShow);

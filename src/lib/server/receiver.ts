@@ -17,6 +17,7 @@ import { bosaiTsunamiSource } from "./sources/jma-bosai.ts";
 import { jmaSource, jmaWeatherSource } from "./sources/jma.ts";
 import { p2pSource } from "./sources/p2p.ts";
 import { ptwcSource } from "./sources/ptwc.ts";
+import { RtsBoard, tremSource } from "./sources/trem.ts";
 import type { Incoming, Source, SourceContext } from "./sources/types.ts";
 import { usgsSource } from "./sources/usgs.ts";
 import { wolfxSource } from "./sources/wolfx.ts";
@@ -34,6 +35,11 @@ interface App {
   pusher?: Pusher;
   /** Webhook (Discord・Slack など) の送り手。鍵は要らないので、いつもある */
   webhooks: Webhooks;
+  /**
+   * 台湾の観測点のいまの揺れ (TREM-RTS)。メモリだけに持ち、開いている画面に配る (地図の点の色だけ)。
+   * DB にも Broker にも入れないので、Web Push・Webhook・読み上げには届かない (docs/design.md の 2.9)
+   */
+  rts: RtsBoard;
   /** 読み上げの音を作る VOICEVOX。`VOICEVOX_URL` が無ければ無い (画面は端末の読み上げで読む) */
   voice?: Voicevox;
   stopVoice?: () => void;
@@ -56,6 +62,7 @@ export function app(): App {
       off: [],
       pusher: vapid ? new Pusher(d, vapid) : undefined,
       webhooks: new Webhooks(d, { origin: originFromEnv() }),
+      rts: new RtsBoard(),
       voice: voicevoxFromEnv(d),
     };
   }
@@ -110,9 +117,20 @@ export function startReceiving(): void {
     bosaiTsunamiSource(ctx),
     geonetSource(ctx),
   ];
+  a.off = [];
+  // 台湾の観測点の揺れ。受けたものは a.rts に入れるだけ (ctx の emit を渡さない。知らせに届かない)。
+  // 非商用の条件のデータなので、`SONAE_TREM=off` で切れるようにしておく (README)
+  if (process.env.SONAE_TREM?.trim().toLowerCase() === "off") {
+    a.off.push({
+      id: "trem",
+      state: "off",
+      reason: "SONAE_TREM=off で切ってあります",
+      since: new Date().toISOString(),
+    });
+    console.log("[trem] SONAE_TREM=off なので、TREM の受信は切ってあります");
+  } else a.sources.push(tremSource(a.rts, { onStatus: ctx.onStatus }));
   // 台湾の中央氣象署は授権碼が要る。無ければ作らない (docs/cwa.md)
   const cwa = cwaSource(ctx);
-  a.off = [];
   if (cwa) a.sources.push(cwa);
   else {
     a.off.push({
@@ -182,6 +200,6 @@ export function startReceiving(): void {
   // 受信の輪を止めないと、いつまでも終わらない (k8s の入れ替えが遅れる)
   (process as EventEmitter).once("sveltekit:shutdown", () => a.stop?.());
   console.log(
-    "[receiver] 気象庁 (地震火山・気象)・P2P地震情報・Wolfx・USGS・PTWC・EMSC・気象庁 bosai (国際津波)・GeoNet の受信を始めました",
+    "[receiver] 気象庁 (地震火山・気象)・P2P地震情報・Wolfx・USGS・PTWC・EMSC・気象庁 bosai (国際津波)・GeoNet・ExpTech TREM (台湾の観測点の揺れ) の受信を始めました",
   );
 }

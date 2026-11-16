@@ -5,7 +5,7 @@
  * 「JMA Earthquake Early Warning JSON API」の項目の一覧と、WebSocket の説明
  * (https://wolfx.jp/en/docs/websocket/)。
  *
- * **原文 (`OriginalText`) は読まない・残さない** (Wolfx の規約で公開の再配布が禁じられている)。
+ * **原文 (`OriginalText`) は読まない・残さない** (中身は気象庁の電文で、Wolfx の規約の五条で気象庁の条件に従う。配り直してよいと確かめられない。docs/design.md の 5 章)。
  * 最大予測震度 (`MaxIntensity`・`WarnArea[].Shindo1/2`) も読まない (docs/design.md の 5 章)。
  */
 

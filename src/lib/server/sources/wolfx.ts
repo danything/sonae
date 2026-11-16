@@ -2,7 +2,7 @@
  * Wolfx Open API の WebSocket (`wss://ws-api.wolfx.jp/all_eew`)。気象庁の緊急地震速報 (`jma_eew`) と、
  * 地震情報の一覧 (`jma_eqlist`、P2P地震情報の予備) を 1 つの接続で受ける。
  *
- * - 1 クライアント 1 接続。`all_eew` は Wolfx のすべての JSON API の配信を流すので、`type` で
+ * - 接続は 1 本 (文書の「可能な限り接続を再利用し、不要な重複接続を避ける」)。`all_eew` は Wolfx のすべての JSON API の配信を流すので、`type` で
  *   `jma_eew` と `jma_eqlist` だけを採り、ほか (中国の速報など) は捨てる
  * - つながったら `query_jmaeqlist` を送り、いまの一覧を受ける (切れていた間の分を埋める)。
  *   地震のときに Wolfx が一覧を自分から送ってくるかは確かめられていないので、つながっている間は
