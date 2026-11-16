@@ -77,8 +77,7 @@ export async function readPushState(): Promise<{
   endpoint: string | undefined;
 }> {
   const res = await fetch("/api/push");
-  if (!res.ok)
-    throw new Error(`Web Push の登録を読めませんでした (${res.status})`);
+  if (!res.ok) throw new Error(String(res.status));
   const info = (await res.json()) as PushInfo;
   if (!info.enabled || !pushSupported()) return { info, endpoint: undefined };
   const sub = await (

@@ -124,7 +124,7 @@ Web Push を使えないブラウザでは、「通知」の Web Push の節に�
     それより前は登録の途中で例外になることもあった ([同じ件の別の質問](https://learn.microsoft.com/en-us/answers/questions/5781524/))。Microsoft の正式な告知や、直ったという記載は見つからない。
     caniuse と MDN の互換表には Edge for Android の列が無い
   - 文は「このブラウザ (Android の Edge) は…」と名前を添え、Android の Chrome で開く (アプリとして入れるときも Chrome から) ことを案内する。Edge が直って正しい宛先を返せば、そのまま登録できる
-- **登録が例外で止まった** (配信サービスにつながらない など): 例外の名前と、ほかのブラウザで試すことを出す
+- **登録が例外で止まった** (配信サービスにつながらない など): 例外の名前と、ほかのブラウザで試すことを出す。sonae のサーバーにつながらなかったとき (`fetch` の `TypeError`) は、ブラウザの英語 (「Failed to fetch」) を出さず、「登録できませんでした (つながりません)」と、つながってから押し直すことを出す
 - どれでも、開いている間の OS の通知・音・読み上げ (「開いているとき」) は Web Push と別なので使える、と添える。
 - **Android の Edge は、サイトの通知そのものが使えない** (2026-11-15、Android 10・Edge 157 の実機で確かめた)。
   `Notification.permission`・`permissions.query`・`pushManager.permissionState` がどれも `denied` で、

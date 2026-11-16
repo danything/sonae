@@ -11,6 +11,7 @@
   import { alerter } from "#lib/alerter.svelte.ts";
   import Icon from "#lib/components/Icon.svelte";
   import Menu from "#lib/components/Menu.svelte";
+  import { failureText } from "#lib/failure.ts";
   import {
     INTENSITY_COLORS,
     jstFull,
@@ -784,7 +785,7 @@
       }
       showNote(await saveHome(home));
     } catch (err) {
-      showNote(`住んでいる地域を決められませんでした: ${err}`);
+      showNote(failureText("住んでいる地域を決められませんでした", err));
     } finally {
       homeBusy = false;
     }

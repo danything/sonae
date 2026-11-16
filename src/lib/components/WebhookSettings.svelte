@@ -5,6 +5,7 @@
    * URL は秘密 (知っていれば誰でも投稿できる) なので、足した後はホストだけを出す (サーバーも URL を返さない)。
    * 窓を開くたびに読み直す。
    */
+  import { failureText } from "#lib/failure.ts";
   import { jst } from "#lib/format.ts";
   import type { PushPrefs } from "#lib/push.ts";
   import {
@@ -34,7 +35,7 @@
     try {
       hooks = await readWebhooks();
     } catch (err) {
-      message = String(err instanceof Error ? err.message : err);
+      message = failureText("Webhook を読めませんでした", err);
     }
   }
 
@@ -54,7 +55,7 @@
       message = failed ?? "追加しました。上の条件で送ります";
       await load();
     } catch (err) {
-      message = `追加できませんでした: ${err}`;
+      message = failureText("追加できませんでした", err);
     } finally {
       busy = false;
     }
@@ -66,7 +67,7 @@
       message = (await removeWebhook(id)) ?? "解除しました";
       await load();
     } catch (err) {
-      message = `解除できませんでした: ${err}`;
+      message = failureText("解除できませんでした", err);
     } finally {
       busy = false;
     }
@@ -78,7 +79,7 @@
       message = await testWebhook(id);
       await load();
     } catch (err) {
-      message = `送れませんでした: ${err}`;
+      message = failureText("送れませんでした", err);
     } finally {
       busy = false;
     }
