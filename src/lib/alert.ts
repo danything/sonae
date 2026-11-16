@@ -195,9 +195,12 @@ function mark(
   const qTag = advisoryQuotaTag(n);
   const p = decideDaily(n, prefs, prev, digest, here, sent.get(qTag), now);
   if (!p.send) return null;
+  // Map は書き直しても並びが変わらないので、消してから足す。古い控えから捨てる (`trimSent`) ときに、
+  // 長く続く事象 (津波・気象) の控えを先に捨てて、次の続報を初めてとして鳴らさないため
+  sent.delete(n.tag);
   sent.set(n.tag, { level: keptLevel(prev, n), digest });
   if (p.day) {
-    // 古い控えから捨てる (`trimSent`) ときに残るよう、いちばん新しい所へ置き直す
+    // 数えた日の控えも同じく、いちばん新しい所へ置き直す
     sent.delete(qTag);
     sent.set(qTag, { level: 0, digest: p.day });
   }

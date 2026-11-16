@@ -160,6 +160,19 @@ describe("開いているときに鳴らすか", () => {
     expect(next?.renotify).toBe(false);
     expect(next?.notice.tag).toBe("quake:20261114090000");
   });
+
+  test("控えは、最後に書いたものがいちばん新しい所に並ぶ (古いものから捨てるため)", () => {
+    const sent = new Map<string, Sent>();
+    const p = prefs();
+    planAlert(quake(), NOW, p, sent);
+    planAlert(quake({ id: "20261114091000" }), NOW, p, sent);
+    // 前の地震の続報で書き直したら、そちらが後ろへ
+    planAlert(quake({ magnitude: 5.3 }), NOW, p, sent);
+    expect([...sent.keys()]).toEqual([
+      "quake:20261114091000",
+      "quake:20261114090000",
+    ]);
+  });
 });
 
 describe("開いているときの OS の通知", () => {
