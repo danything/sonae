@@ -31,8 +31,7 @@ export interface AlertSettings {
   // 声は端末に持たない (この家で 1 つ。サーバーの DB。前の `voice` は読まない)
   /** OS の通知を出す。無ければ既定 (通知の許可があれば出す)。許可が無ければ、オンでも出せない */
   notify?: boolean;
-  /** 画面への配信が切れた・戻ったことを知らせる。無ければ既定 (知らせる) */
-  outage?: boolean;
+  // 画面への配信が切れた・戻ったことはいつも知らせる (2026-11-16 からスイッチは無い。前の `outage` は読まない)
   /** 地図の現在地が入る市町村等の気象も知らせる。無ければ既定 (知らせる) */
   here?: boolean;
 }
@@ -48,7 +47,6 @@ export function parseAlertSettings(raw: string | null): AlertSettings {
       speech: o?.speech === true,
     };
     if (typeof o?.notify === "boolean") s.notify = o.notify;
-    if (typeof o?.outage === "boolean") s.outage = o.outage;
     if (typeof o?.here === "boolean") s.here = o.here;
     return s;
   } catch {

@@ -34,9 +34,9 @@ sonae:
   # Web Push の連絡先 (VAPID の subject。mailto: か https:)。空なら publicUrl。
   # 秘密鍵は下の `secrets` の Secret から読む (docs/push.md)
   vapidSubject: ""
-  # まだ画面で声を選んでいないときの声 (VOICEVOX のスタイルの id。docs/design.md の 2.4)。空ならアプリの既定 (剣崎雌雄)。
-  # 画面で選んだ声はサーバーの DB に持ち、この家の全部の端末で同じになる
-  voicevoxSpeaker: ""
+  # 緊急地震速報の訓練・試験も一覧と地図に出す。true で SONAE_TRAINING=on。出しても音・読み上げ・通知では知らせない
+  # (docs/design.md の 2.2)。読み上げの声は画面で選び (サーバーの DB に持つ)、まだ選んでいなければ剣崎雌雄
+  training: false
   # 追加の環境変数。そのまま container.env に入る
   extraEnv: []
   resources: {}

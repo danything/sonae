@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import { type Advisory, isPinnedAdvisory } from "#lib/model.ts";
-import { noticeOf } from "#lib/notify.ts";
+import { matches, noticeOf } from "#lib/notify.ts";
+import { normalizePrefs } from "#lib/push.ts";
 import { parseJmaXml, WANTED_CODES } from "#lib/server/sources/jma-xml.ts";
 import type { Incoming } from "#lib/server/sources/types.ts";
 import { readView, selectHref } from "#lib/view.ts";
@@ -91,6 +92,20 @@ describe("地震の活動状況・地震回数 (VXSE56・60)", () => {
       ),
     ).toBeNull();
   });
+});
+
+test("南海トラフ地震臨時情報は、前のスイッチを切ってあった条件でも知らせる", () => {
+  const a: Advisory = {
+    ...advisory("74_01_01_200512_VYSE50.xml"),
+    cancelled: false,
+    updatedAt: "2020-05-12T00:00:00Z",
+  };
+  const n = noticeOf(
+    { seq: 1, type: "advisory", data: a },
+    Date.parse(a.reportedAt) + 60_000,
+  );
+  expect(n).not.toBeNull();
+  expect(n && matches(n, normalizePrefs({ advisory: false }))).toBe(true);
 });
 
 test("お知らせを選ぶ URL は i=<id>", () => {

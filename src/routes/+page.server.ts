@@ -1,4 +1,5 @@
 import { app } from "#lib/server/receiver.ts";
+import { showTraining } from "#lib/server/site.ts";
 import { OFFICE_PREFIX, readView } from "#lib/view.ts";
 
 import type { PageServerLoad } from "./$types";
@@ -10,13 +11,14 @@ import type { PageServerLoad } from "./$types";
 export const load: PageServerLoad = ({ url }) => {
   const { store } = app();
   const view = readView(url.searchParams);
+  const training = showTraining();
   const id = view.selected?.id;
   const kind = view.selected?.kind;
   const quake = kind === "quake" && id ? (store.quake(id) ?? null) : null;
   return {
-    training: view.training,
-    // 訓練・試験は既定で隠す。`?training=1` で出す
-    eewHistory: store.eews(50, view.training),
+    training,
+    // 訓練・試験は既定で隠す。`SONAE_TRAINING=on` で出す
+    eewHistory: store.eews(50, training),
     quake,
     // 選んだ地震の長周期地震動 (いまの姿の新しい 50 件に無い、古い地震のため)。地震識別番号で引く
     longPeriod: quake?.eventId

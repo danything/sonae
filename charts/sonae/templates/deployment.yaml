@@ -136,13 +136,13 @@ spec:
             - name: VOICEVOX_URL
               value: http://voicevox:50021
             {{- end }}
-            {{- with .Values.sonae.voicevoxSpeaker }}
-            - name: VOICEVOX_SPEAKER
-              value: {{ . | quote }}
-            {{- end }}
             {{- if not .Values.sonae.receive }}
             - name: SONAE_RECEIVE
               value: "off"
+            {{- end }}
+            {{- if .Values.sonae.training }}
+            - name: SONAE_TRAINING
+              value: "on"
             {{- end }}
             {{- with .Values.sonae.extraEnv }}
             {{- toYaml . | nindent 12 }}

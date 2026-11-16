@@ -62,7 +62,7 @@ export interface Notice {
    * 報ごとに M や震源が少しずつ変わるので、警報の地域が増えたときだけ送り直す
    */
   changeKey?: string;
-  /** 気象の特別警報を、住んでいる地域でなくても知らせるもの (条件は「特別警報はどこでも」で見る) */
+  /** 気象の特別警報を、住んでいる地域でなくても知らせるもの (いつも知らせる) */
   special?: boolean;
   /**
    * 気象警報・注意報の通知で、住んでいる地域に当たる市町村等 (電文の名前と、出ている種類)。
@@ -365,9 +365,9 @@ function warningFor(
   const special = w.areas.filter((a) => areaLevel(a) === 5);
   const homeLevel = homeNotice?.level ?? 0;
   // 同じ府県予報区のほかの市町村等に特別警報が出ているときは、特別警報を先に言う
-  // (住んでいる地域が特別警報なら、上の住んでいる地域の通知が特別警報を言う)
-  if (!prefs.weatherSpecial || special.length === 0 || homeLevel >= 5)
-    return homeNotice;
+  // (住んでいる地域が特別警報なら、上の住んでいる地域の通知が特別警報を言う)。
+  // どこかの特別警報はいつも知らせる (選ばせない。持ち主の決定、2026-11-16)
+  if (special.length === 0 || homeLevel >= 5) return homeNotice;
   const names = [
     ...new Set(
       special.flatMap((a) =>
@@ -547,15 +547,17 @@ export function matches(n: Notice, prefs: PushPrefs): boolean {
     case "tsunami":
       return prefs.tsunami !== "off" && n.level >= TSUNAMI_MIN[prefs.tsunami];
     case "advisory":
-      return prefs.advisory;
+      // 南海トラフ地震臨時情報等はいつも知らせる (選ばせない。持ち主の決定、2026-11-16)
+      return true;
     case "volcano":
       // 噴火速報はどちらでも。噴火警報は「warning」なら居住地域 (レベル 4・5)、「all」なら火口周辺 (レベル 2) から
       if (prefs.volcano === "off") return false;
       if (e.data.code === "VFVO56") return true;
       return n.level >= (prefs.volcano === "all" ? 2 : VOLCANO_RESIDENTIAL);
     case "warning":
-      // どこかの特別警報 (住んでいる地域でなくても) と、住んでいる地域の警報以上 (「all」なら注意報から)
-      if (n.special) return prefs.weatherSpecial;
+      // 特別警報はどこに出ても (住んでいる地域でも、「知らせない」にしてあっても) 知らせる。
+      // ほかは住んでいる地域の警報以上 (「all」なら注意報から)
+      if (n.special || n.level >= 5) return true;
       if (prefs.weather === "off") return false;
       return n.level >= (prefs.weather === "all" ? 2 : 3);
     case "weather":

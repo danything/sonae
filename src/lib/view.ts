@@ -1,11 +1,11 @@
 /**
  * 1 つの画面の「いま何を見ているか」。どれも URL の query に持つので、リンクを送ればそのまま開ける
  * (docs/ui.md の「URL」)。一覧は全部の種類を 1 本に並べ、どの種類を出すか (全部か 1 つ) は端末に覚える (`readOnly`)。
- * 前の一覧の種類 `k` は読まず、リンクを作るときに外す。
+ * 前の一覧の種類 `k` と、前の訓練・試験を出す印 `training` (2026-11-16 から環境変数 `SONAE_TRAINING`) は読まず、
+ * リンクを作るときに外す。
  *
  * - `q` / `t` / `e` / `v` / `w` / `i` / `f` … 選んだ地震 (id)・津波 (id)・緊急地震速報 (地震の識別番号)・火山の報 (id)・
  *   気象 (府県予報区の警報・注意報は `office-<府県予報区のコード>`、気象の報は id)・お知らせ (id)・海外の地震 (id)。1 つだけ
- * - `training=1` … 緊急地震速報の訓練・試験も出す
  * - `about=1` … 「出典と注意」を開く
  */
 import { placeName } from "./format.ts";
@@ -44,7 +44,6 @@ export const OFFICE_PREFIX = "office-";
 export interface View {
   /** 選んだもの (無ければ null) */
   selected: { kind: Kind; id: string } | null;
-  training: boolean;
   about: boolean;
 }
 
@@ -79,21 +78,21 @@ export function readView(params: Params): View {
   }
   return {
     selected,
-    training: params.get("training") === "1",
     about: params.has("about"),
   };
 }
 
 /**
  * いまの query に `patch` を当てたリンク。`null` の鍵は外す。選ぶもの (`q`・`t`・`e`・`v`・`w`・`i`・`f`) は 1 つだけなので、
- * どれかを入れたらほかは外す。前の一覧の種類 (`k`) は使わないので外す
+ * どれかを入れたらほかは外す。前の一覧の種類 (`k`) と訓練・試験を出す印 (`training`) は使わないので外す
  */
 export function viewHref(
   params: Params,
-  patch: Partial<Record<SelectKey | "training" | "about", string | null>>,
+  patch: Partial<Record<SelectKey | "about", string | null>>,
 ): string {
   const next = new URLSearchParams(params.toString());
   next.delete("k");
+  next.delete("training");
   if (SELECT_PARAMS.some((key) => patch[key] !== undefined))
     for (const key of SELECT_PARAMS) next.delete(key);
   for (const [key, value] of Object.entries(patch)) {
@@ -154,11 +153,8 @@ export function legacyRedirect(url: URL): string | null {
       return q ? selectHref(empty, "quake", q) : "/";
     }
     case "/tsunami":
-      return "/";
     case "/eew":
-      return viewHref(empty, {
-        training: params.get("training") === "1" ? "1" : null,
-      });
+      return "/";
     case "/about":
       return "/?about=1";
     default:

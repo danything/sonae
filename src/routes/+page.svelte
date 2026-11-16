@@ -141,7 +141,10 @@
       matches(query, t.headline, ...t.areas.map((a) => a.name)),
     ),
   );
-  /** 緊急地震速報。訓練・試験を出していないときは、SSE で来たもの (通常だけ) を重ねる */
+  /**
+   * 緊急地震速報。訓練・試験を出していないとき (既定。`SONAE_TRAINING=on` で出す) は、
+   * SSE で来たもの (通常だけ) を重ねる
+   */
   const allEews = $derived(
     data.training
       ? data.eewHistory
@@ -599,10 +602,6 @@
       specialOffices.map((o) => o.office),
     ),
   );
-  const trainingHref = $derived(
-    viewHref(params, { training: data.training ? null : "1" }),
-  );
-
   // ---- スマホの形: 地図と一覧の切り替え (選んだもので開いたときは一覧) ----
   // svelte-ignore state_referenced_locally
   let tab = $state<"map" | "list">(v.selected ? "list" : "map");
@@ -1461,11 +1460,7 @@
     statuses={snap.statuses}
   />
   {#if user}
-    <PushSettings
-      bind:open={pushOpen}
-      training={data.training}
-      {trainingHref}
-    />
+    <PushSettings bind:open={pushOpen} />
   {/if}
 </div>
 

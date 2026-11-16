@@ -82,7 +82,7 @@ export function planOpen(
   return { replace: s.auto, closeDialog: grave && s.dialog };
 }
 
-/** 開くリンク。いまの query (訓練・試験を出すか) は残し、窓を閉じるときは「出典と注意」も外す */
+/** 開くリンク。いまの query は残し、窓を閉じるときは「出典と注意」も外す */
 export function openHref(
   params: Pick<URLSearchParams, "toString">,
   target: Selected,
