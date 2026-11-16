@@ -134,7 +134,10 @@ function feedSource(
       });
       if (!res.ok) {
         log(`${tag} ${e.url} が ${res.status} を返しました`);
-        all = false;
+        // 取り直すのは、待てば取れそうなもの (5xx・408・429) だけ。404・410 などは取り直しても
+        // 取れないので、取り残しに数えない (毎回フィードを読み直さない)
+        if (res.status >= 500 || res.status === 408 || res.status === 429)
+          all = false;
         continue;
       }
       const body = await res.text();
