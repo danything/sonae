@@ -3,7 +3,7 @@
  * 知らせる判定は Web Push と同じ `#lib/notify.ts` の noticeOf・decide を使う。鳴らすのは `alerter.svelte.ts`。
  */
 
-import type { SonaeEvent } from "./model.ts";
+import type { SonaeEvent, WeatherWarning } from "./model.ts";
 import {
   contentOf,
   decide,
@@ -98,7 +98,10 @@ export function planAlert(
  * `planAlert` に、現在地の市町村等 (`here`) の気象の通知を足したもの。住んでいる地域と現在地の
  * それぞれで知らせるかを決めて控える (tag が違うので控えも別)。現在地が住んでいる地域と同じなら、
  * 住んでいる地域の通知だけ。記録的短時間大雨情報・竜巻注意情報は 1 つの報に地域が並ぶので、
- * 住んでいる地域が対象なら現在地は足さない。鳴らすのを 1 度にまとめるのは `groupAlerts`
+ * 住んでいる地域が対象なら現在地は足さない。鳴らすのを 1 度にまとめるのは `groupAlerts`。
+ *
+ * `left` は前にいた (もう出た) 市町村等。そこで前に知らせたもの (控えのある tag) だけ、解除・続報で
+ * 出ている通知を置き換える (鳴らさない。重さが上がっても、もういないので鳴らし直さない)
  */
 export function planAlerts(
   e: SonaeEvent,
@@ -106,28 +109,77 @@ export function planAlerts(
   prefs: PushPrefs,
   sent: Map<string, Sent>,
   here: Home | null,
+  left: readonly Home[] = [],
 ): AlertPlan[] {
   const base = noticeOf(e, now);
   if (!base) return [];
   // 気象は住んでいる地域で中身が変わる (Web Push と同じく、条件ごとに作る)
   const home = noticeFor(base, prefs);
-  const notices = home ? [home] : [];
+  const notices: { notice: Notice; quiet: boolean }[] = home
+    ? [{ notice: home, quiet: false }]
+    : [];
   if (
     here &&
     here.code !== prefs.home?.code &&
     !(e.type === "weather" && home)
   ) {
     const h = hereNoticeFor(base, prefs, here);
-    if (h) notices.push(h);
+    if (h) notices.push({ notice: h, quiet: false });
+  }
+  for (const l of left) {
+    if (l.code === here?.code || l.code === prefs.home?.code) continue;
+    const h = hereNoticeFor(base, prefs, l, true);
+    if (h && sent.has(h.tag)) notices.push({ notice: h, quiet: true });
   }
   const plans: AlertPlan[] = [];
-  for (const n of notices) {
-    const prev = sent.get(n.tag);
-    const digest = contentOf(n);
-    const p = decide(n, prefs, prev, digest);
-    if (!p.send) continue;
-    sent.set(n.tag, { level: Math.max(prev?.level ?? 0, n.level), digest });
-    plans.push({ notice: n, renotify: p.renotify });
+  const seen = new Set<string>();
+  for (const { notice: n, quiet } of notices) {
+    // 記録的短時間大雨情報・竜巻注意情報は、地域が違っても同じ tag (先に並ぶほうだけ)
+    if (seen.has(n.tag)) continue;
+    seen.add(n.tag);
+    const p = mark(n, prefs, sent);
+    if (p) plans.push(quiet ? { ...p, renotify: false } : p);
+  }
+  return plans;
+}
+
+/** 知らせるかを決め、知らせるなら控える (Web Push の push_log と同じく、重さは大きいほうを残す) */
+function mark(
+  n: Notice,
+  prefs: PushPrefs,
+  sent: Map<string, Sent>,
+): AlertPlan | null {
+  const prev = sent.get(n.tag);
+  const digest = contentOf(n);
+  const p = decide(n, prefs, prev, digest);
+  if (!p.send) return null;
+  sent.set(n.tag, { level: Math.max(prev?.level ?? 0, n.level), digest });
+  return { notice: n, renotify: p.renotify };
+}
+
+/**
+ * 現在地が別の市町村等に替わったとき、そこにもう出ている気象警報・注意報を知らせるかを決めて控える
+ * (`warnings` は画面が持ついまの警報・注意報。府県予報区と種別ごとの最新の報)。
+ * 段は `planAlerts` と同じ (警報以上 / 注意報も)。同じ中身は控えで 1 度だけなので、境目で行き来しても、
+ * 戻ってきても鳴らし直さない。出たままの警報は、報が古くても (6 時間を過ぎても) 出ているので知らせる。
+ * 住んでいる地域と同じ市町村等なら足さない (住んでいる地域の通知で知らせている)
+ */
+export function planEntry(
+  warnings: readonly WeatherWarning[],
+  prefs: PushPrefs,
+  sent: Map<string, Sent>,
+  here: Home,
+): AlertPlan[] {
+  if (here.code === prefs.home?.code) return [];
+  const plans: AlertPlan[] = [];
+  for (const w of warnings) {
+    const e: SonaeEvent = { seq: 0, type: "warning", data: w };
+    // 古さは見ない (いま出ているもの)。訓練・試験は noticeOf が外す
+    const base = noticeOf(e, Date.parse(w.reportedAt));
+    const n = base ? hereNoticeFor(base, prefs, here) : null;
+    if (!n || n.closing) continue;
+    const p = mark(n, prefs, sent);
+    if (p) plans.push(p);
   }
   return plans;
 }

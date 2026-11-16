@@ -5,6 +5,7 @@ import {
   parseAlertSettings,
   planAlert,
   planAlerts,
+  planEntry,
 } from "#lib/alert.ts";
 import { type AreaFeature, createHereFinder, featureAt } from "#lib/home.ts";
 import type { SonaeEvent, WeatherInfo, WeatherWarning } from "#lib/model.ts";
@@ -294,5 +295,91 @@ describe("現在地が入る市町村等を探し直す", () => {
     expect(looked).toBe(2);
     expect(find(0.5, 5)).toBeNull();
     expect(featureAt(0.5, 1.5, areas)?.properties.code).toBe("B");
+  });
+});
+
+describe("現在地が別の市町村等に替わったとき", () => {
+  /** 松江市の大雨警報が解除された報 (ほかの市町村等はそのまま) */
+  const matsueArea = shimane.areas.find((a) => a.code === matsue.code);
+  if (!matsueArea) throw new Error("松江市がありません");
+  const released: WeatherWarning = {
+    ...shimane,
+    areas: shimane.areas.filter((a) => a.code !== matsue.code),
+    released: [matsueArea],
+  };
+
+  test("入った市町村等にもう出ている警報を 1 度知らせる (同じ中身は鳴らし直さない)", () => {
+    const sent = new Map<string, Sent>();
+    const g = groupAlerts(planEntry([shimane], prefs(), sent, izumo));
+    expect(g.ring?.title).toBe("現在地の島根県出雲市にレベル3大雨警報");
+    expect(g.ring?.here).toBe(true);
+    // 境目で行き来しても、戻ってきても鳴らし直さない
+    expect(planEntry([shimane], prefs(), sent, izumo)).toEqual([]);
+    // 入った後に同じ中身の報が届いても鳴らさない
+    expect(planAlerts(ev(shimane), AT, prefs(), sent, izumo)).toEqual([]);
+  });
+
+  test("報が古くても、出ている警報は知らせる", () => {
+    const old = { ...shimane, reportedAt: "2024-11-01T00:00:00+09:00" };
+    const plans = planEntry([old], prefs(), new Map(), matsue);
+    expect(plans.map((p) => p.notice.title)).toEqual([
+      "現在地の島根県松江市にレベル3大雨警報",
+    ]);
+  });
+
+  test("段は住んでいる地域と同じ。注意報は「注意報も」のときだけ", () => {
+    expect(planEntry([shimane], prefs(), new Map(), okuizumo)).toEqual([]);
+    expect(
+      planEntry([shimane], prefs({ weather: "all" }), new Map(), okuizumo).map(
+        (p) => p.notice.title,
+      ),
+    ).toEqual(["現在地の島根県奥出雲町にレベル2大雨注意報"]);
+    expect(
+      planEntry([shimane], prefs({ weather: "off" }), new Map(), matsue),
+    ).toEqual([]);
+  });
+
+  test("住んでいる地域と同じ市町村等なら足さない。警報の出ていない市町村等は何も無い", () => {
+    expect(
+      planEntry([shimane], prefs({ home: matsue }), new Map(), matsue),
+    ).toEqual([]);
+    expect(planEntry([shimane], prefs(), new Map(), chiyoda)).toEqual([]);
+  });
+
+  test("出た市町村等の解除は、出ていた通知を鳴らさずに置き換える", () => {
+    const sent = new Map<string, Sent>();
+    planAlerts(ev(shimane), AT, prefs(), sent, matsue);
+    // 出雲市へ移り (そこの警報を知らせた)、その後に松江市の警報が解除された
+    expect(planEntry([shimane], prefs(), sent, izumo)).toHaveLength(1);
+    const g = groupAlerts(
+      planAlerts(ev(released), AT, prefs(), sent, izumo, [matsue]),
+    );
+    expect(g.ring).toBeNull();
+    expect(g.replace.map((n) => n.tag)).toEqual(["warning:3220100:VPWW55"]);
+    const n = g.replace[0];
+    expect(n?.closing).toBe(true);
+    // もういないので「現在地の」と言わない
+    expect(n?.title.startsWith("島根県松江市の")).toBe(true);
+    expect(n?.here).toBeUndefined();
+    // 同じ報がもう一度届いても置き換えない
+    expect(
+      planAlerts(ev(released), AT, prefs(), sent, izumo, [matsue]),
+    ).toEqual([]);
+  });
+
+  test("出た市町村等で知らせていないものは足さず、重さが上がっても鳴らさない", () => {
+    // 知らせていない (控えが無い) 所は置き換えるものが無い
+    expect(
+      planAlerts(ev(released), AT, prefs(), new Map(), null, [okuizumo]),
+    ).toEqual([]);
+    const sent = new Map<string, Sent>();
+    planAlerts(ev(shimane), AT, prefs(), sent, matsue);
+    const g = groupAlerts(
+      planAlerts(ev(special), AT, prefs(), sent, chiyoda, [matsue]),
+    );
+    // 特別警報の通知は鳴らし、松江市の通知は音なしで置き換えるだけ
+    expect(g.ring?.tag).toBe("warning:special:320000:VPWW55");
+    expect(g.also).toEqual([]);
+    expect(g.replace.map((n) => n.tag)).toEqual(["warning:3220100:VPWW55"]);
   });
 });

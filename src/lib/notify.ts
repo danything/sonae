@@ -445,20 +445,24 @@ export function noticeFor(n: Notice, prefs: PushPrefs): Notice | null {
 /**
  * 現在地の市町村等の、気象の通知 (開いている画面だけが使う。docs/design.md の 2.4 の「現在地」)。
  * 住んでいる地域の通知と同じ作り方で、地域の名前の前に「現在地の」を付け、`here` を立てる。
- * 気象のほかの種類と、現在地が入らないどこかの特別警報 (住んでいる地域の側で言う) は null
+ * 気象のほかの種類と、現在地が入らないどこかの特別警報 (住んでいる地域の側で言う) は null。
+ * `left` は前にいた (もう出た) 市町村等で、出ている通知を解除・続報で置き換えるためのもの。
+ * 「現在地の」も `here` も付けない (もういないので。読み上げもしない)
  */
 export function hereNoticeFor(
   n: Notice,
   prefs: PushPrefs,
   here: Home,
+  left = false,
 ): Notice | null {
   const e = n.event;
   if (e.type !== "warning" && e.type !== "weather") return null;
   const m = noticeFor(n, {
     ...prefs,
-    home: { ...here, name: `現在地の${here.name}` },
+    home: left ? here : { ...here, name: `現在地の${here.name}` },
   });
   if (!m || m.tag.startsWith("warning:special:")) return null;
+  if (left) return m;
   // 同じ府県予報区のほかの市町村の特別警報を言う通知は、見出しが府県予報区の名前になるので、
   // 現在地の通知と分かるように添える (現在地の状態は本文に「現在地の…」で入る)
   if (m.special)
