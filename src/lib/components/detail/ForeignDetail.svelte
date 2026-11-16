@@ -14,11 +14,11 @@
       : `M${r.magnitude.toFixed(1)}${r.magType ? ` (${r.magType})` : ""}`;
   const depth = (km: number | undefined) =>
     km === undefined ? "深さ 不明" : `深さ 約 ${Math.round(km)} km`;
-  const facts = $derived(
-    [`${jstFull(q.originTime)} 頃 発生`, mag(q), depth(q.depthKm)].filter(
-      Boolean,
-    ),
-  );
+  const facts = $derived([
+    `${jstFull(q.originTime)} 頃 発生`,
+    mag(q),
+    depth(q.depthKm),
+  ]);
 </script>
 
 <div class="detail stack">
@@ -67,11 +67,6 @@
 </div>
 
 <style>
-  .plain {
-    margin: var(--so-space-2) 0 0;
-    padding: 0;
-    list-style: none;
-  }
   .plain li {
     display: flex;
     flex-direction: column;

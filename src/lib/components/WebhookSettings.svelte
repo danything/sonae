@@ -139,10 +139,6 @@
 {/if}
 
 <style>
-  .section-head {
-    margin: var(--so-space-3) 0 0;
-    font-size: var(--so-text-base);
-  }
   .hooks {
     display: flex;
     flex-direction: column;

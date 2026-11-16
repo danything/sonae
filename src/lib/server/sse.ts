@@ -78,6 +78,11 @@ export function sseStream(o: SseOptions): Response {
           // もう閉じている
         }
       };
+      // 始める前に切れていたら abort はもう来ないので、ここで片付ける
+      if (o.signal.aborted) {
+        cleanup();
+        return;
+      }
       o.signal.addEventListener("abort", cleanup, { once: true });
       const send = (s: string) => {
         if (closed) return;
@@ -120,6 +125,8 @@ export function sseStream(o: SseOptions): Response {
         // 最初の知らせを送る所で閉じていたら、ここで外す (片付けはもう済んでいる)
         if (closed) unnotice();
       }
+      // ここまでの send で閉じていたら (片付けは済んでいる)、輪を張らない
+      if (closed) return;
       timer = setInterval(() => {
         send(": ping\n\n");
         if (o.status) send(o.status());

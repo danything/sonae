@@ -68,6 +68,49 @@ test("埋め直しで投げたら、購読を残さずに閉じる", async () =>
   expect(broker.size).toBe(0);
 });
 
+test("始める前に切れていたら、購読も ping の輪も残さずに閉じる", async () => {
+  const broker = new Broker();
+  const ac = new AbortController();
+  ac.abort();
+  let pings = 0;
+  const res = sseStream({
+    latestSeq: () => 0,
+    backlog: () => [],
+    subscribe: (fn) => broker.subscribe(fn),
+    status: () => {
+      pings++;
+      return "";
+    },
+    signal: ac.signal,
+    pingMs: 5,
+  });
+  expect(await res.text()).toBe("");
+  expect(broker.size).toBe(0);
+  await Bun.sleep(30);
+  expect(pings).toBe(0);
+});
+
+test("最初の状況を送る間に切れたら、ping の輪を張らない", async () => {
+  const broker = new Broker();
+  const ac = new AbortController();
+  let statuses = 0;
+  sseStream({
+    latestSeq: () => 0,
+    backlog: () => [],
+    subscribe: (fn) => broker.subscribe(fn),
+    status: () => {
+      statuses++;
+      ac.abort();
+      return "";
+    },
+    signal: ac.signal,
+    pingMs: 5,
+  });
+  await Bun.sleep(30);
+  expect(broker.size).toBe(0);
+  expect(statuses).toBe(1);
+});
+
 test("埋め直しが上限を超えたら、送らずに resync を送り、いまの最後から生の配信に移る", async () => {
   const broker = new Broker();
   const ac = new AbortController();

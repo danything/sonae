@@ -531,7 +531,7 @@
   let remembered = $state(false);
   /** オンを覚えているのに、まだ追っていない (開いたときに許可が無かった) */
   const paused = $derived(remembered && locating === "off");
-  /** 位置を取れないわけ (無ければ空)。ボタンの下に出す */
+  /** 位置を取れないわけ (無ければ空)。操作の 1 行の上に積んで出す */
   let locateNote = $state("");
   let me = $state<{ lon: number; lat: number; accuracy: number }>();
   let watchId: number | undefined;
@@ -766,9 +766,9 @@
     noteTimer = setTimeout(() => (placeNote = ""), 8000);
   }
 
-  /** 押した所が入る市町村等を、住んでいる地域にする (通知の窓の「現在地から選ぶ」と同じ探し方と覚え方) */
   /** 住んでいる地域を探して覚えている途中か (続けて押したときに、知らせの文が前後しないよう 1 つずつ) */
   let homeBusy = false;
+  /** 押した所が入る市町村等を、住んでいる地域にする (通知の窓の「現在地から選ぶ」と同じ探し方と覚え方) */
   async function setHomeHere(): Promise<void> {
     const at = place;
     if (!at || homeBusy) return;
@@ -1006,7 +1006,7 @@
       const li = document.createElement("li");
       const label = document.createElement("span");
       const color = WARNING_COLORS[k.level];
-      label.className = "warning-label";
+      label.className = "level-label";
       label.textContent = kindText(k.name);
       if (color) {
         label.style.background = color.bg;
@@ -1222,7 +1222,6 @@
             bind:open={hazardMenu}
             side="top"
             align="end"
-            class="hazard-menu"
             focusOnOpen={hazardBy !== "hover"}
             onclosed={() => (hazardBy = "")}
           >
@@ -1337,7 +1336,6 @@
       <Menu
         bind:open={placeMenu}
         align="start"
-        class="place-menu"
         testid="place-menu"
         onclosed={placeClosed}
       >
@@ -1391,10 +1389,6 @@
     --credit-top: 0.9375rem;
   }
   /*
-   * 現在地のボタン。地図 (動く中身) の上に重なるので操作の層 (面と影) に乗せる。
-   * オンは並びの外の切り替えなので、主の色のアイコンと短い下線 (denpa の 6 章「ボタン」)
-   */
-  /*
    * 地図の上の操作 (ハザードマップの選択と現在地のボタン) は右下にまとめる。広い形は隅の出典 (1 行) のすぐ上、
    * スマホの形は下のタブと dock のすぐ上 (`--map-bottom`。出典は上の角)。並びは下から操作の 1 行・凡例・知らせ
    */
@@ -1422,6 +1416,10 @@
     align-items: center;
     gap: var(--so-space-2);
   }
+  /*
+   * 現在地のボタン。地図 (動く中身) の上に重なるので操作の層 (面と影) に乗せる。
+   * オンは並びの外の切り替えなので、主の色のアイコンと短い下線 (denpa の 6 章「ボタン」)
+   */
   .locate-button {
     position: relative;
     display: grid;
@@ -1497,8 +1495,8 @@
     box-shadow: var(--so-shadow-pop);
     color: var(--so-fg);
     pointer-events: auto;
-    /* 土砂災害は凡例が 3 枚あるので、地図の高さを超えたら中で巻く */
-    max-height: calc(var(--map-h, 100dvh) * 0.55);
+    /* 土砂災害は凡例が 3 枚あるので、画面の高さの 55% を超えたら中で巻く */
+    max-height: 55dvh;
     overflow-y: auto;
   }
   .legend figcaption,
@@ -1514,7 +1512,7 @@
     border-radius: var(--so-radius-sm);
     background: #fff;
   }
-  /* 避難場所の吹き出し (MapLibre が DOM に置くので :global)。メニューと同じ面 */
+  /* 避難場所と気象警報・注意報の吹き出し (MapLibre が DOM に置くので :global)。メニューと同じ面 */
   .map :global(.maplibregl-popup-content) {
     padding: var(--so-space-2) var(--so-space-3);
     border-radius: var(--so-item-radius);
@@ -1545,14 +1543,6 @@
   .map :global(.warning-kinds li) {
     margin: 0;
     list-style: none;
-  }
-  .map :global(.warning-label) {
-    border-radius: var(--so-radius-sm);
-    padding: 0 var(--so-space-2);
-    font-size: var(--so-text-xs);
-    font-weight: var(--so-weight-bold);
-    line-height: 1.75;
-    white-space: nowrap;
   }
   @media (max-width: 639.98px) {
     /* 狭い画面では凡例を細くする (地図を隠しすぎない) */
@@ -1623,7 +1613,7 @@
    * 地図の隅にぴったり付けた、余白の無い薄い帯にする (よくある地図の出典の形)。地図を覆わないよう小さく薄く、
    * 写真の上でも読めるよう地の色を 65% の濃さで敷く。
    * スマホの形は地図の上の角 (右上)。下は浮いた下のタブ・dock・操作が重なり、ぴったり付ける角が無いため。
-   * 上の帯 (緊急地震速報・音が止まっている) は地図を押し下げるので、帯にも隠れない
+   * 音が止まっているときの上の帯は地図を押し下げるので、帯にも隠れない
    */
   .map-credit {
     position: absolute;

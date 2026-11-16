@@ -73,20 +73,20 @@
    * 一覧を絞る欄 (震源・地域・予報区の名前)。形は denpa の `SearchField` (虫眼鏡と字と `/` の印だけの平らな面)。
    * 打つたびにその場で一覧を絞る。`/` で欄へ移る (`+page.svelte`)。
    *
-   * `onplace` を渡すと、欄の下に「場所の候補」も出す (combobox。docs/map.md の「場所の検索」)。
+   * 欄の下に「場所の候補」も出す (combobox。docs/map.md の「場所の検索」)。選ぶと `onplace` を呼ぶ。
    * 市町村は手元のデータから打つたびに、住所・地名は国土地理院の住所検索に、Enter を押したときか
    * 打つのが止まって少し経ってから (2 文字から) 問い合わせる。↑↓で選び、Enter で決め、Esc で閉じる
    */
   let {
     value = $bindable(""),
-    label = "地名で絞り込み・住所で探す",
     onplace,
   }: {
     value?: string;
-    label?: string;
     /** 場所の候補を選んだとき (地図をそこへ寄せる) */
-    onplace?: (place: Place) => void;
+    onplace: (place: Place) => void;
   } = $props();
+
+  const label = "地名で絞り込み・住所で探す";
 
   const uid = $props.id();
   const listId = `places-${uid}`;
@@ -102,7 +102,7 @@
   let controller: AbortController | undefined;
 
   const local = $derived(
-    onplace && data ? localPlaces(value, data.cities, data.bounds) : [],
+    data ? localPlaces(value, data.cities, data.bounds) : [],
   );
   const places = $derived(
     mergePlaces(
@@ -111,15 +111,14 @@
     ),
   );
   const open = $derived(
-    onplace !== undefined &&
-      focused &&
+    focused &&
       !dismissed &&
       value.trim() !== "" &&
       (places.length > 0 || remoteState !== "idle" || shouldQuery(value)),
   );
 
   function ensureData(): void {
-    if (!onplace || data) return;
+    if (data) return;
     loadTables()
       .then((t) => (data = t))
       .catch(() => {
@@ -131,7 +130,7 @@
   function searchNow(): void {
     clearTimeout(timer);
     const q = value.trim();
-    if (!onplace || !shouldQuery(q)) return;
+    if (!shouldQuery(q)) return;
     if (remote?.query === q) return;
     controller?.abort();
     const c = new AbortController();
@@ -155,19 +154,18 @@
     clearTimeout(timer);
     controller?.abort();
     remoteState = "idle";
-    if (onplace && shouldQuery(value))
-      timer = setTimeout(searchNow, REMOTE_DELAY_MS);
+    if (shouldQuery(value)) timer = setTimeout(searchNow, REMOTE_DELAY_MS);
   }
 
   function choose(p: Place): void {
     dismissed = true;
     active = -1;
-    onplace?.(p);
+    onplace(p);
   }
 
   function onkeydown(event: KeyboardEvent): void {
     // 変換を確定する Enter は選ばない (Safari は確定の Enter を isComposing でなく keyCode 229 で送る)
-    if (!onplace || event.isComposing || event.keyCode === 229) return;
+    if (event.isComposing || event.keyCode === 229) return;
     switch (event.key) {
       case "ArrowDown":
       case "ArrowUp": {
@@ -225,10 +223,10 @@
       autocomplete="off"
       enterkeyhint="search"
       data-search-field
-      role={onplace ? "combobox" : undefined}
-      aria-autocomplete={onplace ? "list" : undefined}
-      aria-expanded={onplace ? open : undefined}
-      aria-controls={onplace ? listId : undefined}
+      role="combobox"
+      aria-autocomplete="list"
+      aria-expanded={open}
+      aria-controls={listId}
       aria-activedescendant={open && active >= 0
         ? `${listId}-${active}`
         : undefined}
@@ -242,44 +240,40 @@
     />
     <kbd class="key" aria-hidden="true">/</kbd>
   </form>
-  {#if onplace}
-    <div class="places" id="{listId}-box" hidden={!open} data-testid="places">
-      <p class="places-head tiny muted">場所の候補</p>
-      <ul id={listId} role="listbox" aria-label="場所の候補">
-        {#each places as p, i (p.id)}
-          <!-- キーボードでは欄の ↑↓ と Enter で選ぶ (combobox の aria-activedescendant)。候補そのものは押すだけ -->
-          <!-- svelte-ignore a11y_click_events_have_key_events -->
-          <li
-            id="{listId}-{i}"
-            role="option"
-            aria-selected={i === active}
-            class="place"
-            data-kind={p.kind}
-            onpointerdown={(event) => event.preventDefault()}
-            onmousedown={(event) => event.preventDefault()}
-            onclick={() => choose(p)}
+  <div class="places" id="{listId}-box" hidden={!open} data-testid="places">
+    <p class="places-head tiny muted">場所の候補</p>
+    <ul id={listId} role="listbox" aria-label="場所の候補">
+      {#each places as p, i (p.id)}
+        <!-- キーボードでは欄の ↑↓ と Enter で選ぶ (combobox の aria-activedescendant)。候補そのものは押すだけ -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <li
+          id="{listId}-{i}"
+          role="option"
+          aria-selected={i === active}
+          class="place"
+          onpointerdown={(event) => event.preventDefault()}
+          onmousedown={(event) => event.preventDefault()}
+          onclick={() => choose(p)}
+        >
+          <span class="place-label">{p.label}</span>
+          <span class="tiny muted"
+            >{p.kind === "city" ? "市町村" : "住所・地名"}</span
           >
-            <span class="place-label">{p.label}</span>
-            <span class="tiny muted"
-              >{p.kind === "city" ? "市町村" : "住所・地名"}</span
-            >
-          </li>
-        {/each}
-      </ul>
-      <p class="places-foot tiny muted" role="status">
-        {#if remoteState === "loading"}
-          住所を探しています…
-        {:else if remoteState === "failed"}
-          住所を探せませんでした
-          (国土地理院の住所検索)。市町村だけを出しています
-        {:else if remote && remote.query === value.trim()}
-          住所: 国土地理院の住所検索
-        {:else if shouldQuery(value)}
-          Enter で住所も探します
-        {/if}
-      </p>
-    </div>
-  {/if}
+        </li>
+      {/each}
+    </ul>
+    <p class="places-foot tiny muted" role="status">
+      {#if remoteState === "loading"}
+        住所を探しています…
+      {:else if remoteState === "failed"}
+        住所を探せませんでした (国土地理院の住所検索)。市町村だけを出しています
+      {:else if remote && remote.query === value.trim()}
+        住所: 国土地理院の住所検索
+      {:else if shouldQuery(value)}
+        Enter で住所も探します
+      {/if}
+    </p>
+  </div>
 </div>
 
 <style>
