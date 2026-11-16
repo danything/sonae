@@ -178,7 +178,7 @@ test("受信: 観測点の表を取り、SSE のスナップショットを入�
     fetch: (async (input: string | URL | Request, init?: RequestInit) => {
       const u = String(input);
       seen.push(u);
-      if (u.startsWith("https://st.example")) {
+      if (u === "https://st.example/a") {
         const tag = new Headers(init?.headers).get("if-none-match");
         if (tag === 'W/"1"') return new Response(null, { status: 304 });
         return new Response(CSV, { headers: { etag: 'W/"1"' } });
