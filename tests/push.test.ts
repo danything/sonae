@@ -57,10 +57,10 @@ describe("通知の条件", () => {
         eew: "loud",
         quakeMinInt: "8",
         home: { code: "x", name: "a" },
-        tsunami: "major",
+        tsunami: "nearby",
         weather: "loud",
       }),
-    ).toEqual({ ...DEFAULT_PREFS, tsunami: "major" });
+    ).toEqual({ ...DEFAULT_PREFS, tsunami: "nearby" });
     expect(
       normalizePrefs({
         home: {
@@ -87,16 +87,82 @@ describe("通知の条件", () => {
     ).toBeNull();
   });
 
-  test("既定は 警報だけ・最大震度 4 以上・津波注意報以上・気象は地域の警報以上", () => {
+  test("既定は 気象だけ住んでいる地域と現在地、ほかは全国 (前の既定と同じものを知らせる)", () => {
     expect(DEFAULT_PREFS).toEqual({
-      eew: "warning",
-      quakeMinInt: "4",
       home: null,
-      areaMinInt: "3",
-      tsunami: "watch",
-      volcano: "warning",
-      weather: "warning",
+      eew: "everywhere",
+      quake: "everywhere",
+      tsunami: "everywhere",
+      volcano: "everywhere",
+      weather: "nearby",
     });
+  });
+
+  test("前の形の段 (DB・Webhook・localStorage・API に残った値) を範囲に読み替える", () => {
+    // 前の既定
+    expect(
+      normalizePrefs({
+        eew: "warning",
+        quakeMinInt: "4",
+        areaMinInt: "3",
+        tsunami: "watch",
+        volcano: "warning",
+        weather: "warning",
+      }),
+    ).toEqual(DEFAULT_PREFS);
+    // 前の「予報も」「火口周辺警報も」「注意報も」と、ほかの津波の段
+    expect(
+      normalizePrefs({
+        eew: "all",
+        quakeMinInt: "5+",
+        tsunami: "major",
+        volcano: "all",
+        weather: "all",
+      }),
+    ).toEqual(DEFAULT_PREFS);
+    expect(normalizePrefs({ tsunami: "warning" }).tsunami).toBe("everywhere");
+    // 「知らない」は知らせないのまま
+    expect(
+      normalizePrefs({
+        eew: "off",
+        tsunami: "off",
+        volcano: "off",
+        weather: "off",
+      }),
+    ).toEqual({
+      ...DEFAULT_PREFS,
+      eew: "off",
+      tsunami: "off",
+      volcano: "off",
+      weather: "off",
+    });
+    // 最大震度を「知らせない」にして住んでいる地域の震度だけで受けていたものは、住んでいる地域と現在地
+    expect(normalizePrefs({ quakeMinInt: "off", areaMinInt: "4" }).quake).toBe(
+      "nearby",
+    );
+    // 新しい形があればそちら
+    expect(normalizePrefs({ quake: "off", quakeMinInt: "3" }).quake).toBe(
+      "off",
+    );
+    // 前の段の名前は新しい形に残らない
+    const p = normalizePrefs({ quakeMinInt: "4", areaMinInt: "3" });
+    expect("quakeMinInt" in p).toBe(false);
+    expect("areaMinInt" in p).toBe(false);
+  });
+
+  test("住んでいる地域の津波予報区を読む。前の形 (津波予報区が無い) は無いまま読む", () => {
+    const base = { code: "1221700", name: "千葉県柏市" };
+    expect(
+      normalizePrefs({
+        home: { ...base, tsunami: [{ code: "312", name: "東京湾内湾" }, {}] },
+      }).home?.tsunami,
+    ).toEqual([{ code: "312", name: "東京湾内湾" }]);
+    expect(
+      normalizePrefs({ home: { ...base, tsunami: [] } }).home?.tsunami,
+    ).toEqual([]);
+    expect("tsunami" in (normalizePrefs({ home: base }).home ?? {})).toBe(
+      false,
+    );
   });
 
   test("前のスイッチ (南海トラフ等・どこかの特別警報) は、保存済みの false も読まずに捨てる", () => {
@@ -126,7 +192,19 @@ describe("何を知らせるか", () => {
     };
     expect(matches(n3, prefs())).toBe(false);
     expect(matches(n3, prefs({ home: tokyo }))).toBe(true);
-    expect(matches(n3, prefs({ home: tokyo, areaMinInt: "4" }))).toBe(false);
+    expect(matches(n3, prefs({ home: tokyo, quake: "nearby" }))).toBe(true);
+    expect(matches(n3, prefs({ home: tokyo, quake: "off" }))).toBe(false);
+    // 開いている画面の現在地でも見る (住んでいる地域が無くても)
+    expect(matches(n3, prefs({ quake: "nearby" }), tokyo)).toBe(true);
+    // 震度 2 は住んでいる地域でも知らせない (震度 3 から)
+    const n2 = noticeOf(
+      quake({
+        maxInt: "2",
+        areas: [{ code: "350", name: "東京都２３区", int: "2" }],
+      }),
+      NOW,
+    );
+    expect(n2 && matches(n2, prefs({ home: tokyo }))).toBe(false);
     // P2P の震度速報には地域のコードが無い。名前で見る
     const p2p = noticeOf(
       quake({ maxInt: "3", areas: [{ name: "東京都２３区", int: "3" }] }),
@@ -138,7 +216,9 @@ describe("何を知らせるか", () => {
     expect(n4 && matches(n4, prefs())).toBe(true);
     expect(n4?.title).toBe("最大震度4 千葉県北西部");
     expect(n4?.url).toBe("/?q=20261114090000");
-    expect(n4 && matches(n4, prefs({ quakeMinInt: "off" }))).toBe(false);
+    // 「住んでいる地域と現在地」では、最大震度 4 でもほかの地域なら知らせない
+    expect(n4 && matches(n4, prefs({ quake: "nearby" }))).toBe(false);
+    expect(n4 && matches(n4, prefs({ quake: "off" }))).toBe(false);
   });
 
   test("訓練・試験・遠地地震・古いものは知らせない", () => {
@@ -152,10 +232,10 @@ describe("何を知らせるか", () => {
     expect(noticeOf(eew({ issuedAt: "2026-11-14T00:06:00Z" }), NOW)).toBeNull();
   });
 
-  test("緊急地震速報は既定で警報だけ。予想震度は書かない", () => {
+  test("緊急地震速報は警報だけ (予報は知らせない)。予想震度は書かない", () => {
     const f = noticeOf(eew(), NOW);
     expect(f && matches(f, prefs())).toBe(false);
-    expect(f && matches(f, prefs({ eew: "all" }))).toBe(true);
+    expect(f && matches(f, prefs({ eew: "nearby" }))).toBe(false);
     const w = noticeOf(
       eew({
         kind: "warning",
@@ -165,6 +245,23 @@ describe("何を知らせるか", () => {
       NOW,
     );
     expect(w && matches(w, prefs())).toBe(true);
+    // 「住んでいる地域と現在地」は、その地震情報／細分区域が警報の対象のときだけ
+    const area = (name: string) => ({
+      code: "1221700",
+      name: "千葉県柏市",
+      quake: { code: "340", name },
+      office: "120000",
+      ichiji: "120010",
+    });
+    const near = prefs({ eew: "nearby", home: area("千葉県北西部") });
+    expect(w && matches(w, near)).toBe(true);
+    expect(
+      w && matches(w, prefs({ eew: "nearby", home: area("東京都２３区") })),
+    ).toBe(false);
+    expect(w && matches(w, prefs({ eew: "nearby" }), area("茨城県南部"))).toBe(
+      true,
+    );
+    expect(w && matches(w, prefs({ eew: "off" }))).toBe(false);
     expect(w?.title).toContain("強い揺れに警戒");
     expect(w?.body).toContain("茨城県南部・千葉県北西部");
     expect(w?.body).not.toMatch(/震度/);
@@ -179,7 +276,7 @@ describe("何を知らせるか", () => {
     expect(t.title).toBe("津波注意報");
     expect(t.body).toBe("岩手県");
     expect(matches(t, prefs())).toBe(true);
-    expect(matches(t, prefs({ tsunami: "warning" }))).toBe(false);
+    expect(matches(t, prefs({ tsunami: "off" }))).toBe(false);
 
     const ended = noticeOf(tsunami({ ended: true }), NOW);
     if (!ended) throw new Error("通知が無い");
@@ -340,9 +437,20 @@ describe("送り手", () => {
     );
     if (!a || !b) throw new Error("購読が読めない");
     pusher.save("me", a, prefs(), "Chrome");
-    pusher.save("me", b, prefs({ quakeMinInt: "5+" }), "Firefox");
+    // 住んでいる地域 (東京都２３区) で震度 3 以上のときだけ
+    const tokyo = {
+      code: "1310100",
+      name: "東京都千代田区",
+      quake: { code: "350", name: "東京都２３区" },
+      office: "130000",
+      ichiji: "130010",
+    };
+    pusher.save("me", b, prefs({ quake: "nearby", home: tokyo }), "Firefox");
+    const first = quake({
+      areas: [{ code: "340", name: "千葉県北西部", int: "4" }],
+    });
 
-    expect(await pusher.handle(quake())).toEqual(["ok"]);
+    expect(await pusher.handle(first)).toEqual(["ok"]);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toBe(a.endpoint);
     const h = calls[0]?.headers;
@@ -353,8 +461,8 @@ describe("送り手", () => {
     expect(h?.get("authorization")).toStartWith("vapid t=");
 
     // 同じ中身の続報は送らない
-    expect(await pusher.handle(quake())).toEqual([]);
-    // 震度 5 強に上がったら、両方に送る (a は鳴らし直し、b は初めて)
+    expect(await pusher.handle(first)).toEqual([]);
+    // 震度 5 強に上がり、東京都２３区も震度 3 になったら、両方に送る (a は鳴らし直し、b は初めて)
     expect(await pusher.handle(quake({ maxInt: "5+" }))).toEqual(["ok", "ok"]);
   });
 
@@ -525,7 +633,7 @@ test("送った本文は RFC 8291 (aes128gcm) でブラウザが復号できる"
 });
 
 test("緊急地震速報は報ごとに M が変わっても送り直さず、警報の地域が増えたら置き換える", () => {
-  const p = prefs({ eew: "all" });
+  const p = prefs();
   const first = noticeOf(eew(), NOW);
   if (!first) throw new Error("通知が無い");
   const sent = { level: first.level, digest: digestOf(first) };

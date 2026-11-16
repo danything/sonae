@@ -168,13 +168,24 @@ describe("送り手", () => {
   test("条件に合う Webhook にだけ送り、続報は同じ中身なら送らない", async () => {
     const { hooks, calls } = setup();
     hooks.add("me", DISCORD, prefs());
-    hooks.add("me", OTHER, prefs({ quakeMinInt: "5+" }));
+    // 住んでいる地域 (東京都２３区) で震度 3 以上のときだけ
+    const tokyo = {
+      code: "1310100",
+      name: "東京都千代田区",
+      quake: { code: "350", name: "東京都２３区" },
+      office: "130000",
+      ichiji: "130010",
+    };
+    hooks.add("me", OTHER, prefs({ quake: "nearby", home: tokyo }));
+    const first = quake({
+      areas: [{ code: "340", name: "千葉県北西部", int: "4" }],
+    });
 
-    expect(await hooks.handle(quake())).toEqual(["ok"]);
+    expect(await hooks.handle(first)).toEqual(["ok"]);
     expect(calls.map((c) => c.url)).toEqual([DISCORD]);
     // 同じ中身の続報は送らない
-    expect(await hooks.handle(quake())).toEqual([]);
-    // 震度 5 強に上がったら、両方に送る
+    expect(await hooks.handle(first)).toEqual([]);
+    // 震度 5 強に上がり、東京都２３区も震度 3 になったら、両方に送る
     expect(await hooks.handle(quake({ maxInt: "5+" }))).toEqual(["ok", "ok"]);
     expect(hooks.list("me").map((w) => w.lastStatus)).toEqual(["ok", "ok"]);
   });
@@ -213,7 +224,7 @@ describe("送り手", () => {
 
     expect(hooks.setPrefs("me", prefs({ eew: "off" }))).toBe(MAX_WEBHOOKS);
     expect(hooks.list("me").every((w) => w.prefs.eew === "off")).toBe(true);
-    expect(hooks.list("you")[0]?.prefs.eew).toBe("warning");
+    expect(hooks.list("you")[0]?.prefs.eew).toBe("everywhere");
 
     const first = hooks.list("me")[0]?.id ?? -1;
     expect(hooks.remove("you", first)).toBe(false);

@@ -6,7 +6,10 @@
 
 import { type Home, normalizePrefs, type PushPrefs } from "./push.ts";
 
-/** cities.json の 1 行: [名前, 府県と市町村の名前, 府県予報区, 一次細分区域, まとめた地域, 地震情報／細分区域] */
+/**
+ * cities.json の 1 行: [名前, 府県と市町村の名前, 府県予報区, 一次細分区域, まとめた地域, 地震情報／細分区域,
+ * 沿岸が入る津波予報区 ([コード, 名前] の並び。海に面していなければ空。tools/areas/tsunami-cities.ts)]
+ */
 export type CityRow = [
   string,
   string,
@@ -14,6 +17,7 @@ export type CityRow = [
   string | null,
   string | null,
   string | null,
+  ([string, string][] | undefined)?,
 ];
 export type Cities = Record<string, CityRow>;
 
@@ -86,7 +90,7 @@ export function homeOf(
 ): Home | null {
   const row = cities[code];
   if (!row) return null;
-  const [name, , office, ichiji, , quake] = row;
+  const [name, , office, ichiji, , quake, tsunami] = row;
   const quakeName = quake ? quakeNames.get(quake) : undefined;
   return {
     code,
@@ -95,6 +99,7 @@ export function homeOf(
     quake: quake && quakeName ? { code: quake, name: quakeName } : null,
     office,
     ichiji,
+    tsunami: (tsunami ?? []).map(([c, n]) => ({ code: c, name: n })),
   };
 }
 

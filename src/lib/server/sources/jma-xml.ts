@@ -428,6 +428,12 @@ function readVolcano(body: V, code: VolcanoCode) {
       return n ? [n] : [];
     }),
   );
+  const cityCodes = cityItems.flatMap((item) =>
+    children(child(item, "Areas"), "Area").flatMap((a) => {
+      const c = textAt(a, "Code");
+      return c ? [c] : [];
+    }),
+  );
   const wKind = child(cityItems[0], "Kind");
   const warningName = textAt(wKind, "Name");
   const content = child(body, "VolcanoInfoContent");
@@ -442,6 +448,7 @@ function readVolcano(body: V, code: VolcanoCode) {
           }
         : undefined,
     cities: [...new Set(cities)],
+    cityCodes: [...new Set(cityCodes)],
     eventTime: textAt(at(target, "Item/EventTime"), "EventDateTime"),
     contentHeadline: textAt(content, "VolcanoHeadline"),
     activity: textAt(content, "VolcanoActivity"),
@@ -608,6 +615,7 @@ export function parseJmaXml(xml: string, code: string): Normalized[] {
           volcanoes: v.volcanoes,
           warning: v.warning,
           cities: v.cities,
+          cityCodes: v.cityCodes,
           activity: v.activity,
           prevention: v.prevention,
         },

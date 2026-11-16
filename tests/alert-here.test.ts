@@ -140,45 +140,24 @@ describe("開いているときは、現在地の気象も知らせる", () => {
     expect(again.also).toEqual([]);
   });
 
-  test("重いほうを鳴らす。住んでいる地域が注意報だけなら、「注意報も」のときだけ並べる", () => {
+  test("重いほうを鳴らす。住んでいる地域が注意報だけなら並べない (注意報は知らせない)", () => {
     const home = prefs({ home: okuizumo });
     const g = groupAlerts(planAlerts(ev(shimane), AT, home, new Map(), matsue));
     expect(g.ring?.title).toBe("現在地の島根県松江市にレベル3大雨警報");
     expect(g.also).toEqual([]);
 
-    const all = prefs({ home: okuizumo, weather: "all" });
+    // 「全国」でも注意報は知らせない
+    const all = prefs({ home: okuizumo, weather: "everywhere" });
     const h = groupAlerts(planAlerts(ev(shimane), AT, all, new Map(), matsue));
     expect(h.ring?.title).toBe("現在地の島根県松江市にレベル3大雨警報");
-    expect(h.also.map((n) => n.title)).toEqual([
-      "島根県奥出雲町にレベル2大雨注意報",
-    ]);
-    // 読み上げは住んでいる地域を先に、現在地は後ろで「現在地の情報です。」から読む
-    const parts = readoutOfAll([h.ring, ...h.also].filter((n) => n !== null));
-    expect(parts[0]).toBe("気象の注意報です。");
-    expect(parts.indexOf(HERE)).toBeGreaterThan(
-      parts.indexOf("奥出雲町には、レベル2大雨注意報が出ています。"),
-    );
-    expect(parts[parts.indexOf(HERE) + 1]).toBe(
-      "松江市には、レベル3大雨警報が出ています。",
-    );
+    expect(h.also).toEqual([]);
   });
 
-  test("現在地の注意報は「注意報も」のときだけ知らせる (住んでいる地域と同じ条件)", () => {
-    expect(planAlerts(ev(shimane), AT, prefs(), new Map(), okuizumo)).toEqual(
-      [],
-    );
-    const plans = planAlerts(
-      ev(shimane),
-      AT,
-      prefs({ weather: "all" }),
-      new Map(),
-      okuizumo,
-    );
-    expect(plans.map((p) => p.notice.title)).toEqual([
-      "現在地の島根県奥出雲町にレベル2大雨注意報",
-    ]);
-    const n = plans[0]?.notice;
-    expect(n ? readoutOf(n) : []).toContain(HERE);
+  test("現在地の注意報は知らせない (住んでいる地域と同じ段)", () => {
+    for (const weather of ["nearby", "everywhere"] as const)
+      expect(
+        planAlerts(ev(shimane), AT, prefs({ weather }), new Map(), okuizumo),
+      ).toEqual([]);
     // 「知らせない」なら現在地も知らせない
     expect(
       planAlerts(ev(shimane), AT, prefs({ weather: "off" }), new Map(), matsue),
@@ -213,6 +192,19 @@ describe("開いているときは、現在地の気象も知らせる", () => {
   test("気象でない報は、現在地で増えない", () => {
     const plans = planAlerts(quake(), NOW, prefs(), new Map(), matsue);
     expect(plans).toHaveLength(1);
+    expect(plans[0]?.notice.here).toBeUndefined();
+  });
+
+  test("気象でない報も、「住んでいる地域と現在地」の判定には現在地を使う (通知は 1 つのまま)", () => {
+    const kashiwa: Home = {
+      ...city("1221700", "千葉県柏市"),
+      quake: { code: "340", name: "千葉県北西部" },
+    };
+    const p = prefs({ quake: "nearby", home: chiyoda });
+    // 千代田区 (住んでいる地域) は細分区域が無い作りなので当たらず、現在地の千葉県北西部 (震度 4) で当たる
+    expect(planAlerts(quake(), NOW, p, new Map(), null)).toEqual([]);
+    const plans = planAlerts(quake(), NOW, p, new Map(), kashiwa);
+    expect(plans.map((x) => x.notice.tag)).toEqual(["quake:20261114090000"]);
     expect(plans[0]?.notice.here).toBeUndefined();
   });
 
@@ -252,10 +244,8 @@ describe("開いているときは、現在地の気象も知らせる", () => {
     ]);
   });
 
-  test("スイッチは既定でオン (覚えていなければ無し)。読めない値は無し", () => {
-    expect(parseAlertSettings("{}").here).toBeUndefined();
-    expect(parseAlertSettings('{"here":false}').here).toBe(false);
-    expect(parseAlertSettings('{"here":"no"}').here).toBeUndefined();
+  test("前のスイッチ「現在地の気象も知らせる」は読まない (現在地はいつも使う)", () => {
+    expect("here" in parseAlertSettings('{"here":false}')).toBe(false);
   });
 });
 
@@ -310,47 +300,50 @@ describe("現在地が別の市町村等に替わったとき", () => {
 
   test("入った市町村等にもう出ている警報を 1 度知らせる (同じ中身は鳴らし直さない)", () => {
     const sent = new Map<string, Sent>();
-    const g = groupAlerts(planEntry([shimane], prefs(), sent, izumo));
+    const g = groupAlerts(planEntry([ev(shimane)], prefs(), sent, izumo));
     expect(g.ring?.title).toBe("現在地の島根県出雲市にレベル3大雨警報");
     expect(g.ring?.here).toBe(true);
     // 境目で行き来しても、戻ってきても鳴らし直さない
-    expect(planEntry([shimane], prefs(), sent, izumo)).toEqual([]);
+    expect(planEntry([ev(shimane)], prefs(), sent, izumo)).toEqual([]);
     // 入った後に同じ中身の報が届いても鳴らさない
     expect(planAlerts(ev(shimane), AT, prefs(), sent, izumo)).toEqual([]);
   });
 
   test("報が古くても、出ている警報は知らせる", () => {
     const old = { ...shimane, reportedAt: "2024-11-01T00:00:00+09:00" };
-    const plans = planEntry([old], prefs(), new Map(), matsue);
+    const plans = planEntry([ev(old)], prefs(), new Map(), matsue);
     expect(plans.map((p) => p.notice.title)).toEqual([
       "現在地の島根県松江市にレベル3大雨警報",
     ]);
   });
 
-  test("段は住んでいる地域と同じ。注意報は「注意報も」のときだけ", () => {
-    expect(planEntry([shimane], prefs(), new Map(), okuizumo)).toEqual([]);
+  test("段は住んでいる地域と同じ。注意報は知らせない", () => {
+    expect(planEntry([ev(shimane)], prefs(), new Map(), okuizumo)).toEqual([]);
     expect(
-      planEntry([shimane], prefs({ weather: "all" }), new Map(), okuizumo).map(
-        (p) => p.notice.title,
+      planEntry(
+        [ev(shimane)],
+        prefs({ weather: "everywhere" }),
+        new Map(),
+        okuizumo,
       ),
-    ).toEqual(["現在地の島根県奥出雲町にレベル2大雨注意報"]);
+    ).toEqual([]);
     expect(
-      planEntry([shimane], prefs({ weather: "off" }), new Map(), matsue),
+      planEntry([ev(shimane)], prefs({ weather: "off" }), new Map(), matsue),
     ).toEqual([]);
   });
 
   test("住んでいる地域と同じ市町村等なら足さない。警報の出ていない市町村等は何も無い", () => {
     expect(
-      planEntry([shimane], prefs({ home: matsue }), new Map(), matsue),
+      planEntry([ev(shimane)], prefs({ home: matsue }), new Map(), matsue),
     ).toEqual([]);
-    expect(planEntry([shimane], prefs(), new Map(), chiyoda)).toEqual([]);
+    expect(planEntry([ev(shimane)], prefs(), new Map(), chiyoda)).toEqual([]);
   });
 
   test("出た市町村等の解除は、出ていた通知を鳴らさずに置き換える", () => {
     const sent = new Map<string, Sent>();
     planAlerts(ev(shimane), AT, prefs(), sent, matsue);
     // 出雲市へ移り (そこの警報を知らせた)、その後に松江市の警報が解除された
-    expect(planEntry([shimane], prefs(), sent, izumo)).toHaveLength(1);
+    expect(planEntry([ev(shimane)], prefs(), sent, izumo)).toHaveLength(1);
     const g = groupAlerts(
       planAlerts(ev(released), AT, prefs(), sent, izumo, [matsue]),
     );

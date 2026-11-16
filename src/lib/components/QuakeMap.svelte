@@ -73,7 +73,7 @@
   } from "#lib/model.ts";
   import { mapCredit, showsGrus } from "#lib/notice.ts";
   import type { Place } from "#lib/places.ts";
-  import { readPref, removePref, writePref } from "#lib/prefs.ts";
+  import { readPref, writePref } from "#lib/prefs.ts";
   import { homeAt, saveHome, trackHere } from "#lib/push-client.ts";
 
   /**
@@ -506,9 +506,9 @@
     }
   });
 
-  // ---- 現在地 (押している間だけ watchPosition で追う。位置は端末の中で描き、入る市町村等を開いているときの
-  // 気象の通知に使うだけで、サーバーには送らない) ----
-  // オンにしたかどうかは端末に覚え、開いたときに位置の許可がもうあれば自動で始める (`#lib/map/locate.ts`)
+  // ---- 現在地 (オンの間だけ watchPosition で追う。既定はオン。位置は端末の中で描き、入る市町村等を開いているときの
+  // 通知の「住んでいる地域と現在地」に使うだけで、サーバーには送らない) ----
+  // 選んだオン・オフは端末に覚え、開いたときは `#lib/map/locate.ts` の決まりで自動で始める
   type Locating = "off" | "waiting" | "on";
   let locating = $state<Locating>("off");
   /** オンを覚えているか。許可を待っていて追っていない間も true (ボタンはオンの見た目で、押すと始める) */
@@ -529,16 +529,17 @@
     me = undefined;
   }
 
+  /** 人が選んだ (か、許可が拒まれた) オン・オフを覚える。既定はオンなので、オフも覚える */
   function rememberLocate(on: boolean): void {
     remembered = on;
-    if (on) writePref(LOCATE_PREF, "on");
-    else removePref(LOCATE_PREF);
+    writePref(LOCATE_PREF, on ? "on" : "off");
   }
 
   /** 追い始める。`pan` は押して始めたとき (最初に取れた所へ寄せる) */
   function startLocating(pan: boolean): void {
     if (!("geolocation" in navigator)) {
-      locateNote = "このブラウザは位置を取れません";
+      // 開いたときに自動で始めようとしたときは、何も言わずにオフにする (押したときだけ言う)
+      if (pan) locateNote = "このブラウザは位置を取れません";
       rememberLocate(false);
       return;
     }
@@ -581,15 +582,19 @@
     startLocating(true);
   }
 
-  // 開いたとき: オンを覚えていて、位置の許可がもうあるときだけ自動で始める (許可の窓をいきなり出さない)。
-  // 許可が変わったら (サイトの設定で変えたとき) 合わせる。拒まれたら覚えたオンを消す
+  // 開いたとき: オフを選んでいなければ (既定はオン)、位置の許可がもうあれば自動で始める。まだ選んでいない
+  // 端末は許可を聞く (断られたらオフを覚える)。人がオンにした端末で許可が消えていたら、押すのを待つ。
+  // 許可が変わったら (サイトの設定で変えたとき) 合わせる。拒まれたらオフを覚える (聞き直さない)
   $effect(() => {
-    remembered = readLocate(readPref(LOCATE_PREF));
+    const choice = readLocate(readPref(LOCATE_PREF));
+    remembered = choice !== "off";
     let status: PermissionStatus | undefined;
     let gone = false;
     const apply = (p: GeoPermission) => {
-      const next = autoLocate(remembered, p);
-      if (next === "start" && locating === "off") startLocating(false);
+      // 覚えた選択は、許可が変わったときにも読み直す (押して選び直していることがある)
+      const next = autoLocate(readLocate(readPref(LOCATE_PREF)), p);
+      if ((next === "start" || next === "ask") && locating === "off")
+        startLocating(false);
       else if (next === "forget") {
         stopLocating();
         rememberLocate(false);
@@ -617,7 +622,7 @@
     };
   });
 
-  // 現在地が入る市町村等を、開いているときの気象の通知に使う (端末の中だけ。緯度・経度は送らない)。
+  // 現在地が入る市町村等を、開いているときの通知の範囲に使う (端末の中だけ。緯度・経度は送らない)。
   // 前の市町村等の中にいる間は面を引き直さない (`trackHere`)
   $effect(() => {
     void trackHere(me ? { lat: me.lat, lon: me.lon } : undefined);

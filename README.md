@@ -17,7 +17,7 @@ https://github.com/user-attachments/assets/24a0b5a8-9ba6-4722-bb65-c7baeda2827f
   <tr>
     <td align="center"><img src="docs/images/map.webp" alt="地図と一覧" width="380"><br><sub><b>地図と一覧</b> — 津波注意報の海岸と気象の警報・注意報を地図に、全部の種類を新しい順に 1 本の一覧に</sub></td>
     <td align="center"><img src="docs/images/detail.webp" alt="詳しい内容" width="380"><br><sub><b>詳しい内容</b> — 行を押すと、震源・M・各地域の震度。地図も各地の震度で塗る</sub></td>
-    <td align="center"><img src="docs/images/notify.webp" alt="通知の窓を下まで巻いたところ。受信が切れたときの説明、現在地の気象も知らせるスイッチ、Web Push の「このブラウザで受ける」、Webhook の URL の欄と「追加」" width="380"><br><sub><b>通知</b> — 知らせる条件・音と読み上げ・読み上げの声・Web Push・Webhook</sub></td>
+    <td align="center"><img src="docs/images/notify.webp" alt="通知の窓の先頭。住んでいる地域 (千葉県千葉市) と、緊急地震速報・地震・津波・火山・気象の 3 択と、それぞれ何を知らせるかの 1 文" width="380"><br><sub><b>通知</b> — 種類ごとに全国・住んでいる地域と現在地・知らせないを選ぶ。音と読み上げ・Web Push・Webhook も</sub></td>
   </tr>
   <tr>
     <td align="center"><img src="docs/images/phone-map.webp" alt="スマホの地図" width="190"><br><sub><b>スマホ</b> — 地図が画面いっぱいに。下に選んだものの 1 行と 5 つのタブ</sub></td>
@@ -36,7 +36,9 @@ https://github.com/user-attachments/assets/24a0b5a8-9ba6-4722-bb65-c7baeda2827f
 - [Zero Quake](https://github.com/0Quake/Zero-Quake) の機能を参考にした。コードは読んでも写してもいない (一から書いている)。
 - 地震・津波・火山 (噴火速報・噴火警報) の情報を気象庁 (防災情報 XML)・P2P地震情報・Wolfx Project から、海外の地震を USGS・EMSC・GeoNet・中央氣象署 (台湾、授権碼があるとき) から、太平洋の津波の参考情報を PTWC (米国) と気象庁ホームページ (国際津波関連情報) から受け、画面には必ず出典と「公式の情報を優先してください」という注意文を出す。気象庁の情報は加工して出しているので、その旨も書く。
 
-開いている画面では、条件に合う情報を短い音と読み上げで知らせる。読み上げの声は、sonae と一緒に動かす [VOICEVOX](https://voicevox.hiroshiba.jp/) のエンジンで作る (既定の声は「VOICEVOX:剣崎雌雄」。声は画面で選べ、この家の全部の端末で同じ声になる)。
+知らせる条件は、緊急地震速報・地震・津波・火山・気象のそれぞれで「全国のもの」「住んでいる地域と現在地のものだけ」「知らせない」から選ぶ。何の段から知らせるか (震度いくつ以上など) は決めてあり、選んだもので何を知らせるかを画面に 1 文で出す ([docs/design.md の 2.4](docs/design.md#24-web-push) の表)。
+
+開いている画面では、条件に合う情報を短い音と読み上げで知らせる (「オフ」「通知音だけ」「読み上げも」から選ぶ)。読み上げの声は、sonae と一緒に動かす [VOICEVOX](https://voicevox.hiroshiba.jp/) のエンジンで作る (既定の声は「VOICEVOX:剣崎雌雄」。声は画面で選べ、この家の全部の端末で同じ声になる)。
 VOICEVOX は公式のイメージを別のコンテナで動かし (理由は [docs/design.md の 2.4](docs/design.md))、`docker compose up` でも Helm chart でも sonae と一緒に起きる。
 VOICEVOX が止まっているときは、ブラウザの読み上げで同じ文を読む。
 

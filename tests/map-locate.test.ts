@@ -2,27 +2,35 @@ import { expect, test } from "bun:test";
 
 import { autoLocate, readLocate } from "#lib/map/locate.ts";
 
-test("オンを覚えていて許可があるときだけ自動で始める", () => {
-  expect(autoLocate(true, "granted")).toBe("start");
+test("オフを選んでいなければ、許可があるときは自動で始める (既定はオン)", () => {
+  expect(autoLocate("on", "granted")).toBe("start");
+  expect(autoLocate(null, "granted")).toBe("start");
 });
 
-test("許可をまだ聞いていない・query が無いときは始めず、オンは覚えたまま", () => {
-  expect(autoLocate(true, "prompt")).toBe("wait");
-  expect(autoLocate(true, "unknown")).toBe("wait");
+test("まだ選んでいない端末は、許可をまだ聞いていなければ聞く (断られたらオフを覚える)", () => {
+  expect(autoLocate(null, "prompt")).toBe("ask");
+  expect(autoLocate(null, "unknown")).toBe("ask");
 });
 
-test("拒まれていたら覚えたオンを消す", () => {
-  expect(autoLocate(true, "denied")).toBe("forget");
+test("人がオンにした端末で許可をまだ聞いていない・query が無いときは始めず、オンは覚えたまま", () => {
+  expect(autoLocate("on", "prompt")).toBe("wait");
+  expect(autoLocate("on", "unknown")).toBe("wait");
 });
 
-test("オンを覚えていなければ、許可があっても何もしない", () => {
+test("拒まれていたらオフを覚える (聞き直さない)", () => {
+  expect(autoLocate("on", "denied")).toBe("forget");
+  expect(autoLocate(null, "denied")).toBe("forget");
+});
+
+test("オフを選んであれば、許可があっても何もしない", () => {
   for (const p of ["granted", "prompt", "denied", "unknown"] as const)
-    expect(autoLocate(false, p)).toBe("none");
+    expect(autoLocate("off", p)).toBe("none");
 });
 
-test("覚えた値は on だけをオンと読む", () => {
-  expect(readLocate("on")).toBe(true);
-  expect(readLocate(null)).toBe(false);
-  expect(readLocate("true")).toBe(false);
-  expect(readLocate("")).toBe(false);
+test("覚えた値は on と off だけを読み、ほかはまだ選んでいない", () => {
+  expect(readLocate("on")).toBe("on");
+  expect(readLocate("off")).toBe("off");
+  expect(readLocate(null)).toBeNull();
+  expect(readLocate("true")).toBeNull();
+  expect(readLocate("")).toBeNull();
 });

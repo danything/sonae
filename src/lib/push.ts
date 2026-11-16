@@ -3,33 +3,31 @@
  * どこからでも読むので、DOM や Worker にしか無いものは使わない。
  */
 
-import { type Intensity, isIntensity } from "./model.ts";
-
-/** 津波の通知の閾値。注意報以上 / 警報以上 / 大津波警報だけ / 送らない */
-export const TSUNAMI_LEVELS = ["watch", "warning", "major", "off"] as const;
-export type TsunamiLevel = (typeof TSUNAMI_LEVELS)[number];
-
-/** 緊急地震速報。警報だけ / 予報も / 送らない */
-export const EEW_LEVELS = ["warning", "all", "off"] as const;
-export type EewLevel = (typeof EEW_LEVELS)[number];
+import { isIntensity } from "./model.ts";
 
 /**
- * 火山。噴火速報と噴火警報 (居住地域、警戒レベル 4・5) / それに火口周辺警報 (レベル 2・3) も / 送らない
+ * 種類ごとに選ぶ、どこのものを知らせるか (持ち主の決定、2026-11-16。docs/design.md の 2.4 の表)。
+ * 全国のもの / 住んでいる地域と現在地のものだけ / 知らせない。何の段から知らせるか (震度いくつ以上・
+ * 注意報も など) は選ばせず、`#lib/notify.ts` の既定値で決める
  */
-export const VOLCANO_LEVELS = ["warning", "all", "off"] as const;
-export type VolcanoLevel = (typeof VOLCANO_LEVELS)[number];
+export const SCOPES = ["everywhere", "nearby", "off"] as const;
+export type Scope = (typeof SCOPES)[number];
+
+/** 範囲を選ぶ種類 (画面に並べる順) */
+export const SCOPE_KINDS = [
+  "eew",
+  "quake",
+  "tsunami",
+  "volcano",
+  "weather",
+] as const;
+export type ScopeKind = (typeof SCOPE_KINDS)[number];
 
 /**
- * 気象の通知 (住んでいる地域)。警報以上 (危険警報・特別警報、記録的短時間大雨情報・竜巻注意情報も) /
- * 注意報も / 送らない
- */
-export const WEATHER_LEVELS = ["warning", "all", "off"] as const;
-export type WeatherLevel = (typeof WEATHER_LEVELS)[number];
-
-/**
- * 住んでいる地域。1 つの市町村等 (気象警報等) を選び、地震と気象の両方の条件に使う。
- * 地震情報／細分区域・府県予報区・一次細分区域は、選んだときに画面が市町村等の表 (`static/areas/cities.json`)
- * から引いて一緒に持つ (サーバーと Service Worker が表を読まずに判定できるように)。緯度・経度は持たない
+ * 住んでいる地域。1 つの市町村等 (気象警報等) を選び、どの種類の「住んでいる地域」にも使う。
+ * 地震情報／細分区域・府県予報区・一次細分区域・津波予報区は、選んだときに画面が市町村等の表
+ * (`static/areas/cities.json`) から引いて一緒に持つ (サーバーと Service Worker が表を読まずに判定できるように)。
+ * 緯度・経度は持たない。開いている画面の現在地 (`alerter.here`) も同じ形
  */
 export interface Home {
   /** 市町村等のコード (気象・地震・火山情報／市町村等、7 桁) */
@@ -42,49 +40,62 @@ export interface Home {
   office: string | null;
   /** 一次細分区域のコード (6 桁。記録的短時間大雨情報の地域) */
   ichiji: string | null;
+  /**
+   * 沿岸が入る津波予報区 (海に面していなければ空)。2026-11-16 より前に覚えた住んでいる地域には無く、
+   * 無いときは分からないので、津波はどの予報区でも当たるとみなす (知らせない側に倒さない)。
+   * 画面を開けば表から引き直して覚え直す
+   */
+  tsunami?: { code: string; name: string }[];
 }
 
 /**
- * 端末 (ブラウザの購読) ごとに選ぶ、何を知らせるか。
+ * 端末 (ブラウザの購読) ごとに選ぶ、何を知らせるか。種類ごとに範囲 (`Scope`) を 1 つ選ぶ。
  * 南海トラフ地震臨時情報等と、どこかの気象の特別警報は選ばせず、いつも知らせる
- * (持ち主の決定、2026-11-16。docs/design.md の 2.4)。前に持っていた `advisory`・`weatherSpecial` は
- * `normalizePrefs` が読まずに捨てる (DB・localStorage に残った false も効かない)
+ * (持ち主の決定、2026-11-16。docs/design.md の 2.4)。前の形の段 (`quakeMinInt`・`areaMinInt`・
+ * 津波の `watch` など) は `normalizePrefs` が新しい範囲に読み替える
  */
 export interface PushPrefs {
-  eew: EewLevel;
-  /** 最大震度がこれ以上の地震。"off" で送らない */
-  quakeMinInt: Intensity | "off";
-  /** 住んでいる地域。無ければ地域の条件 (地震の地域の震度・気象) は使わない */
+  /** 住んでいる地域。無ければ「住んでいる地域と現在地」は現在地だけ (開いている画面だけ) で見る */
   home: Home | null;
-  /** 住んでいる地域でこの震度以上なら、最大震度の条件に届かなくても送る */
-  areaMinInt: Intensity;
-  tsunami: TsunamiLevel;
-  /** 火山 (噴火速報・噴火警報) */
-  volcano: VolcanoLevel;
-  /** 住んでいる地域の気象警報・注意報と、記録的短時間大雨情報・竜巻注意情報 */
-  weather: WeatherLevel;
+  eew: Scope;
+  quake: Scope;
+  tsunami: Scope;
+  volcano: Scope;
+  weather: Scope;
 }
 
 /**
- * 既定値。理由は docs/design.md の 2.4 (持ち主の決定、2026-11-13)。
- * 警報だけ・最大震度 4 以上・住んでいる地域で 3 以上・津波注意報以上。
- * 火山は噴火速報と噴火警報 (居住地域) だけ (2026-11-14 に足した。理由は同じ節)。
- * 気象は住んでいる地域の警報以上 (2026-11-14 に足した。注意報は既定で送らない)。
+ * 既定値。前の既定 (緊急地震速報の警報・最大震度 4 以上・津波注意報以上・噴火速報と噴火警報は全国、
+ * 気象は住んでいる地域の警報以上) と同じものを知らせる範囲にした
  */
 export const DEFAULT_PREFS: PushPrefs = {
-  eew: "warning",
-  quakeMinInt: "4",
   home: null,
-  areaMinInt: "3",
-  tsunami: "watch",
-  volcano: "warning",
-  weather: "warning",
+  eew: "everywhere",
+  quake: "everywhere",
+  tsunami: "everywhere",
+  volcano: "everywhere",
+  weather: "nearby",
 };
 
 const code = (v: unknown, digits: number): string | null =>
   typeof v === "string" && new RegExp(`^\\d{${digits}}$`).test(v) ? v : null;
 const label = (v: unknown): string | null =>
   typeof v === "string" && v.length > 0 && v.length <= 40 ? v : null;
+
+/** 津波予報区の並びを読む。並びでなければ無し (前の形。分からない) */
+function readTsunamiAreas(
+  v: unknown,
+): { code: string; name: string }[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  // 1 つの市町村等に当たるのは多くて 2〜3。外から来た値の長さは、予報区の数 (66) までに抑える
+  return v.slice(0, 66).flatMap((a) => {
+    const o =
+      typeof a === "object" && a !== null ? (a as Record<string, unknown>) : {};
+    const c = code(o.code, 3);
+    const n = label(o.name);
+    return c && n ? [{ code: c, name: n }] : [];
+  });
+}
 
 /** 住んでいる地域を読む。市町村等のコードと名前が読めなければ無し */
 function readHome(v: unknown): Home | null {
@@ -99,22 +110,33 @@ function readHome(v: unknown): Home | null {
       : {};
   const qc = code(q.code, 3);
   const qn = label(q.name);
+  const tsunami = readTsunamiAreas(o.tsunami);
   return {
     code: c,
     name,
     quake: qc && qn ? { code: qc, name: qn } : null,
     office: code(o.office, 6),
     ichiji: code(o.ichiji, 6),
+    ...(tsunami ? { tsunami } : {}),
   };
 }
 
-const pick = <T extends string>(
-  list: readonly T[],
-  v: unknown,
-  fallback: T,
-): T => (list.includes(v as T) ? (v as T) : fallback);
+/**
+ * 範囲を読む。新しい形の値はそのまま、前の形の段は `old` で読み替える。読めなければ既定値。
+ * 新しい値の名前は、前の形の値 (`all`・`warning` など) と重ならないようにしてある
+ */
+function scope(v: unknown, old: Record<string, Scope>, fallback: Scope): Scope {
+  if ((SCOPES as readonly unknown[]).includes(v)) return v as Scope;
+  return typeof v === "string" && Object.hasOwn(old, v)
+    ? (old[v] ?? fallback)
+    : fallback;
+}
 
-/** 外から来た値を、知っている形に直す。読めない項目は既定値に戻す */
+/**
+ * 外から来た値を、知っている形に直す。読めない項目は既定値に戻す。
+ * DB の購読・Webhook・端末の localStorage・API の本文のどれもここを通すので、前の形の値もここで読み替える
+ * (2026-11-16 の作り替え。docs/design.md の 2.4 の「前の形の読み替え」)
+ */
 export function normalizePrefs(input: unknown): PushPrefs {
   const o =
     typeof input === "object" && input !== null
@@ -122,19 +144,46 @@ export function normalizePrefs(input: unknown): PushPrefs {
       : {};
   // 前の形の「現在地」(地震情報の細分区域だけ。area) は市町村等が分からないので読まない (選び直してもらう)。
   // 前のスイッチ (advisory・weatherSpecial) も読まない (いつも知らせる。2026-11-16)
+  const off = { off: "off" } as const;
+  // 地震は前の 2 つの段から読む。最大震度の条件があれば全国、「知らせない」で住んでいる地域の震度だけなら地域
+  const oldQuake =
+    o.quakeMinInt === "off"
+      ? "nearby"
+      : isIntensity(o.quakeMinInt)
+        ? "everywhere"
+        : undefined;
   return {
-    eew: pick(EEW_LEVELS, o.eew, DEFAULT_PREFS.eew),
-    quakeMinInt:
-      o.quakeMinInt === "off" || isIntensity(o.quakeMinInt)
-        ? o.quakeMinInt
-        : DEFAULT_PREFS.quakeMinInt,
     home: readHome(o.home),
-    areaMinInt: isIntensity(o.areaMinInt)
-      ? o.areaMinInt
-      : DEFAULT_PREFS.areaMinInt,
-    tsunami: pick(TSUNAMI_LEVELS, o.tsunami, DEFAULT_PREFS.tsunami),
-    volcano: pick(VOLCANO_LEVELS, o.volcano, DEFAULT_PREFS.volcano),
-    weather: pick(WEATHER_LEVELS, o.weather, DEFAULT_PREFS.weather),
+    // 前は 警報だけ / 予報も / 送らない。予報はもう知らせない (2.4)
+    eew: scope(
+      o.eew,
+      { ...off, warning: "everywhere", all: "everywhere" },
+      DEFAULT_PREFS.eew,
+    ),
+    quake: scope(o.quake, {}, oldQuake ?? DEFAULT_PREFS.quake),
+    // 前は 注意報以上 / 警報以上 / 大津波警報だけ / 送らない。どれも全国のものだった
+    tsunami: scope(
+      o.tsunami,
+      {
+        ...off,
+        watch: "everywhere",
+        warning: "everywhere",
+        major: "everywhere",
+      },
+      DEFAULT_PREFS.tsunami,
+    ),
+    // 前は 噴火速報と噴火警報 / 火口周辺警報も / 送らない。どれも全国のものだった
+    volcano: scope(
+      o.volcano,
+      { ...off, warning: "everywhere", all: "everywhere" },
+      DEFAULT_PREFS.volcano,
+    ),
+    // 前は住んでいる地域の 警報以上 / 注意報も / 送らない。注意報はもう知らせない (2.4)
+    weather: scope(
+      o.weather,
+      { ...off, warning: "nearby", all: "nearby" },
+      DEFAULT_PREFS.weather,
+    ),
   };
 }
 
