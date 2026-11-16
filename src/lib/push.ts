@@ -62,7 +62,7 @@ export interface PushPrefs {
   /**
    * 地震を知らせる震度 (範囲の下に 1 つだけ選ぶ。2026-11-16 に戻した)。「全国」ならどこかの最大震度、
    * 「住んでいる地域と現在地」ならそこの震度で見る。選んでいなければ範囲ごとの既定
-   * (全国 4・地域 3。`#lib/notify.ts` の `quakeMinOf`)
+   * (全国 4・地域 3。`quakeMinOf`)
    */
   quakeMin?: Intensity;
   tsunami: Scope;
@@ -71,8 +71,8 @@ export interface PushPrefs {
 }
 
 /**
- * 既定値。前の既定 (緊急地震速報の警報・最大震度 4 以上・津波注意報以上・噴火速報と噴火警報は全国、
- * 気象は住んでいる地域の警報以上) と同じものを知らせる範囲にした
+ * 既定値。気象だけ「住んでいる地域と現在地」、ほかは「全国」(docs/design.md の 2.4)。前の既定 (最大震度 4 以上・
+ * 住んでいる地域で震度 3 以上・津波注意報以上・噴火速報と噴火警報 (居住地域)) を知らせる組み合わせにした
  */
 export const DEFAULT_PREFS: PushPrefs = {
   home: null,
@@ -139,7 +139,7 @@ function scope(v: unknown, old: Record<string, Scope>, fallback: Scope): Scope {
 }
 
 /** 範囲ごとの震度の既定 (前の既定の、最大震度 4 と住んでいる地域の震度 3) */
-export const QUAKE_MIN_DEFAULT: Record<"everywhere" | "nearby", Intensity> = {
+const QUAKE_MIN_DEFAULT: Record<"everywhere" | "nearby", Intensity> = {
   everywhere: "4",
   nearby: "3",
 };
@@ -244,7 +244,7 @@ export interface PushPayload {
   url: string;
   /** 置き換えるときも鳴らし直す (重さが上がったとき) */
   renotify: boolean;
-  /** 閉じるまで残す (緊急地震速報の警報・津波警報) */
+  /** 閉じるまで残す (緊急地震速報の警報・津波警報以上・噴火速報と噴火警報 (居住地域)・気象の危険警報と特別警報) */
   sticky: boolean;
   /** 事象の時刻 (ミリ秒) */
   timestamp: number;
@@ -338,7 +338,7 @@ export function base64UrlToBytes(s: string): Uint8Array<ArrayBuffer> {
  * Mozilla、Safari は Apple、旧 Edge は WNS)。画面も、登録する前に同じ決まりで見る
  * (届かない宛先を返すブラウザに、黙って登録させない)
  */
-export const PUSH_HOSTS = [
+const PUSH_HOSTS = [
   "fcm.googleapis.com",
   "push.services.mozilla.com",
   "push.apple.com",

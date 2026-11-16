@@ -18,15 +18,7 @@ import {
 } from "#lib/notify.ts";
 import type { PushPrefs } from "#lib/push.ts";
 
-export {
-  matches,
-  type Notice,
-  noticeFor,
-  noticeOf,
-  payloadOf,
-  type Plan,
-  type Sent,
-} from "#lib/notify.ts";
+export { matches, noticeOf, payloadOf, type Sent } from "#lib/notify.ts";
 
 /** 中身が変わったかを見るための値 (push_log・webhook_log の digest) */
 export const digestOf = (n: Pick<Notice, "title" | "body" | "changeKey">) =>

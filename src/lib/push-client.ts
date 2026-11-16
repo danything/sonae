@@ -48,7 +48,7 @@ export type PushInfo =
   | { enabled: true; publicKey: string; subscriptions: Registered[] };
 
 /** このブラウザにある、Web Push に要る機能 */
-export const pushFeatures = (): PushFeatures => ({
+const pushFeatures = (): PushFeatures => ({
   serviceWorker: "serviceWorker" in navigator,
   pushManager: "PushManager" in window,
   notification: "Notification" in window,
@@ -59,8 +59,7 @@ export const pushFeatures = (): PushFeatures => ({
 });
 
 /** ブラウザが Web Push を使えそうか (機能がそろっているか) */
-export const pushSupported = (): boolean =>
-  pushBlockOf(pushFeatures()) === null;
+const pushSupported = (): boolean => pushBlockOf(pushFeatures()) === null;
 
 /**
  * 登録してみて分かった、届かない宛先 (Android の Edge など)。このページを開いている間は覚えておき、

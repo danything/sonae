@@ -155,7 +155,7 @@ const inPolygon = (lon: number, lat: number, poly: Ring[]) =>
   !poly.slice(1).some((hole) => inRing(lon, lat, hole));
 
 /** 緯度・経度が、市町村等の面の中か */
-export function inFeature(lat: number, lon: number, f: AreaFeature): boolean {
+function inFeature(lat: number, lon: number, f: AreaFeature): boolean {
   const g = f.geometry;
   if (!g || !f.properties.code) return false;
   const polys = g.type === "Polygon" ? [g.coordinates] : g.coordinates;

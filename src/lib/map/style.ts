@@ -35,7 +35,7 @@ export const PHOTO_MIN_ZOOM = 9;
  * 写真の出典。地理院タイルの一覧の「写真」の備考のとおり、ズームの段ごとに元の衛星画像の出典も出す
  * (9〜13 は全国ランドサットモザイク、14〜18 はシームレス空中写真。2〜8 の世界衛星モザイクは使わない)
  */
-export const PHOTO_ATTRIBUTION = [
+const PHOTO_ATTRIBUTION = [
   `<a href="${TILES}" target="_blank" rel="noopener">国土地理院</a> (シームレス空中写真)`,
   "Landsat8画像 (GSI, TSIC, GEO Grid/AIST)・Landsat8画像 (courtesy of the U.S. Geological Survey)・海底地形 (GEBCO)",
   "GRUS画像 (© Axelspace)",
@@ -392,15 +392,15 @@ export function mergeShelters(
 export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "各地の震度",
-    note: "地図に出している地震 (選んだ地震か、いちばん新しい地震) の、地域ごとの震度の色と数字",
+    note: "一覧で選んだ地震の、地域ごとの震度の色と数字。何も選んでいないときは出しません",
   },
   {
     label: "震源",
-    note: "新しい 50 件の丸。色は深さ (30 km まで赤・100 km まで黄・300 km まで緑・それより深いと青)、大きさは M。地図に出している地震は ×",
+    note: "新しい 50 件の丸。色は深さ (30 km まで赤・100 km まで黄・300 km まで緑・それより深いと青)、大きさは M。選んだ地震は ×",
   },
   {
     label: "長周期地震動階級",
-    note: "地図に出している地震で、階級 1 以上を観測した地域を太い枠で囲みます。枠の色は階級 4 紫・3 赤・2 橙・1 黄",
+    note: "選んだ地震で、階級 1 以上を観測した地域を太い枠で囲みます。枠の色は階級 4 紫・3 赤・2 橙・1 黄",
   },
   {
     label: "津波の警報・注意報",
@@ -518,7 +518,6 @@ export type OfficeTable = Record<
   Record<string, [number, number, number, number]>
 >;
 
-/** 選んだ府県予報区の市町村等だけを縁取る filter (選んでいなければ何も描かない) */
 /** 住んでいる地域の市町村等だけを縁取る filter (決まっていなければ何も描かない) */
 export function homeFilter(code: string | null | undefined): Expr {
   return ["==", ["get", "code"], code ?? ""];
@@ -527,6 +526,7 @@ export function homeFilter(code: string | null | undefined): Expr {
 /** 住んでいる地域の縁取りの色 (写真の上で読める水色。警報・注意報の段の色と取り違えない) */
 export const HOME_COLOR = "#3cd7ff";
 
+/** 選んだ府県予報区の市町村等だけを縁取る filter (選んでいなければ何も描かない) */
 export function officeFilter(
   table: OfficeTable,
   office: string | null | undefined,
@@ -613,7 +613,7 @@ export const DEPTH_COLORS = [
 ] as const;
 
 /** 深さ (km、無ければ -1) から色を引く MapLibre の式 */
-export function depthColorExpr(): Expr {
+function depthColorExpr(): Expr {
   return [
     "case",
     ["<", ["get", "depth"], 0],
@@ -1127,7 +1127,7 @@ export function baseStyle(
  * 道路 (地理院地図Vector の道路中心線)。写真の上で読めるよう、細い黒い縁取りの上に明るい線を引く。
  * 引いているときは高速道路と国道だけ、寄せるほど細い道まで出す (読むタイルと描く線を減らす)
  */
-export function roadLayers(): Record<string, unknown>[] {
+function roadLayers(): Record<string, unknown>[] {
   const kinds: {
     id: string;
     ctg: string[];
@@ -1204,7 +1204,7 @@ export function roadLayers(): Record<string, unknown>[] {
 }
 
 /** 現在地の青い点の色 (震源の深さの青と分けるため、白い縁を太く付ける) */
-export const ME_COLOR = "#1a73e8";
+const ME_COLOR = "#1a73e8";
 
 /**
  * 現在地の点と、位置の誤差の円 (半径はメートル。地図のズームにかかわらず実際の大きさで描くため、
