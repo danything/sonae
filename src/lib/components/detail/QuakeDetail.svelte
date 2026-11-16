@@ -15,7 +15,6 @@
   import {
     type AreaIntensity,
     INTENSITIES,
-    intensityRank,
     LG_CLASSES,
     lgWords,
     type LongPeriod,
@@ -34,14 +33,13 @@
    */
   let { q, lp }: { q: Quake; lp?: LongPeriod | null } = $props();
 
-  /** 震度の大きい順に、地域 (または観測点) の名前を束ねる */
+  /** 震度の大きい順 (震度5弱以上未入電は震度5強と震度5弱の間) に、地域 (または観測点) の名前を束ねる */
   function byIntensity<T extends AreaIntensity | StationIntensity>(items: T[]) {
     const order: ObservedIntensity[] = [...INTENSITIES].reverse();
     order.splice(order.indexOf("5-"), 0, UNRECEIVED);
     return order
       .map((int) => ({ int, items: items.filter((x) => x.int === int) }))
-      .filter((g) => g.items.length > 0)
-      .sort((a, b) => intensityRank(b.int) - intensityRank(a.int));
+      .filter((g) => g.items.length > 0);
   }
   const areas = $derived(byIntensity(q.areas));
   const stations = $derived(byIntensity(q.stations));

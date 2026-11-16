@@ -6,7 +6,11 @@
     STATUS_LABEL,
     weatherTitle,
   } from "#lib/format.ts";
-  import { WEATHER_INFO_LABEL, type WeatherInfo } from "#lib/model.ts";
+  import {
+    isExpired,
+    WEATHER_INFO_LABEL,
+    type WeatherInfo,
+  } from "#lib/model.ts";
 
   import WarningLevel from "../WarningLevel.svelte";
 
@@ -16,9 +20,7 @@
    */
   let { w, now }: { w: WeatherInfo; now: number } = $props();
 
-  const expired = $derived(
-    w.validUntil !== undefined && Date.parse(w.validUntil) < now,
-  );
+  const expired = $derived(isExpired(w, now));
   /** 事実は控えた字を「・」でつなぐ (バッジにしない) */
   const facts = $derived(
     [
@@ -63,7 +65,7 @@
   {/if}
 
   {#if w.headline}
-    <p class="small text">{w.headline}</p>
+    <p class="small pre-line">{w.headline}</p>
   {/if}
 
   {#if t}
@@ -106,7 +108,7 @@
   {#if w.text}
     <section>
       <h2>本文</h2>
-      <p class="small text">{w.text}</p>
+      <p class="small pre-line">{w.text}</p>
     </section>
   {/if}
 
@@ -119,9 +121,6 @@
 </div>
 
 <style>
-  .text {
-    white-space: pre-line;
-  }
   .facts {
     display: grid;
     grid-template-columns: auto 1fr;
