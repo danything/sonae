@@ -88,7 +88,7 @@ test("配り方: 見た目 (震度の階級) が同じなら、決めた間は�
   expect(board.current()).toBeUndefined();
 });
 
-test("情報源: 一覧を取り、受けた値を 1 秒ごとにまとめて入れる。位置を隠した観測点は外す", async () => {
+test("情報源: 一覧を取り、受けた値を 1 秒ごとにまとめて入れる。位置を隠した観測点は一覧を取り直しても外す", async () => {
   const board = new RtsBoard();
   const frames: unknown[] = [];
   board.subscribe((event, data) => {
@@ -103,6 +103,7 @@ test("情報源: 一覧を取り、受けた値を 1 秒ごとにまとめて入
   const src = seisSource(board, {
     fetch: fakeFetch,
     flushMs: 10,
+    listEveryMs: 20,
     log: () => {},
     connect: () => {
       const s = new FakeSocket();
@@ -136,6 +137,9 @@ test("情報源: 一覧を取り、受けた値を 1 秒ごとにまとめて入
   await tick(30);
   expect(board.stations().stations).toEqual([[139, 35]]);
   expect(board.current()?.points).toEqual([[139, 35, 0.1]]);
+  // 一覧を取り直しても (listEveryMs) 隠したまま
+  await tick(60);
+  expect(board.stations().stations).toEqual([[139, 35]]);
 
   ac.abort();
   await done;

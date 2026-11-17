@@ -31,6 +31,9 @@ const SEISJS_LIST = "https://api.wolfx.jp/seis_list.json";
 /** これより古い観測点の値は、まとめに入れない (ミリ秒) */
 const VALUE_TTL_MS = 5_000;
 
+/** 一覧に無く、観測で位置を知った観測点を覚える数の上限 */
+const MAX_FOUND = 200;
+
 /** 位置として使える数か */
 const okLonLat = (x: unknown, y: unknown): x is number =>
   typeof x === "number" &&
@@ -113,11 +116,23 @@ export function seisSource(board: RtsBoard, o: SeisOptions = {}): Source {
   const log = o.log ?? ((m: string) => console.log(m));
   const listUrl = o.listUrl ?? SEISJS_LIST;
   let etag: string | undefined;
-  let stations = new Map<string, RtsStation>();
+  /** 一覧の観測点 */
+  let listed = new Map<string, RtsStation>();
+  /** 一覧に無く、観測で位置を知った観測点 */
+  const found = new Map<string, RtsStation>();
+  /** 位置を隠すよう頼んでいる (`private`) と分かった観測点。一覧に載っていても出さない */
+  const hidden = new Set<string>();
+  let shown = "";
   const latest = new Map<string, { i: number; at: number }>();
 
-  function setStations(m: Map<string, RtsStation>) {
-    stations = m;
+  /** 一覧と観測で知った観測点を合わせ、隠すものを除く。変わったときだけ画面に配る */
+  function publish() {
+    const m = new Map<string, RtsStation>();
+    for (const [id, at] of [...listed, ...found])
+      if (!hidden.has(id)) m.set(id, at);
+    const look = JSON.stringify([...m].sort());
+    if (look === shown) return;
+    shown = look;
     board.setStations(new Map(m));
   }
 
@@ -133,9 +148,10 @@ export function seisSource(board: RtsBoard, o: SeisOptions = {}): Source {
       });
       if (res.status === 304) return true;
       if (!res.ok) throw new Error(`${listUrl} が ${res.status} を返しました`);
-      const m = parseSeisList(await res.json());
+      listed = parseSeisList(await res.json());
       etag = res.headers.get("etag") ?? undefined;
-      setStations(m);
+      for (const id of listed.keys()) found.delete(id);
+      publish();
       return true;
     } catch (err) {
       if (!signal.aborted)
@@ -159,28 +175,27 @@ export function seisSource(board: RtsBoard, o: SeisOptions = {}): Source {
     }
   }
 
-  /** 受けた値を 1 つ入れる。一覧に無い観測点も、位置が付いていれば足す */
+  /**
+   * 受けた値を 1 つ入れる。一覧に無い観測点も、位置が付いていれば足す (上限 `MAX_FOUND`)。
+   * 観測点の表の変わり目は、次のまとめ (`flush`) で画面に配る
+   */
   function take(r: SeisReading) {
     if (r.private) {
-      // 位置を隠すよう頼まれた観測点は出さない (一覧に載っていても外す)
+      // 位置を隠すよう頼まれた観測点は出さない (一覧を取り直しても外したまま)
       latest.delete(r.id);
-      if (stations.has(r.id)) {
-        const m = new Map(stations);
-        m.delete(r.id);
-        setStations(m);
-      }
+      hidden.add(r.id);
       return;
     }
-    if (!stations.has(r.id) && r.at) {
-      const m = new Map(stations);
-      m.set(r.id, r.at);
-      setStations(m);
+    hidden.delete(r.id);
+    if (!listed.has(r.id) && r.at) {
+      if (found.has(r.id) || found.size < MAX_FOUND) found.set(r.id, r.at);
     }
     latest.set(r.id, { i: r.i, at: now() });
   }
 
   /** 新しい値だけをまとめて board に入れる */
   function flush() {
+    publish();
     const t = now();
     const i = new Map<string, number>();
     for (const [id, v] of latest) {
