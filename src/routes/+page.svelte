@@ -1312,6 +1312,7 @@
         {aboutHref}
         shown={!phone.current || tab === "map"}
         {found}
+        selected={v.selected !== null}
       />
     </div>
   </main>

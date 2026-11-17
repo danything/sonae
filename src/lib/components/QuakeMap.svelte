@@ -28,6 +28,7 @@
     readLocate,
   } from "#lib/map/locate.ts";
   import { coordLabel, coordText, longPressOk } from "#lib/map/press.ts";
+  import { type MapView, ViewKeeper } from "#lib/map/restore.ts";
   import {
     baseStyle,
     eewFill,
@@ -101,7 +102,10 @@
     aboutHref = "/?about=1",
     shown = true,
     found = null,
+    selected = false,
   }: {
+    /** 詳しい内容を開いているか (閉じたら、開く前の地図の位置へ戻す。`#lib/map/restore.ts`) */
+    selected?: boolean;
     /** いまの気象警報・注意報 (市町村等を段の色で塗る。押すと吹き出し) */
     warnings?: WeatherWarning[];
     /** 一覧で選んだ府県予報区のコード (その市町村等を縁取り、寄せる) */
@@ -278,9 +282,12 @@
           openPlace(e.point.x, e.point.y, e.lngLat.lat, e.lngLat.lng);
         });
         // 地図が動いたらメニューを閉じる (押した所から離れるため)
-        created.on("movestart", () => {
+        created.on("movestart", (e) => {
           pressMoved = true;
           placeMenu = false;
+          // 人が動かした (引く・つまむ・ホイール・ダブルクリック・キー) ときだけ `originalEvent` が付く。jumpTo と大きさの
+          // 測り直しには付かない。詳しい内容を開いている間に人が動かしたら、閉じても元の位置へ戻さない
+          if ((e as { originalEvent?: unknown }).originalEvent) keeper.moved();
         });
         map = created;
         // 手元 (vite dev) で画面を撮るときに、地図を動かせるようにする (本番の束には入らない)
@@ -1090,6 +1097,8 @@
     if (found.n === foundN) return;
     foundN = found.n;
     const p = found.place;
+    // 人が探して寄せた所なので、詳しい内容を閉じても元の位置へ戻さない
+    untrack(() => keeper.moved());
     // スマホの形で地図のタブへ移るのと同時なので、地図の箱の大きさを測り直してから寄せる
     map.resize();
     if (p.bounds) {
@@ -1124,6 +1133,26 @@
   // 続報で中身が変わるたびに寄せ直すと、見ている所が勝手に動くので、寄せるのは選んだものが替わったときと、
   // 地図が見えたとき (スマホの形で地図のタブに移ったとき) に震央が画面の外にあるときだけ
   let focused = "";
+  /** 詳しい内容を開く前の地図の位置 (閉じたら戻す。`#lib/map/restore.ts`) */
+  const keeper = new ViewKeeper();
+  /** いまの地図の位置 */
+  function viewOf(m: MapLibreMap): MapView {
+    const c = m.getCenter();
+    return {
+      center: [c.lng, c.lat],
+      zoom: m.getZoom(),
+      bearing: m.getBearing(),
+      pitch: m.getPitch(),
+    };
+  }
+  /** 選んだものへ寄せる直前に、詳しい内容を開いていれば、いまの位置を控える (開いたまま移ったときは最初のまま) */
+  function remember(): void {
+    if (map)
+      keeper.focus(
+        viewOf(map),
+        untrack(() => selected),
+      );
+  }
   /** 検索の欄で選んだ場所へ寄せた直後か (地図のタブへ移ったときに、震央へ寄せ直さない) */
   let foundJumpedAt = 0;
   let wasShown = false;
@@ -1175,6 +1204,7 @@
       const cam = map.cameraForBounds(ob, { padding: focusPadding() });
       if (!cam) return;
       focused = key;
+      remember();
       // 小さな市町村 1 つでも寄せすぎない (まわりが分かるように)
       map.jumpTo({ ...cam, zoom: Math.min(cam.zoom ?? 9, 10) });
       return;
@@ -1192,7 +1222,18 @@
     const away = appeared && !map.getBounds().contains(center);
     if (key === focused && !away) return;
     focused = key;
+    remember();
     map.jumpTo({ center, zoom: fq ? 4 : Math.max(map.getZoom(), 5.5) });
+  });
+  // 詳しい内容を閉じたら、開く前の位置へ戻す (寄せるときと同じく飛ばさずに jumpTo)。開いている間に人が
+  // 動かしたら戻さない。出ている緊急地震速報があるときも戻さない (震央を見せたままにする)
+  $effect(() => {
+    if (!map || selected || !keeper.open) return;
+    const back = keeper.close();
+    if (untrack(() => eews.some((e) => !e.cancelled))) return;
+    // 閉じたので、同じものをもう一度開いたら寄せ直す
+    focused = "";
+    if (back) map.jumpTo(back);
   });
 </script>
 
