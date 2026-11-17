@@ -18,7 +18,13 @@
 
   import { mutedText } from "#lib/alert.ts";
   import { alerter } from "#lib/alerter.svelte.ts";
-  import { isGrave, openHref, planOpen, targetOf } from "#lib/auto-open.ts";
+  import {
+    followsEew,
+    isGrave,
+    openHref,
+    planOpen,
+    targetOf,
+  } from "#lib/auto-open.ts";
   import AboutDialog from "#lib/components/AboutDialog.svelte";
   import Calendar from "#lib/components/Calendar.svelte";
   import AdvisoryDetail from "#lib/components/detail/AdvisoryDetail.svelte";
@@ -736,6 +742,10 @@
       auto: own,
       holdingEew:
         selEew !== null && pinnedEews.some((e) => e.eventId === selEew.eventId),
+      followsHeldEew:
+        selEew !== null &&
+        target.kind === "quake" &&
+        snap.quakes.some((q) => q.id === target.id && followsEew(q, selEew)),
       dialog: v.about || pushOpen,
     });
     if (!plan) return;
