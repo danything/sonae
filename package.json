@@ -17,7 +17,7 @@
   "devDependencies": {
     "@anyblades/blades": "^3.1.4",
     "@block65/webcrypto-web-push": "^2.0.0",
-    "@iconify-json/lucide": "^1.2.155",
+    "@iconify-json/lucide": "^1.2.156",
     "@maplibre/maplibre-gl-style-spec": "^26.8.0",
     "@sveltejs/adapter-bun": "^1.0.1",
     "@sveltejs/kit": "^3.2.0",

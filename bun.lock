@@ -7,7 +7,7 @@
       "devDependencies": {
         "@anyblades/blades": "^3.1.4",
         "@block65/webcrypto-web-push": "^2.0.0",
-        "@iconify-json/lucide": "^1.2.155",
+        "@iconify-json/lucide": "^1.2.156",
         "@maplibre/maplibre-gl-style-spec": "^26.8.0",
         "@sveltejs/adapter-bun": "^1.0.1",
         "@sveltejs/kit": "^3.2.0",
@@ -38,7 +38,7 @@
 
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@2.2.0", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-JP7OYH38Q7+pyTAe14raZHLQIK7BDKbdwji+Xi3pcd/6QkJYQH3SX4wu6EplGrGJWRepoNzedfm0G3B9Z4e9Rw=="],
 
-    "@iconify-json/lucide": ["@iconify-json/lucide@1.2.155", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-pntdVKUFkr/NA+R5wVvRlpRFCr+wY8xKU1wFjywvOr5taNq8Y6MTfHTZ6v7P5M0pe3LQYUO2rYzKCgIfAhdcDA=="],
+    "@iconify-json/lucide": ["@iconify-json/lucide@1.2.156", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-IOB3g2X+cmpoEPcjEbGfpDWPPzXioeDW2gnYgaNxYSaVEHyM4fQqP2uz29cdRQJbQwo5CTQ8D9NJnATeCQKatQ=="],
 
     "@iconify/types": ["@iconify/types@2.0.0", "", {}, "sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg=="],
 
