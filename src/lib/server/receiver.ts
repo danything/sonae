@@ -11,6 +11,7 @@ import type { SourceStatus } from "#lib/model.ts";
 import { Broker } from "./broker.ts";
 import { db } from "./db.ts";
 import { Pusher, vapidFromEnv } from "./push.ts";
+import { RtsBoard } from "./rts-board.ts";
 import { publicOrigin } from "./site.ts";
 import { cwaSource } from "./sources/cwa.ts";
 import { emscSource } from "./sources/emsc.ts";
@@ -19,7 +20,8 @@ import { bosaiTsunamiSource } from "./sources/jma-bosai.ts";
 import { jmaSource, jmaWeatherSource } from "./sources/jma.ts";
 import { p2pSource } from "./sources/p2p.ts";
 import { ptwcSource } from "./sources/ptwc.ts";
-import { RtsBoard, tremSource } from "./sources/trem.ts";
+import { seisSource } from "./sources/seisjs.ts";
+import { tremSource } from "./sources/trem.ts";
 import type { Incoming, Source, SourceContext } from "./sources/types.ts";
 import { usgsSource } from "./sources/usgs.ts";
 import { wolfxSource } from "./sources/wolfx.ts";
@@ -43,6 +45,8 @@ interface App {
    * DB にも Broker にも入れないので、Web Push・Webhook・読み上げには届かない (docs/design.md の 2.9)
    */
   rts: RtsBoard;
+  /** Wolfx SeisJS の観測点のいまの揺れ。`rts` と同じく地図の点の色だけ (docs/design.md の 2.10) */
+  seis: RtsBoard;
   /** 読み上げの音を作る VOICEVOX。`VOICEVOX_URL` が無ければ無い (画面は端末の読み上げで読む) */
   voice?: Voicevox;
   stopVoice?: () => void;
@@ -66,6 +70,11 @@ export function app(): App {
       pusher: vapid ? new Pusher(d, vapid) : undefined,
       webhooks: new Webhooks(d, { origin: publicOrigin() }),
       rts: new RtsBoard(),
+      // SeisJS は観測点ごとに約 1 秒ごとに来る。見た目が変わらなければ 5 秒に 1 回だけ配る (画面は 10 秒で灰色に戻す)
+      seis: new RtsBoard(Date.now, {
+        events: { stations: "seis-stations", frame: "seis" },
+        minRepeatMs: 5_000,
+      }),
       voice: voicevoxFromEnv(d),
     };
   }
@@ -132,6 +141,19 @@ export function startReceiving(): void {
     });
     console.log("[trem] SONAE_TREM=off なので、TREM の受信は切ってあります");
   } else a.sources.push(tremSource(a.rts, { onStatus: ctx.onStatus }));
+  // 有志の観測点の揺れ (Wolfx SeisJS)。受けたものは a.seis に入れるだけ。帯域を食う (1 日 800MB ほど) ので
+  // `SONAE_SEISJS=off` で切れるようにしておく (docs/install.md)
+  if (process.env.SONAE_SEISJS?.trim().toLowerCase() === "off") {
+    a.off.push({
+      id: "seisjs",
+      state: "off",
+      reason: "SONAE_SEISJS=off で切ってあります",
+      since: new Date().toISOString(),
+    });
+    console.log(
+      "[seisjs] SONAE_SEISJS=off なので、SeisJS の受信は切ってあります",
+    );
+  } else a.sources.push(seisSource(a.seis, { onStatus: ctx.onStatus }));
   // 台湾の中央氣象署は授権碼が要る。無ければ作らない (docs/cwa.md)
   const cwa = cwaSource(ctx);
   if (cwa) a.sources.push(cwa);

@@ -16,14 +16,12 @@
  */
 
 import type { SourceStatus } from "#lib/model.ts";
-import {
-  RTS_STALE_MS,
-  type RtsFrame,
-  type RtsStation,
-  type RtsStations,
-} from "#lib/rts.ts";
+import type { RtsStation } from "#lib/rts.ts";
 
+import { RtsBoard } from "../rts-board.ts";
 import { sleep, StatusTracker, USER_AGENT } from "./retry.ts";
+
+export { RtsBoard };
 import type { Source } from "./types.ts";
 
 const TREM_RTS_URL = "https://api.lb.exptech.dev/api/v1/trem/sse/rts";
@@ -132,73 +130,6 @@ export function tremDelay(
   const base = Math.min(60_000, 3_000 * 2 ** Math.min(attempt, 10));
   const d = base + Math.round(random() * 1_000);
   return limited ? Math.max(60_000, d) : d;
-}
-
-type Listener = (frame: string, data: RtsFrame | RtsStations) => void;
-
-/**
- * いまの揺れと観測点の表 (メモリだけ)。開いている画面の SSE (`/api/stream` の notices) が購読する。
- * 値は DB に入れない
- */
-export class RtsBoard {
-  private stationsById = new Map<string, RtsStation>();
-  private last: { receivedAt: number; frame: RtsFrame } | undefined;
-  private listeners = new Set<(kind: "rts" | "rts-stations") => void>();
-
-  constructor(private readonly clock: () => number = Date.now) {}
-
-  setStations(m: Map<string, RtsStation>): void {
-    this.stationsById = m;
-    this.emit("rts-stations");
-  }
-
-  stations(): RtsStations {
-    return { stations: [...this.stationsById.values()] };
-  }
-
-  /** スナップショットを受けた。位置の分かる観測点だけを、画面に送る形にする */
-  put(i: Map<string, number>): RtsFrame {
-    const points: [number, number, number][] = [];
-    for (const [id, v] of i) {
-      const at = this.stationsById.get(id);
-      if (at) points.push([at[0], at[1], Math.round(v * 10) / 10]);
-    }
-    const now = this.clock();
-    const frame = { at: new Date(now).toISOString(), points };
-    this.last = { receivedAt: now, frame };
-    this.emit("rts");
-    return frame;
-  }
-
-  /** いまの揺れ。古ければ (`RTS_STALE_MS`) 無し */
-  current(staleMs = RTS_STALE_MS): RtsFrame | undefined {
-    if (!this.last) return undefined;
-    return this.clock() - this.last.receivedAt < staleMs
-      ? this.last.frame
-      : undefined;
-  }
-
-  /** 変わったら呼ぶ。やめる関数を返す */
-  subscribe(fn: Listener): () => void {
-    const relay = (kind: "rts" | "rts-stations") => {
-      if (kind === "rts") {
-        const f = this.last?.frame;
-        if (f) fn("rts", f);
-      } else fn("rts-stations", this.stations());
-    };
-    this.listeners.add(relay);
-    return () => this.listeners.delete(relay);
-  }
-
-  private emit(kind: "rts" | "rts-stations"): void {
-    for (const fn of this.listeners) {
-      try {
-        fn(kind);
-      } catch (err) {
-        console.warn(`[trem] 配れませんでした: ${err}`);
-      }
-    }
-  }
 }
 
 export interface TremOptions {

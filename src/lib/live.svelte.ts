@@ -83,6 +83,10 @@ export class Live {
   rtsStations = $state.raw<RtsStation[]>([]);
   rts = $state.raw<RtsFrame | null>(null);
   private rtsTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Wolfx SeisJS の観測点の位置と、いまの揺れ (2.10)。扱いは TREM-RTS と同じ */
+  seisStations = $state.raw<RtsStation[]>([]);
+  seis = $state.raw<RtsFrame | null>(null);
+  private seisTimer: ReturnType<typeof setTimeout> | undefined;
   connected = $state(false);
   /** ブラウザで load の中身を入れた (サーバーの描画では false のまま、load の data を使う) */
   seeded = $state(false);
@@ -222,6 +226,14 @@ export class Live {
       this.rtsTimer = setTimeout(() => (this.rts = null), RTS_STALE_MS);
   }
 
+  /** SeisJS のいまの揺れ。`setRts` と同じく `RTS_STALE_MS` 次が届かなければ消す */
+  setSeis(frame: RtsFrame | null): void {
+    clearTimeout(this.seisTimer);
+    this.seis = frame && Array.isArray(frame.points) ? frame : null;
+    if (this.seis)
+      this.seisTimer = setTimeout(() => (this.seis = null), RTS_STALE_MS);
+  }
+
   /**
    * `onResync`: 長く切れていて、埋め直しが上限を超えたときに呼ぶ (サーバーが `event: resync` を送る)。
    * 一覧を取り直す (load を走らせ直し、seed で入れ替える)。
@@ -313,6 +325,16 @@ export class Live {
         seen();
         this.setRts(JSON.parse((m as MessageEvent).data) as RtsFrame);
       });
+      // SeisJS の観測点の表といまの揺れ (扱いは上の台湾の観測点と同じ)
+      es.addEventListener("seis-stations", (m) => {
+        seen();
+        const d = JSON.parse((m as MessageEvent).data) as Partial<RtsStations>;
+        if (Array.isArray(d.stations)) this.seisStations = d.stations;
+      });
+      es.addEventListener("seis", (m) => {
+        seen();
+        this.setSeis(JSON.parse((m as MessageEvent).data) as RtsFrame);
+      });
       es.addEventListener("resync", () => {
         seen();
         onResync();
@@ -368,6 +390,7 @@ export class Live {
       clearTimeout(retry);
       clearTimeout(stable);
       this.setRts(null);
+      this.setSeis(null);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("pageshow", onShow);

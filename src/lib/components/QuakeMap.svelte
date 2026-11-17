@@ -95,6 +95,8 @@
     foreignQuake = null,
     rtsStations = [],
     rts = null,
+    seisStations = [],
+    seis = null,
     warnings = [],
     office = null,
     officeHref,
@@ -130,6 +132,9 @@
     /** 台湾の観測点 (TREM-RTS) の位置と、いまの揺れ (点の色だけ。docs/design.md の 2.9) */
     rtsStations?: RtsStation[];
     rts?: RtsFrame | null;
+    /** Wolfx SeisJS の観測点の位置と、いまの揺れ (台湾の観測点と同じ扱い。docs/design.md の 2.10) */
+    seisStations?: RtsStation[];
+    seis?: RtsFrame | null;
     /** 地図が見えているか (スマホの形で一覧の面が上にある間は false) */
     shown?: boolean;
     /** 検索の欄で選んだ場所 (寄せて印を置く。`n` が替わるたびに寄せる) */
@@ -429,6 +434,16 @@
     if (src && "setData" in src)
       (src as { setData(d: unknown): void }).setData(
         rtsFeatures(rtsStations, rts),
+      );
+  });
+
+  // 有志の観測点 (Wolfx SeisJS)。見た目が変わったときと 5 秒ごとに届く
+  $effect(() => {
+    if (!map) return;
+    const src = map.getSource("seis");
+    if (src && "setData" in src)
+      (src as { setData(d: unknown): void }).setData(
+        rtsFeatures(seisStations, seis),
       );
   });
 
