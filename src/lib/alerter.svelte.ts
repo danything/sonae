@@ -118,8 +118,11 @@ class Alerter {
   private rings = 0;
   /** 読み上げの回数。新しい読み上げが始まったら、前のものを止める */
   private speaking = 0;
-  /** 読み上げている最中 (文と文の間に、無音で動かして割り込まない) */
-  private reading = false;
+  /**
+   * 読み上げている最中 (文と文の間に、無音で動かして割り込まない)。画面はこの間だけ「読み上げ中断」を出す。
+   * 最初の文の音を取りに行っている間も含む
+   */
+  reading = $state(false);
 
   /** VOICEVOX で読める */
   get voicevox(): boolean {
@@ -730,6 +733,19 @@ class Alerter {
     } finally {
       if (id === this.speaking) this.reading = false;
     }
+  }
+
+  /**
+   * いまの読み上げを止める (画面の「読み上げ中断」と Esc)。読んでいる文も、同じ読み上げの残りの文も読まない。
+   * 音と読み上げの設定はそのまま (次に届いた報は、いつもどおり鳴らして読む)
+   */
+  stopReading(): void {
+    if (!this.reading) return;
+    // 回数を進めると、読み上げの繰り返しが次の文へ進まずに抜ける
+    this.speaking++;
+    this.reading = false;
+    this.voiceAudio?.pause();
+    if (this.speechSupported) speechSynthesis.cancel();
   }
 
   /** VOICEVOX の音を鳴らし、終わるまで待つ */

@@ -12,6 +12,7 @@
   import Info from "~icons/lucide/info";
   import List from "~icons/lucide/list";
   import MapIcon from "~icons/lucide/map";
+  import Square from "~icons/lucide/square";
   import TriangleAlert from "~icons/lucide/triangle-alert";
   import VolumeX from "~icons/lucide/volume-x";
 
@@ -827,6 +828,30 @@
     field.select();
   }
 
+  /**
+   * 読み上げている間の Esc で、読み上げを止める (「読み上げ中断」と同じ)。Esc を先に使うもの (メニュー・
+   * 検索の候補・窓) が使ったとき (`defaultPrevented`) と、欄に打っている間・窓を開いている間は止めない
+   */
+  function stopShortcut(event: KeyboardEvent): void {
+    if (
+      event.key !== "Escape" ||
+      event.defaultPrevented ||
+      event.isComposing ||
+      !alerter.reading
+    )
+      return;
+    const target = event.target;
+    if (
+      target instanceof HTMLElement &&
+      (target.isContentEditable ||
+        target.closest("input, textarea, select, dialog") !== null)
+    )
+      return;
+    if (document.querySelector("dialog[open]") !== null) return;
+    event.preventDefault();
+    alerter.stopReading();
+  }
+
   const title = $derived(
     selQuake
       ? `${quakeName(selQuake)} ${jst(quakeTime(selQuake))} - sonae`
@@ -870,7 +895,12 @@
   const user = $derived(data.user);
 </script>
 
-<svelte:window onkeydown={searchShortcut} />
+<svelte:window
+  onkeydown={(event) => {
+    searchShortcut(event);
+    stopShortcut(event);
+  }}
+/>
 
 <svelte:head>
   <title>{title}</title>
@@ -1193,6 +1223,24 @@
         <span class="mute-body">{m.body}</span>
       </span>
       <span class="mute-action">音を出す</span>
+    </button>
+  {/if}
+
+  {#if alerter.reading}
+    <!--
+      読み上げている間だけ、地図の左下 (スマホの形は dock のすぐ上の左) に浮かせる。押すといまの読み上げを止める
+      (音と読み上げの設定は変えない)。Esc でも止まる
+    -->
+    <button
+      type="button"
+      class="small speech-stop"
+      onclick={() => alerter.stopReading()}
+      aria-keyshortcuts="Escape"
+      title="読み上げ中断 (Esc)"
+      data-testid="speech-stop"
+    >
+      <Icon icon={Square} size={1} />
+      読み上げ中断
     </button>
   {/if}
 
@@ -1628,6 +1676,34 @@
     50% {
       opacity: 0.55;
       transform: scale(1.15);
+    }
+  }
+  /*
+   * 読み上げ中断。動く中身 (地図・一覧) の上に重なるので、主のボタンと同じく操作の層に浮かせる。
+   * 広い形は地図の左下 (右下はハザードマップの選択・現在地・出典)、スマホの形は dock のすぐ上の左。
+   * 出るときは透明度と transform だけで少し下から出る
+   */
+  .speech-stop {
+    position: fixed;
+    left: calc(2 * var(--so-space-3));
+    bottom: calc(2 * var(--so-space-3));
+    z-index: var(--so-z-dock);
+    gap: var(--so-space-2);
+    margin: 0;
+    white-space: nowrap;
+    animation: speech-stop-enter var(--so-duration-enter) var(--so-ease-spring)
+      both;
+  }
+  :global(:where(html[data-phone])) .speech-stop {
+    left: var(--so-dock-inset);
+    bottom: calc(
+      var(--so-tabbar) + var(--so-dock-gap) + var(--dock-h) + var(--so-space-2)
+    );
+  }
+  @keyframes speech-stop-enter {
+    from {
+      opacity: 0;
+      transform: translateY(0.5rem);
     }
   }
   /* 受信に問題があるときだけの注意の印 (押すと情報源ごとの受信) */
