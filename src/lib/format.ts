@@ -81,6 +81,7 @@ export const SOURCE_LABEL: Record<SourceId, string> = {
   ptwc: "PTWC (米国 太平洋津波警報センター)",
   "jma-bosai": "気象庁ホームページ (国際津波)",
   trem: "ExpTech TREM (台湾の観測点の揺れ・非公式)",
+  seisjs: "Wolfx SeisJS (有志の観測点の揺れ・非公式)",
 };
 
 const SOURCE_STATE: Record<SourceStatus["state"], string> = {

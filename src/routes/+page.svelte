@@ -1352,6 +1352,8 @@
         foreignQuake={selForeign}
         rtsStations={live.rtsStations}
         rts={live.rts}
+        seisStations={live.seisStations}
+        seis={live.seis}
         warnings={snap.warnings}
         office={selOffice?.office.code ?? null}
         officeHref={(code) =>

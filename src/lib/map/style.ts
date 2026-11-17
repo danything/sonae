@@ -55,6 +55,10 @@ export const BLUE_MARBLE_ATTRIBUTION = `Blue Marble: NASA Earth Observatory | <a
 export const RTS_ATTRIBUTION =
   '資料來源：ExpTech Studio TREM（<a href="https://exptech.dev" target="_blank" rel="noopener">exptech.dev</a>）・非商業使用・非官方資訊，以中央氣象署發布為準';
 
+/** 有志の観測点の揺れ (Wolfx SeisJS) の出典。Wolfx から返事をもらった書き方 (全文は `#lib/notice.ts` の CREDITS) */
+export const SEIS_ATTRIBUTION =
+  '<a href="https://wolfx.jp/seisapi" target="_blank" rel="noopener">Wolfx Project (SeisJS)</a>・非公式';
+
 export const JMA_GIS_ATTRIBUTION =
   '<a href="https://www.data.jma.go.jp/developer/gis.html" target="_blank" rel="noopener">気象庁 予報区等 GIS データ</a> を加工';
 
@@ -417,6 +421,10 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "台湾の観測点の揺れ (非公式)",
     note: "ExpTech の観測網 TREM-net の台湾の観測点。ふだんは小さな灰色の点で、地震の間だけ、揺れた観測点をいまの揺れ (計測震度) に当たる震度の色で塗ります。中央氣象署の発表ではない非公式の値で、地図に出すだけです。一覧・音・読み上げ・通知では知らせません。中央氣象署の発表を優先してください",
+  },
+  {
+    label: "有志の観測点の揺れ (非公式)",
+    note: "Wolfx Project の SeisJS に参加している有志の観測点 (いまは中国と台湾の数か所)。値は観測点が計算した計測震度で、0.5 以上なら震度の色で塗り、それ未満は灰色の点です。気象庁や各国の機関の発表ではない非公式の値で、地図に出すだけです。一覧・音・読み上げ・通知では知らせません",
   },
   {
     label: "海外の地震",
@@ -837,6 +845,12 @@ export function baseStyle(
         data: { type: "FeatureCollection", features: [] },
         attribution: RTS_ATTRIBUTION,
       },
+      // 有志の観測点 (Wolfx SeisJS)。点の作り方は TREM-RTS と同じ
+      seis: {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+        attribution: SEIS_ATTRIBUTION,
+      },
       hypocenters: {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -1005,31 +1019,10 @@ export function baseStyle(
           "line-dasharray": [2, 1],
         },
       },
-      // 台湾の観測点のいまの揺れ (TREM-RTS)。震源の丸の下に、小さな点で置く。ふだんは控えた灰色、
-      // 揺れの値が来た観測点だけ震度の色で少し大きく (大きい値ほど上)。押しても何も出さない
-      {
-        id: "rts",
-        type: "circle",
-        source: "rts",
-        paint: {
-          // ズームの補間は式の外側に 1 つだけ (MapLibre の決まり)。中で揺れているかで分ける
-          "circle-radius": [
-            "interpolate",
-            ["linear"],
-            ["zoom"],
-            4,
-            ["case", ["get", "shaking"], 4, 2],
-            9,
-            ["case", ["get", "shaking"], 7, 3.5],
-          ],
-          "circle-color": ["get", "color"],
-          // 灰色の点も写真の上で見分けられる濃さに (震源の丸より小さく、縁は細く)
-          "circle-opacity": ["case", ["get", "shaking"], 0.95, 0.8],
-          "circle-stroke-color": "rgba(0,0,0,0.6)",
-          "circle-stroke-width": ["case", ["get", "shaking"], 1, 0.5],
-        },
-        layout: { "circle-sort-key": ["get", "order"] },
-      },
+      // 台湾の観測点のいまの揺れ (TREM-RTS)。見た目は下の stationLayer
+      stationLayer("rts"),
+      // 有志の観測点のいまの揺れ (Wolfx SeisJS)。見た目は台湾の観測点と同じ
+      stationLayer("seis"),
       {
         id: "hypocenters",
         type: "circle",
@@ -1256,3 +1249,33 @@ export const JAPAN_BOUNDS: [[number, number], [number, number]] = [
   [122, 24],
   [149, 46],
 ];
+
+/**
+ * 観測点のいまの揺れの層 (台湾の TREM-RTS と Wolfx SeisJS)。震源の丸の下に、小さな点で置く。ふだんは控えた灰色、
+ * 揺れの値が来た観測点だけ震度の色で少し大きく (大きい値ほど上)。押しても何も出さない
+ */
+function stationLayer(id: "rts" | "seis") {
+  return {
+    id,
+    type: "circle" as const,
+    source: id,
+    paint: {
+      // ズームの補間は式の外側に 1 つだけ (MapLibre の決まり)。中で揺れているかで分ける
+      "circle-radius": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        4,
+        ["case", ["get", "shaking"], 4, 2],
+        9,
+        ["case", ["get", "shaking"], 7, 3.5],
+      ],
+      "circle-color": ["get", "color"],
+      // 灰色の点も写真の上で見分けられる濃さに (震源の丸より小さく、縁は細く)
+      "circle-opacity": ["case", ["get", "shaking"], 0.95, 0.8],
+      "circle-stroke-color": "rgba(0,0,0,0.6)",
+      "circle-stroke-width": ["case", ["get", "shaking"], 1, 0.5],
+    },
+    layout: { "circle-sort-key": ["get", "order"] },
+  };
+}
