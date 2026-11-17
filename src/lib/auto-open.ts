@@ -50,6 +50,11 @@ export interface OpenState {
   auto: boolean;
   /** いま選んでいるものは、出ている緊急地震速報 (取消を除く) */
   holdingEew: boolean;
+  /**
+   * 開こうとしているものは、いま見ている緊急地震速報と同じ地震の地震情報 (`followsEew`)。
+   * 震度速報などが来たら緊急地震速報の役目は終わっているので、出ている間でも切り替える
+   */
+  followsHeldEew?: boolean;
   /** 窓 (通知・出典と注意) が開いている */
   dialog: boolean;
 }
@@ -64,7 +69,8 @@ export interface OpenPlan {
  * `target` を自動で開くか。開かないときは null。
  *
  * - もう開いているものは開き直さない (命に関わるもので窓が開いていれば、窓だけ閉じる)
- * - 出ている緊急地震速報を見ている間は、ほかの緊急地震速報でなければ替えない
+ * - 出ている緊急地震速報を見ている間は、ほかの緊急地震速報か、同じ地震の地震情報でなければ替えない
+ *   (同じ地震の地震情報は、命に関わらなくても、緊急地震速報を自動で開いたのと同じ扱いで置き換える)
  * - 命に関わらないものは、窓が開いているとき・人がほかのものを選んで見ているときは開かない。
  *   何も選んでいないときと、前に自動で開いたものを見ているときだけ開く
  * - 命に関わるものは、窓を閉じて開く
@@ -77,9 +83,43 @@ export function planOpen(
   const same = s.selected?.kind === target.kind && s.selected.id === target.id;
   if (same)
     return grave && s.dialog ? { replace: true, closeDialog: true } : null;
-  if (s.holdingEew && target.kind !== "eew") return null;
+  if (s.holdingEew && target.kind !== "eew") {
+    if (!s.followsHeldEew) return null;
+    // 緊急地震速報を見ていた続きなので、人がそれを開いていても替える。窓が開いていれば開かない
+    if (s.dialog) return null;
+    return { replace: s.auto, closeDialog: false };
+  }
   if (!grave && (s.dialog || (s.selected !== null && !s.auto))) return null;
   return { replace: s.auto, closeDialog: grave && s.dialog };
+}
+
+/** 結び付けに使う発生時刻のずれの上限 (ミリ秒)。地震識別番号が無いとき (P2P だけの震度速報など) に使う */
+const SAME_QUAKE_MS = 3 * 60_000;
+
+/**
+ * 地震情報が、緊急地震速報と同じ地震のものか。地震識別番号が両方にあればそれで比べ、
+ * 無ければ発生時刻 (震度速報は対象の時刻) が 3 分以内かで見る
+ */
+export function followsEew(
+  quake: {
+    eventId?: string;
+    originTime?: string;
+    reports?: { targetTime?: string }[];
+  },
+  eew: { eventId: string; originTime?: string },
+): boolean {
+  if (quake.eventId) return quake.eventId === eew.eventId;
+  if (!eew.originTime) return false;
+  const e = Date.parse(eew.originTime);
+  const times = [
+    quake.originTime,
+    ...(quake.reports ?? []).map((r) => r.targetTime),
+  ];
+  return times.some((t) => {
+    if (!t) return false;
+    const q = Date.parse(t);
+    return Number.isFinite(q) && Math.abs(q - e) <= SAME_QUAKE_MS;
+  });
 }
 
 /** 開くリンク。いまの query は残し、窓を閉じるときは「出典と注意」も外す */

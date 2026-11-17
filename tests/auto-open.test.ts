@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  followsEew,
   isGrave,
   openHref,
   type OpenState,
@@ -127,6 +128,57 @@ describe("自動で開くか (planOpen)", () => {
       replace: true,
       closeDialog: false,
     });
+  });
+  test("出ている緊急地震速報を見ていても、同じ地震の地震情報なら替える (声と画面を合わせる)", () => {
+    const held = {
+      ...idle,
+      selected: eewTarget,
+      auto: true,
+      holdingEew: true,
+      followsHeldEew: true,
+    } as OpenState;
+    expect(planOpen(quakeTarget, false, held)).toEqual({
+      replace: true,
+      closeDialog: false,
+    });
+    // 人が自分で緊急地震速報を開いていても替える (履歴は積む)
+    expect(planOpen(quakeTarget, false, { ...held, auto: false })).toEqual({
+      replace: false,
+      closeDialog: false,
+    });
+    // 窓が開いていれば替えない
+    expect(planOpen(quakeTarget, false, { ...held, dialog: true })).toBeNull();
+  });
+});
+
+describe("同じ地震か (followsEew)", () => {
+  const e = {
+    eventId: "20261117120000",
+    originTime: "2026-11-17T12:00:00+09:00",
+  };
+  test("地震識別番号があればそれで比べる", () => {
+    expect(followsEew({ eventId: "20261117120000" }, e)).toBe(true);
+    expect(
+      followsEew(
+        { eventId: "20261117121000", originTime: "2026-11-17T12:00:30+09:00" },
+        e,
+      ),
+    ).toBe(false);
+  });
+  test("無ければ発生時刻か震度速報の対象の時刻が 3 分以内か", () => {
+    expect(followsEew({ originTime: "2026-11-17T12:01:00+09:00" }, e)).toBe(
+      true,
+    );
+    expect(
+      followsEew({ reports: [{ targetTime: "2026-11-17T12:01:00+09:00" }] }, e),
+    ).toBe(true);
+    expect(followsEew({ originTime: "2026-11-17T12:10:00+09:00" }, e)).toBe(
+      false,
+    );
+    expect(followsEew({}, e)).toBe(false);
+    expect(
+      followsEew({ originTime: "2026-11-17T12:00:00+09:00" }, { eventId: "x" }),
+    ).toBe(false);
   });
 });
 
