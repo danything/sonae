@@ -122,16 +122,20 @@ Web Push を使えないブラウザでは、「通知」の Web Push の節に�
   - **Android の Edge** がこれに当たる。2025-12 (Edge 143) から、許可は `granted` になり `pushManager.subscribe()` も成功するが、endpoint が `https://permanently-removed.invalid/...` になり、届かないと報告されている
     ([Microsoft Q&A「Edge on Android and push subscription」](https://learn.microsoft.com/en-us/answers/questions/5686199/edge-on-android-and-push-subscription)。モデレーターの回答 "push messages cannot be delivered on Edge for Android in this scenario"。2026-11-15 に確かめた)。
     それより前は登録の途中で例外になることもあった ([同じ件の別の質問](https://learn.microsoft.com/en-us/answers/questions/5781524/))。Microsoft の正式な告知や、直ったという記載は見つからない。
-    caniuse と MDN の互換表には Edge for Android の列が無い
+    caniuse と MDN の互換表には Edge for Android の列が無い。2026-11-18 に Android のタブレットの Edge で受けられた (下の「その後」) ので、少なくともその Edge は届く宛先を返した
   - 文は「このブラウザ (Android の Edge) は…」と名前を添え、Android の Chrome で開く (アプリとして入れるときも Chrome から) ことを案内する。Edge が直って正しい宛先を返せば、そのまま登録できる
 - **登録が例外で止まった** (配信サービスにつながらない など): 例外の名前と、ほかのブラウザで試すことを出す。sonae のサーバーにつながらなかったとき (`fetch` の `TypeError`) は、ブラウザの英語 (「Failed to fetch」) を出さず、「登録できませんでした (つながりません)」と、つながってから押し直すことを出す
 - どれでも、開いている間の OS の通知・音・読み上げ (「開いているとき」) は Web Push と別なので使える、と添える。
-- **Android の Edge は、サイトの通知そのものが使えない** (2026-11-15、Android 10・Edge 157 の実機で確かめた)。
+- **Android の Edge は、許可の窓を出さずに通知を断ることがある。** 2026-11-15 (Android 10・Edge 157 の実機) には、サイトの通知そのものが使えないように見えた。
   `Notification.permission`・`permissions.query`・`pushManager.permissionState` がどれも `denied` で、
-  `requestPermission()` は窓を出さずに断る。Edge の設定にも、サイトの通知を許す項目が無い
+  `requestPermission()` は窓を出さずに断った。Edge の設定にも、サイトの通知を許す項目が見つからなかった
   (「サイトの設定」は「サイトのアクセス許可」と背景の音だけ、「通知」は Edge 自身のお知らせだけ)。
-  なので開いている間の OS の通知も出ない。許可が無いときの文は、設定の道筋ではなく「対応していない。Android の Chrome で開く。Edge のままでも開いている間の音と読み上げは使える」を出す
-  (`permissionDeniedText`)。「通知」の窓の下の「ブラウザの通知の状態」で、ブラウザが返す値をそのまま見られる
+  なので開いている間の OS の通知も出なかった。「通知」の窓の下の「ブラウザの通知の状態」で、ブラウザが返す値をそのまま見られる
+  - **その後 (2026-11-18、Android のタブレットの Edge の実機で確かめた):** 最初は同じく許可の窓が出なかったが、このサイトのデータ (ブラウザのデータ) を消すと「Get notifications? From s.doany.io / Allow」の窓が出た。
+    許可すると Web Push を受けられた。なので Android の Edge でもサイトの通知は使える。前に窓が出なかったのは、前の拒否 (または前の状態) を Edge が覚えていたためと考えている (確かめてはいない)。
+    11-15 の端末でデータを消して確かめ直してはいない。11-18 の端末で、Edge の設定にサイトの通知を許す項目があるかは見ていない。Edge のバージョンも控えていない
+  - 許可が無いときの文 (`permissionDeniedText`) は、Android の Edge では鍵の印の道筋ではなく「このサイトのデータを消すと許可の窓がまた出る。Edge のメニューの設定で消してから押し直す。消すと端末に覚えた設定とログインも消える。窓が出ないままなら Android の Chrome で開く」を出す。
+    Android の Edge の設定の項目の名前 (日本語) は確かめていないので、文には「設定」より先の名前を書かない。届かない宛先を返したとき (上) は、宛先で決めるので変えない
 
 ## 届かないとき
 

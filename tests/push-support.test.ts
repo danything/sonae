@@ -141,16 +141,23 @@ describe("通知の許可が無いときの文", () => {
   const EDGE_DESKTOP =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.3650.97";
 
-  test("Android の Edge は、通知に対応していないことと Chrome を言う (設定の道筋は出さない)", () => {
-    for (const t of [
-      permissionDeniedText(EDGE_ANDROID, { asked: true, quiet: true }),
-      permissionDeniedText(EDGE_ANDROID),
-    ]) {
-      expect(t).toStartWith(
-        "Android の Edge は、サイトの通知に対応していません",
-      );
+  test("Android の Edge は、このサイトのデータを消すと窓がまた出ることを言う (鍵の印の道筋は出さない)", () => {
+    const quiet = permissionDeniedText(EDGE_ANDROID, {
+      asked: true,
+      quiet: true,
+    });
+    expect(quiet).toStartWith("ブラウザが許可の窓を出さずに、通知を断りました");
+    expect(permissionDeniedText(EDGE_ANDROID)).toStartWith(
+      "通知が許可されていません。",
+    );
+    for (const t of [quiet, permissionDeniedText(EDGE_ANDROID)]) {
+      expect(t).toContain("このサイトのデータを消すと、許可の窓がまた出ます");
+      expect(t).toContain("ログインも消えます");
+      // 代わりの手として残す
       expect(t).toContain("Android の Chrome");
+      expect(t).not.toContain("対応していません");
       expect(t).not.toContain("サイトのアクセス許可");
+      expect(t).not.toContain("通知の要求を静かにする");
     }
   });
 
