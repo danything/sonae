@@ -665,6 +665,7 @@
   afterNavigate(() => {
     retract = false;
     touched = null;
+    lastTop = listBox?.scrollTop ?? 0;
   });
   $effect(() => {
     if (tab === "map") retract = false;
