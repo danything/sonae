@@ -1,6 +1,6 @@
 <script lang="ts">
   import { browser } from "$app/env";
-  import { goto } from "$app/navigation";
+  import { afterNavigate, goto } from "$app/navigation";
   import { page } from "$app/state";
   import { tick, untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
@@ -98,6 +98,7 @@
     type ThemeMode,
     writePref,
   } from "#lib/prefs.ts";
+  import { nextRetract, RETRACT_SHORT, touchedInside } from "#lib/retract.ts";
   import {
     dayKey,
     dayLabel,
@@ -627,17 +628,44 @@
     if (query.trim() === "") found = null;
   });
   let listBox = $state<HTMLElement>();
-  /** 一覧を下へ読んでいる間は、下のタブと dock を引っ込める (動きは CSS) */
+  /**
+   * 低い画面で一覧を下へ読んでいる間は、dock を引っ込める (下のタブはいつも出す。denpa と同じ条件。`#lib/retract.ts`)。
+   * JS は印 (`data-retract`) を付け外しするだけで、動きは CSS
+   */
   let retract = $state(false);
   let lastTop = 0;
+  /** 最後に人が触った所 (ホイール・指・押す・キー)。一覧の箱の中なら、その巻き取りを見る */
+  let touched: EventTarget | null = null;
   function onListScroll() {
     if (!listBox) return;
     const y = listBox.scrollTop;
-    if (y < 48) retract = false;
-    else if (y - lastTop > 4) retract = true;
-    else if (lastTop - y > 4) retract = false;
+    if (touchedInside(listBox, touched))
+      retract = nextRetract(retract, y, lastTop, short.matches);
     lastTop = y;
   }
+  const short =
+    typeof matchMedia === "function"
+      ? matchMedia(RETRACT_SHORT)
+      : ({ matches: false } as Pick<MediaQueryList, "matches">);
+  $effect(() => {
+    const own = (event: Event) => (touched = event.target);
+    const onShort = () => {
+      if (!short.matches) retract = false;
+    };
+    const OWN = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
+    for (const type of OWN)
+      addEventListener(type, own, { capture: true, passive: true });
+    (short as MediaQueryList).addEventListener?.("change", onShort);
+    return () => {
+      for (const type of OWN) removeEventListener(type, own, { capture: true });
+      (short as MediaQueryList).removeEventListener?.("change", onShort);
+    };
+  });
+  // 画面を移ったら (選ぶ・戻る) 出し、触った所も忘れる
+  afterNavigate(() => {
+    retract = false;
+    touched = null;
+  });
   $effect(() => {
     if (tab === "map") retract = false;
   });
@@ -1941,7 +1969,7 @@
     width: min(22rem, calc(100vw - 2 * var(--so-dock-inset)));
   }
 
-  /* 下のタブ (いつも浮いた操作の層。denpa と同じ形) */
+  /* 下のタブ (いつも浮いた操作の層。denpa と同じ形)。一覧を読んでいる間も引っ込めない (`#lib/retract.ts`) */
   :global(:where(html[data-phone])) .tabbar {
     position: fixed;
     inset: auto var(--so-dock-inset)
@@ -1954,12 +1982,6 @@
     border-radius: 2rem;
     background: var(--so-float);
     box-shadow: var(--so-shadow-pop);
-    transition: transform var(--so-duration-move) var(--so-ease-spring);
-  }
-  :global(:where(html[data-phone]))
-    .shell[data-retract]
-    .tabbar:not(:has(:focus-visible)) {
-    transform: translateY(calc(100% + 0.5rem + env(safe-area-inset-bottom)));
   }
   .tabbar .tab {
     position: relative;
