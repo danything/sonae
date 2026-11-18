@@ -358,3 +358,15 @@ export function pushEndpointOk(endpoint: string): boolean {
     (h) => url.hostname === h || url.hostname.endsWith(`.${h}`),
   );
 }
+
+/**
+ * 試しの通知を送った結果 (`POST /api/push/test` の `result`) を、「通知」の窓に出す文にする。
+ * サーバーは配信サービスが断ったときも 200 で返すので、`result` を見ないと「送りました」と言ってしまう
+ */
+export function pushTestText(result: unknown): string {
+  if (result === "ok")
+    return "送りました。届かないときは、端末の通知の設定を見てください。";
+  if (result === "gone")
+    return "購読が切れていたので、サーバーの登録を消しました。「このブラウザで受ける」で受け直してください。";
+  return "送れませんでした。配信サービスが受け付けませんでした。";
+}

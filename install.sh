@@ -124,7 +124,7 @@ env_template() {
       '# OIDC_CLIENT_SECRET=' \
       '# 通すロール (既定 admin)' \
       '# OIDC_ROLE=admin' \
-      '# 外から https で開くなら、その URL (ログインの戻り先と Web Push の連絡先に使う)' \
+      '# 外から https で開くなら、その URL (ログインの戻り先と Webhook の本文のリンクに使う)' \
       '# PUBLIC_URL=https://sonae.example.com' \
       '# 台湾の中央氣象署の授権碼 (docs/cwa.md)' \
       '# CWA_API_KEY=' > "$1"

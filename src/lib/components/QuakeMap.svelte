@@ -581,7 +581,7 @@
         };
       },
       (err) => {
-        // 許可されなかったときは追うのをやめ、覚えたオンも消す。一時的に取れないだけなら追い続ける
+        // 許可されなかったときは追うのをやめ、オフを覚える (聞き直さない)。一時的に取れないだけなら追い続ける
         if (err.code === err.PERMISSION_DENIED) {
           stopLocating();
           rememberLocate(false);
@@ -632,7 +632,7 @@
         status = await navigator.permissions.query({ name: "geolocation" });
         p = status.state;
       } catch {
-        // query が無い・geolocation を聞けないブラウザでは始めない (押せば始まる)
+        // query が無い・geolocation を聞けないブラウザは unknown のまま (autoLocate が決める。まだ選んでいなければ聞く)
       }
       if (gone) return;
       apply(p);
@@ -760,7 +760,7 @@
   /** メニューを出した所 (地図の箱の中の px) と、その緯度・経度 */
   let place = $state<{ x: number; y: number; lat: number; lon: number }>();
   let placeMenu = $state(false);
-  /** メニューの操作の結果の知らせ (地図の下に少しの間だけ出す) */
+  /** メニューの操作の結果の知らせ (地図の上の真ん中に少しの間だけ出す) */
   let placeNote = $state("");
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
 

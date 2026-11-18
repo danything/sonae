@@ -187,7 +187,10 @@ export const CREDITS: Credit[] = [
     // 出典の書き方は Wolfx に確かめた (2026-11-17)
     label: "有志の観測点の揺れ",
     parts: [
-      { text: "Wolfx Project (SeisJS)", href: "https://wolfx.jp/seisapi" },
+      {
+        text: "Wolfx Project (SeisJS)",
+        href: "https://wolfx.jp/docs/seisjs-api/",
+      },
       "。SeisJS に参加している有志の観測点が計算した、いまの揺れ (計測震度) を地図の点の色で出しています。気象庁や各国の機関の発表ではない非公式の値で、遅れたり誤ったりすることがあります。公式の発表を優先してください。sonae はこの値を地図に出すだけで、一覧・音・読み上げ・通知では知らせません",
     ],
   },

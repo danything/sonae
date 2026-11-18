@@ -1,6 +1,7 @@
 /** 画面の書き方。時刻はいつも日本時間で出す (気象庁の発表に合わせる) */
 
 import type {
+  ForeignSource,
   Hypocenter,
   Quake,
   SourceId,
@@ -66,6 +67,14 @@ export const STATUS_LABEL: Record<Status, string> = {
   normal: "",
   training: "訓練",
   test: "試験",
+};
+
+/** 海外の地震の情報源の短い名前 (一覧の行の 2 段目) */
+export const FOREIGN_SOURCE_SHORT: Record<ForeignSource, string> = {
+  usgs: "USGS",
+  emsc: "EMSC",
+  geonet: "GeoNet",
+  cwa: "中央氣象署",
 };
 
 /** 情報源の名前 (受信の状態・詳しい内容・起動のログ) */

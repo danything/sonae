@@ -51,6 +51,7 @@
   import { activeEews } from "#lib/eew.ts";
   import {
     depthText,
+    FOREIGN_SOURCE_SHORT,
     jst,
     jstClock,
     jstTime,
@@ -300,7 +301,7 @@
         "海外の地震",
         x.magnitude === undefined ? "" : `M${x.magnitude.toFixed(1)}`,
         x.depthKm === undefined ? "" : `深さ 約 ${Math.round(x.depthKm)} km`,
-        x.reports.map((r) => r.source.toUpperCase()).join("・"),
+        x.reports.map((r) => FOREIGN_SOURCE_SHORT[r.source]).join("・"),
       ]
         .filter(Boolean)
         .join("・"),
@@ -468,7 +469,7 @@
       title: placeName(e.hypocenter),
       meta: [
         e.kind === "warning" ? "緊急地震速報 (警報)" : "緊急地震速報 (予報)",
-        `第 ${e.serial} 報${e.final ? " (最終)" : ""}`,
+        `第 ${e.serial} 報${e.final ? " (最終報)" : ""}`,
         e.magnitude !== undefined ? magnitudeText(e) : "",
         e.warnAreas.length > 0 ? e.warnAreas.join("、") : "",
       ]
