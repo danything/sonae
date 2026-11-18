@@ -7,9 +7,6 @@ ENV NODE_ENV=production
 COPY package.json bun.lock ./
 RUN bun i --frozen-lockfile
 COPY . .
-# 公開のワークフローがコミットを渡す (開いているタブが古いバージョンだと気づくのに使う予定)
-ARG APP_VERSION
-ENV APP_VERSION=$APP_VERSION
 RUN bun run build
 
 # 配信用の distroless にはシェルが無いので、PVC を重ねるディレクトリはここで作り、持ち主ごと写す
