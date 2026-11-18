@@ -86,3 +86,15 @@ export function connectionNotification(
     options: { ...shape.options, silent: down ? silent : true },
   };
 }
+
+/**
+ * 受信に問題があるときの、ヘッダー (スマホの形は dock) の注意の印の一言 (docs/ui.md)。
+ * 画面への配信が切れたときも、読み上げと OS の通知の「受信が切れました」にそろえて「受信」と呼ぶ。
+ * `short` は dock の印の aria-label (「再接続しています」を付けない)
+ */
+export const troubleLabel = (connected: boolean, short = false): string =>
+  connected
+    ? "受信に問題があります"
+    : short
+      ? "受信が切れています"
+      : "受信が切れています・再接続しています";

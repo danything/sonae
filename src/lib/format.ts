@@ -69,6 +69,17 @@ export const STATUS_LABEL: Record<Status, string> = {
   test: "試験",
 };
 
+/**
+ * 訓練・試験の緊急地震速報の詳しい内容の先頭に、大きく出す文 (通常は空)。
+ * 訓練・試験は一覧と地図に出さなくても (`SONAE_TRAINING` がオフ)、`?e=<識別番号>` のリンクでは開くので、
+ * 本物と取り違えないようにする (docs/design.md の 2.2)
+ */
+export const EEW_DRILL_NOTE: Record<Status, string> = {
+  normal: "",
+  training: "訓練の緊急地震速報です。実際の地震ではありません。",
+  test: "試験の緊急地震速報です。実際の地震ではありません。",
+};
+
 /** 海外の地震の情報源の短い名前 (一覧の行の 2 段目) */
 export const FOREIGN_SOURCE_SHORT: Record<ForeignSource, string> = {
   usgs: "USGS",

@@ -39,6 +39,7 @@ export const load: PageServerLoad = ({ url }) => {
         ? (store.weatherInfo(id) ?? null)
         : null,
     foreign: kind === "foreign" && id ? (store.foreignQuake(id) ?? null) : null,
+    // 訓練・試験は `SONAE_TRAINING` がオフでも、リンクで開けば出す (画面が先頭に「訓練」「試験」を大きく出す。docs/design.md の 2.2)
     eew:
       kind === "eew" && id
         ? (store.eew(id) ??
