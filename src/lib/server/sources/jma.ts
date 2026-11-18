@@ -4,7 +4,8 @@
  *
  * - `If-None-Match` と `If-Modified-Since` を付ける (変わっていなければ 304)。`Cache-Control: max-age=60`
  *   なので 60 秒より短くしない
- * - 一度取った電文は取り直さない (Atom の id を raw_messages に持つ)
+ * - 一度取った電文は取り直さない (Atom の id を raw_messages に持つ)。404・410 が返った電文も、
+ *   そのフィードに載っている間は取り直さない (メモリに持つ。5xx などの一時的な失敗は次の回に取り直す)
  * - 起動したときと、取得が 10 分以上途切れた後に、長期フィード (eqvol_l.xml・extra_l.xml) を 1 回だけ読む
  * - 1 日 10GB を超えると IP が遮断される。種別で絞り、知らない種別は取らない
  * - その時点の状態をまるごと持つ種別 (府県予報区ごとの警報・注意報) は、同じ府県予報区のいちばん新しい
@@ -90,6 +91,12 @@ function feedSource(
   const interval = Math.max(60_000, opts.intervalMs ?? 60_000);
   const wait = opts.sleep ?? sleep;
   const cache = new Map<string, { etag?: string; modified?: string }>();
+  /**
+   * フィードごとの、404・410 が返った電文 (Atom の id)。そのフィードを読んで載っていなければ忘れる。
+   * 長期フィードと高頻度のフィードに同じ電文が載るので、どちらかで覚えていれば取りに行かない
+   */
+  const gone = new Map<string, Set<string>>();
+  const isGone = (id: string) => [...gone.values()].some((s) => s.has(id));
   const tag = `[${kind.id}]`;
 
   /**
@@ -107,7 +114,7 @@ function feedSource(
     });
     if (res.status === 304) return;
     if (!res.ok) throw new Error(`フィードが ${res.status} を返しました`);
-    if (!(await take(parseFeed(await res.text()), signal))) return;
+    if (!(await take(url, parseFeed(await res.text()), signal))) return;
     cache.set(url, {
       etag: res.headers.get("etag") ?? undefined,
       modified: res.headers.get("last-modified") ?? undefined,
@@ -116,14 +123,20 @@ function feedSource(
 
   /** まだ取っていない電文を、古い順に取って渡す。取れなかった電文があれば false */
   async function take(
+    feedUrl: string,
     entries: FeedEntry[],
     signal: AbortSignal,
   ): Promise<boolean> {
+    const listed = new Set(entries.map((e) => e.id));
+    const missing = new Set(
+      [...(gone.get(feedUrl) ?? [])].filter((id) => listed.has(id)),
+    );
+    gone.set(feedUrl, missing);
     const todo = latestSnapshots(
       entries.filter((e) => kind.wanted.has(e.code)),
       kind.snapshot,
     )
-      .filter((e) => !ctx.seen(kind.id, e.id))
+      .filter((e) => !isGone(e.id) && !ctx.seen(kind.id, e.id))
       .reverse();
     let all = true;
     for (const e of todo) {
@@ -135,9 +148,11 @@ function feedSource(
       if (!res.ok) {
         log(`${tag} ${e.url} が ${res.status} を返しました`);
         // 取り直すのは、待てば取れそうなもの (5xx・408・429) だけ。404・410 などは取り直しても
-        // 取れないので、取り残しに数えない (毎回フィードを読み直さない)
+        // 取れないので、取り残しに数えない (毎回フィードを読み直さない)。404・410 は覚えて、
+        // フィードが変わって読み直しても、載っている間は取りに行かない
         if (res.status >= 500 || res.status === 408 || res.status === 429)
           all = false;
+        else if (res.status === 404 || res.status === 410) missing.add(e.id);
         continue;
       }
       const body = await res.text();
