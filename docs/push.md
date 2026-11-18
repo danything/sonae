@@ -131,11 +131,13 @@ Web Push を使えないブラウザでは、「通知」の Web Push の節に�
   `requestPermission()` は窓を出さずに断った。Edge の設定にも、サイトの通知を許す項目が見つからなかった
   (「サイトの設定」は「サイトのアクセス許可」と背景の音だけ、「通知」は Edge 自身のお知らせだけ)。
   なので開いている間の OS の通知も出なかった。「通知」の窓の下の「ブラウザの通知の状態」で、ブラウザが返す値をそのまま見られる
-  - **その後 (2026-11-18、Android のタブレットの Edge の実機で確かめた):** 最初は同じく許可の窓が出なかったが、このサイトのデータ (ブラウザのデータ) を消すと「Get notifications? From s.doany.io / Allow」の窓が出た。
-    許可すると Web Push を受けられた。なので Android の Edge でもサイトの通知は使える。前に窓が出なかったのは、前の拒否 (または前の状態) を Edge が覚えていたためと考えている (確かめてはいない)。
-    11-15 の端末でデータを消して確かめ直してはいない。11-18 の端末で、Edge の設定にサイトの通知を許す項目があるかは見ていない。Edge のバージョンも控えていない
-  - 許可が無いときの文 (`permissionDeniedText`) は、Android の Edge では鍵の印の道筋ではなく「このサイトのデータを消すと許可の窓がまた出る。Edge のメニューの設定で消してから押し直す。消すと端末に覚えた設定とログインも消える。窓が出ないままなら Android の Chrome で開く」を出す。
-    Android の Edge の設定の項目の名前 (日本語) は確かめていないので、文には「設定」より先の名前を書かない。届かない宛先を返したとき (上) は、宛先で決めるので変えない
+  - **その後 (2026-11-18、Android のタブレットの Edge の実機で確かめた。表示は英語):** 最初は同じく許可の窓が出なかったが、Settings → Privacy and security → Clear browsing data (開いた画面のタイトルは「Delete browsing data」) で「Site settings」だけに印を付けて「Delete data」を押すと、「Get notifications? From s.doany.io / Allow」の窓が出た。
+    「Cookies and site data」には印を付けていないので、ログインと端末に覚えた設定は残る。許可すると Web Push を受けられた。なので Android の Edge でもサイトの通知は使える。
+    前に窓が出なかったのは、前の拒否 (または前の状態) を Edge が覚えていたためと考えている (確かめてはいない)。
+    その画面の下には「This will clear your data across all your synced devices signed in to …」と出る。Microsoft アカウントで同期していると、同期しているほかの端末のサイトの設定も消える。
+    11-15 の端末で確かめ直してはいない。11-18 の端末で、Edge の設定にサイトの通知を許す項目があるかは見ていない。Edge のバージョンも控えていない
+  - 許可が無いときの文 (`permissionDeniedText`) は、Android の Edge では鍵の印の道筋ではなく「サイトの設定を消すと許可の窓がまた出る。Edge のメニューの設定 → Privacy and security → Clear browsing data で、Site settings だけに印を付けて消してから押し直す。Cookie など、ほかの項目の印は外す。同期していると、ほかの端末のサイトの設定も消える。窓が出ないままなら Android の Chrome で開く」を出す。
+    項目の名前は英語の表示を基本にし、日本語の表示の「プライバシーとセキュリティ」「サイトの設定」を括弧で添える。「Clear browsing data」の日本語の表示は確かめていないので、英語だけにする。届かない宛先を返したとき (上) は、宛先で決めるので変えない
 
 ## 届かないとき
 

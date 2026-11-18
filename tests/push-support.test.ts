@@ -141,7 +141,7 @@ describe("通知の許可が無いときの文", () => {
   const EDGE_DESKTOP =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.3650.97";
 
-  test("Android の Edge は、このサイトのデータを消すと窓がまた出ることを言う (鍵の印の道筋は出さない)", () => {
+  test("Android の Edge は、閲覧データの Site settings だけを消すと窓がまた出ることを言う (鍵の印の道筋は出さない)", () => {
     const quiet = permissionDeniedText(EDGE_ANDROID, {
       asked: true,
       quiet: true,
@@ -151,8 +151,14 @@ describe("通知の許可が無いときの文", () => {
       "通知が許可されていません。",
     );
     for (const t of [quiet, permissionDeniedText(EDGE_ANDROID)]) {
-      expect(t).toContain("このサイトのデータを消すと、許可の窓がまた出ます");
-      expect(t).toContain("ログインも消えます");
+      expect(t).toContain("サイトの設定を消すと、許可の窓がまた出ます");
+      expect(t).toContain("「Privacy and security」");
+      expect(t).toContain("「Clear browsing data」");
+      expect(t).toContain("「Site settings」(サイトの設定) だけに印を付けて");
+      expect(t).toContain("ほかの項目の印は外します");
+      expect(t).toContain("同期しているほかの端末");
+      // Cookie は消さないので、ログインは消えない
+      expect(t).not.toContain("ログインも消えます");
       // 代わりの手として残す
       expect(t).toContain("Android の Chrome");
       expect(t).not.toContain("対応していません");
