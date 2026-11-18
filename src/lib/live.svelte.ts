@@ -10,6 +10,7 @@ import type {
   Advisory,
   Eew,
   ForeignQuake,
+  LiftedOffice,
   LongPeriod,
   Quake,
   SonaeEvent,
@@ -74,6 +75,11 @@ export class Live {
   volcanoLevels = $state<Volcano[]>([]);
   longPeriods = $state<LongPeriod[]>([]);
   warnings = $state<WeatherWarning[]>([]);
+  /**
+   * 開いている間に、警報・注意報が全部解除された府県予報区 (コードごと)。いまの姿 (`warnings`) からは外れるので、
+   * その府県予報区を見ていた画面が「解除されました」と出すために控える (メモリだけ)
+   */
+  liftedOffices = $state<Record<string, LiftedOffice>>({});
   weatherInfos = $state<WeatherInfo[]>([]);
   statuses = $state<SourceStatus[]>([]);
   /**
@@ -188,6 +194,14 @@ export class Live {
         const w = { ...e.data, released: [] };
         const rest = this.warnings.filter((x) => x.id !== w.id);
         this.warnings = w.areas.length > 0 ? [w, ...rest] : rest;
+        if (
+          w.areas.length === 0 &&
+          !rest.some((x) => x.office.code === w.office.code)
+        )
+          this.liftedOffices = {
+            ...this.liftedOffices,
+            [w.office.code]: { office: w.office, reportedAt: w.reportedAt },
+          };
         return true;
       }
       case "weather":

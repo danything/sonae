@@ -55,6 +55,7 @@
     FOREIGN_SOURCE_SHORT,
     jst,
     jstClock,
+    jstFull,
     jstTime,
     kindText,
     magnitudeText,
@@ -581,6 +582,16 @@
         ) ?? null)
       : null,
   );
+  /** 選んだ府県予報区が一覧に無いとき、全部解除されたと分かればその府県予報区と解除した報の時刻 (分からなければ null) */
+  const selLifted = $derived.by(() => {
+    const id = v.selected?.kind === "weather" ? v.selected.id : "";
+    if (selOffice || !id.startsWith(OFFICE_PREFIX)) return null;
+    const code = id.slice(OFFICE_PREFIX.length);
+    return (
+      live.liftedOffices[code] ??
+      (data.liftedOffice?.office.code === code ? data.liftedOffice : null)
+    );
+  });
   const selWeather = $derived(
     v.selected?.kind === "weather" && !v.selected.id.startsWith(OFFICE_PREFIX)
       ? (snap.weatherInfos.find((x) => x.id === v.selected?.id) ??
@@ -1292,6 +1303,15 @@
             <WarningDetail o={selOffice} />
           {:else if selWeather}
             <WeatherDetail w={selWeather} now={live.now} />
+          {:else if selLifted}
+            <div class="empty-state" data-testid="office-lifted">
+              <p class="bold">
+                {selLifted.office.name}の警報・注意報は解除されました
+              </p>
+              <p class="small muted">
+                {jstFull(selLifted.reportedAt)} 発表。いま出ている警報・注意報はありません。一覧から選んでください。
+              </p>
+            </div>
           {:else}
             <div class="empty-state">
               <p class="bold">この情報はありません</p>

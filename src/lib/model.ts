@@ -737,6 +737,31 @@ export function warningsByOffice(ws: WeatherWarning[]): OfficeWarnings[] {
   );
 }
 
+/** 警報・注意報が全部解除された府県予報区 (一覧に無い `?w=office-…` のリンクを開いたときに出す) */
+export interface LiftedOffice {
+  office: { code: string; name: string };
+  /** 解除した報 (その府県予報区のいちばん新しい報) の時刻 */
+  reportedAt: string;
+}
+
+/**
+ * 府県予報区の報 (種別ごと) から、警報・注意報が全部解除されたと分かるかを決める。
+ * 受けた報があり、どの種別にも出ている市町村等が無ければ解除された。報が無ければ (受けていない・
+ * 訓練と試験だけ) 分からないので null。まだ出ている種別があれば null
+ */
+export function liftedOffice(
+  ws: Pick<WeatherWarning, "office" | "status" | "reportedAt" | "areas">[],
+): LiftedOffice | null {
+  const normal = ws.filter((w) => w.status === "normal");
+  const first = normal[0];
+  if (!first || normal.some((w) => w.areas.length > 0)) return null;
+  const reportedAt = normal.reduce(
+    (t, w) => (Date.parse(w.reportedAt) > Date.parse(t) ? w.reportedAt : t),
+    first.reportedAt,
+  );
+  return { office: first.office, reportedAt };
+}
+
 /** 市町村等ごとのいちばん高い段 (地図を塗る) */
 export function cityLevels(ws: WeatherWarning[]): Map<string, WarningLevel> {
   const out = new Map<string, WarningLevel>();
