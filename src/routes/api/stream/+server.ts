@@ -9,7 +9,7 @@ import type { RequestHandler } from "./$types";
  * 読み上げの声 (`event: voice`、`{ voice }`) は、つないだときと替わったときに送る (2.4)。
  * 台湾の観測点の表 (`event: rts-stations`) といまの揺れ (`event: rts`)、SeisJS の観測点の表 (`event: seis-stations`) と
  * いまの揺れ (`event: seis`) も、つないだときと替わったときに送る (2.9・2.10)。
- * どちらも番号を付けず、埋め直しもしない (いまの値だけ)
+ * どれも番号を付けず、埋め直しもしない (いまの値だけ)
  */
 export const GET: RequestHandler = ({ request, url }) => {
   const { store, broker, voice, rts, seis } = app();

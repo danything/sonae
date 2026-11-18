@@ -123,7 +123,7 @@ describe("oidc", () => {
       verify(await idToken({ ...base, exp: base.exp - 7200 }), "n1", NOW),
     ).rejects.toThrow(/期限/);
     await expect(verify(await idToken(base), "other", NOW)).rejects.toThrow(
-      /合言葉/,
+      /nonce/,
     );
     await expect(
       verify(await idToken(base, { alg: "none" }), "n1", NOW),

@@ -12,7 +12,7 @@ import { FakeSocket } from "./helpers.ts";
 
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
-// 2026-11-17 に受けた一覧と観測の形 (値は短くした)
+// 2026-11-17 に受けた一覧と観測の形式 (値は短くした)
 const LIST = {
   "a615e761-d26c-482c-9bba-c83e2c4f07cd": {
     enable: true,

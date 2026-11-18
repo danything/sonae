@@ -133,7 +133,7 @@ export function seisSource(board: RtsBoard, o: SeisOptions = {}): Source {
     const look = JSON.stringify([...m].sort());
     if (look === shown) return;
     shown = look;
-    board.setStations(new Map(m));
+    board.setStations(m);
   }
 
   /** 観測点の一覧を取る。変わっていなければ (304) 何もしない。取れたら true */

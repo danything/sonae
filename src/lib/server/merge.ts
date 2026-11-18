@@ -51,7 +51,7 @@ export function mergeEew(
   if (r.serial > prev.serial) {
     return {
       ...fields,
-      // 一度出た警報は、取消でしか消えない。続報が予報の形で来ても警報のまま見せる
+      // 一度出た警報は、取消でしか消えない。続報が予報として来ても警報のまま見せる
       kind: prev.kind === "warning" ? "warning" : r.kind,
       final: r.final || prev.final,
       warnAreas: union(prev.warnAreas, r.warnAreas),

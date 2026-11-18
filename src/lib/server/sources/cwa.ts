@@ -8,7 +8,7 @@
  *
  * 仕様: https://opendata.cwa.gov.tw/dist/opendata-swagger.html 。政府資料開放授權條款 第 1 版
  * (https://data.gov.tw/license。CC BY 4.0 と両立)。出典の表示が要る。
- * 形は仕様の項目の名前に合わせて書いた。2026-11-15 から授権碼を入れて実物を受けている (docs/design.md の 1 章)。
+ * 読み方は仕様の項目の名前に合わせて書いた。2026-11-15 から授権碼を入れて実物を受けている (docs/design.md の 1 章)。
  */
 
 import type { ForeignReport } from "#lib/model.ts";
@@ -37,7 +37,7 @@ export function cwaTime(v: string | undefined): string | undefined {
   return Number.isFinite(t) ? new Date(t).toISOString() : undefined;
 }
 
-/** 応答を読む。形が違えば例外 (その回を捨てる) */
+/** 応答を読む。形式が違えば例外 (その回を捨てる) */
 export function parseCwa(text: string): Incoming[] {
   const doc = JSON.parse(text) as Record<string, unknown>;
   if (doc.success !== "true" && doc.success !== true)

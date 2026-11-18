@@ -43,7 +43,7 @@ export const topicOf = (tag: string) =>
 
 /**
  * 送り先ごとに、事象 (tag) へ最後に送ったものの控え。Web Push (`push_log`、鍵は購読の endpoint) と
- * Webhook (`webhook_log`、鍵は Webhook の id) が同じ形で使う
+ * Webhook (`webhook_log`、鍵は Webhook の id) が同じ作りで使う
  */
 export interface SentLog {
   /** 前に送ったもの。無ければ undefined */

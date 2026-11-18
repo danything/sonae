@@ -55,7 +55,7 @@ function readUsgsFeature(f: unknown): ForeignReport | null {
   };
 }
 
-/** フィード 1 つを読む。形が違えば例外を投げる (その回を捨てる) */
+/** フィード 1 つを読む。形式が違えば例外を投げる (その回を捨てる) */
 export function parseUsgs(text: string): Incoming[] {
   const doc = JSON.parse(text) as Record<string, unknown>;
   if (doc.type !== "FeatureCollection" || !Array.isArray(doc.features))

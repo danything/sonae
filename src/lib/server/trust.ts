@@ -16,7 +16,8 @@
  *   誰でも付けられるヘッダなので、前段でない相手のものは読まない
  * - **adapter-bun の `ADDRESS_HEADER` を設定していたら、信頼するネットワークは使わない** (閉じる)。
  *   `getClientAddress()` がそのヘッダの値になり、誰でも名乗れるため
- * - 通した人は全員 1 つの利用者 (`TRUSTED_USER`) として扱う。読み上げの声・Web Push の購読は、この家の LAN の人で共有になる
+ * - 通した人は全員 1 つの利用者 (`TRUSTED_USER`) として扱う。通知の条件・Web Push の購読・Webhook は、この家の LAN の人で共有になる
+ *   (読み上げの声は、ログインした人も含めて家で 1 つ)
  */
 
 import {
@@ -98,7 +99,7 @@ function bareName(host: string): string | null {
   return name === "" ? null : name;
 }
 
-/** ログインなしで開いてよい名前か (`Host` の値。ポート付きでよい)。読めない形なら通さない */
+/** ログインなしで開いてよい名前か (`Host` の値。ポート付きでよい)。読めない形式なら通さない */
 export function knownHost(host: string, allowed: readonly string[]): boolean {
   const name = bareName(host);
   if (name === null) return false;
@@ -157,8 +158,8 @@ const reported = new Set<string>();
  *
  * ログインなしで通すと、Cookie の SameSite の守りが効かない。LAN の人が悪いサイトを開くと、そのサイトが
  * `http://192.168.x.x:3030/api/...` へ送らせた要求も、接続元は LAN・名前は IP の直書きなので通ってしまう。
- * SvelteKit の CSRF の守りはフォームの形の本文しか見ず、`text/plain` で JSON を送る `fetch` (事前の確認が要らない) は通る。
- * そこで、状態を変える要求 (GET・HEAD・OPTIONS 以外) は、ブラウザが付ける `Sec-Fetch-Site` (無ければ `Origin`) が同じオリジンでなければ断る。
+ * SvelteKit の CSRF の守りも、フォームで送れる形式 (`text/plain` も含む) と Content-Type の無い本文の書き込みを、
+ * `Origin` が違えば断る。その判定 (本文の形式と `Origin` だけで決める) に任せず、ここでも、状態を変える要求 (GET・HEAD・OPTIONS 以外) は、ブラウザが付ける `Sec-Fetch-Site` (無ければ `Origin`) が同じオリジンでなければ断る。
  * どちらも無い (ブラウザでない道具) ときは通す (ほかのサイトから送らせることはできない)
  */
 export function crossSiteWrite(request: Request, origin: string): boolean {

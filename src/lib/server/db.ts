@@ -203,7 +203,7 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX webhooks_subject ON webhooks (subject);
 
-  -- Webhook ごとに、事象 (tag) へ最後に送ったもの (push_log と同じ形)
+  -- Webhook ごとに、事象 (tag) へ最後に送ったもの (push_log と同じ列)
   CREATE TABLE webhook_log (
     webhook_id INTEGER NOT NULL REFERENCES webhooks (id) ON DELETE CASCADE,
     tag TEXT NOT NULL,
