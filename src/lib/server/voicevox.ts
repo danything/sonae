@@ -97,6 +97,8 @@ export class Voicevox {
   private readonly urgent: Job[] = [];
   private readonly background: Job[] = [];
   private working = false;
+  /** いま走っている `check` (重ねて走らせない) */
+  private checking: Promise<boolean> | undefined;
   private readonly allowed = new Set<string>(FIXED_TEXTS);
 
   constructor(o: VoicevoxOptions) {
@@ -397,9 +399,18 @@ export class Voicevox {
 
   /**
    * つながりを確かめる。つながり直したら、声の一覧と辞書を読み直し、決まった文を下ごしらえする。
-   * 辞書を直したら、それまでに合成した音は読みが違うことがあるので捨てる
+   * 辞書を直したら、それまでに合成した音は読みが違うことがあるので捨てる。
+   * 前の確かめが終わっていなければ (エンジンが遅く、1 分ごとの次の回が重なったとき)、それを待つ。
+   * 重ねて走らせると、どちらも同じ辞書を読んでから足すので、同じ語が二重に入る
    */
-  async check(): Promise<boolean> {
+  check(): Promise<boolean> {
+    this.checking ??= this.checkOnce().finally(() => {
+      this.checking = undefined;
+    });
+    return this.checking;
+  }
+
+  private async checkOnce(): Promise<boolean> {
     try {
       await this.call("/version", {}, 5_000);
       const was = this.available;

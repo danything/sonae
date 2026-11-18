@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { OPENINGS, SAMPLE } from "#lib/readout.ts";
 import { openDb } from "#lib/server/db.ts";
-import type { Reading } from "#lib/server/readings.ts";
+import { type Reading, READINGS } from "#lib/server/readings.ts";
 import { readSetting, voiceStore, writeSetting } from "#lib/server/settings.ts";
 import {
   changeVoice,
@@ -141,6 +141,19 @@ describe("VOICEVOX", () => {
       ]),
     ).toBe(1);
     expect(e.dict.size).toBe(1);
+  });
+
+  test("前の確かめが終わる前に次の確かめが来ても重ねて走らせず、辞書に同じ語を二重に足さない", async () => {
+    const e = fakeEngine();
+    const v = new Voicevox({ url: "http://vv:50021", fetch: e.f });
+    // エンジンが遅く、1 分ごとの次の回が前の回の途中で始まったとき
+    const [a, b] = await Promise.all([v.check(), v.check()]);
+    expect([a, b]).toEqual([true, true]);
+    expect(e.dict.size).toBe(READINGS.length);
+    // 終わった後の確かめはまた走る (足りない語は無い)
+    expect(await v.check()).toBe(true);
+    expect(e.dict.size).toBe(READINGS.length);
+    await settle(v);
   });
 
   test("事象を受けたら変わる文を合成する。受けていない文は読ませない", async () => {
