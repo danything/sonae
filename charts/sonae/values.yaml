@@ -59,7 +59,8 @@ secrets:
   name: ""
   # Secret の中のキーの名前
   keys:
-    # OIDC のクライアントシークレット。**要る** (無いと Pod が起動しない)
+    # OIDC のクライアントシークレット。**要る** (無いと Pod が起動しない。ログインの設定の漏れに起動してすぐ気づけるよう、
+    # optional を付けていない。docs/design.md の 8 章)
     oidcClientSecret: oidc-client-secret
     # Web Push の VAPID の秘密鍵 (JWK の JSON)。任意。無ければ Web Push を切って動く (docs/push.md)
     vapidPrivateJwk: vapid-private-jwk
