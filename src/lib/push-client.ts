@@ -1,12 +1,12 @@
 /**
- * 通知の条件を覚えて送る道と、住んでいる地域を探す道 (画面だけで使う)。
+ * 通知の条件を覚えて送る処理と、住んでいる地域を探す処理 (画面だけで使う)。
  * 「通知」の窓 (`PushSettings.svelte`) と、地図の右クリック・長押しのメニュー (`QuakeMap.svelte`) が同じものを使う。
  *
  * - 条件はすぐ端末に覚え (`alerter.setPrefs`)、このブラウザが Web Push に登録してあればサーバーにも送る。
  *   続けて変えたときに前の送信と追い越さないよう、送るのは 1 つずつ順に (`queuePrefs`)
  * - 住んでいる地域は、緯度・経度が入る市町村等を端末の中で探す (`#lib/home.ts` の `cityAt`・`homeOf`)。
  *   **緯度・経度はサーバーに送らず、覚えもしない**。送るのは市町村等のコードと、そこから引いた地域だけ
- * - 地図の現在地が入る市町村等も同じ道で探し、開いているときの範囲の「現在地」に使う (`trackHere`)。
+ * - 地図の現在地が入る市町村等も同じ方法で探し、開いているときの範囲の「現在地」に使う (`trackHere`)。
  *   これはサーバーに送らず、端末にも覚えない
  */
 
@@ -130,7 +130,7 @@ export async function sendPrefs(
       });
     const sub = await subscribe(publicKey);
     // 登録できても、届かない宛先を返すブラウザがある (Android の Edge は `permanently-removed.invalid`)。
-    // サーバーに送っても断られるだけなので、ここで止めて、何ができないかと代わりの道を返す
+    // サーバーに送っても断られるだけなので、ここで止めて、何ができないかと代わりの方法を返す
     const block = endpointBlock(sub.endpoint);
     if (block) {
       endpointBlocked = block;

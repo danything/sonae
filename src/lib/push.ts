@@ -177,7 +177,7 @@ export function withQuakeMin(p: PushPrefs, v: Intensity): PushPrefs {
 }
 
 /**
- * 外から来た値を、知っている形に直す。読めない項目は既定値に戻す。
+ * 外から来た値を、決まった形に直す。読めない項目は既定値に戻す。
  * DB の購読・Webhook・端末の localStorage・API の本文のどれもここを通すので、前の形の値もここで読み替える
  * (2026-11-16 の作り替え。docs/design.md の 2.4 の「前の形の読み替え」)
  */

@@ -49,17 +49,17 @@ export const BLUE_MARBLE_TILES =
   "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg";
 const GIBS = "https://nasa-gibs.github.io/gibs-api-docs/";
 /** Blue Marble の出典。NASA Earth Observatory の頼み (「NASA Earth Observatory」と書く) と、GIBS の謝辞の文 */
-export const BLUE_MARBLE_ATTRIBUTION = `Blue Marble: NASA Earth Observatory | <a href="${GIBS}" target="_blank" rel="noopener">NASA GIBS</a>`;
+const BLUE_MARBLE_ATTRIBUTION = `Blue Marble: NASA Earth Observatory | <a href="${GIBS}" target="_blank" rel="noopener">NASA GIBS</a>`;
 
 /** 台湾の観測点の揺れ (TREM-RTS) の出典。授權頁の書き方 (全文は `#lib/notice.ts` の CREDITS) */
-export const RTS_ATTRIBUTION =
+const RTS_ATTRIBUTION =
   '資料來源：ExpTech Studio TREM（<a href="https://exptech.dev" target="_blank" rel="noopener">exptech.dev</a>）・非商業使用・非官方資訊，以中央氣象署發布為準';
 
 /** 有志の観測点の揺れ (Wolfx SeisJS) の出典。Wolfx から返事をもらった書き方 (全文は `#lib/notice.ts` の CREDITS) */
-export const SEIS_ATTRIBUTION =
+const SEIS_ATTRIBUTION =
   '<a href="https://wolfx.jp/seisapi" target="_blank" rel="noopener">Wolfx Project (SeisJS)</a>・非公式';
 
-export const JMA_GIS_ATTRIBUTION =
+const JMA_GIS_ATTRIBUTION =
   '<a href="https://www.data.jma.go.jp/developer/gis.html" target="_blank" rel="noopener">気象庁 予報区等 GIS データ</a> を加工';
 
 /**
@@ -67,7 +67,7 @@ export const JMA_GIS_ATTRIBUTION =
  * (「出典と注意」の窓の全文は `#lib/notice.ts` の CREDITS。docs/map.md)
  */
 export const PLATES_URL = "/plates/pb2002-boundaries.geojson";
-export const PLATES_ATTRIBUTION =
+const PLATES_ATTRIBUTION =
   'プレート境界: Contains information from PB2002 (Bird, 2003; Hugo Ahlenius, Nordpil) which is made available under the <a href="https://opendatacommons.org/licenses/by/1-0/" target="_blank" rel="noopener">ODC Attribution License</a>';
 /**
  * プレート境界の線の色。写真の上で沈まず、震源の丸 (不透明度 0.8・黒い縁) より目立たない淡い橙を半分透かす。
@@ -79,9 +79,9 @@ export const PLATE_COLOR = "rgba(255, 196, 150, 0.55)";
  * 地理院地図Vector (国土地理院最適化ベクトルタイル) の PMTiles。試験公開で URL が変わりうる (docs/map.md)。
  * 前の `{z}/{x}/{y}.pbf` の配信は 2023 年のデータで止まっているので、PMTiles の 1 ファイルを範囲で読む
  */
-export const GSI_VECTOR_URL =
+const GSI_VECTOR_URL =
   "https://cyberjapandata.gsi.go.jp/xyz/optimal_bvmap-v1/optimal_bvmap-v1.pmtiles";
-export const GSI_VECTOR_ATTRIBUTION = `<a href="https://github.com/gsi-cyberjapan/optimal_bvmap" target="_blank" rel="noopener">国土地理院最適化ベクトルタイル</a> を加工`;
+const GSI_VECTOR_ATTRIBUTION = `<a href="https://github.com/gsi-cyberjapan/optimal_bvmap" target="_blank" rel="noopener">国土地理院最適化ベクトルタイル</a> を加工`;
 
 /** 地図の字と印に使う端末の字体 (字体のファイルは外から読まない。tools/gsi/build.ts と同じ) */
 export const TEXT_FONT_CSS = '"Noto Sans JP", sans-serif';
@@ -94,10 +94,9 @@ export const TEXT_FONT_CSS = '"Noto Sans JP", sans-serif';
 export type HazardId = "none" | "flood" | "landslide" | "tsunami" | "faults";
 const DISAPORTAL = "https://disaportaldata.gsi.go.jp/raster";
 const LEGEND = "https://disaportal.gsi.go.jp/hazardmap/copyright/img";
-export const HAZARD_ATTRIBUTION = `<a href="https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html" target="_blank" rel="noopener">ハザードマップポータルサイト</a>`;
+const HAZARD_ATTRIBUTION = `<a href="https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html" target="_blank" rel="noopener">ハザードマップポータルサイト</a>`;
 /** 国土地理院の「活断層図（都市圏活断層図）について」(各図の調査者がある) */
-export const GSI_AFM_ABOUT =
-  "https://www.gsi.go.jp/bousaichiri/active_fault.html";
+const GSI_AFM_ABOUT = "https://www.gsi.go.jp/bousaichiri/active_fault.html";
 
 export interface Hazard {
   id: Exclude<HazardId, "none">;
@@ -297,7 +296,7 @@ export const SHELTER_DISASTERS = [
   "内水氾濫",
   "火山現象",
 ] as const;
-export const SHELTER_ATTRIBUTION = `<a href="https://www.gsi.go.jp/bousaichiri/hinanbasho.html" target="_blank" rel="noopener">国土地理院 (指定緊急避難場所・指定避難所データ)</a>`;
+const SHELTER_ATTRIBUTION = `<a href="https://www.gsi.go.jp/bousaichiri/hinanbasho.html" target="_blank" rel="noopener">国土地理院 (指定緊急避難場所・指定避難所データ)</a>`;
 
 /** 見ている範囲 (西・南・東・北) に掛かるズーム z のタイル。多すぎたら空 (読みすぎない) */
 export function tilesIn(
@@ -454,7 +453,7 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   },
   {
     label: "現在地",
-    note: "地図の右下のボタンを押している間だけ、白い縁の青い点と、位置の誤差の淡い円を出します。位置は端末の中で使うだけで、サーバーには送りません",
+    note: "地図の右下の現在地のボタンがオンの間 (既定はオン) だけ、白い縁の青い点と、位置の誤差の淡い円を出します。位置は端末の中で使うだけで、サーバーには送りません",
   },
   {
     label: "住んでいる地域",
@@ -497,7 +496,7 @@ export function intensityFill(areas: AreaIntensity[]): string | Expr {
   return matchExpr(byCode, byName, TRANSPARENT);
 }
 
-/** 長周期地震動階級 1 以上の地域の枠の色の式 (階級 0 と取消は透明) */
+/** 長周期地震動階級 1 以上の地域の枠の色の式 (階級 0 は透明。取消のときは呼ぶ側が空で渡す) */
 export function longPeriodLine(areas: AreaLongPeriod[]): string | Expr {
   const byCode = new Map<string, string>();
   const byName = new Map<string, string>();
@@ -532,7 +531,7 @@ export function homeFilter(code: string | null | undefined): Expr {
 }
 
 /** 住んでいる地域の縁取りの色 (写真の上で読める水色。警報・注意報の段の色と取り違えない) */
-export const HOME_COLOR = "#3cd7ff";
+const HOME_COLOR = "#3cd7ff";
 
 /** 選んだ府県予報区の市町村等だけを縁取る filter (選んでいなければ何も描かない) */
 export function officeFilter(
@@ -670,7 +669,7 @@ export function hypocenterFeatures(quakes: Quake[], n = 50) {
   };
 }
 
-/** 地域ごとの震度のラベルを置く (大きいほうから。重なるときに大きい震度が上に来るよう、描く順は小さいほうから) */
+/** 地域ごとの震度のラベルを置く所。重なったときに大きい震度が上に来るよう、小さいほうから並べる */
 export function intensityLabels(
   areas: AreaIntensity[],
   points: Record<string, [number, number]>,
@@ -686,7 +685,7 @@ export function intensityLabels(
 }
 
 /** 海外の地震の点の出典 (機関を足したらここにも足す) */
-export const FOREIGN_ATTRIBUTION =
+const FOREIGN_ATTRIBUTION =
   '海外の地震: <a href="https://earthquake.usgs.gov/" target="_blank" rel="noopener">Credit: U.S. Geological Survey</a> | <a href="https://www.seismicportal.eu" target="_blank" rel="noopener">Credit: EMSC-CSEM SeismicPortal</a> (CC BY 4.0) | <a href="https://www.geonet.org.nz/" target="_blank" rel="noopener">GeoNet</a> (CC BY 3.0 NZ) | <a href="https://www.cwa.gov.tw/" target="_blank" rel="noopener">中央氣象署</a>';
 
 /** 海外の地震の点 (新しい順に最大 n 件)。色は深さ、大きさは M */

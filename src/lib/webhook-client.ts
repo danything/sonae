@@ -1,5 +1,5 @@
 /**
- * Webhook を読む・足す・消す・試す道と、条件を Webhook にも送る道 (画面だけで使う。docs/design.md の 2.4)。
+ * Webhook を読む・足す・消す・試す処理と、条件を Webhook にも送る処理 (画面だけで使う。docs/design.md の 2.4)。
  * 「通知」の窓 (`WebhookSettings.svelte`・`PushSettings.svelte`) と、地図のメニュー (`#lib/push-client.ts` の `saveHome`) が使う。
  *
  * Webhook の条件は、登録した人が「通知」で最後に変えた条件。条件を変えたら、その人の Webhook 全部に送る。

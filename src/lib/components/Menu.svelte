@@ -1,6 +1,6 @@
 <script lang="ts" module>
   /** 引き金のボタンに付ける属性。呼び出し側は `<button {...props}>` とそのまま広げる */
-  export interface MenuTrigger {
+  interface MenuTrigger {
     id: string;
     popovertarget: string;
     "aria-haspopup": "menu" | undefined;
