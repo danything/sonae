@@ -283,6 +283,18 @@ describe("地図の印", () => {
     expect(marks[1]?.at).toEqual([137.48, 35.893]);
   });
 
+  test("段が分からない火山の印には、三角の横に出す字を付ける (段があれば付けない)", () => {
+    const marks = volcanoMarks([full(ASAMA)], full(ONTAKE), points);
+    // 段を受けていない火山の噴火速報は「噴火速報」で、一覧と同じいちばん重い色の地
+    expect(marks.find((m) => m.code === "312")).toMatchObject({
+      label: "噴火速報",
+      labelLevel: 5,
+    });
+    const asama = marks.find((m) => m.code === "306");
+    expect(asama?.label).toBeUndefined();
+    expect(asama?.labelLevel).toBeUndefined();
+  });
+
   test("位置が分からない火山は置かない", () => {
     expect(volcanoMarks([], full(ONTAKE), {})).toEqual([]);
   });

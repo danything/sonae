@@ -357,3 +357,12 @@ test("地図の style は MapLibre の決まりに合う (式の形の誤りで�
     expect(errors.map((e) => e.message)).toEqual([]);
   }
 });
+
+test("地図の見方: 津波予報の青い細い線と、段の分からない火山の字を書く", () => {
+  const note = (label: string) =>
+    MAP_LEGEND.find((l) => l.label === label)?.note ?? "";
+  expect(note("津波の警報・注意報")).toContain(
+    "津波予報 (若干の海面変動) は青い細い線",
+  );
+  expect(note("火山")).toContain("レベルが分からない火山");
+});

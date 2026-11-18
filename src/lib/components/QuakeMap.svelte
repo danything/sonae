@@ -524,6 +524,18 @@
       outer.className = "volcano-wrap";
       outer.title = `${v.name} ${volcanoKindText(v.kind)}`;
       outer.append(el);
+      // 段が分からない火山は三角に数字が無いので、横に種類を字で出す (色だけに頼らない)
+      if (v.label) {
+        const cap = document.createElement("span");
+        cap.className = "volcano-caption";
+        cap.textContent = v.label;
+        const lc = v.labelLevel ? VOLCANO_COLORS[v.labelLevel] : undefined;
+        if (lc) {
+          cap.style.background = lc.bg;
+          cap.style.color = lc.fg;
+        }
+        outer.append(cap);
+      }
       volcanoMarkers.push(
         new MarkerClass({ element: outer, anchor: "bottom" })
           .setLngLat(v.at)
@@ -1720,7 +1732,25 @@
   }
   /* 火山の印。三角を警戒の段の色で塗り、段の数字を字でも出す (色だけに頼らない)。影は三角で切られないよう外の要素に */
   .map :global(.volcano-wrap) {
+    position: relative;
     filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.7));
+  }
+  /*
+   * 段の分からない火山の字 (噴火速報・種類の名前)。三角の右に、一覧のラベル (VolcanoLevel) と同じ灰色の地で置く。
+   * 外に出して置くので、印の位置 (三角の下の端) は動かない
+   */
+  .map :global(.volcano-caption) {
+    position: absolute;
+    bottom: 0;
+    left: calc(100% + 0.125rem);
+    padding: 0 0.25rem;
+    border-radius: 0.25rem;
+    background: rgb(200 200 203);
+    color: #000;
+    font-size: var(--so-text-2xs);
+    font-weight: var(--so-weight-bold);
+    line-height: 1.4;
+    white-space: nowrap;
   }
   .map :global(.volcano-mark) {
     display: grid;
