@@ -337,13 +337,13 @@ type QuakeReport = {
 
 ### 2.3 ブラウザへの配信: SSE
 
-|                      | SSE (`text/event-stream`)                                                                                               | WebSocket                                                                          |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| 向き                 | サーバーからだけ。sonae はこれで足りる (設定の変更は普通の POST)                                                        | 両向き                                                                             |
-| 張り直し・取りこぼし | ブラウザが自動で張り直し、`Last-Event-ID` を送る。そこから DB で埋められる                                              | 自前で書く                                                                         |
-| 認証                 | 普通の要求なので、セッションの Cookie と hooks の判定がそのまま効く                                                     | Upgrade の時に別に判定する                                                         |
-| SvelteKit・Gateway   | `+server.ts` で `ReadableStream` を返すだけ。Cilium Gateway もそのまま通る                                              | SvelteKit に標準の仕組みが無く、adapter-bun の外で `Bun.serve` の websocket を触る |
-| 同時の接続数         | HTTP/1.1 だとブラウザの 6 本の上限に数える。HTTP/2 なら 1 本に束ねられる (Gateway が h2 を話すかは載せるときに確かめる) | 制限なし                                                                           |
+|                      | SSE (`text/event-stream`)                                                                                                         | WebSocket                                                                          |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 向き                 | サーバーからだけ。sonae はこれで足りる (設定の変更は普通の POST)                                                                  | 両向き                                                                             |
+| 張り直し・取りこぼし | ブラウザが自動で張り直し、`Last-Event-ID` を送る。そこから DB で埋められる                                                        | 自前で書く                                                                         |
+| 認証                 | 普通の要求なので、セッションの Cookie と hooks の判定がそのまま効く                                                               | Upgrade の時に別に判定する                                                         |
+| SvelteKit・Gateway   | `+server.ts` で `ReadableStream` を返すだけ。Cilium Gateway もそのまま通る                                                        | SvelteKit に標準の仕組みが無く、adapter-bun の外で `Bun.serve` の websocket を触る |
+| 同時の接続数         | HTTP/1.1 だとブラウザの 6 本の上限に数える。HTTP/2 なら 1 本に束ねられる (家の本番はブラウザとの間に Cloudflare があり、h2 か h3) | 制限なし                                                                           |
 
 **SSE にする。** `GET /api/stream`。
 
@@ -893,7 +893,7 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
   - ほかの情報源 (USGS・EMSC・GeoNet・中央氣象署・PTWC・気象庁 bosai) も `tests/fixtures/<情報源>/` に置き、それぞれの README.md に、取ったものを縮めたのか作り物なのかと出典を書く。TREM-RTS と SeisJS は試験の中で値を作る。
 - **アダプター:** 情報源のサーバーを立てない。`fetch` と WebSocket を差し替えて、304・切断・張り直し・heartbeat の途絶を試す。
 - **E2E (後で):** Playwright で、ログインを飛ばした画面に SSE で fixture を流し、表示と通知の判定を見る。GPU を切った CPU の測定もここで。
-- **CI:** `bun run lint` (oxlint・`bun fmt --check`)・`bun run check` (`svelte-check --tsgo --fail-on-warnings`)・`bun test tests`・`bun run build` (警告で失敗)・Docker のビルドと起動して `/health` を見る。
+- **CI:** `bun run lint` (oxlint・`bun fmt --check`)・`bun run check` (`svelte-check --tsgo --fail-on-warnings`)・`bun test tests`・`bun run build` (警告で失敗)・Docker のビルドと起動して `/health` を見る。chart は `chart.yml` (8 章)、インストーラは `installers.yml` (インストーラと配布物に関わるファイルを変えたときと手で回したときだけ。各 OS で入れて、上げ直して、外すまで)。
 
 ## 8. 家のクラスタへの載せ方
 
@@ -905,7 +905,7 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 - 環境変数 (chart の `templates/deployment.yaml`): `PUBLIC_URL` と `ORIGIN` (adapter-bun) はどちらも `sonae.publicUrl` (家は `https://s.doany.io`)。`CONNECTION_IDLE_TIMEOUT=255` (既定の 10 秒だと 30 秒ごとの `: ping` を待つ間に SSE が切れる)。`SHUTDOWN_TIMEOUT=5` (SSE は終わらないので長く待たない)。`VOICEVOX_URL=http://voicevox:50021` (2.4 の「読み上げ」)。
 - 外向きの NetworkPolicy は ashi と同じ形 (kube-dns と、プライベートでないアドレス全部)。クラスタに既定で閉じるポリシーは無いので、これが無くても外へは出られる。家の LAN とクラスタの中を閉じるために置く。DNS の Pod のラベルはクラスタで違うので、chart の既定では出さない。
 - イメージ: main にマージすると `docker-publish.yml` が `ghcr.io/danything/sonae:<sha>` と `latest` を作り、`deploy/application.yaml` の `image.tag` を差し替える PR を作って自分でマージする。**イメージの中身に関わらないものだけを変えたマージでは組まず、差し替えもしない** (`paths-ignore` の `docs/`・`tests/`・`tools/`・`charts/`・`deploy/`・`.github/`・直下の `*.md` など)。入れ替えは Recreate で、そのたびに数秒〜十数秒つながらないため。並べるのはビルドが読まないと言い切れるものだけで、分からないものは組む側に倒す。タグのコミットにイメージが無ければ、`release.yml` は中身を変えた最後のコミットのものを使う (同じ除外の一覧を持つ)。
-- chart: PR と main で `chart.yml` が `helm lint` と `helm template` (chart の既定値・家の値・Ingress と VOICEVOX 無し) を回す。リリースを作ると `release.yml` が chart を `oci://ghcr.io/danything/charts/sonae` に出す。
+- chart: PR と main で `chart.yml` が `helm lint` と `helm template` (chart の既定値・外向きの宛先を足した値・家の値・Ingress と VOICEVOX 無し) を回す。リリースを作ると `release.yml` が chart を `oci://ghcr.io/danything/charts/sonae` に出す。
 - 実行のイメージは `oven/bun:<ver>-distroless` (シェル無し・uid 1000)。
 - **リリースの前に、この順で済ませる** (denpa の docs/development.md の「リリース」と同じ。持ち主の決定、2026-11-16)。
   1. **矛盾と圧縮を点検して直す。** 前のリリースからの差分だけでなく、**毎回あらためて全体を**読む。docs・CSS とそのコメント・コード・chart を通して、今のコードやこの文書と食い違う説明を直し、使っていないもの・同じことを何か所にも書いたもの・回りくどい書き方を縮める。範囲ごとに PR に分けて出す。
