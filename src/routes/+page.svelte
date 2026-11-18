@@ -1630,7 +1630,9 @@
     flex-shrink: 0;
     color: var(--so-warn-text);
     /* 決めた回数だけ脈打って止まる (常時は回さない。動きを減らす設定では止まる) */
-    animation: mute-pulse 0.9s ease-in-out 3;
+    --so-pulse-opacity: 0.55;
+    --so-pulse-scale: 1.15;
+    animation: var(--so-pulse);
   }
   .mute-text {
     display: flex;
@@ -1677,12 +1679,6 @@
     from {
       opacity: 0;
       transform: translateY(-0.5rem);
-    }
-  }
-  @keyframes mute-pulse {
-    50% {
-      opacity: 0.55;
-      transform: scale(1.15);
     }
   }
   /*
@@ -1931,17 +1927,13 @@
     background: var(--so-rec);
     color: #fff;
     font-weight: var(--so-weight-bold);
-    animation: dock-pulse 0.9s ease-in-out 3;
+    --so-pulse-opacity: 0.7;
+    --so-pulse-scale: 1.01;
+    animation: var(--so-pulse);
   }
   .dock-selected.eew-forecast {
     color: var(--so-warn-text);
     font-weight: var(--so-weight-bold);
-  }
-  @keyframes dock-pulse {
-    50% {
-      opacity: 0.7;
-      transform: scale(1.01);
-    }
   }
   .dock-more {
     flex-shrink: 0;
