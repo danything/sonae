@@ -52,17 +52,13 @@
       訓練・試験。一覧と地図に出さないとき (SONAE_TRAINING がオフ) も、?e= のリンクでは開くので、
       本物と取り違えないよう、先頭に大きく出す (docs/design.md の 2.2・docs/ui.md の「URL」)
     -->
-    <section
-      class="notice drill"
-      aria-label={STATUS_LABEL[e.status]}
-      data-testid="eew-drill"
-    >
+    <div class="notice drill" data-testid="eew-drill">
       <Icon icon={TriangleAlert} size={1.5} />
       <div>
         <p class="drill-label">{STATUS_LABEL[e.status]}</p>
         <p class="small">{EEW_DRILL_NOTE[e.status]}</p>
       </div>
-    </section>
+    </div>
   {/if}
   {#if active}
     <section
