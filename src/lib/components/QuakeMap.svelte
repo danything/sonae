@@ -1741,11 +1741,7 @@
   }
   /* 緊急地震速報の震央は、出たときに 3 回だけ大きさで脈打つ (transform だけ) */
   .map :global(.epicenter.eew) {
-    animation: eew-pulse 0.9s ease-in-out 3;
-  }
-  @keyframes -global-eew-pulse {
-    50% {
-      transform: scale(1.35);
-    }
+    --so-pulse-scale: 1.35;
+    animation: var(--so-pulse);
   }
 </style>

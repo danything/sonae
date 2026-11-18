@@ -162,7 +162,9 @@
   }
   /* 警報は、決めた回数だけ脈打って止まる (常時は回さない。動きを減らす設定では止まる) */
   .warning .now-title {
-    animation: pulse 0.9s ease-in-out 3;
+    --so-pulse-opacity: 0.55;
+    --so-pulse-scale: 1.01;
+    animation: var(--so-pulse);
   }
   .areas {
     font-size: var(--so-text-base);
@@ -201,12 +203,6 @@
     from {
       opacity: 0;
       transform: translateY(-0.5rem);
-    }
-  }
-  @keyframes pulse {
-    50% {
-      opacity: 0.55;
-      transform: scale(1.01);
     }
   }
 </style>

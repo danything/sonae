@@ -876,7 +876,7 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 ほかのアプリ (corp・mado・denpa の docs/design.md 7・8 章) と同じ。
 
 - 動かすのは **CSS の `opacity` と `transform` だけ**。JS のアニメーション (rAF・`setInterval` で値を書き換える・ライブラリ) は使わない。ぼかしと背景の位置は動かさない。色・地・影は、指を乗せたときと押したときに `--so-duration` で移すだけ (denpa の 7 章の `--dp-duration` と同じ)。
-- 緊急地震速報の箱・dock の 1 行や震源の印を目立たせる点滅・脈打ちは、`transform: scale` と `opacity` の CSS アニメーションで、回数を決めて止める (常時は回さない)。
+- 緊急地震速報の箱・dock の 1 行や震源の印を目立たせる点滅・脈打ちは、`transform: scale` と `opacity` の CSS アニメーションで、回数を決めて止める (常時は回さない)。脈打ちは `app.css` の 1 つ (`--so-pulse`) を使い、強さだけを要素ごとに `--so-pulse-opacity`・`--so-pulse-scale` で決める。
 - スマホの形で地図と一覧を切り替えるときは、一覧の面を透明度と少しの `translateY` で出し入れする (地図は作り直さない)。
 - 地図のカメラは飛ばさない (`jumpTo`。寄せるときの決まりは [map.md](map.md))。MapLibre は止まっている間は描かないので、地図を開いているだけで CPU を使うことは無い。
 - 時間で動き続けるものは無い (脈打ちは決めた回数で止まる)。そのため denpa の `<html data-lite>` (ソフトウェアで描いている端末で止める印) と `content-visibility: auto` はまだ要らない。動き続けるものを足すときに入れる。WebGL が無ければ地図は出さない。

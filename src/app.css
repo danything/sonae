@@ -90,6 +90,8 @@
     1
   );
   --so-ease-exit: cubic-bezier(0.3, 0, 1, 1);
+  /* 目立たせる脈打ち。決めた回数 (3 回) で止まる。強さは要素ごとに決める (下の「脈打ち」) */
+  --so-pulse: so-pulse 0.9s ease-in-out 3;
   --pico-transition: var(--so-duration) var(--so-ease);
   /* 状態の色 (denpa と同じ。Pico の色見本の red・cyan)。注意の色は字の `--so-warn-text` だけを使う */
   --so-rec: #d93526;
@@ -976,6 +978,19 @@ dialog[open] > .modal-box {
   }
   dialog > article.modal-box {
     margin-top: auto;
+  }
+}
+
+/*
+ * ---- 脈打ち (緊急地震速報の箱の見出し・dock の 1 行・震央の ×、音が止まっている帯のアイコン) ----
+ * `animation: var(--so-pulse)` で付け、いちばん強いときの透明度と大きさを要素ごとに
+ * `--so-pulse-opacity`・`--so-pulse-scale` で決める (既定はどちらも 1。元の透明度が 1 でない要素は、透明度も必ず決める)。
+ * 動かすのは透明度と transform だけで、常時は回さない (docs/design.md の 6.3)
+ */
+@keyframes so-pulse {
+  50% {
+    opacity: var(--so-pulse-opacity, 1);
+    transform: scale(var(--so-pulse-scale, 1));
   }
 }
 
