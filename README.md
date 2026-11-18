@@ -34,7 +34,7 @@ https://github.com/user-attachments/assets/10623080-5ec4-4150-8a29-319a88e5f30b
 
 - 名前は「備え」から。地震を待つのではなく、来たときに慌てないためのもの。
 - [Zero Quake](https://github.com/0Quake/Zero-Quake) の機能を参考にした。コードは読んでも写してもいない (一から書いている)。
-- 地震・津波・火山 (噴火速報・噴火警報) の情報を気象庁 (防災情報 XML)・P2P地震情報・Wolfx Project から、海外の地震を USGS・EMSC・GeoNet・中央氣象署 (台湾、授権碼があるとき) から、太平洋の津波の参考情報を PTWC (米国) と気象庁ホームページ (国際津波関連情報) から受け、画面には必ず出典と「公式の情報を優先してください」という注意文を出す。気象庁の情報は加工して出しているので、その旨も書く。
+- 地震・津波・火山 (噴火速報・噴火警報)・気象 (警報・注意報など) の情報を気象庁 (防災情報 XML) から、地震・津波を P2P地震情報・Wolfx Project からも、海外の地震を USGS・EMSC・GeoNet・中央氣象署 (台湾、授権碼があるとき) から、太平洋の津波の参考情報を PTWC (米国) と気象庁ホームページ (国際津波関連情報) から受け、画面には必ず出典と「公式の情報を優先してください」という注意文を出す。気象庁の情報は加工して出しているので、その旨も書く。
 - 地図には、台湾の観測点のいまの揺れ (ExpTech の [TREM](https://exptech.dev) の RTS。非公式) と、有志の観測点のいまの揺れ (Wolfx Project の [SeisJS](https://wolfx.jp/seisapi)。非公式) を点の色で出す。地図に出すだけで、一覧・音・読み上げ・通知では知らせない。
 
 知らせる条件は、緊急地震速報・地震・津波・火山・気象のそれぞれで「全国のものを知らせる」「住んでいる地域と現在地のものだけ」「知らせない」から選ぶ。地震は、知らせる震度も選ぶ。
@@ -64,7 +64,7 @@ irm https://raw.githubusercontent.com/danything/sonae/main/install.ps1 | iex
 ```
 
 - Linux は Docker Compose で動かす。Mac と Windows はコンテナを使わず、配布物の bun とアプリ、公式の VOICEVOX のエンジン (CPU 版) をそのまま動かす (Mac は root の LaunchDaemon、Windows は SYSTEM のタスク)
-- 開くのは <http://localhost:3030> (Linux は genkan があれば <http://sonae.localhost>)。もう一度流せば最新に上げ直し、`--uninstall` (Windows は `-Uninstall`) で止めて外す (DB と設定は残す)
+- 開くのは、Mac・Windows は <http://localhost:3030>、Linux は genkan があれば <http://sonae.localhost>、無ければ `http://<IP>:3030`。もう一度流せば最新に上げ直し、`--uninstall` (Windows は `-Uninstall`) で止めて外す (DB と設定は残す)
 - **家の LAN (とそのマシンのブラウザ) からは、ログインなしで開ける** (`sonae.env` の `TRUSTED_NETWORKS`)。その中の誰でも設定を変えられるので、家の外からも開くならログイン (OIDC) を足す。http の LAN の IP で開いた端末では Web Push は使えない
 - 置き場・環境変数・ログイン・VOICEVOX のバージョンと規約は [docs/install.md](docs/install.md) ([Mac](docs/install-mac.md)・[Windows](docs/install-windows.md))
 
@@ -108,7 +108,7 @@ chart はリリースのたびに `oci://ghcr.io/danything/charts/sonae` に出�
    ```
 
 - 公開の URL (`PUBLIC_URL`・`ORIGIN`) は、書かなければ `httpRoute.hostnames` か `ingress.hosts` の先頭に `https://` を付けたもの。違うときは `sonae.publicUrl` に書く。
-- OIDC の 3 つ (issuer・client id・Secret の `oidc-client-secret`) が揃わないと、画面は開かず `/health` だけ答える。chart は `TRUSTED_NETWORKS` を書かない (書くなら `sonae.extraEnv`。[docs/install.md の「ログイン」](docs/install.md#ログイン))。
+- OIDC の 3 つ (issuer・client id・Secret の `oidc-client-secret`) が揃わないと、画面は開かず `/health` だけ答える。ただし `secrets.name` の Secret に `oidc-client-secret` が無いと、Pod が起動しない。chart は `TRUSTED_NETWORKS` を書かない (書くなら `sonae.extraEnv`。[docs/install.md の「ログイン」](docs/install.md#ログイン))。
 - VAPID の鍵が無ければ Web Push を切って動く。授権碼が無ければ中央氣象署の受信だけを切って動く。
 - 既定の `image.tag` は `latest` (main に中身の変更が入るたびに動く)。固定するなら `ghcr.io/danything/sonae` のコミットの sha のタグを書く。
 - Ingress を使うなら `ingress.enabled: true` と `ingress.hosts`。SSE (`/api/stream`) が切れないよう、前段の読み込みのタイムアウトを長くする。

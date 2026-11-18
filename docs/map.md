@@ -43,12 +43,13 @@
 | ハザードマップ                | 重ねるハザードマップのラスタータイル (`https://disaportaldata.gsi.go.jp/raster/<層>/{z}/{x}/{y}.png`、ズーム 2〜17)。洪水浸水想定区域 (想定最大規模) `01_flood_l2_shinsuishin_data`・土砂災害警戒区域 `05_dosekiryukeikaikuiki`・`05_kyukeishakeikaikuiki`・`05_jisuberikeikaikuiki`・津波浸水想定 `04_tsunami_newlegend_data`。地図の右下の「ハザードマップ」で、なし・洪水・土砂災害・津波・活断層から 1 つだけ選ぶ (色がぶつかるので重ねない。既定はなし、端末に覚える `sonae.map.hazard`)。選んだものの公式の凡例の画像 (`https://disaportal.gsi.go.jp/hazardmap/copyright/img/`) をその下に出す | [ハザードマップポータルサイトのオープンデータ](https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html): URL からそのまま読んでアプリで使ってよく (商用・非商用とも)、申請の記載は無い。出典「ハザードマップポータルサイト」。国が作ったように見せない。土砂災害警戒区域は国土数値情報の利用規約と都道府県の条件にも従う (2026-11-16 に読んだ。京都府は商用不可で、ほかは注意だけ。docs/design.md の「情報源の判断」)。洪水・津波は載っていない県・川があるので、凡例の下に「色が無くても安全とは限りません」と書く                         |
 
 細分区域と津波予報区の GeoJSON は `tools/areas/build.sh` で作り、`static/areas/` に置く (mapshaper で簡略化。
-細分区域 約 1.7MB・gzip 約 220KB、津波予報区 約 560KB・gzip 約 86KB)。気象庁の GIS データの更新 (年に 1〜2 回) を
+細分区域 約 1.7MB・gzip 約 220KB、津波予報区 約 560KB・gzip 約 86KB)。同じスクリプトが、細分区域ごとに震度のラベルを置く 1 点の表 `quake-points.json` も作る。気象庁の GIS データの更新 (年に 1〜2 回) を
 受けたら作り直す。GIS データのページにある「国土地理院長の承認を得て…」の文は、気象庁がそのデータを作るときの承認で、
 sonae の画面には気象庁の GIS データの出典を出す。
 
 市町村等 (気象警報等) の面 `warning-areas.geojson` (約 1.4MB・gzip 約 280KB。簡略化は 600m) と、市町村等の表 `cities.json`
-(名前・府県予報区・一次細分区域・まとめた地域・地震情報／細分区域) は `tools/areas/build-weather.sh` で作る。
+(名前・府県と市町村の名前・府県予報区・一次細分区域・まとめた地域・地震情報／細分区域・沿岸が入る津波予報区) は `tools/areas/build-weather.sh` で作る。
+沿岸が入る津波予報区は、気象庁の市町村対応表を書き写した `tools/areas/tsunami-cities.tsv` から `tools/areas/tsunami-cities.ts` が足す。
 同じスクリプトが、その 2 つから府県予報区ごとの市町村等と面の外枠の表 `offices.json` (約 68KB・gzip 約 19KB。`tools/areas/offices.ts`) も作る。
 地図は、一覧で府県予報区を選んだときに初めてこれを読み、縁取る市町村等と寄せる範囲を決める。
 コンテナの bun の slim には unzip が無いので、zip は `tools/areas/zip.ts` で開く。
@@ -107,7 +108,7 @@ sonae の画面には気象庁の GIS データの出典を出す。
 
 - 見出しに押した所の緯度・経度 (「北緯 35.6852・東経 139.7528」)、項目は 2 つ
   - **ここを住んでいる地域にする**: 押した所が入る市町村等を、「通知」の「現在地から選ぶ」と同じ道 (`#lib/push-client.ts` の `homeAt`。`warning-areas.geojson` を `cityAt` で引き、`homeOf` で組む) で探し、住んでいる地域にする。
-    覚え方も「通知」の窓と同じ関数 (`saveHome` → `alerter.setPrefs`、Web Push に登録してあれば `queuePrefs` で順にサーバーへ)。決まったら地図の下に「東京都千代田区を住んでいる地域にしました」と少しの間出す。
+    覚え方も「通知」の窓と同じ関数 (`saveHome` → `alerter.setPrefs`、Web Push に登録してあれば `queuePrefs` で順にサーバーへ)。決まったら地図の上の真ん中に「東京都千代田区を住んでいる地域にしました」と少しの間出す。
     海の上や日本の外で市町村等が見つからなければ「ここが入る市町村が見つかりませんでした (海の上や日本の外です)。住んでいる地域は変えていません」と出し、変えない。**緯度・経度はサーバーに送らない** (送るのは市町村等のコードと、そこから引いた地域だけ)
   - **緯度・経度を写す**: 「35.68520, 139.75280」(小数 5 桁、約 1 m) をクリップボードに写す。写せないブラウザでは知らせの中に出す
 - 開け閉めは画面のほかのメニューと同じ `Menu.svelte` (押した所に大きさの無い引き金を置き、そこから右下へ出す)。↑↓で動き、Enter で選び、Esc か外を押すと閉じる (外を押した押下は地図に渡さない)。地図が動いたら閉じる
