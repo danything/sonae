@@ -122,7 +122,7 @@
    *   その下は 地図 | 一覧の列 の 2 列。列は右の 1 本だけにして地図を広く取る (denpa の観る画面の右の列と同じ置き方)。
    *   列の上に種類で絞るチップと日付のカレンダー (メニュー) の 1 行、その下に一覧か、選んだときは詳しい内容
    * - スマホの形: ヘッダーを出さず、地図を画面いっぱいに。一覧は地図の上に重ねる面で、下のタブ (地図・一覧・通知・強震モニタ・その他) で切り替える。
-   *   下のタブのすぐ上に操作の 1 行 (dock。種類で絞るチップか、地図に出している地震)。一覧を下へ読むと、下のタブと dock は引っ込む
+   *   下のタブのすぐ上に操作の 1 行 (dock。一覧のタブでは種類で絞るチップ、地図のタブでは選んでいるもの)。一覧を下へ読むと、下のタブと dock は引っ込む
    *
    * 一覧は全部の種類を新しい順に 1 本に並べる。チップで全部か 1 つの種類を出し、端末に覚える。
    * いま出ている緊急地震速報・大津波警報・津波警報・気象の特別警報は、チップにかかわらず一覧の先頭に出す
@@ -968,18 +968,6 @@
   {/if}
 {/snippet}
 
-{#snippet credits(where: string)}
-  <!-- 注意文と短い出典 (docs/design.md の 5 章)。どちらの形も一覧のいちばん下。出典の全文は「出典と注意」の窓 -->
-  <footer class="foot {where} tiny muted">
-    <p>{NOTICE}</p>
-    <p>
-      {SHORT_CREDIT}。全文は<a href={aboutHref} data-testid="foot-credits"
-        >「出典と注意」</a
-      >にあります。
-    </p>
-  </footer>
-{/snippet}
-
 {#snippet rowItem(r: RowData)}
   <!-- 状態のバッジは、あるときだけ渡す (空の入れ物が行の間隔を広げないよう) -->
   {#snippet stateTags()}
@@ -1219,7 +1207,7 @@
     )}
     <!--
       音か読み上げがオンなのに、ブラウザが音を止めている (最初の操作の前・再生を断られた)。
-      画面の上の端の帯で、何が止まっていて何は届くかを言う。帯のどこを押しても鳴らせるようになる
+      ヘッダーのすぐ下 (スマホの形は画面の上の端) の帯で、何が止まっていて何は届くかを言う。帯のどこを押しても鳴らせるようになる
     -->
     <button
       type="button"
@@ -1344,8 +1332,15 @@
           {/each}
         {/if}
 
-        <!-- 注意文と出典 (どちらの形も一覧のいちばん下) -->
-        {@render credits("list-foot")}
+        <!-- 注意文と短い出典 (docs/design.md の 5 章)。どちらの形も一覧のいちばん下。出典の全文は「出典と注意」の窓 -->
+        <footer class="foot tiny muted">
+          <p>{NOTICE}</p>
+          <p>
+            {SHORT_CREDIT}。全文は<a href={aboutHref} data-testid="foot-credits"
+              >「出典と注意」</a
+            >にあります。
+          </p>
+        </footer>
       </section>
     </div>
 
@@ -1809,7 +1804,7 @@
     min-height: 0;
     padding: 0 0 var(--so-space-3) var(--so-space-3);
   }
-  .list-foot {
+  .foot {
     margin-top: var(--so-space-4);
   }
   .foot p {
@@ -1886,7 +1881,7 @@
     display: block;
   }
 
-  /* dock (種類で絞るチップか地図に出している地震と、受信に問題があるときの注意の印)。下のタブから `--so-dock-gap` 上のカプセル */
+  /* dock (種類で絞るチップか選んでいるもの・案内の 1 行と、受信に問題があるときの注意の印)。下のタブから `--so-dock-gap` 上のカプセル */
   :global(:where(html[data-phone])) .dock {
     position: fixed;
     inset-inline: var(--so-dock-inset);
@@ -2027,8 +2022,7 @@
     background: var(--pico-primary);
   }
   @media (min-width: 640px) {
-    .tabbar .tab,
-    .tab-more :global(.tab) {
+    .tabbar .tab {
       font-size: var(--so-text-xs);
     }
   }

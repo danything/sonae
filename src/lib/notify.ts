@@ -776,7 +776,7 @@ export const isAdvisoryOnly = (n: Notice): boolean =>
 /**
  * 注意報だけの通知を数える控えの tag。送り先ごとの控え (サーバーは push_log・webhook_log、
  * 画面はメモリと localStorage) に、この tag で最後に数えた日 (日本時間の暦日) を digest として持つ。
- * 住んでいる地域と現在地は別に数える (サーバーは現在地を知らないので、住んでいる地域の数をそろえるため)
+ * 住んでいる地域と現在地は別に数える (サーバーは現在地を持たないので、住んでいる地域の数をそろえるため)
  */
 export const ADVISORY_QUOTA = {
   home: "quota:advisory",

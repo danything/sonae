@@ -2,10 +2,10 @@
   /**
    * 通知の条件と、開いているときの OS の通知・音・読み上げと、Web Push の登録と Webhook の送り先
    * (docs/design.md の 2.4・docs/push.md)。
-   * ヘッダーのナビ (スマホの形は下のタブ) の「通知」から開くダイアログ 1 つに閉じる。
+   * ヘッダーのナビ (スマホの形は下のタブ) の「通知」から開くダイアログ 1 つにまとめる。
    * 開け閉めは `open` で持つ (閉じるのは左下の「閉じる」・幕・Esc)。
    * 条件はブラウザごとに 1 つで、音・読み上げのために端末 (localStorage) に、Web Push のためにサーバー (購読) に持つ。
-   * サーバーに VAPID の鍵が無いときは、Web Push の節にそう出すだけ (条件と、開いているときの知らせは使える)。
+   * サーバーに VAPID の鍵が無いときは、Web Push の節にそう出すだけ (条件と、開いているときの通知・音・読み上げは使える)。
    */
   import "@anyblades/blades/components/accordion";
   import "@anyblades/blades/components/modal";
@@ -133,9 +133,9 @@
     rows.push(["ブラウザ", navigator.userAgent]);
     diag = rows;
   }
-  /** 条件を覚えたかどうか (条件のすぐ下に出す。Web Push の登録の知らせは下の message) */
+  /** 条件を覚えたかどうか (条件のすぐ下に出す。Web Push の登録の結果は下の message) */
   let prefsMessage = $state("");
-  /** 開いているときの通知のスイッチの知らせ (許可されなかったとき) */
+  /** 開いているときの通知のスイッチの結果 (許可されなかったとき) */
   let notifyMessage = $state("");
   /** 声を保存したかどうか (声の選択のすぐ下に出す) */
   let voiceMessage = $state("");
@@ -166,10 +166,6 @@
     info?.enabled === true &&
       info.subscriptions.some((s) => s.endpoint === endpoint),
   );
-
-  async function registration(): Promise<ServiceWorkerRegistration> {
-    return navigator.serviceWorker.ready;
-  }
 
   /** 条件は、このブラウザが Web Push に登録してあればその条件、無ければ端末に覚えた条件 */
   async function load(): Promise<void> {
@@ -354,7 +350,8 @@
     busy = true;
     try {
       if (target === endpoint) {
-        const sub = await (await registration()).pushManager.getSubscription();
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
         await sub?.unsubscribe();
       }
       const res = await fetch("/api/push", {
@@ -645,7 +642,7 @@
         サーバーに VAPID の鍵が入っていないので、Web Push は切ってあります。
       </p>
     {:else if block}
-      <!-- 黙って押せないままにしない。何ができないかと、代わりの道を言う -->
+      <!-- 黙って押せないままにしない。何ができないかと、代わりの方法を出す -->
       <p class="small" role="status" data-testid="push-unsupported">
         {pushBlockText(block, navigator.userAgent)}
       </p>
