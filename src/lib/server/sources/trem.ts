@@ -234,6 +234,8 @@ export function tremSource(board: RtsBoard, o: TremOptions = {}): Source {
       const parser = new SseParser();
       const decoder = new TextDecoder();
       const reader = res.body.getReader();
+      // 読めないスナップショットが続く間 (地震の間は 0.5 秒ごとに来る) は、最初の 1 回だけ知らせる
+      let unreadable = false;
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
@@ -244,7 +246,13 @@ export function tremSource(board: RtsBoard, o: TremOptions = {}): Source {
           try {
             board.put(decodeRts(m.data));
             status.seen(true);
+            if (unreadable) {
+              unreadable = false;
+              status.recovered();
+            }
           } catch (err) {
+            if (unreadable) continue;
+            unreadable = true;
             status.set("connected", `読めないスナップショット: ${err}`);
           }
         }

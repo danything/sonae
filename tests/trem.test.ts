@@ -223,6 +223,36 @@ test("受信: 429 なら 60 秒より短く張り直さない", async () => {
   expect(waits.filter((w) => w <= 61_000)).toEqual([60_000]);
 });
 
+test("受信: 読めないスナップショットが続く間は知らせ直さない。直ったら知らせ、また読めなければ知らせる", async () => {
+  const ctl = new AbortController();
+  const told: { state: string; lastError?: string }[] = [];
+  const good = `data: ${snapshot({ "125313C": { i: 2.1, alert: 1 } })}\n\n`;
+  const bad = "data: !!\n\n";
+  const src = tremSource(new RtsBoard(), {
+    url: "https://rts.example/sse",
+    stationUrls: [],
+    random: () => 0,
+    onStatus: (s) => told.push({ state: s.state, lastError: s.lastError }),
+    log: () => {},
+    fetch: (async () =>
+      streamOf(
+        good + bad + bad + bad + good + good + bad + bad,
+      )) as unknown as typeof fetch,
+    sleep: async (ms) => {
+      if (ms <= 61_000) ctl.abort();
+      await new Promise((r) => setTimeout(r, 0));
+    },
+  });
+  await src.run(ctl.signal);
+  const unreadable = (s: { lastError?: string }) =>
+    s.lastError?.startsWith("読めないスナップショット") ?? false;
+  expect(
+    told.map((s) =>
+      s.state === "connected" ? (unreadable(s) ? "bad" : "ok") : s.state,
+    ),
+  ).toEqual(["ok", "bad", "ok", "bad", "retrying", "stopped"]);
+});
+
 test("出典: ExpTech の授權頁の書き方と、非公式で中央氣象署を優先する旨。地図の見方にも書く", () => {
   const all = CREDITS.map(creditText).join("\n");
   expect(all).toContain("資料來源：ExpTech Studio TREM（exptech.dev）");
