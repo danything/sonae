@@ -200,6 +200,15 @@ for (const [code, x] of extra) {
   used.add(x.alias);
   out[code] = [round(x.lon), round(x.lat), x.alias];
 }
+// 画面は名前 (別名も) → 位置の索引を作るので、どの名前も 1 つの観測点だけを指すようにする
+const owner = new Map<string, string>();
+for (const [code, [, , ...names]] of Object.entries(out))
+  for (const n of names) {
+    const prev = owner.get(n as string);
+    if (prev && prev !== code)
+      throw new Error(`名前 ${n} が ${prev} と ${code} の両方を指します`);
+    owner.set(n as string, code);
+  }
 const unused = positions.filter((p) => !used.has(p.name)).map((p) => p.name);
 
 const text = JSON.stringify(out);
