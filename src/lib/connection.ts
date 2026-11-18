@@ -7,7 +7,7 @@ import { type NotificationShape, toNotification } from "./push.ts";
 import { CONNECTION } from "./readout.ts";
 
 /**
- * 何も届かなければ死んだとみなす長さ。サーバーは 30 秒ごとに情報源の状況 (`event: status`) を送るので
+ * 何も届かなければ切れたとみなす長さ。サーバーは 30 秒ごとに情報源の状況 (`event: status`) を送るので
  * (`server/sse.ts` の PING_MS)、2 回半届かなければ張り直す。`: ping` のコメント行は EventSource が
  * 画面に渡さないので、数えられるのは `status` とイベントだけ
  */

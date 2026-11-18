@@ -1,6 +1,6 @@
 /**
  * 台湾の観測点のいまの揺れ (ExpTech の TREM-RTS)。サーバーと画面の両方で使う形と、地図に描く点
- * (docs/design.md の 2.9)。
+ * (docs/design.md の 2.9)。Wolfx SeisJS の有志の観測点 (2.10) も同じ形と点で描く。
  *
  * - 非公式の観測網 (TREM-net) の値で、中央氣象署の発表ではない。**地図に色で出すだけで、一覧にも知らせ
  *   (音・読み上げ・OS の通知・Web Push・Webhook) にも使わない** (ExpTech の規約: 予警報に使わない・安全の判断の
@@ -35,7 +35,7 @@ export const RTS_STALE_MS = 10_000;
 
 /**
  * 計測震度から震度の階級 (気象庁の階級の境と同じ切り方) を引く。0.5 未満は無し。
- * TREM の値は TREM-net の観測で、気象庁の震度ではない。色を引くためだけに使う
+ * TREM-net・SeisJS の観測点の値で、気象庁の震度ではない。色を引くためだけに使う
  */
 export function rtsClass(i: number): string | undefined {
   if (!Number.isFinite(i) || i < 0.5) return undefined;
@@ -61,7 +61,7 @@ export const rtsColor = (i: number | undefined) =>
 
 /**
  * 地図の点。観測点はいつも小さな灰色の点で置き、値の来た観測点は揺れの色で上に重ねる (大きい値ほど上)。
- * `frame` が無ければ全部灰色 (古くなった値は、画面が `RTS_STALE_MS` で消す。`live.svelte.ts` の `setRts`)
+ * `frame` が無ければ全部灰色 (古くなった値は、画面が `RTS_STALE_MS` で消す。`live.svelte.ts` の `setShaking`)
  */
 export function rtsFeatures(
   stations: RtsStation[],

@@ -91,9 +91,8 @@
   );
   --so-ease-exit: cubic-bezier(0.3, 0, 1, 1);
   --pico-transition: var(--so-duration) var(--so-ease);
-  /* 状態の色 (denpa と同じ。Pico の色見本の red・jade・amber・cyan) */
+  /* 状態の色 (denpa と同じ。Pico の色見本の red・cyan)。注意の色は字の `--so-warn-text` だけを使う */
   --so-rec: #d93526;
-  --so-warn: #c79400;
   --so-info: #058686;
 }
 /* 指で押す端末の件は 72px */
@@ -172,7 +171,7 @@
 }
 :root,
 [data-theme] {
-  /* 操作の層の面 (ヘッダー・下のタブ・dock・主のボタン)。メニューの面を 92% 残して下をうっすら見せる。ぼかさない */
+  /* 操作の層の面 (下のタブ・dock・地図の上の操作・主のボタン・貼り付いた日付の見出し)。メニューの面を 92% 残して下をうっすら見せる。ぼかさない */
   --so-float: color-mix(in srgb, var(--so-pop) 92%, transparent);
   --so-hover: var(--so-subtle);
   --so-hover-soft: color-mix(in srgb, var(--so-subtle) 55%, transparent);
@@ -394,7 +393,7 @@ table {
     scale var(--so-duration-move) var(--so-ease-spring);
 }
 /* 浮いたものの中と件の面では、主のボタンも浮かせず太字だけ */
-:where(dialog, [popover], .modal-box, .item, .dock) {
+:where(dialog, [popover], .item, .dock) {
   --so-btn-solid: transparent;
   --so-btn-solid-hover: var(--so-btn-tonal-hover);
   --so-btn-lift: none;
@@ -792,7 +791,7 @@ button[data-on] {
   height: var(--so-space-2);
 }
 
-/* ---- 縦の並び (`.side-label`・`.side-list`・`.side-item`)。カレンダーの見出しと、メニューの中の状態に使う。地のまま、線を引かない ---- */
+/* ---- 縦の並び (`.side-label`・`.side-list`・`.side-item`)。カレンダーの見出しと、受信の状態 (`StatusList.svelte`。メニューと「出典と注意」の窓) に使う。地のまま、線を引かない ---- */
 .side-label {
   display: flex;
   align-items: center;

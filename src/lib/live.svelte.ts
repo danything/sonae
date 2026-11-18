@@ -1,6 +1,6 @@
 /**
  * 画面の「いまの姿」。最初は load で受けたものを入れ、SSE (`/api/stream`) の差分で更新する。
- * 切れたら自分で張り直し (EventSource の張り直しには任せない。止まったままになる道があるため)、
+ * 切れたら自分で張り直し (EventSource の張り直しには任せない。止まったままになることがあるため)、
  * 最後に受けた番号 (`?after=`) から埋め直してもらう (docs/design.md の 2.3)。
  */
 
@@ -82,11 +82,13 @@ export class Live {
    */
   rtsStations = $state.raw<RtsStation[]>([]);
   rts = $state.raw<RtsFrame | null>(null);
-  private rtsTimer: ReturnType<typeof setTimeout> | undefined;
   /** Wolfx SeisJS の観測点の位置と、いまの揺れ (2.10)。扱いは TREM-RTS と同じ */
   seisStations = $state.raw<RtsStation[]>([]);
   seis = $state.raw<RtsFrame | null>(null);
-  private seisTimer: ReturnType<typeof setTimeout> | undefined;
+  private shakingTimers: Record<
+    "rts" | "seis",
+    ReturnType<typeof setTimeout> | undefined
+  > = { rts: undefined, seis: undefined };
   connected = $state(false);
   /** ブラウザで load の中身を入れた (サーバーの描画では false のまま、load の data を使う) */
   seeded = $state(false);
@@ -218,26 +220,25 @@ export class Live {
     }
   }
 
-  /** いまの揺れを入れ、`RTS_STALE_MS` 次が届かなければ消す (揺れが収まると送られてこなくなるため) */
-  setRts(frame: RtsFrame | null): void {
-    clearTimeout(this.rtsTimer);
-    this.rts = frame && Array.isArray(frame.points) ? frame : null;
-    if (this.rts)
-      this.rtsTimer = setTimeout(() => (this.rts = null), RTS_STALE_MS);
-  }
-
-  /** SeisJS のいまの揺れ。`setRts` と同じく `RTS_STALE_MS` 次が届かなければ消す */
-  setSeis(frame: RtsFrame | null): void {
-    clearTimeout(this.seisTimer);
-    this.seis = frame && Array.isArray(frame.points) ? frame : null;
-    if (this.seis)
-      this.seisTimer = setTimeout(() => (this.seis = null), RTS_STALE_MS);
+  /**
+   * 台湾の観測点 (`rts`) か SeisJS (`seis`) のいまの揺れを入れ、`RTS_STALE_MS` 次が届かなければ消す
+   * (揺れが収まると送られてこなくなるため)
+   */
+  setShaking(kind: "rts" | "seis", frame: RtsFrame | null): void {
+    clearTimeout(this.shakingTimers[kind]);
+    this[kind] = frame && Array.isArray(frame.points) ? frame : null;
+    if (this[kind])
+      this.shakingTimers[kind] = setTimeout(
+        () => (this[kind] = null),
+        RTS_STALE_MS,
+      );
   }
 
   /**
    * `onResync`: 長く切れていて、埋め直しが上限を超えたときに呼ぶ (サーバーが `event: resync` を送る)。
    * 一覧を取り直す (load を走らせ直し、seed で入れ替える)。
    * `onEvent`: 新しく受けたイベントごとに呼ぶ (開いているときの音と読み上げ。`alerter.svelte.ts`)。
+   * `onHealth`: つながっているか (5 秒ごとと、変わったとき。切れたままなら知らせる `alerter.connection`)。
    * `onVoice`: この家の読み上げの声 (つないだときと、替わったとき)。
    */
   connect(
@@ -315,26 +316,24 @@ export class Live {
           .voice;
         if (typeof v === "number" && Number.isInteger(v)) onVoice(v);
       });
-      // 台湾の観測点の表といまの揺れ (番号は無い。いまの値だけ。地図の点の色にだけ使う)
-      es.addEventListener("rts-stations", (m) => {
-        seen();
-        const d = JSON.parse((m as MessageEvent).data) as Partial<RtsStations>;
-        if (Array.isArray(d.stations)) this.rtsStations = d.stations;
-      });
-      es.addEventListener("rts", (m) => {
-        seen();
-        this.setRts(JSON.parse((m as MessageEvent).data) as RtsFrame);
-      });
-      // SeisJS の観測点の表といまの揺れ (扱いは上の台湾の観測点と同じ)
-      es.addEventListener("seis-stations", (m) => {
-        seen();
-        const d = JSON.parse((m as MessageEvent).data) as Partial<RtsStations>;
-        if (Array.isArray(d.stations)) this.seisStations = d.stations;
-      });
-      es.addEventListener("seis", (m) => {
-        seen();
-        this.setSeis(JSON.parse((m as MessageEvent).data) as RtsFrame);
-      });
+      // 台湾の観測点 (rts) と SeisJS (seis) の観測点の表といまの揺れ
+      // (番号は無い。いまの値だけ。地図の点の色にだけ使う)
+      for (const kind of ["rts", "seis"] as const) {
+        es.addEventListener(`${kind}-stations`, (m) => {
+          seen();
+          const d = JSON.parse(
+            (m as MessageEvent).data,
+          ) as Partial<RtsStations>;
+          if (Array.isArray(d.stations)) this[`${kind}Stations`] = d.stations;
+        });
+        es.addEventListener(kind, (m) => {
+          seen();
+          this.setShaking(
+            kind,
+            JSON.parse((m as MessageEvent).data) as RtsFrame,
+          );
+        });
+      }
       es.addEventListener("resync", () => {
         seen();
         onResync();
@@ -389,8 +388,8 @@ export class Live {
       clearInterval(watch);
       clearTimeout(retry);
       clearTimeout(stable);
-      this.setRts(null);
-      this.setSeis(null);
+      this.setShaking("rts", null);
+      this.setShaking("seis", null);
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
       window.removeEventListener("pageshow", onShow);

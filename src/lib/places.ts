@@ -19,6 +19,8 @@ const REMOTE_MIN_CHARS = 2;
 export const REMOTE_DELAY_MS = 600;
 /** 候補の数の上限 */
 const PLACE_LIMIT = 8;
+/** 住所・地名の候補に、少なくとも残す枠 */
+const REMOTE_MIN_SLOTS = 3;
 
 export interface Place {
   /** 候補の鍵 (並びの中で一意) */
@@ -57,7 +59,7 @@ export function cityBounds(
 }
 
 /**
- * 手元の市町村から探す。並びは、名前がそのまま同じ・名前の頭が同じ・府県と市町村の名前のどこかに入る、の順。
+ * 手元の市町村から探す。並びは、名前がそのまま同じ・名前の先頭が同じ・府県と市町村の名前のどこかに入る、の順。
  * 同じ段は市町村等のコードの順
  */
 export function localPlaces(
@@ -161,9 +163,6 @@ export function mergePlaces(
   );
   return [...local.slice(0, keep), ...extra].slice(0, limit);
 }
-
-/** 住所・地名の候補に、少なくとも残す枠 */
-const REMOTE_MIN_SLOTS = 3;
 
 /** 国土地理院の住所検索の URL (打った文字だけを送る) */
 export const gsiSearchUrl = (query: string): string =>
