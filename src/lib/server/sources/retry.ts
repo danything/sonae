@@ -49,6 +49,13 @@ export class StatusTracker {
     };
     if (changed || error) this.onChange?.(this.get());
   }
+  /** 直ったとき。直近のエラーを消して知らせる (エラーが無ければ何もしない) */
+  recovered(): void {
+    if (this.value.lastError === undefined) return;
+    this.value = { ...this.value };
+    delete this.value.lastError;
+    this.onChange?.(this.get());
+  }
   seen(message: boolean): void {
     const at = nowIso();
     this.value.lastSeenAt = at;
