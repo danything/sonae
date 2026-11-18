@@ -2,7 +2,7 @@
  * 気象庁防災情報 XML の電文を、正規化したモデルに読む。
  *
  * 仕様: 気象庁防災情報 XML フォーマット 技術資料 (https://xml.kishou.go.jp/tec_material.html)。
- * 読むのは Bun 組み込みの `Bun.XML.parse` (外部の DTD・実体を読まない)。compact の形では、
+ * 読むのは Bun 組み込みの `Bun.XML.parse` (外部の DTD・実体を読まない)。compact の形式では、
  * 属性も子も無い要素は文字列、そうでなければ `@属性`・`#text`・子の名前を鍵にした物になる。
  */
 
@@ -471,7 +471,7 @@ const isAdvisoryCode = (c: string): c is AdvisoryCode =>
 
 /**
  * 電文 1 通を読む。code は種別 (フィードのリンクのファイル名から取ったもの)。
- * 読めない形なら例外を投げる (呼ぶ側が原文を残して記録する)。
+ * 読めない形式なら例外を投げる (呼ぶ側が原文を残して記録する)。
  */
 export function parseJmaXml(xml: string, code: string): Normalized[] {
   const doc = XML.parse(xml);

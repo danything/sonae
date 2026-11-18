@@ -56,7 +56,7 @@ describe("USGS の GeoJSON", () => {
     });
   });
 
-  test("形が違えば例外 (その回を捨てる)。地震でないものは飛ばす", () => {
+  test("形式が違えば例外 (その回を捨てる)。地震でないものは飛ばす", () => {
     expect(() => parseUsgs("{}")).toThrow();
     expect(() => parseUsgs("<html>")).toThrow();
     const doc = JSON.parse(USGS);
@@ -202,7 +202,7 @@ describe("決まった間隔で取りに行く輪", () => {
     expect(source.status().state).toBe("stopped");
   });
 
-  test("失敗したら間隔を倍々に空け (上限あり)、読めない形でも止まらない", async () => {
+  test("失敗したら間隔を倍々に空け (上限あり)、読めない形式でも止まらない", async () => {
     const { ctx } = context();
     const waits: number[] = [];
     const controller = new AbortController();

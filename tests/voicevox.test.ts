@@ -319,7 +319,7 @@ describe("声を替える (PUT /api/speech)", () => {
     await v.check();
     const body = JSON.stringify({ voice: 52 });
     expect((await changeVoice(v, undefined, put(body))).status).toBe(401);
-    // フォームの形 (別のオリジンからプリフライトなしで送れる) は受けない
+    // フォームの形式 (別のオリジンからプリフライトなしで送れる) は受けない
     expect(
       (await changeVoice(v, "sub-1", put(body, "text/plain"))).status,
     ).toBe(415);

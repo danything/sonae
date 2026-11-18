@@ -7,7 +7,7 @@
  *   出典は画面の「出典と注意」の窓 (`#lib/notice.ts`)。商用で立てるなら ExpTech の同意が要る (README)
  * - **知らせには使わない。** 受けたものは DB に入れず、Broker にも流さない (Web Push・Webhook・読み上げに届かない)。
  *   `RtsBoard` に今の値だけを持ち、開いている画面に `event: rts` で配る (地図の点の色だけ)
- * - 既定の sleep の形でつなぐ (地震の間だけ 0.5 秒ごとに送り、ふだんは 60 秒ごとの `: ping` だけ)。
+ * - 既定の sleep のモードでつなぐ (地震の間だけ 0.5 秒ごとに送り、ふだんは 60 秒ごとの `: ping` だけ)。
  *   ExpTech が「地震の間のデータだけ要るなら sleep」と勧めている。ふだんの観測点は灰色の点で置く
  * - 張り直しは文書のとおり 3 秒から倍々、上限 60 秒に揺らぎを足す。429 は 60 秒より短く張り直さない。
  *   90 秒何も来なければ (ping も含めて) 切れたとみなす
@@ -18,10 +18,8 @@
 import type { SourceStatus } from "#lib/model.ts";
 import type { RtsStation } from "#lib/rts.ts";
 
-import { RtsBoard } from "../rts-board.ts";
+import type { RtsBoard } from "../rts-board.ts";
 import { sleep, StatusTracker, USER_AGENT } from "./retry.ts";
-
-export { RtsBoard };
 import type { Source } from "./types.ts";
 
 const TREM_RTS_URL = "https://api.lb.exptech.dev/api/v1/trem/sse/rts";
@@ -56,13 +54,9 @@ export function parseStations(text: string): Map<string, RtsStation> {
 }
 
 /** RTS の 1 つのスナップショット (base64 の gzip の JSON) を読む。観測点 id → 計測震度 (`i`) */
-export function decodeRts(data: string): {
-  ts?: number;
-  i: Map<string, number>;
-} {
+export function decodeRts(data: string): Map<string, number> {
   const bytes = Uint8Array.from(atob(data.trim()), (c) => c.charCodeAt(0));
   const doc = JSON.parse(new TextDecoder().decode(Bun.gunzipSync(bytes))) as {
-    ts?: unknown;
     stations?: unknown;
   };
   if (typeof doc.stations !== "object" || doc.stations === null)
@@ -74,7 +68,7 @@ export function decodeRts(data: string): {
     const n = (v as { i?: unknown } | null)?.i;
     if (typeof n === "number" && Number.isFinite(n)) i.set(k, n);
   }
-  return { ts: typeof doc.ts === "number" ? doc.ts : undefined, i };
+  return i;
 }
 
 /** SSE の 1 件 */
@@ -248,7 +242,7 @@ export function tremSource(board: RtsBoard, o: TremOptions = {}): Source {
         for (const m of parser.push(decoder.decode(value, { stream: true }))) {
           if (m.event !== "message") continue;
           try {
-            board.put(decodeRts(m.data).i);
+            board.put(decodeRts(m.data));
             status.seen(true);
           } catch (err) {
             status.set("connected", `読めないスナップショット: ${err}`);

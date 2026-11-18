@@ -82,7 +82,7 @@ test("新しい電報の本文を 1 回だけ取り、お知らせにする", as
   expect(source.status().state).toBe("stopped");
 });
 
-test("一覧の形が変わったら、その回を捨てて状態にエラーを出す (止まらない)", async () => {
+test("一覧の形式が変わったら、その回を捨てて状態にエラーを出す (止まらない)", async () => {
   const { ctx, got } = context();
   const waits: number[] = [];
   const controller = new AbortController();

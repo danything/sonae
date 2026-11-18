@@ -4,7 +4,7 @@
  * - 間隔は情報源ごとに決め、`minIntervalMs` より短くしない (相手のキャッシュの寿命より短く取りに行かない)
  * - `If-None-Match`・`If-Modified-Since` を付ける。304 なら何もしない
  * - 続けて失敗したら、2 回目から間隔の 2 倍・4 倍…と空ける (上限 `maxBackoffMs`)。同じ URL を立て続けに取りに行かない
- * - 読めない形 (相手の形が変わった) は、その回を捨てて状態にエラーを出す。ほかの情報源には響かない
+ * - 読めない形式 (相手の形式が変わった) は、その回を捨てて状態にエラーを出す。ほかの情報源には響かない
  * - 起動したときと、取得が `gapMs` より長く途切れた後に、1 回だけ `backfillUrl` (長い期間の一覧) を読む
  */
 
@@ -15,7 +15,7 @@ import type { Incoming, Source, SourceContext } from "./types.ts";
 
 /** 読むときに使える道具。一覧から本文を取りに行く情報源 (気象庁 bosai の国際津波など) が使う */
 export interface PollTools {
-  /** 本文を 1 つ取る (同じ頭を付け、20 秒で諦める)。200 でなければ例外 */
+  /** 本文を 1 つ取る (同じヘッダーを付け、20 秒で諦める)。200 でなければ例外 */
   fetchText(url: string): Promise<string>;
   signal: AbortSignal;
   /** この回で取り残したものがある (次の回も一覧を 304 にせず読み直す) */
@@ -31,7 +31,7 @@ export interface PollOptions {
   minIntervalMs: number;
   maxBackoffMs?: number;
   gapMs?: number;
-  /** 付ける要求の頭 (Accept・鍵など) */
+  /** 付ける要求のヘッダー (Accept・鍵など) */
   headers?: Record<string, string>;
   /** 受けた本文から、渡すもの (鍵が付いた Incoming) を作る。読めなければ例外を投げる */
   parse(

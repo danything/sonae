@@ -34,7 +34,7 @@ export function memoryStore(start = "2026-11-13T00:00:00.000Z") {
 export const codeOf = (file: string) =>
   /_([A-Z]{4}\d{2})\.xml$/.exec(file)?.[1] ?? "";
 
-/** 気象庁の XML の fixture を、気象庁のフィードから受けた 1 通の形にする */
+/** 気象庁の XML の fixture を、気象庁のフィードから受けた 1 通の形式にする */
 export function jmaIncoming(file: string): Incoming {
   const body = fixture(`jma/${file}`);
   return {

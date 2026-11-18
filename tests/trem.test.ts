@@ -10,10 +10,10 @@ import {
   rtsColor,
   rtsFeatures,
 } from "#lib/rts.ts";
+import { RtsBoard } from "#lib/server/rts-board.ts";
 import {
   decodeRts,
   parseStations,
-  RtsBoard,
   SseParser,
   tremDelay,
   tremSource,
@@ -28,7 +28,7 @@ const CSV = [
   "3,BAD,x,121,1,1,3,2026-02-16,1",
 ].join("\n");
 
-/** 文書の例の形のスナップショットを、配信と同じ base64(gzip(JSON)) にする */
+/** 文書の例の形式のスナップショットを、配信と同じ base64(gzip(JSON)) にする */
 const snapshot = (
   stations: Record<string, { i: number; pga?: number; alert?: 1 }>,
 ) =>
@@ -56,9 +56,8 @@ test("スナップショット: base64 の gzip の JSON から計測震度 (i) 
   const r = decodeRts(
     snapshot({ "125313C": { i: 3.3, pga: 4.05, alert: 1 }, X: { i: -3 } }),
   );
-  expect(r.ts).toBe(1790619680000);
-  expect(r.i.get("125313C")).toBe(3.3);
-  expect(r.i.get("X")).toBe(-3);
+  expect(r.get("125313C")).toBe(3.3);
+  expect(r.get("X")).toBe(-3);
   expect(() =>
     decodeRts(
       Buffer.from(Bun.gzipSync(new TextEncoder().encode("{}"))).toString(
