@@ -7,6 +7,7 @@ import {
   INTENSITY_COLORS,
   LG_COLORS,
   TSUNAMI_COLORS,
+  volcanoKindText,
   WARNING_COLORS,
 } from "#lib/format.ts";
 import type {
@@ -407,7 +408,7 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   },
   {
     label: "津波の警報・注意報",
-    note: "津波予報区の海岸の線を区分の色で引きます。大津波警報は線が太くなります",
+    note: "津波予報区の海岸の線を区分の色で引きます。大津波警報は紫の太い線、津波警報は赤、津波注意報は黄、津波予報 (若干の海面変動) は青い細い線です",
   },
   {
     label: "緊急地震速報",
@@ -435,7 +436,7 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   },
   {
     label: "火山",
-    note: "噴火警戒レベル 2 以上の火山と、選んだ情報の火山の三角。中の数字はレベル",
+    note: "噴火警戒レベル 2 以上の火山と、選んだ情報の火山の三角。中の数字はレベルです。レベルが分からない火山は灰色の三角で、右に種類の名前 (噴火速報は「噴火速報」) を出します",
   },
   {
     label: "道路・地名・施設の記号",
@@ -712,6 +713,13 @@ export interface VolcanoMark {
   at: [number, number];
   /** 警戒の段 (1〜5)。分からなければ無し */
   level?: number;
+  /**
+   * 段が分からないときに、三角の横に出す字 (色だけに頼らない。docs/design.md の 6.2)。
+   * 噴火速報は「噴火速報」、ほかは種類の名前。段があれば無し (三角の中の数字で書く)
+   */
+  label?: string;
+  /** 字の地の色の段。噴火速報は一覧と同じくいちばん重い色 (5)、ほかは無し (灰色) */
+  labelLevel?: number;
   kind: string;
   /** 選んだ情報の火山 */
   selected: boolean;
@@ -738,12 +746,20 @@ export function volcanoMarks(
             : undefined;
       if (!at) continue;
       const prev = out.get(a.code);
+      // 噴火速報には段が無いので、いまの段を残す
+      const level = a.level ?? prev?.level;
       out.set(a.code, {
         code: a.code,
         name: a.name,
         at,
-        // 噴火速報には段が無いので、いまの段を残す
-        level: a.level ?? prev?.level,
+        level,
+        label:
+          level !== undefined
+            ? undefined
+            : v.code === "VFVO56"
+              ? "噴火速報"
+              : volcanoKindText(a.kind) || "火山",
+        labelLevel: level === undefined && v.code === "VFVO56" ? 5 : undefined,
         kind: a.kind,
         selected: isSelected || prev?.selected === true,
       });
