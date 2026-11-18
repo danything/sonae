@@ -48,6 +48,7 @@
   import TsunamiSummary from "#lib/components/TsunamiSummary.svelte";
   import VolcanoLevel from "#lib/components/VolcanoLevel.svelte";
   import WarningLevel from "#lib/components/WarningLevel.svelte";
+  import { troubleLabel } from "#lib/connection.ts";
   import { activeEews } from "#lib/eew.ts";
   import {
     depthText,
@@ -1002,9 +1003,7 @@
 
 {#snippet statusBody()}
   <p class="menu-head">
-    {live.connected
-      ? "受信に問題があります"
-      : "配信が切れています・再接続しています"}
+    {troubleLabel(live.connected)}
   </p>
   <StatusList connected={live.connected} statuses={snap.statuses} />
 {/snippet}
@@ -1163,9 +1162,7 @@
               data-testid="trouble"
             >
               <Icon icon={TriangleAlert} size={1} />
-              {live.connected
-                ? "受信に問題があります"
-                : "配信が切れています・再接続しています"}
+              {troubleLabel(live.connected)}
             </button>
           {/snippet}
           {@render statusBody()}
@@ -1438,9 +1435,7 @@
             {...props}
             type="button"
             class="ghost icon small dock-more warn"
-            aria-label={live.connected
-              ? "受信に問題があります"
-              : "配信が切れています"}
+            aria-label={troubleLabel(live.connected, true)}
             data-testid="dock-trouble"
           >
             <Icon icon={TriangleAlert} />
