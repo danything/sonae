@@ -78,6 +78,10 @@ async function readInfo(): Promise<PushInfo> {
   return (await res.json()) as PushInfo;
 }
 
+/** 作り直した後に読み直す。読めなければ前に読んだもので返す (作り直した結果と文を呼ぶ側に届ける) */
+const readInfoOr = (prev: PushInfo): Promise<PushInfo> =>
+  readInfo().catch(() => prev);
+
 /** `readPushState` が返すもの */
 export type PushState = {
   info: PushInfo;
@@ -127,15 +131,15 @@ async function readPushStateOnce(): Promise<PushState> {
       return { info, endpoint: undefined };
     case "blocked":
       endpointBlocked = renewed.block;
-      return { info: await readInfo(), endpoint: undefined };
+      return { info: await readInfoOr(info), endpoint: undefined };
     case "failed":
       return {
-        info: renewed.kept ? info : await readInfo(),
+        info: renewed.kept ? info : await readInfoOr(info),
         endpoint: renewed.kept ? sub.endpoint : undefined,
         note: renewFailedText(renewed.reason, renewed.kept),
       };
     case "renewed":
-      return { info: await readInfo(), endpoint: renewed.endpoint };
+      return { info: await readInfoOr(info), endpoint: renewed.endpoint };
   }
 }
 
