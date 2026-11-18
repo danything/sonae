@@ -78,17 +78,30 @@ async function readInfo(): Promise<PushInfo> {
   return (await res.json()) as PushInfo;
 }
 
+/** `readPushState` が返すもの */
+export type PushState = {
+  info: PushInfo;
+  endpoint: string | undefined;
+  /** 購読を作り直せなかったときの文 */
+  note?: string;
+};
+
+/** 読んでいる途中の `readPushState` (窓を開いたときと地図のメニューが重なっても、作り直しを 1 回にする) */
+let reading: Promise<PushState> | undefined;
+
 /**
  * サーバーの Web Push の登録と、このブラウザの購読の endpoint (無ければ undefined)。
  * 購読の公開鍵がサーバーの公開鍵と違えば (VAPID の鍵を替えた)、ここで作り直してサーバーに登録し直す
- * (`#lib/push-renew.ts`)。作り直せなかったときは、その文を `note` に返す
+ * (`#lib/push-renew.ts`)。作り直せなかったときは、その文を `note` に返す。
+ * 重なって呼ばれたら、読んでいる途中のものを待つ (同じ購読を 2 度作り直さない)
  */
-export async function readPushState(): Promise<{
-  info: PushInfo;
-  endpoint: string | undefined;
-  note?: string;
-}> {
-  let info = await readInfo();
+export function readPushState(): Promise<PushState> {
+  reading ??= readPushStateOnce().finally(() => (reading = undefined));
+  return reading;
+}
+
+async function readPushStateOnce(): Promise<PushState> {
+  const info = await readInfo();
   if (!info.enabled || !pushSupported()) return { info, endpoint: undefined };
   const pm = (await navigator.serviceWorker.ready).pushManager;
   const sub = await pm.getSubscription();
@@ -117,13 +130,12 @@ export async function readPushState(): Promise<{
       return { info: await readInfo(), endpoint: undefined };
     case "failed":
       return {
-        info: await readInfo(),
-        endpoint: undefined,
-        note: renewFailedText(renewed.reason),
+        info: renewed.kept ? info : await readInfo(),
+        endpoint: renewed.kept ? sub.endpoint : undefined,
+        note: renewFailedText(renewed.reason, renewed.kept),
       };
     case "renewed":
-      info = await readInfo();
-      return { info, endpoint: renewed.endpoint };
+      return { info: await readInfo(), endpoint: renewed.endpoint };
   }
 }
 
@@ -284,7 +296,7 @@ export async function saveHome(home: Home): Promise<string> {
   // 「通知」の窓で変えた条件をまだ送っている途中なら、それが終わってからサーバーの条件を読む
   // (古い条件に住んでいる地域だけを足して送り、窓で変えた所を戻さない)
   await prefsSettled();
-  let state: Awaited<ReturnType<typeof readPushState>> | null = null;
+  let state: PushState | null = null;
   try {
     state = await readPushState();
   } catch {
@@ -302,5 +314,7 @@ export async function saveHome(home: Home): Promise<string> {
     result === null || result === "保存しました"
       ? plan.note
       : `${plan.note}。${result}`;
-  return failed ? `${note}。${failed}` : note;
+  // 鍵が替わっていて購読を作り直せなかったときは、その文も添える
+  const all = state?.note ? `${note}。${state.note}` : note;
+  return failed ? `${all}。${failed}` : all;
 }

@@ -36,6 +36,7 @@
     prefsSettled,
     pushBlock,
     type PushInfo,
+    type PushState,
     queuePrefs,
     readPushState,
     sendPrefs,
@@ -181,7 +182,7 @@
     pref = prefs.home?.code.slice(0, 2) ?? "";
     if (Object.keys(cities).length === 0) void loadCities();
     block = pushBlock();
-    let state: Awaited<ReturnType<typeof readPushState>>;
+    let state: PushState;
     try {
       state = await readPushState();
     } catch (err) {

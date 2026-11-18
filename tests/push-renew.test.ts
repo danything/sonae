@@ -138,21 +138,31 @@ describe("鍵を替えたときの購読の作り直し", () => {
   test("サーバーが登録を断ったら、作り直した購読も消して、理由を返す", async () => {
     const f = fakes({ status: { PUT: 409 } });
     const r = await renewIfKeyChanged(oldSub(), NEW_KEY, DEFAULT_PREFS, f.deps);
-    expect(r).toEqual({ kind: "failed", reason: "登録できませんでした (409)" });
+    expect(r).toEqual({
+      kind: "failed",
+      reason: "登録できませんでした (409)",
+      kept: false,
+    });
     expect(f.created[0]?.unsubscribed).toBe(true);
-    expect(renewFailedText("登録できませんでした (409)")).toBe(
+    expect(renewFailedText("登録できませんでした (409)", false)).toBe(
       "サーバーの鍵が替わったため購読を作り直そうとしましたが、できませんでした (登録できませんでした (409))。「このブラウザで受ける」を押してください",
     );
   });
 
-  test("サーバーの前の endpoint を消せなければ、作り直さない", async () => {
+  test("サーバーの前の endpoint を消せなければ、ブラウザの購読も残して作り直さない (次に開いたときに作り直す)", async () => {
+    const sub = oldSub();
     const f = fakes({ status: { DELETE: 500 } });
-    const r = await renewIfKeyChanged(oldSub(), NEW_KEY, DEFAULT_PREFS, f.deps);
+    const r = await renewIfKeyChanged(sub, NEW_KEY, DEFAULT_PREFS, f.deps);
     expect(r).toEqual({
       kind: "failed",
       reason: "前の購読を消せませんでした (500)",
+      kept: true,
     });
+    expect(sub.unsubscribed).toBe(false);
     expect(f.created).toEqual([]);
+    expect(renewFailedText("前の購読を消せませんでした (500)", true)).toBe(
+      "サーバーの鍵が替わったため購読を作り直そうとしましたが、できませんでした (前の購読を消せませんでした (500))。次に「通知」を開いたときに、もう一度作り直します",
+    );
   });
 
   test("作り直した購読が届かない宛先なら、サーバーに送らずに消す", async () => {
