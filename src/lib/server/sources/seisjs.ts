@@ -1,7 +1,7 @@
 /**
  * Wolfx SeisJS (有志の観測点のいまの揺れ)。docs/design.md の 2.10。
  *
- * - 文書: https://wolfx.jp/seisapi ・プライバシー通知 https://seis.wolfx.jp/PrivatePolicy/ja_JP
+ * - 文書: https://wolfx.jp/docs/seisjs-api/ ・プライバシー通知 https://seis.wolfx.jp/PrivatePolicy/ja_JP
  * - 2026-11-17 に Wolfx から、家庭のセルフホストで家族の地図に出すのは SeisJS の利用目的の範囲内で、
  *   個別の許諾は要らないと答えをもらった。出典は「Wolfx Project (SeisJS)」(`#lib/notice.ts`)
  * - 接続はサーバーごとに 1 本を使い回し、切れたら間隔を延ばしながら張り直す (Wolfx の頼み)。

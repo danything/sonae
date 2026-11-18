@@ -2,7 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import type { SonaeEvent } from "#lib/model.ts";
 import { contentOf, decide } from "#lib/notify.ts";
-import { DEFAULT_PREFS, normalizePrefs, toNotification } from "#lib/push.ts";
+import {
+  DEFAULT_PREFS,
+  normalizePrefs,
+  pushTestText,
+  toNotification,
+} from "#lib/push.ts";
 import { openDb } from "#lib/server/db.ts";
 import {
   digestOf,
@@ -944,4 +949,13 @@ test("試しの通知の回数の制限: 窓の中で max 回まで、超えた�
   expect(limit.take("you")).toBe(0);
   t = 60_000;
   expect(limit.take("me")).toBe(0);
+});
+
+describe("試しの通知の結果の文", () => {
+  test("送れたときだけ「送りました」と出す", () => {
+    expect(pushTestText("ok")).toStartWith("送りました");
+    expect(pushTestText("gone")).toContain("購読が切れていた");
+    expect(pushTestText("error")).toStartWith("送れませんでした");
+    expect(pushTestText(undefined)).toStartWith("送れませんでした");
+  });
 });

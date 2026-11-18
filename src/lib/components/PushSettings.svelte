@@ -50,6 +50,7 @@
     DEFAULT_PREFS,
     normalizePrefs,
     type PushPrefs,
+    pushTestText,
     quakeMinOf,
     SCOPE_KINDS,
     SCOPES,
@@ -379,9 +380,15 @@
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ endpoint }),
       });
-      message = res.ok
-        ? "送りました。届かないときは、端末の通知の設定を見てください。"
-        : res.status === 429
+      if (res.ok) {
+        const { result } = (await res.json()) as { result?: unknown };
+        // 購読が切れていてサーバーが消したときは、登録済みの表示を読み直す (load は文を消すので先に)
+        if (result === "gone") await load();
+        message = pushTestText(result);
+        return;
+      }
+      message =
+        res.status === 429
           ? ((
               (await res.json().catch(() => null)) as {
                 message?: string;
@@ -509,8 +516,8 @@
       {/each}
       <p class="small muted">
         特別警報にあたるもの (気象の特別警報・大津波警報・噴火警報 (レベル
-        4・5))
-        と、南海トラフ地震臨時情報・後発地震注意情報は、「知らせない」を選んでもいつも知らせます。
+        4・5)) と、南海トラフ地震臨時情報・南海トラフ地震関連解説情報
+        (定例外)・後発地震注意情報は、「知らせない」を選んでもいつも知らせます。
       </p>
       {#if prefsMessage}
         <p class="small" role="status" data-testid="prefs-status">

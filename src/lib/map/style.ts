@@ -57,7 +57,7 @@ const RTS_ATTRIBUTION =
 
 /** 有志の観測点の揺れ (Wolfx SeisJS) の出典。Wolfx から返事をもらった書き方 (全文は `#lib/notice.ts` の CREDITS) */
 const SEIS_ATTRIBUTION =
-  '<a href="https://wolfx.jp/seisapi" target="_blank" rel="noopener">Wolfx Project (SeisJS)</a>・非公式';
+  '<a href="https://wolfx.jp/docs/seisjs-api/" target="_blank" rel="noopener">Wolfx Project (SeisJS)</a>・非公式';
 
 const JMA_GIS_ATTRIBUTION =
   '<a href="https://www.data.jma.go.jp/developer/gis.html" target="_blank" rel="noopener">気象庁 予報区等 GIS データ</a> を加工';

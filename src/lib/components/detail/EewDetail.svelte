@@ -19,7 +19,7 @@
    * 緊急地震速報の詳しい内容。**予想震度は出さない** (docs/design.md の 5 章。モデルにも入っていない)。
    *
    * いま出ているもの (`active`。訓練・試験を除き、最後の報から 3 分の間。`#lib/eew.ts`) は、先頭の箱に出す (docs/ui.md の「自動で開く」)。
-   * 警報は状態の赤で塗り「強い揺れに警戒」と対象の地域、予報は震源と M、取消は取り消されたこと。
+   * 警報は状態の赤で塗り「強い揺れに警戒」と警報の地域、予報は震源と M、取消は取り消されたこと。
    * 箱は `role="alert"` で、続報で中身が変わるたびに読み上げソフトにも伝わる。強震モニタへのリンクもここ
    */
   let { e, active = false }: { e: Eew; active?: boolean } = $props();
@@ -64,7 +64,7 @@
       {#if !e.cancelled}
         {#if e.kind === "warning" && e.warnAreas.length > 0}
           <p class="areas">
-            <span class="label">対象の地域</span>
+            <span class="label">警報の地域</span>
             {e.warnAreas.join("・")}
           </p>
         {/if}

@@ -24,6 +24,10 @@ services:
         required: false
     environment:
       TZ: Asia/Tokyo
+      # 置き場とポートはこのファイルが決める (下の volumes・ports と組み。sonae.env に書いても効かないよう、ここで上書きする)
+      SONAE_DATA: /data
+      PORT: "3000"
+      HOST: 0.0.0.0
       # 読み上げの声を作る VOICEVOX (下の voicevox。docs/design.md の 2.4)
       VOICEVOX_URL: http://voicevox:50021
       # 何も流れない接続を切るまでの秒数 (adapter-bun)。既定の 10 秒だと SSE (/api/stream) が切れる
