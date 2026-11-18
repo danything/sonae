@@ -112,6 +112,23 @@ export function magnitudeText(
   return q.magnitudeText ?? "—";
 }
 
+/**
+ * いま出ている緊急地震速報の箱の震源の行 (「震源 石川県能登地方・深さ 約 10 km・M5.6」)。
+ * 震源も M も無ければ空
+ */
+export function eewSourceLine(
+  e: Pick<Quake, "hypocenter" | "magnitude" | "magnitudeText">,
+): string {
+  return [
+    e.hypocenter
+      ? `震源 ${e.hypocenter.name}・深さ ${depthText(e.hypocenter)}`
+      : "",
+    e.magnitude !== undefined ? magnitudeText(e) : "",
+  ]
+    .filter(Boolean)
+    .join("・");
+}
+
 /** 気象庁の「震度の色」(配色の指針 表 2-2) と、その上に置く字の色 */
 export const INTENSITY_COLORS: Record<string, { bg: string; fg: string }> = {
   "7": { bg: "rgb(180 0 104)", fg: "#fff" },
