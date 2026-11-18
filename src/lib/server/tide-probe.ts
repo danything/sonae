@@ -28,7 +28,7 @@ export type TideTrigger = "tsunami" | "quake" | "wave";
 /** 地震の後に測る時間 */
 export const QUAKE_WINDOW_MS = 2 * 60 * 60_000;
 /** 残す期間と行の数 */
-export const KEEP_DAYS = 90;
+const KEEP_DAYS = 90;
 export const KEEP_ROWS = 10_000;
 /** 前に取れた時刻からこれより空いていれば、その回の「取った時刻からの遅れ」は更新の時刻を表さない */
 const GAP_MS = 90_000;
@@ -123,8 +123,8 @@ export interface TideRow {
   afterGap: boolean;
 }
 
-/** ログに出力する 1 行。`grep tide-latency` で拾う */
-export const logLine = (r: TideRow) =>
+/** ログに出力する 1 行。`grep tide-latency` で探せる */
+const logLine = (r: TideRow) =>
   `tide-latency data=${r.dataTime} fetched=${r.fetchedAt} lastModified=${r.lastModified ?? "-"} fetchDelay=${r.fetchDelaySec}s modifiedDelay=${r.modifiedDelaySec === null ? "-" : `${r.modifiedDelaySec}s`} triggers=${r.triggers.join(",")} afterGap=${r.afterGap ? 1 : 0}`;
 
 export interface TideProbeOptions {

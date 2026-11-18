@@ -42,7 +42,7 @@ https://github.com/user-attachments/assets/24a0b5a8-9ba6-4722-bb65-c7baeda2827f
 特別警報にあたるもの (気象の特別警報・大津波警報・噴火警報 (レベル 4・5)) と、南海トラフ地震臨時情報・後発地震注意情報は、「知らせない」を選んでもいつも知らせる。
 
 開いている画面では、条件に合う情報を短い音と読み上げで知らせる (「オフ」「通知音だけ」「読み上げも」から選ぶ)。読み上げの声は、sonae と一緒に動かす [VOICEVOX](https://voicevox.hiroshiba.jp/) のエンジンで作る (既定の声は「VOICEVOX:剣崎雌雄」。声は画面で選べ、この家の全部の端末で同じ声になる)。
-エンジンは sonae とは別のプロセスで動かし (理由は [docs/design.md の 2.4](docs/design.md#24-web-push))、1 行のインストーラでも `docker compose up` でも Helm chart でも sonae と一緒に起きる。
+エンジンは sonae とは別のプロセスで動かし (理由は [docs/design.md の 2.4 の「読み上げ」](docs/design.md#読み上げ-voicevox))、1 行のインストーラでも `docker compose up` でも Helm chart でも sonae と一緒に起きる。
 エンジンが止まっているときは、ブラウザの読み上げで同じ文を読む。
 
 タブを閉じていても、条件に合う情報を Web Push でブラウザに届ける。Discord や Slack の Incoming Webhook の URL を「通知」に足せば、同じ情報を同じ見出しと本文でチャンネルにも送る (Home Assistant のような、JSON を受ける送り先にも送れる。[docs/push.md の「Webhook」](docs/push.md#webhook))。

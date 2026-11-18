@@ -1,6 +1,6 @@
 /**
  * P2P地震情報と Wolfx の時刻 (`2006/01/02 15:04:05.999`、日本時間) を ISO 8601 (+09:00) にする。
- * 形が違えば undefined。
+ * 形式が違えば undefined。
  */
 export function jstToIso(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;

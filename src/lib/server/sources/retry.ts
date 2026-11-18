@@ -1,7 +1,7 @@
 /**
- * 張り直しの間隔と、WebSocket を張り続ける輪。P2P・Wolfx・EMSC で同じものを使う。
+ * 張り直しの間隔と、WebSocket を張り続ける輪。P2P・Wolfx・EMSC・SeisJS で同じものを使う。
  *
- * - 指数のバックオフに揺らぎを足す (1 秒から倍々、上限 30 秒、full jitter)
+ * - 指数のバックオフに揺らぎを足す (既定は 1 秒から倍々、上限 30 秒、full jitter。EMSC は自分の間隔を渡す)
  * - 60 秒つながっていたら間隔を戻す
  * - 決まった時間 (既定 90 秒。情報源ごとに変える。P2P は見ない) 何も来なければ (heartbeat も含めて) 切れたとみなして張り直す
  */
@@ -86,7 +86,7 @@ export interface SocketLoopOptions {
   connect?: Connect;
   backoff?: Backoff;
   /**
-   * 何も来なければ死んだとみなす時間。null で見ない (heartbeat の無い P2P。切れたことは close で知る)。
+   * 何も来なければ切れたとみなす時間。null で見ない (heartbeat の無い P2P。切れたことは close で知る)。
    * つながるまでは、どちらでも 30 秒で諦める
    */
   idleMs?: number | null;

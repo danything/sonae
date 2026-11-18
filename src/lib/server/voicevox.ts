@@ -6,7 +6,7 @@
  *   画面は原稿を自分で作り、文ごとに `POST /api/speech` で音を取りに来る。
  * - 冒頭の決まった文は、起動したとき・つながり直したとき・声を替えたときに、選んである声で合成しておく。
  * - 合成した音はメモリに (声, 文) の組で持つ。選んである声の決まった文は捨てず、ほかは古いものから上限まで捨てる。
- * - 合成は 1 つずつ順に頼む (エンジンは CPU で 1 つずつ合成する)。事象の文を、声の下ごしらえより先にする。
+ * - 合成は 1 つずつ順にリクエストする (エンジンは CPU で 1 つずつ合成する)。事象の文を、声の下ごしらえより先にする。
  * - 地名の読みはユーザー辞書 (`readings.ts`) で直す。エンジンは辞書をコンテナの中に持つので、
  *   つながるたびに足りない語を足す。
  * - 合成できる文は、決まった文と、受けた事象の原稿の文だけ (勝手な文をエンジンに読ませない)。
@@ -169,7 +169,7 @@ export class Voicevox {
   }
 
   /** 選べる声か (つながる前は既定の声だけ) */
-  isVoice(id: number): boolean {
+  private isVoice(id: number): boolean {
     return id === this.defaultSpeaker || this.voices.some((v) => v.id === id);
   }
 
@@ -182,7 +182,7 @@ export class Voicevox {
   }
 
   /** 決まった文をこの声で合成しておく (後回しの列に入れる) */
-  warm(speaker: number): void {
+  private warm(speaker: number): void {
     for (const t of FIXED_TEXTS)
       void this.audio(speaker, t, false).catch(() => {});
   }
@@ -306,7 +306,7 @@ export class Voicevox {
    * audio_query で読みと抑揚を作り、synthesis で WAV にする。かかった秒数と音の秒数を 1 行で出す
    * (話している間に次の文が間に合うかを見るため。文の中身は出さず、字数だけ)
    */
-  async synthesize(
+  private async synthesize(
     speaker: number,
     text: string,
   ): Promise<Uint8Array<ArrayBuffer>> {
@@ -340,7 +340,7 @@ export class Voicevox {
   /**
    * 選べる声を `/speakers` から作る (規約を確かめたキャラクターだけ。既定の声の剣崎雌雄も入っている)
    */
-  async loadVoices(): Promise<void> {
+  private async loadVoices(): Promise<void> {
     const list = (await (await this.call("/speakers", {}, 10_000)).json()) as {
       name: string;
       speaker_uuid: string;
@@ -536,7 +536,7 @@ const plain = (status: number, text: string) =>
  * - ログインした人なら誰でも替えられる (通すロールは 1 つで、ログインした人はみな同じロールを持つ。2.6)。
  *   `subject` が無ければ 401 (hooks の内側なので、ふつうは来ない)。
  * - 本文は JSON だけ受ける (415)。ほかのサイトから JSON で送るにはプリフライトが要り、通らない
- *   (フォームの形は SvelteKit が別のオリジンから受けない)。
+ *   (フォームの形式は SvelteKit が別のオリジンから受けない)。
  * - VOICEVOX を使っていなければ 404、選べない声は 400。
  */
 export async function changeVoice(

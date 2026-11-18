@@ -55,7 +55,7 @@ export class RtsBoard {
     return { stations: [...this.stationsById.values()] };
   }
 
-  /** 揺れを受けた。位置の分かる観測点だけを、画面に送る形にする */
+  /** 揺れを受けた。位置の分かる観測点だけを、画面に送る形式にする */
   put(i: Map<string, number>): RtsFrame {
     const points: [number, number, number][] = [];
     for (const [id, v] of i) {

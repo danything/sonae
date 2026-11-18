@@ -56,7 +56,7 @@ export const PUT: RequestHandler = async ({ locals, request }) => {
   const p = pusherOr404();
   const b = await body(request);
   const sub = parseSubscription(b.subscription);
-  if (!sub) error(400, "購読の形が違うか、知らない配信サービスです");
+  if (!sub) error(400, "購読の形式が違うか、知らない配信サービスです");
   const label = typeof b.label === "string" ? b.label : "";
   if (p.save(subject, sub, normalizePrefs(b.prefs), label) === "full") {
     error(

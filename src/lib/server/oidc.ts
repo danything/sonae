@@ -255,7 +255,7 @@ function readClaims(raw: unknown): Claims {
     typeof o.iss !== "string" ||
     typeof o.exp !== "number"
   ) {
-    throw new Error("ID トークンの形が違います");
+    throw new Error("ID トークンの形式が違います");
   }
   const aud = typeof o.aud === "string" ? o.aud : strings(o.aud);
   if (aud === undefined) throw new Error("ID トークンに aud がありません");
@@ -303,7 +303,7 @@ export async function verify(
   at = Date.now(),
 ): Promise<Claims> {
   const parts = token.split(".");
-  if (parts.length !== 3) throw new Error("ID トークンの形が違います");
+  if (parts.length !== 3) throw new Error("ID トークンの形式が違います");
   const [rawHeader = "", rawPayload = "", rawSignature = ""] = parts;
   const header = JSON.parse(
     new TextDecoder().decode(decodeBase64Url(rawHeader)),
@@ -341,7 +341,7 @@ export async function verify(
     throw new Error("ID トークンがまだ有効ではありません");
   }
   if (claims.nonce !== nonce)
-    throw new Error("ID トークンの合言葉が合いません");
+    throw new Error("ID トークンの nonce が合いません");
   if (claims.sub === "") throw new Error("ID トークンに sub がありません");
   return claims;
 }

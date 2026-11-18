@@ -102,7 +102,7 @@ describe("緊急地震速報の新旧の判定", () => {
     expect(store.eew("20220811005302")?.serial).toBe(2);
   });
 
-  test("一度出た警報は、予報の形の続報でも警報のまま", () => {
+  test("一度出た警報は、予報として来た続報でも警報のまま", () => {
     const { store } = memoryStore();
     store.ingest(wolfx(warning));
     store.ingest(wolfx({ ...forecast, Serial: 3 }));

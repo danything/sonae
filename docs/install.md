@@ -144,7 +144,7 @@ Linux は sonae のイメージの bun で、Mac と Windows は配布物の bun
 
 ## VOICEVOX
 
-読み上げの声は、sonae と一緒に動かす [VOICEVOX](https://voicevox.hiroshiba.jp/) のエンジンで作ります ([design.md の 2.4](design.md#24-web-push))。
+読み上げの声は、sonae と一緒に動かす [VOICEVOX](https://voicevox.hiroshiba.jp/) のエンジンで作ります ([design.md の 2.4 の「読み上げ」](design.md#読み上げ-voicevox))。
 既定の声は「VOICEVOX:剣崎雌雄」で、画面で替えられます。エンジンが止まっているときは、ブラウザの読み上げで同じ文を読みます。
 
 | OS      | 入れるもの                                                                                                          | 取り方                                                                                                   |

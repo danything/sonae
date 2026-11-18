@@ -4,6 +4,7 @@
   import Icon from "#lib/components/Icon.svelte";
   import {
     depthText,
+    eewSourceLine,
     jstClock,
     jstFull,
     magnitudeText,
@@ -40,6 +41,7 @@
       e.sources.map((s) => SOURCE_LABEL[s]).join("、"),
     ].filter(Boolean),
   );
+  const sourceLine = $derived(eewSourceLine(e));
 </script>
 
 <div class="detail stack">
@@ -66,17 +68,14 @@
             {e.warnAreas.join("・")}
           </p>
         {/if}
-        <p class="small">
-          {#if e.hypocenter}
-            震源 {e.hypocenter.name}・深さ {depthText(e.hypocenter)}
-          {/if}
-          {#if e.magnitude !== undefined}
-            ・{magnitudeText(e)}
-          {/if}
-          {#if e.assumed}
-            <span class="tag">仮定震源 (震源と M は目安)</span>
-          {/if}
-        </p>
+        {#if sourceLine || e.assumed}
+          <p class="small">
+            {sourceLine}
+            {#if e.assumed}
+              <span class="tag">仮定震源 (震源と M は目安)</span>
+            {/if}
+          </p>
+        {/if}
       {/if}
       <p class="tiny">
         第 {e.serial} 報{e.final ? " (最終報)" : ""}・{jstClock(e.issuedAt)} 発表・{e.sources

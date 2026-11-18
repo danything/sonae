@@ -211,7 +211,7 @@ function readTyphoon(body: V): TyphoonNow | undefined {
 
 /**
  * 電文 1 通を読む。code は種別 (フィードのリンクのファイル名から取ったもの)。
- * 読めない形なら例外を投げる (呼ぶ側が原文を残して記録する)。
+ * 読めない形式なら例外を投げる (呼ぶ側が原文を残して記録する)。
  */
 export function parseWeatherXml(xml: string, code: string): Normalized[] {
   const doc = XML.parse(xml);

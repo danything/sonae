@@ -22,7 +22,7 @@ const num = (v: unknown) =>
 const str = (v: unknown) =>
   typeof v === "string" && v.trim() !== "" ? v.trim() : undefined;
 
-/** GeoJSON を読む。形が違えば例外 (その回を捨てる) */
+/** GeoJSON を読む。形式が違えば例外 (その回を捨てる) */
 export function parseGeonet(text: string): Incoming[] {
   const doc = JSON.parse(text) as Record<string, unknown>;
   if (doc.type !== "FeatureCollection" || !Array.isArray(doc.features))

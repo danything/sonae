@@ -206,7 +206,7 @@ export function jmaSource(ctx: SourceContext, opts: JmaOptions = {}): Source {
   );
 }
 
-/** 気象の随時のフィード (extra.xml。警報・注意報・土砂災害・竜巻・洪水・台風など) */
+/** 気象の随時のフィード (extra.xml。警報・注意報・竜巻・洪水・台風など) */
 export function jmaWeatherSource(
   ctx: SourceContext,
   opts: JmaOptions = {},

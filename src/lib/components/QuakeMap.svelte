@@ -669,6 +669,8 @@
     if (me && !panned) {
       panned = true;
       locateNote = "";
+      // 人が現在地のボタンを押して寄せた所なので、詳しい内容を閉じても元の位置へ戻さない
+      untrack(() => keeper.moved());
       map.jumpTo({
         center: [me.lon, me.lat],
         zoom: Math.max(map.getZoom(), 13),
