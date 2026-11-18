@@ -540,6 +540,9 @@
       0,
   );
 
+  /** 地図が選んだ地震の観測点を置いたときの、位置の引けなかった観測点 (詳しい内容に数を出す) */
+  let stationMiss = $state<{ id: string; missing: string[] } | null>(null);
+
   // ---- 選んだもの (SSE で続報が来たら差し替える) ----
   const selQuake = $derived(
     v.selected?.kind === "quake"
@@ -1317,7 +1320,13 @@
         {#if v.selected}
           <DetailBar {backHref} onmap={() => (tab = "map")} />
           {#if selQuake}
-            <QuakeDetail q={selQuake} lp={selLongPeriod} />
+            <QuakeDetail
+              q={selQuake}
+              lp={selLongPeriod}
+              unplaced={stationMiss?.id === selQuake.id
+                ? stationMiss.missing
+                : undefined}
+            />
           {:else if selTsunami}
             <TsunamiDetail t={selTsunami} now={live.now} />
           {:else if selEew}
@@ -1415,6 +1424,7 @@
         shown={!phone.current || tab === "map"}
         {found}
         selected={v.selected !== null}
+        onstations={(r) => (stationMiss = r)}
       />
     </div>
   </main>

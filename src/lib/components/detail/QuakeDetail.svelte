@@ -29,7 +29,16 @@
   /**
    * 地震の詳しい内容。節は見出しと余白で分け、囲まない
    */
-  let { q, lp }: { q: Quake; lp?: LongPeriod | null } = $props();
+  let {
+    q,
+    lp,
+    unplaced,
+  }: {
+    q: Quake;
+    lp?: LongPeriod | null;
+    /** 地図に置けなかった (位置の表に無い) 観測点の名前。地図がまだ置いていなければ無し */
+    unplaced?: string[];
+  } = $props();
 
   /** 震度の大きい順 (震度5弱以上未入電は震度5強と震度5弱の間) に、地域 (または観測点) の名前を束ねる */
   function byIntensity<T extends AreaIntensity | StationIntensity>(items: T[]) {
@@ -179,6 +188,12 @@
           <dd class="small">{g.items.map((s) => s.name).join("、")}</dd>
         {/each}
       </dl>
+      {#if unplaced && unplaced.length > 0}
+        <p class="small muted">
+          地図に出していない観測点 ({unplaced.length} 点。位置の表にありません):
+          {unplaced.join("、")}
+        </p>
+      {/if}
     </section>
   {/if}
 

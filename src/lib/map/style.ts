@@ -63,6 +63,20 @@ const SEIS_ATTRIBUTION =
 const JMA_GIS_ATTRIBUTION =
   '<a href="https://www.data.jma.go.jp/developer/gis.html" target="_blank" rel="noopener">気象庁 予報区等 GIS データ</a> を加工';
 
+/** 震度観測点の位置の出典 (全文は `#lib/notice.ts` の CREDITS) */
+const STATIONS_ATTRIBUTION =
+  '<a href="https://www.jma.go.jp/jma/kishou/know/jishin/intens-st/" target="_blank" rel="noopener">気象庁 震度観測点</a>・<a href="https://xml.kishou.go.jp/tec_material.html" target="_blank" rel="noopener">地震火山関連コード表</a> を加工';
+
+/**
+ * 地域ごとの震度の塗りの濃さ。観測点の丸を出しているときは、寄せるほど薄くする (引いているときは丸が重なり、
+ * 地域の塗りが全体の見当になる。寄せると丸が離れて観測点ごとに読めるので、塗りは下地に回す。docs/map.md)
+ */
+export const QUAKE_FILL_OPACITY = 0.75;
+export function quakeFillOpacity(withStations: boolean): number | Expr {
+  if (!withStations) return QUAKE_FILL_OPACITY;
+  return ["interpolate", ["linear"], ["zoom"], 6, QUAKE_FILL_OPACITY, 9, 0.3];
+}
+
 /**
  * プレート境界 (PB2002。`tools/plates/build.sh` で簡略化した線)。ODC Attribution License 1.0 の 4.3 の文
  * (「出典と注意」の窓の全文は `#lib/notice.ts` の CREDITS。docs/map.md)
@@ -397,6 +411,10 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "各地の震度",
     note: "一覧で選んだ地震の、地域ごとの震度の色と数字。何も選んでいないときは出しません",
+  },
+  {
+    label: "観測点ごとの震度",
+    note: "一覧で選んだ地震の、震度観測点ごとの震度の色の丸 (大きい震度が上)。電文に並んだ観測点だけを置き、観測点の間の震度を補ったり推し量ったりはしていません。寄せると丸が大きくなり、地域の塗りは薄くなります。位置の分からない観測点は出さず、詳しい内容にその数を書きます",
   },
   {
     label: "震源",
@@ -870,6 +888,12 @@ export function baseStyle(
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       },
+      // 選んだ地震の観測点ごとの震度 (`#lib/map/stations.ts` の `stationFeatures`)
+      stations: {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+        attribution: STATIONS_ATTRIBUTION,
+      },
       me: {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -940,7 +964,10 @@ export function baseStyle(
         type: "fill",
         source: "quake-areas",
         layout: vis("quake-fill"),
-        paint: { "fill-color": TRANSPARENT, "fill-opacity": 0.75 },
+        paint: {
+          "fill-color": TRANSPARENT,
+          "fill-opacity": QUAKE_FILL_OPACITY,
+        },
       },
       {
         id: "eew-fill",
@@ -1081,6 +1108,40 @@ export function baseStyle(
           "circle-opacity": 0.55,
           "circle-stroke-color": "#fff",
           "circle-stroke-width": 1.5,
+        },
+        layout: { "circle-sort-key": ["get", "order"] },
+      },
+      // 観測点ごとの震度 (選んだ地震だけ)。気象庁の地図と同じく震度の色の丸で、大きい震度を上に描く。
+      // 震源の丸より上 (選んだ地震の中身なので)。震度 1 の白い丸も写真の上で見えるよう、黒い細い縁を付ける
+      {
+        id: "intensity-stations",
+        type: "circle",
+        source: "stations",
+        paint: {
+          "circle-radius": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            4,
+            2.5,
+            7,
+            4,
+            10,
+            7,
+            13,
+            9,
+          ],
+          "circle-color": ["get", "color"],
+          "circle-stroke-color": "rgba(0,0,0,0.65)",
+          "circle-stroke-width": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            4,
+            0.5,
+            10,
+            1,
+          ],
         },
         layout: { "circle-sort-key": ["get", "order"] },
       },
