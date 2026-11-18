@@ -89,7 +89,7 @@ spec:
               name: sonae-data-dst,
             }
 
-        # Cilium Gateway (danything/gitops の bootstrap/gateway/) に付ける。証明書は Gateway のリスナーが持ち、
+        # Cilium Gateway (danything/gitops の deploy/gateway/) に付ける。証明書は Gateway のリスナーが持ち、
         # DNS は Cloudflare の *.doany.io のワイルドカード (プロキシ経由) で引ける
         httpRoute:
           enabled: true
