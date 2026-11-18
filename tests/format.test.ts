@@ -2,12 +2,14 @@ import { expect, test } from "bun:test";
 
 import {
   depthText,
+  EEW_DRILL_NOTE,
   eewSourceLine,
   jstTime,
   magnitudeText,
   quakeName,
   sourceInTrouble,
   sourceStateText,
+  STATUS_LABEL,
 } from "#lib/format.ts";
 import { type Tsunami, tsunamiTop } from "#lib/model.ts";
 
@@ -85,4 +87,17 @@ test("緊急地震速報の箱の震源の行は、無いものを「・」で�
   // 震源が無く M だけのときに「・M5.6」と始めない
   expect(eewSourceLine({ magnitude: 5.6 })).toBe("M5.6");
   expect(eewSourceLine({})).toBe("");
+});
+
+test("訓練・試験の緊急地震速報は、先頭に出す印と文で本物と取り違えないようにする (通常は出さない)", () => {
+  expect(STATUS_LABEL.normal).toBe("");
+  expect(EEW_DRILL_NOTE.normal).toBe("");
+  expect(STATUS_LABEL.training).toBe("訓練");
+  expect(EEW_DRILL_NOTE.training).toBe(
+    "訓練の緊急地震速報です。実際の地震ではありません。",
+  );
+  expect(STATUS_LABEL.test).toBe("試験");
+  expect(EEW_DRILL_NOTE.test).toBe(
+    "試験の緊急地震速報です。実際の地震ではありません。",
+  );
 });

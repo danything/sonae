@@ -1,9 +1,11 @@
 <script lang="ts">
   import ExternalLink from "~icons/lucide/external-link";
+  import TriangleAlert from "~icons/lucide/triangle-alert";
 
   import Icon from "#lib/components/Icon.svelte";
   import {
     depthText,
+    EEW_DRILL_NOTE,
     eewSourceLine,
     jstClock,
     jstFull,
@@ -33,11 +35,11 @@
   const tone = $derived(
     e.cancelled ? "cancelled" : e.kind === "warning" ? "warning" : "forecast",
   );
+  // 訓練・試験は先頭に大きく出すので、ここには並べない (1 つの意味に印は 1 つ)
   const facts = $derived(
     [
       `${jstFull(e.issuedAt)} 発表`,
       `第 ${e.serial} 報${e.final ? " (最終報)" : ""}`,
-      STATUS_LABEL[e.status],
       e.sources.map((s) => SOURCE_LABEL[s]).join("、"),
     ].filter(Boolean),
   );
@@ -45,6 +47,19 @@
 </script>
 
 <div class="detail stack">
+  {#if e.status !== "normal"}
+    <!--
+      訓練・試験。一覧と地図に出さないとき (SONAE_TRAINING がオフ) も、?e= のリンクでは開くので、
+      本物と取り違えないよう、先頭に大きく出す (docs/design.md の 2.2・docs/ui.md の「URL」)
+    -->
+    <div class="notice drill" data-testid="eew-drill">
+      <Icon icon={TriangleAlert} size={1.5} />
+      <div>
+        <p class="drill-label">{STATUS_LABEL[e.status]}</p>
+        <p class="small">{EEW_DRILL_NOTE[e.status]}</p>
+      </div>
+    </div>
+  {/if}
   {#if active}
     <section
       class="eew-now {tone}"
@@ -122,6 +137,25 @@
 </div>
 
 <style>
+  /*
+   * 訓練・試験の印。ページの中の通知と同じ淡い面で、地は塗らない (状態の赤は本物の警報だけ)。
+   * 注意の色のアイコンと、詳しい内容の見出しより大きい字で、本物と取り違えないようにする
+   */
+  .drill {
+    align-items: center;
+  }
+  .drill > :global(svg) {
+    color: var(--so-warn-text);
+  }
+  .drill p {
+    margin: 0;
+  }
+  .drill-label {
+    color: var(--so-warn-text);
+    font-size: var(--so-text-xl);
+    font-weight: var(--so-weight-bold);
+    line-height: 1.2;
+  }
   /*
    * いま出ている緊急地震速報の箱。警報だけは状態の赤で塗る (docs/design.md の 6.2。どこを見ていても一目で分かるように)。
    * 予報と取消は塗らず、淡い面に注意の色の見出し (ページの中の通知と同じ)
