@@ -1,3 +1,4 @@
+import { liftedOffice } from "#lib/model.ts";
 import { app } from "#lib/server/receiver.ts";
 import { showTraining } from "#lib/server/site.ts";
 import { OFFICE_PREFIX, readView } from "#lib/view.ts";
@@ -27,7 +28,12 @@ export const load: PageServerLoad = ({ url }) => {
     tsunami: kind === "tsunami" && id ? (store.tsunami(id) ?? null) : null,
     volcano: kind === "volcano" && id ? (store.volcano(id) ?? null) : null,
     advisory: kind === "info" && id ? (store.advisory(id) ?? null) : null,
-    // 府県予報区の警報・注意報 (`office-…`) は、いまの姿 (layout の warnings) から画面が組む
+    // 府県予報区の警報・注意報 (`office-…`) は、いまの姿 (layout の warnings) から画面が組む。
+    // いまの姿に無いとき (全部解除された) のために、解除されたと分かるならその報の時刻を渡す
+    liftedOffice:
+      kind === "weather" && id?.startsWith(OFFICE_PREFIX)
+        ? liftedOffice(store.officeWarnings(id.slice(OFFICE_PREFIX.length)))
+        : null,
     weatherInfo:
       kind === "weather" && id && !id.startsWith(OFFICE_PREFIX)
         ? (store.weatherInfo(id) ?? null)

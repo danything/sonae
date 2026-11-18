@@ -48,12 +48,14 @@
   import TsunamiSummary from "#lib/components/TsunamiSummary.svelte";
   import VolcanoLevel from "#lib/components/VolcanoLevel.svelte";
   import WarningLevel from "#lib/components/WarningLevel.svelte";
+  import { troubleLabel } from "#lib/connection.ts";
   import { activeEews } from "#lib/eew.ts";
   import {
     depthText,
     FOREIGN_SOURCE_SHORT,
     jst,
     jstClock,
+    jstFull,
     jstTime,
     kindText,
     magnitudeText,
@@ -580,6 +582,16 @@
         ) ?? null)
       : null,
   );
+  /** 選んだ府県予報区が一覧に無いとき、全部解除されたと分かればその府県予報区と解除した報の時刻 (分からなければ null) */
+  const selLifted = $derived.by(() => {
+    const id = v.selected?.kind === "weather" ? v.selected.id : "";
+    if (selOffice || !id.startsWith(OFFICE_PREFIX)) return null;
+    const code = id.slice(OFFICE_PREFIX.length);
+    return (
+      live.liftedOffices[code] ??
+      (data.liftedOffice?.office.code === code ? data.liftedOffice : null)
+    );
+  });
   const selWeather = $derived(
     v.selected?.kind === "weather" && !v.selected.id.startsWith(OFFICE_PREFIX)
       ? (snap.weatherInfos.find((x) => x.id === v.selected?.id) ??
@@ -1002,9 +1014,7 @@
 
 {#snippet statusBody()}
   <p class="menu-head">
-    {live.connected
-      ? "受信に問題があります"
-      : "配信が切れています・再接続しています"}
+    {troubleLabel(live.connected)}
   </p>
   <StatusList connected={live.connected} statuses={snap.statuses} />
 {/snippet}
@@ -1163,9 +1173,7 @@
               data-testid="trouble"
             >
               <Icon icon={TriangleAlert} size={1} />
-              {live.connected
-                ? "受信に問題があります"
-                : "配信が切れています・再接続しています"}
+              {troubleLabel(live.connected)}
             </button>
           {/snippet}
           {@render statusBody()}
@@ -1295,6 +1303,15 @@
             <WarningDetail o={selOffice} />
           {:else if selWeather}
             <WeatherDetail w={selWeather} now={live.now} />
+          {:else if selLifted}
+            <div class="empty-state" data-testid="office-lifted">
+              <p class="bold">
+                {selLifted.office.name}の警報・注意報は解除されました
+              </p>
+              <p class="small muted">
+                {jstFull(selLifted.reportedAt)} 発表。いま出ている警報・注意報はありません。一覧から選んでください。
+              </p>
+            </div>
           {:else}
             <div class="empty-state">
               <p class="bold">この情報はありません</p>
@@ -1438,9 +1455,7 @@
             {...props}
             type="button"
             class="ghost icon small dock-more warn"
-            aria-label={live.connected
-              ? "受信に問題があります"
-              : "配信が切れています"}
+            aria-label={troubleLabel(live.connected, true)}
             data-testid="dock-trouble"
           >
             <Icon icon={TriangleAlert} />
