@@ -17,7 +17,7 @@
 3. 授権碼を sonae に渡す。
    - 1 行のインストーラで入れたなら、`sonae.env` に `CWA_API_KEY=CWA-XXXX...` を書いて流し直す ([install.md](install.md#環境変数を足す-sonaeenv))
    - Helm chart なら、`secrets.name` の Secret に `cwa-api-key` を足す (chart は `optional: true` で読む)
-   - 持ち主の本番は `deploy/secrets.sops.yaml` の `sonae-secrets` に `cwa-api-key` を足し (`sops deploy/secrets.sops.yaml`)、main にマージする
+   - 持ち主の本番は `deploy/secrets.sops.yaml` の `sonae-secrets` に `cwa-api-key` を足し (`sops edit deploy/secrets.sops.yaml`。[push.md](push.md#鍵を作って入れる-helm-chart) と同じ)、main にマージする
    - 手元の開発は `compose.override.yml` の `environment` に `CWA_API_KEY=...` を書く
 4. 受信の状態の「中央氣象署 (台湾)」が「受信中」になれば動いている。
 
