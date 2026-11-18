@@ -145,6 +145,65 @@ describe("気象庁のフィード", () => {
     });
   });
 
+  /**
+   * フィードが毎回変わり (304 にならない)、3 回目だけ VXSE53 が載っていないとき、VXSE53 がいつも `status` を
+   * 返すなら、4 回まわして VXSE53 を何回取りに行くか
+   */
+  async function alwaysFail(status: number | "network") {
+    const { ctx } = context();
+    const feed = fixture("jma/made-feed.xml");
+    const without = feed.replace(
+      /<entry>\s*<title>震源・震度に関する情報<\/title>[\s\S]*?<\/entry>/,
+      "",
+    );
+    let round = 0;
+    let vxse53 = 0;
+    const fakeFetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("eqvol_l.xml"))
+        return new Response(null, { status: 304 });
+      if (url.endsWith("eqvol.xml")) {
+        round++;
+        return new Response(round === 3 ? without : feed, {
+          headers: { etag: `"${round}"` },
+        });
+      }
+      if (/_VXSE53_/.test(url)) {
+        vxse53++;
+        if (status === "network") throw new TypeError("fetch failed");
+        return new Response("", { status });
+      }
+      return new Response(
+        "<Report><Control><Status>通常</Status></Control><Head><ReportDateTime>2008-06-14T08:00:00+09:00</ReportDateTime></Head></Report>",
+      );
+    }) as typeof fetch;
+    const ac = new AbortController();
+    let rounds = 0;
+    const src = jmaSource(ctx, {
+      feedUrl: "https://example.invalid/eqvol.xml",
+      longFeedUrl: "https://example.invalid/eqvol_l.xml",
+      fetch: fakeFetch,
+      log: () => {},
+      sleep: async () => {
+        if (++rounds >= 4) ac.abort();
+      },
+    });
+    await src.run(ac.signal);
+    expect(without).not.toContain("VXSE53");
+    return vxse53;
+  }
+
+  test("404・410 が返った電文は、フィードが変わっても、載っている間は取り直さない。消えて載り直したら取る", async () => {
+    // 1 回目に取って 404・410。2 回目は載っているので取らない。3 回目は載っていないので忘れ、4 回目にまた取る
+    expect(await alwaysFail(404)).toBe(2);
+    expect(await alwaysFail(410)).toBe(2);
+  });
+
+  test("一時的な失敗 (5xx・ネットの失敗) の電文は、載っている間は毎回取り直す", async () => {
+    expect(await alwaysFail(503)).toBe(3);
+    expect(await alwaysFail("network")).toBe(3);
+  });
+
   test("取れなければ retrying にして、次の回にまた取る", async () => {
     const { ctx } = context();
     const ac = new AbortController();
