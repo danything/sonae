@@ -40,7 +40,7 @@ spec:
       valuesObject:
         image:
           # main にマージするたびに CI が書き換える (そのコミットの sha)。手で触らない
-          tag: 36d666a6e485f99c88e602cf132b56c6288a0e34
+          tag: 01c82a4d456507b96d9a42e6c17a8ade3db33999
           pullPolicy: IfNotPresent
 
         sonae:
