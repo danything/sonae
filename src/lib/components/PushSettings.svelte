@@ -36,6 +36,7 @@
     prefsSettled,
     pushBlock,
     type PushInfo,
+    type PushState,
     queuePrefs,
     readPushState,
     sendPrefs,
@@ -181,7 +182,7 @@
     pref = prefs.home?.code.slice(0, 2) ?? "";
     if (Object.keys(cities).length === 0) void loadCities();
     block = pushBlock();
-    let state: Awaited<ReturnType<typeof readPushState>>;
+    let state: PushState;
     try {
       state = await readPushState();
     } catch (err) {
@@ -190,6 +191,8 @@
     }
     info = state.info;
     endpoint = state.endpoint;
+    // サーバーの鍵が替わっていて、購読を作り直せなかった (readPushState が作り直す)
+    if (state.note) message = state.note;
     // 今の購読が届かない宛先なら、ここで分かる (readPushState が覚える)
     block = pushBlock();
     if (!info.enabled || block) return;
