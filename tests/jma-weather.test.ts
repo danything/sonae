@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   floodLevel,
+  liftedOffice,
   warningLevel,
   warningTop,
   type WeatherInfo,
@@ -293,5 +294,75 @@ describe("保存", () => {
     expect(list).toHaveLength(1);
     expect(list[0]?.cancelled).toBe(true);
     expect(list[0]?.id).toBe(item.info.id);
+  });
+});
+
+describe("全部解除された府県予報区", () => {
+  const office = { code: "320000", name: "島根県" };
+  const row = (
+    reportedAt: string,
+    areas: WeatherWarning["areas"],
+    status: WeatherWarning["status"] = "normal",
+  ) => ({ office, status, reportedAt, areas });
+  const area = warning("15_17_01_251222_VPWW55.xml", "VPWW55").areas[0]!;
+
+  test("どの種別にも出ている市町村等が無ければ、いちばん新しい報の時刻で解除されたとみなす", () => {
+    expect(
+      liftedOffice([
+        row("2024-11-02T10:00:00+09:00", []),
+        row("2024-11-02T11:19:00+09:00", []),
+      ]),
+    ).toEqual({ office, reportedAt: "2024-11-02T11:19:00+09:00" });
+  });
+
+  test("まだ出ている種別があれば、解除されていない", () => {
+    expect(
+      liftedOffice([
+        row("2024-11-02T11:19:00+09:00", []),
+        row("2024-11-02T10:00:00+09:00", [area]),
+      ]),
+    ).toBeNull();
+  });
+
+  test("報を受けていない (訓練・試験だけも) なら分からないので、解除されたとは言わない", () => {
+    expect(liftedOffice([])).toBeNull();
+    expect(
+      liftedOffice([row("2024-11-02T11:19:00+09:00", [], "training")]),
+    ).toBeNull();
+  });
+
+  test("保存した報から引く: 解除の報で出ている市町村等が無くなった府県予報区は、解除されたと分かる", () => {
+    const { store } = memoryStore();
+    const [item] = parse("15_17_01_251222_VPWW55.xml", "VPWW55");
+    if (item?.type !== "warning") throw new Error("警報ではありません");
+    store.ingest({
+      source: "jma-weather",
+      key: "issued",
+      code: "VPWW55",
+      items: [item],
+    });
+    const code = item.warning.office.code;
+    expect(liftedOffice(store.officeWarnings(code))).toBeNull();
+    const lifted = {
+      ...item,
+      warning: {
+        ...item.warning,
+        reportedAt: "2024-11-03T09:00:00+09:00",
+        areas: [],
+        released: item.warning.areas,
+      },
+    };
+    store.ingest({
+      source: "jma-weather",
+      key: "lifted",
+      code: "VPWW55",
+      items: [lifted],
+    });
+    expect(liftedOffice(store.officeWarnings(code))).toEqual({
+      office: item.warning.office,
+      reportedAt: "2024-11-03T09:00:00+09:00",
+    });
+    // 受けていない府県予報区は分からない
+    expect(liftedOffice(store.officeWarnings("999999"))).toBeNull();
   });
 });

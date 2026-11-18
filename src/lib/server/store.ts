@@ -317,6 +317,16 @@ export class Store {
     return row ? (JSON.parse(row.data) as WeatherWarning) : undefined;
   }
 
+  /** 1 つの府県予報区の、種別ごとの最後の報 (解除されて出ている市町村等の無いものも)。訓練・試験は除く */
+  officeWarnings(office: string): WeatherWarning[] {
+    return this.db
+      .query<{ data: string }, [string]>(
+        `SELECT data FROM weather_warnings WHERE office = ? AND status = 'normal'`,
+      )
+      .all(office)
+      .map((r) => JSON.parse(r.data) as WeatherWarning);
+  }
+
   /** いまの気象警報・注意報 (府県予報区と種別ごと)。訓練・試験は除く */
   warnings(): WeatherWarning[] {
     return this.db
