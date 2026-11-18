@@ -23,6 +23,7 @@ import {
 } from "./home.ts";
 import { live } from "./live.svelte.ts";
 import { createQueue } from "./prefs-queue.ts";
+import { renewFailedText, renewIfKeyChanged, sameKey } from "./push-renew.ts";
 import {
   endpointBlock,
   permissionDeniedText,
@@ -71,18 +72,26 @@ let endpointBlocked: PushBlock | null = null;
 export const pushBlock = (): PushBlock | null =>
   pushBlockOf(pushFeatures()) ?? endpointBlocked;
 
-/** サーバーの Web Push の登録と、このブラウザの購読の endpoint (無ければ undefined) */
+async function readInfo(): Promise<PushInfo> {
+  const res = await fetch("/api/push");
+  if (!res.ok) throw new Error(String(res.status));
+  return (await res.json()) as PushInfo;
+}
+
+/**
+ * サーバーの Web Push の登録と、このブラウザの購読の endpoint (無ければ undefined)。
+ * 購読の公開鍵がサーバーの公開鍵と違えば (VAPID の鍵を替えた)、ここで作り直してサーバーに登録し直す
+ * (`#lib/push-renew.ts`)。作り直せなかったときは、その文を `note` に返す
+ */
 export async function readPushState(): Promise<{
   info: PushInfo;
   endpoint: string | undefined;
+  note?: string;
 }> {
-  const res = await fetch("/api/push");
-  if (!res.ok) throw new Error(String(res.status));
-  const info = (await res.json()) as PushInfo;
+  let info = await readInfo();
   if (!info.enabled || !pushSupported()) return { info, endpoint: undefined };
-  const sub = await (
-    await navigator.serviceWorker.ready
-  ).pushManager.getSubscription();
+  const pm = (await navigator.serviceWorker.ready).pushManager;
+  const sub = await pm.getSubscription();
   // 前に作った購読が届かない宛先なら、覚えて消す (サーバーには登録されていないので、ブラウザにだけ残っている)
   const bad = sub ? endpointBlock(sub.endpoint) : null;
   if (sub && bad) {
@@ -90,7 +99,32 @@ export async function readPushState(): Promise<{
     await sub.unsubscribe().catch(() => false);
     return { info, endpoint: undefined };
   }
-  return { info, endpoint: sub?.endpoint };
+  if (!sub) return { info, endpoint: undefined };
+  const mine = info.subscriptions.find((s) => s.endpoint === sub.endpoint);
+  const renewed = await renewIfKeyChanged(
+    sub,
+    info.publicKey,
+    mine?.prefs ?? null,
+    { pm, fetch, label: navigator.userAgent },
+  );
+  switch (renewed.kind) {
+    case "same":
+      return { info, endpoint: sub.endpoint };
+    case "dropped":
+      return { info, endpoint: undefined };
+    case "blocked":
+      endpointBlocked = renewed.block;
+      return { info: await readInfo(), endpoint: undefined };
+    case "failed":
+      return {
+        info: await readInfo(),
+        endpoint: undefined,
+        note: renewFailedText(renewed.reason),
+      };
+    case "renewed":
+      info = await readInfo();
+      return { info, endpoint: renewed.endpoint };
+  }
 }
 
 /** 公開鍵が替わっていたら、購読を作り直す (古い鍵の購読には送れない) */
@@ -99,12 +133,7 @@ export async function subscribe(key: string): Promise<PushSubscription> {
   const want = base64UrlToBytes(key);
   const cur = await pm.getSubscription();
   if (cur) {
-    const have = cur.options.applicationServerKey;
-    const same =
-      have !== null &&
-      new Uint8Array(have).length === want.length &&
-      new Uint8Array(have).every((b, i) => b === want[i]);
-    if (same) return cur;
+    if (sameKey(cur.options.applicationServerKey, want)) return cur;
     await cur.unsubscribe();
   }
   return pm.subscribe({ userVisibleOnly: true, applicationServerKey: want });

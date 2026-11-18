@@ -190,6 +190,8 @@
     }
     info = state.info;
     endpoint = state.endpoint;
+    // サーバーの鍵が替わっていて、購読を作り直せなかった (readPushState が作り直す)
+    if (state.note) message = state.note;
     // 今の購読が届かない宛先なら、ここで分かる (readPushState が覚える)
     block = pushBlock();
     if (!info.enabled || block) return;
