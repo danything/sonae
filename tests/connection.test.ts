@@ -10,6 +10,7 @@ import {
   OUTAGE_NOTIFY_MS,
   OutageWatch,
   STALE_MS,
+  troubleLabel,
 } from "#lib/connection.ts";
 import { CONNECTION, FIXED_TEXTS, isFixed } from "#lib/readout.ts";
 import { PING_MS } from "#lib/server/sse.ts";
@@ -111,5 +112,21 @@ describe("受信が切れたことを知らせるか", () => {
     const s = parseAlertSettings('{"sound":true,"outage":false}');
     expect(s).toEqual({ sound: true, speech: false });
     expect("outage" in s).toBe(false);
+  });
+});
+
+describe("受信に問題があるときの印の一言", () => {
+  test("画面への配信が切れたときも、読み上げと OS の通知にそろえて「受信」と呼ぶ", () => {
+    expect(troubleLabel(false)).toBe("受信が切れています・再接続しています");
+    expect(troubleLabel(false, true)).toBe("受信が切れています");
+    expect(connectionNotification("down", false).title).toBe(
+      "受信が切れました",
+    );
+    expect(CONNECTION.down).toContain("受信が切れました");
+  });
+
+  test("つながっていて情報源に問題があるときは「受信に問題があります」", () => {
+    expect(troubleLabel(true)).toBe("受信に問題があります");
+    expect(troubleLabel(true, true)).toBe("受信に問題があります");
   });
 });
