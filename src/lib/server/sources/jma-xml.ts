@@ -159,7 +159,12 @@ function readObservation(body: V): {
           const sInt = readIntensity(textAt(st, "Int"));
           const sName = textAt(st, "Name");
           if (sInt && sName)
-            stations.push({ name: sName, pref: prefName, int: sInt });
+            stations.push({
+              code: textAt(st, "Code"),
+              name: sName,
+              pref: prefName,
+              int: sInt,
+            });
         }
       }
     }

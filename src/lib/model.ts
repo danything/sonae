@@ -117,6 +117,8 @@ export interface AreaIntensity {
 }
 
 export interface StationIntensity {
+  /** 震度観測点のコード (7 桁。気象庁の XML だけ。P2P と、コードを読む前に受けた報には無い) */
+  code?: string;
   name: string;
   pref?: string;
   int: ObservedIntensity;

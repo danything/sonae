@@ -19,6 +19,8 @@ export interface Credit {
 
 const JMA_FEED = "https://xml.kishou.go.jp/xmlpull.html";
 const JMA_GIS = "https://www.data.jma.go.jp/developer/gis.html";
+const JMA_STATIONS = "https://www.jma.go.jp/jma/kishou/know/jishin/intens-st/";
+const JMA_TEC = "https://xml.kishou.go.jp/tec_material.html";
 const GSI_TILES = "https://maps.gsi.go.jp/development/ichiran.html";
 const GSI_SHELTERS = "https://www.gsi.go.jp/bousaichiri/hinanbasho.html";
 const GSI_AFM = "https://www.gsi.go.jp/bousaichiri/active_fault.html";
@@ -53,6 +55,16 @@ export const CREDITS: Credit[] = [
       "気象庁「予報区等GISデータ」（",
       { text: JMA_GIS, href: JMA_GIS },
       "）を加工して作成",
+    ],
+  },
+  {
+    label: "震度観測点の位置",
+    parts: [
+      "気象庁「震度観測点」（",
+      { text: JMA_STATIONS, href: JMA_STATIONS },
+      "）と、気象庁「地震火山関連コード表」（",
+      { text: JMA_TEC, href: JMA_TEC },
+      "）を加工して作成。コード表の観測点のコード・名前と、震度観測点の一覧の緯度・経度を、名前で結び付けています。結び付かない観測点の一部は、気象庁ホームページの地震情報の位置で補っています。位置が分からない観測点は地図に出しません。観測点の間の震度を補ったり、観測点の無い所の震度を推し量ったりはしていません",
     ],
   },
   {

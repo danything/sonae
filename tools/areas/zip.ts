@@ -1,5 +1,5 @@
 /**
- * zip を読む小さな道具 (地図の区域を作る tools/areas/ だけで使う)。コンテナの bun の slim には
+ * zip を読む小さな道具 (地図の区域を作る tools/areas/ と、震度観測点の位置の表を作る tools/stations/ で使う)。コンテナの bun の slim には
  * unzip が無いので、中央ディレクトリを読み、node:zlib で戻す。名前は Shift_JIS のことがあるので
  * 生のバイトのまま返す (使う側は拡張子だけを見る)。
  */

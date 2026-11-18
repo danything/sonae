@@ -30,6 +30,13 @@
   import { coordLabel, coordText, longPressOk } from "#lib/map/press.ts";
   import { type MapView, ViewKeeper } from "#lib/map/restore.ts";
   import {
+    stationFeatures,
+    type StationIndex,
+    stationIndex,
+    STATIONS_URL,
+    type StationTable,
+  } from "#lib/map/stations.ts";
+  import {
     baseStyle,
     eewFill,
     foreignFeatures,
@@ -49,6 +56,7 @@
     officeFilter,
     type OfficeTable,
     overlayVisibility,
+    quakeFillOpacity,
     readHazard,
     SHELTER_DISASTERS,
     SHELTER_LAYERS,
@@ -105,7 +113,13 @@
     shown = true,
     found = null,
     selected = false,
+    onstations,
   }: {
+    /**
+     * 選んだ地震の観測点を地図に置いたとき、位置の引けなかった観測点の名前を渡す (詳しい内容に数を出す)。
+     * 置いていないとき (地震を選んでいない・位置の表をまだ読んでいない) は null
+     */
+    onstations?: (r: { id: string; missing: string[] } | null) => void;
     /** いまの気象警報・注意報 (市町村等を段の色で塗る。押すと吹き出し) */
     warnings?: WeatherWarning[];
     /** 一覧で選んだ府県予報区のコード (その市町村等を縁取り、寄せる) */
@@ -312,6 +326,7 @@
     return () => {
       disposed = true;
       paintedSig = "";
+      stationSig = "";
       warningSig = "";
       markedSig = "";
       volcanoSig = "";
@@ -422,6 +437,45 @@
     map.setPaintProperty("tsunami", "line-width", t.width as never);
     setData(map, "hypocenters", hypocenterFeatures(quakes));
     setData(map, "foreign", foreignFeatures(foreign));
+  });
+
+  // ---- 観測点ごとの震度 (位置の表は、観測点の並ぶ地震を初めて出すときに読む。docs/map.md) ----
+  let stationIdx = $state<StationIndex | null>(null);
+  let stationsLoading = false;
+  $effect(() => {
+    if (!quake?.stations.length || stationIdx || stationsLoading) return;
+    stationsLoading = true;
+    fetch(STATIONS_URL)
+      .then((r) => {
+        // 読めなかったときは表を持たず、次に地震を選んだときに読み直す
+        if (!r.ok) throw new Error(`intensity-stations.json: ${r.status}`);
+        return r.json() as Promise<StationTable>;
+      })
+      .then((t) => (stationIdx = stationIndex(t)))
+      .catch((err: unknown) => {
+        console.warn(`震度観測点の位置の表を読めませんでした: ${err}`);
+        stationsLoading = false;
+      });
+  });
+  let stationSig = "";
+  $effect(() => {
+    if (!map) return;
+    const next = sig(quake?.id, quake?.updatedAt, stationIdx !== null);
+    if (next === stationSig) return;
+    stationSig = next;
+    const r =
+      quake && stationIdx ? stationFeatures(quake.stations, stationIdx) : null;
+    setData(
+      map,
+      "stations",
+      r?.data ?? { type: "FeatureCollection", features: [] },
+    );
+    map.setPaintProperty(
+      "quake-fill",
+      "fill-opacity",
+      quakeFillOpacity((r?.data.features.length ?? 0) > 0) as never,
+    );
+    onstations?.(quake && r ? { id: quake.id, missing: r.missing } : null);
   });
 
   // 台湾の観測点 (TREM-RTS)。地震の間は 0.5 秒ごとに替わるので、この点だけを差し替える
