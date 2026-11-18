@@ -3,7 +3,7 @@
  * 画面・SSE・DB にはここの形だけを出す。画面からも読むので、サーバーだけの物は置かない。
  */
 
-/** 通常 / 訓練 / 試験。通常以外は保存するが知らせず、一覧では既定で隠す */
+/** 通常 / 訓練 / 試験。通常以外は保存するが知らせず、一覧と地図には `SONAE_TRAINING=on` のときだけ出す (docs/design.md の 2.2) */
 export type Status = "normal" | "training" | "test";
 
 /** 海外の地震の情報源 (docs/design.md の 2.2「海外の地震」) */
@@ -364,8 +364,8 @@ export interface EarthquakeCount {
 }
 
 /**
- * 一覧の上に通知の形で出すお知らせ (南海トラフ地震臨時情報などと、地震・津波に関するお知らせ)。
- * 決めた種類だけを出す (種類を足したときの既定は「出さない」)。地震回数・活動状況・国際津波の情報は、お知らせの一覧にだけ出す
+ * 一覧の先頭に通知の形で出すお知らせ (南海トラフ地震臨時情報などと、地震・津波に関するお知らせ。この 1 週間のもの)。
+ * 決めた種類だけを出す (種類を足したときの既定は「出さない」)。地震回数・活動状況・国際津波の情報は、一覧の行にだけ出す
  */
 export const isPinnedAdvisory = (a: Pick<Advisory, "code">) =>
   a.code.startsWith("VYSE") || a.code === "VZSE40";
@@ -515,10 +515,10 @@ export interface ForeignQuake {
 }
 
 /** いまの姿に採る機関の順。地元の機関 (台湾・ニュージーランド) を先に、速報の EMSC を後に */
-export const FOREIGN_ORDER: ForeignSource[] = ["cwa", "geonet", "usgs", "emsc"];
+const FOREIGN_ORDER: ForeignSource[] = ["cwa", "geonet", "usgs", "emsc"];
 
 /** 同じ地震とみなす近さ: 発生の時刻 60 秒・震央 150 km・M 1.0 (どちらかに M が無ければ見ない) */
-export const FOREIGN_MATCH = { ms: 60_000, km: 150, mag: 1.0 } as const;
+const FOREIGN_MATCH = { ms: 60_000, km: 150, mag: 1.0 } as const;
 
 /** 2 点の距離 (km、球面) */
 export function distanceKm(

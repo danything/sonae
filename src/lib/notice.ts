@@ -1,5 +1,5 @@
 /**
- * どの画面にも出す注意文と出典 (docs/design.md の「法と表示」)。文言を変えるときは設計書も直す
+ * 画面に出す注意文と出典 (docs/design.md の 5 章「法と表示」)。文言を変えるときは設計書も直す
  */
 export const NOTICE =
   "このアプリは気象庁の公式のものではありません。情報は遅れたり欠けたりすることがあります。身の安全に関わる判断は、気象庁・自治体・テレビやラジオの公式の情報を優先してください。";
@@ -199,11 +199,11 @@ export const CREDITS: Credit[] = [
   },
 ];
 
-/** 出典の文の字だけ (試験と、字で出すところ) */
+/** 出典の文の字だけ (テストで文を照らす) */
 export const creditText = (c: Credit) =>
   `${c.label}: ${c.parts.map((p) => (typeof p === "string" ? p : p.text)).join("")}`;
 
-/** 一覧の下と地図の隅に出す短い出典 (全文は「出典と注意」の窓) */
+/** 一覧の下に出す短い出典 (全文は「出典と注意」の窓。地図の隅は `mapCredit`) */
 export const SHORT_CREDIT = "出典: 気象庁ホームページ・国土地理院 ほか";
 
 /**
@@ -223,7 +223,7 @@ export function mapCredit(opts: { hazard: string; grus: boolean }): string {
  * GRUS 画像の範囲 (地理院タイル一覧の「写真」の備考: 北緯 20°24′28″〜20°27′21″、東経 136°03′58″〜136°08′25″)
  * [西, 南, 東, 北]
  */
-export const GRUS_BOX: [number, number, number, number] = [
+const GRUS_BOX: [number, number, number, number] = [
   136 + 3 / 60 + 58 / 3600,
   20 + 24 / 60 + 28 / 3600,
   136 + 8 / 60 + 25 / 3600,

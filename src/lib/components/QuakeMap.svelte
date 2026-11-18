@@ -20,7 +20,7 @@
     volcanoKindText,
     WARNING_COLORS,
   } from "#lib/format.ts";
-  import { edgePadding } from "#lib/map/edges.ts";
+  import { type Box, edgePadding } from "#lib/map/edges.ts";
   import {
     autoLocate,
     type GeoPermission,
@@ -106,8 +106,6 @@
     found = null,
     selected = false,
   }: {
-    /** 詳しい内容を開いているか (閉じたら、開く前の地図の位置へ戻す。`#lib/map/restore.ts`) */
-    selected?: boolean;
     /** いまの気象警報・注意報 (市町村等を段の色で塗る。押すと吹き出し) */
     warnings?: WeatherWarning[];
     /** 一覧で選んだ府県予報区のコード (その市町村等を縁取り、寄せる) */
@@ -141,6 +139,8 @@
     found?: { place: Place; n: number } | null;
     /** 隅の出典を押したときに開く「出典と注意」の窓のリンク */
     aboutHref?: string;
+    /** 詳しい内容を開いているか (閉じたら、開く前の地図の位置へ戻す。`#lib/map/restore.ts`) */
+    selected?: boolean;
   } = $props();
 
   /** 見ている範囲が GRUS 画像の範囲 (沖ノ鳥島のあたり) にかかるか (隅の出典に足す) */
@@ -331,6 +331,12 @@
    * 並びが替わっただけで描き直すと、印の脈打ちが繰り返し始まり、要らない描き直しも増える
    */
   const sig = (...parts: unknown[]) => JSON.stringify(parts);
+  /** GeoJSON の source の中身を差し替える */
+  function setData(m: MapLibreMap, id: string, data: unknown): void {
+    const src = m.getSource(id);
+    if (src && "setData" in src)
+      (src as { setData(d: unknown): void }).setData(data);
+  }
   const eewSig = (es: Eew[]) =>
     es.map((e) => [e.eventId, e.serial, e.cancelled, e.warnAreas.length]);
   let paintedSig = "";
@@ -373,10 +379,7 @@
         return r.json() as Promise<OfficeTable>;
       })
       .then((t) => (offices = t))
-      .catch(() => {
-        // 次に選んだときに読み直す
-        officesLoading = false;
-      });
+      .catch(() => (officesLoading = false));
   });
   $effect(() => {
     if (!map) return;
@@ -417,34 +420,18 @@
     const t = tsunamiPaint(tsunamis);
     map.setPaintProperty("tsunami", "line-color", t.color as never);
     map.setPaintProperty("tsunami", "line-width", t.width as never);
-    const src = map.getSource("hypocenters");
-    if (src && "setData" in src)
-      (src as { setData(d: unknown): void }).setData(
-        hypocenterFeatures(quakes),
-      );
-    const fsrc = map.getSource("foreign");
-    if (fsrc && "setData" in fsrc)
-      (fsrc as { setData(d: unknown): void }).setData(foreignFeatures(foreign));
+    setData(map, "hypocenters", hypocenterFeatures(quakes));
+    setData(map, "foreign", foreignFeatures(foreign));
   });
 
   // 台湾の観測点 (TREM-RTS)。地震の間は 0.5 秒ごとに替わるので、この点だけを差し替える
   $effect(() => {
-    if (!map) return;
-    const src = map.getSource("rts");
-    if (src && "setData" in src)
-      (src as { setData(d: unknown): void }).setData(
-        rtsFeatures(rtsStations, rts),
-      );
+    if (map) setData(map, "rts", rtsFeatures(rtsStations, rts));
   });
 
   // 有志の観測点 (Wolfx SeisJS)。見た目が変わったときと 5 秒ごとに届く
   $effect(() => {
-    if (!map) return;
-    const src = map.getSource("seis");
-    if (src && "setData" in src)
-      (src as { setData(d: unknown): void }).setData(
-        rtsFeatures(seisStations, seis),
-      );
+    if (map) setData(map, "seis", rtsFeatures(seisStations, seis));
   });
 
   // 震度のラベル・震央の印 (字を描くのに地図用の字体を落とさないよう、DOM の印で置く)
@@ -672,16 +659,18 @@
   // 現在地を描き、押して始めたときは最初に取れたときだけそこへ寄せる
   $effect(() => {
     if (!map) return;
-    const src = map.getSource("me");
-    if (src && "setData" in src)
-      (src as { setData(d: unknown): void }).setData(
-        me
-          ? meFeatures(me.lon, me.lat, me.accuracy)
-          : { type: "FeatureCollection", features: [] },
-      );
+    setData(
+      map,
+      "me",
+      me
+        ? meFeatures(me.lon, me.lat, me.accuracy)
+        : { type: "FeatureCollection", features: [] },
+    );
     if (me && !panned) {
       panned = true;
       locateNote = "";
+      // 人が現在地のボタンを押して寄せた所なので、詳しい内容を閉じても元の位置へ戻さない
+      untrack(() => keeper.moved());
       map.jumpTo({
         center: [me.lon, me.lat],
         zoom: Math.max(map.getZoom(), 13),
@@ -916,9 +905,8 @@
     if (shelterSig !== next) return;
     // 読めなかったタイルがあれば、同じ範囲のまま次に動かしたときも読み直す (通信が不安定なときに出ないままにしない)
     if (missed) shelterSig = "";
-    const src = map?.getSource("shelters");
-    if (src && "setData" in src)
-      (src as { setData(d: unknown): void }).setData({
+    if (map)
+      setData(map, "shelters", {
         type: "FeatureCollection",
         features: mergeShelters(parts),
       });
@@ -960,7 +948,7 @@
   function popupOptions(): {
     maxWidth: string;
     closeButton: boolean;
-    padding?: { top: number; bottom: number; left: number; right: number };
+    padding?: Box;
   } {
     const box = container?.getBoundingClientRect();
     return {
@@ -1063,9 +1051,7 @@
       .addTo(map);
   }
 
-  /**
-   * 震央の × 。MapLibre は印の要素そのものの transform で場所を決めるので、動かすのは中の要素
-   */
+  /** 震央の ×。MapLibre は印の要素そのものの transform で場所を決めるので、脈打たせるのは中の要素 */
   function epicenter(title: string, eew: boolean): HTMLElement {
     const outer = document.createElement("div");
     const inner = document.createElement("span");
@@ -1079,12 +1065,7 @@
    * 範囲へ寄せるときの余白 (px)。下は右下のハザードマップの選択と現在地のボタンと隅の出典、
    * スマホの形の下は浮いている下のタブと dock の分を空ける
    */
-  function focusPadding(): {
-    top: number;
-    bottom: number;
-    left: number;
-    right: number;
-  } {
+  function focusPadding(): Box {
     const phone = document.documentElement.hasAttribute("data-phone");
     const h = container?.clientHeight ?? 0;
     const top = 24;
@@ -1144,9 +1125,9 @@
     foundMarker = new MarkerClass({ element: el }).setLngLat(p.at).addTo(map);
   });
 
-  // 選んだ地震 (と、出ている緊急地震速報) の震央へ寄せる。飛ばさない。
-  // 続報で中身が変わるたびに寄せ直すと、見ている所が勝手に動くので、寄せるのは選んだものが替わったときと、
-  // 地図が見えたとき (スマホの形で地図のタブに移ったとき) に震央が画面の外にあるときだけ
+  // 出ている緊急地震速報・選んだ火山・海外の地震・府県予報区・地震の順に、先にあるものへ寄せる。飛ばさない。
+  // 続報で中身が変わるたびに寄せ直すと、見ている所が勝手に動くので、寄せるのは寄せ先が替わったときと、
+  // 地図が見えたとき (スマホの形で地図のタブに移ったとき) に寄せ先が画面の外にあるときだけ
   let focused = "";
   /** 詳しい内容を開く前の地図の位置 (閉じたら戻す。`#lib/map/restore.ts`) */
   const keeper = new ViewKeeper();

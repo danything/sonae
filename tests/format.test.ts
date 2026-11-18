@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import {
   depthText,
+  eewSourceLine,
   jstTime,
   magnitudeText,
   quakeName,
@@ -71,4 +72,17 @@ test("設定で切ってある情報源は問題にしない (注意の印を出
   expect(sourceInTrouble({ id: "usgs", state: "connecting", since })).toBe(
     true,
   );
+});
+
+test("緊急地震速報の箱の震源の行は、無いものを「・」でつながない", () => {
+  const h = { name: "石川県能登地方", depthKm: 10 };
+  expect(eewSourceLine({ hypocenter: h, magnitude: 5.6 })).toBe(
+    "震源 石川県能登地方・深さ 約 10 km・M5.6",
+  );
+  expect(eewSourceLine({ hypocenter: h })).toBe(
+    "震源 石川県能登地方・深さ 約 10 km",
+  );
+  // 震源が無く M だけのときに「・M5.6」と始めない
+  expect(eewSourceLine({ magnitude: 5.6 })).toBe("M5.6");
+  expect(eewSourceLine({})).toBe("");
 });

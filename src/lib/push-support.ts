@@ -59,11 +59,11 @@ export function endpointBlock(endpoint: string): PushBlock | null {
 export const isAndroidEdge = (userAgent: string): boolean =>
   /\bAndroid\b/.test(userAgent) && /\bEdgA\//.test(userAgent);
 
-/** 代わりの道。開いている間の通知・音・読み上げは、Web Push が無くても使える */
+/** 代わりの方法。開いている間の通知・音・読み上げは、Web Push が無くても使える */
 const OPEN_NOTE =
   "sonae を開いている間は、上の「開いているとき」の通知・音・読み上げで知らせます。";
 
-/** 使えない訳を、何ができないかと代わりの道で言う文 */
+/** 使えない訳を、何ができないかと代わりの方法で言う文 */
 export function pushBlockText(block: PushBlock, userAgent: string): string {
   if (block.kind === "ios")
     return `iPhone・iPad では、ホーム画面に追加した sonae (iOS 16.4 以降) でだけ Web Push を受けられます。Safari の共有ボタンから「ホーム画面に追加」して、そこから開いてください。${OPEN_NOTE}`;
@@ -79,7 +79,7 @@ export function pushBlockText(block: PushBlock, userAgent: string): string {
 
 /**
  * 登録 (許可・subscribe・送信) が例外で止まったときの文。ブラウザが配信サービスにつながらないときも
- * ここに来る (Android の Edge の古い版や、配信サービスの無い Chromium)。訳と、代わりの道を言う。
+ * ここに来る (Android の Edge の古いバージョンや、配信サービスの無い Chromium)。訳と、代わりの方法を言う。
  * sonae のサーバーにつながらなかった (`fetch` の `TypeError`) ときは、ブラウザの英語を出さず、つながってから
  * 押し直すことを言う (ほかのブラウザに替えても変わらないため)
  */
@@ -94,7 +94,7 @@ export const QUIET_DENY_MS = 400;
 /**
  * 通知の許可が無いときの文。ブラウザが許可の窓を出さずに断ることがある
  * (前に閉じた・拒否した、Edge の「通知の要求を静かにする」など)。
- * そのときは、何が起きたかと、サイトの設定で許す道筋を出す。Android の Edge だけは許す設定が無いので、
+ * そのときは、何が起きたかと、サイトの設定で許す手順を出す。Android の Edge だけは許す設定が無いので、
  * 対応していないことと Chrome を出す (許可が取れればここは呼ばれないので、Edge が直れば普通に登録できる)
  */
 export function permissionDeniedText(

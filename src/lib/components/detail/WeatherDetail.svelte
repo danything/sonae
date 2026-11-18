@@ -35,10 +35,9 @@
   const typhoonFacts = $derived(
     t
       ? [
-          t.nameKana ?? "",
+          t.nameKana,
           [t.areaClass, t.intensityClass].filter(Boolean).join("で") ||
-            t.className ||
-            "",
+            t.className,
         ].filter(Boolean)
       : [],
   );

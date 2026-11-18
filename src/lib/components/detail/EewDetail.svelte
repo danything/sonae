@@ -4,6 +4,7 @@
   import Icon from "#lib/components/Icon.svelte";
   import {
     depthText,
+    eewSourceLine,
     jstClock,
     jstFull,
     magnitudeText,
@@ -17,7 +18,7 @@
   /**
    * 緊急地震速報の詳しい内容。**予想震度は出さない** (docs/design.md の 5 章。モデルにも入っていない)。
    *
-   * いま出ているもの (`active`) は、前の画面の上の帯と同じ中身を先頭の箱に出す (docs/ui.md の「自動で開く」)。
+   * いま出ているもの (`active`。訓練・試験を除き、最後の報から 3 分の間。`#lib/eew.ts`) は、先頭の箱に出す (docs/ui.md の「自動で開く」)。
    * 警報は状態の赤で塗り「強い揺れに警戒」と対象の地域、予報は震源と M、取消は取り消されたこと。
    * 箱は `role="alert"` で、続報で中身が変わるたびに読み上げソフトにも伝わる。強震モニタへのリンクもここ
    */
@@ -40,6 +41,7 @@
       e.sources.map((s) => SOURCE_LABEL[s]).join("、"),
     ].filter(Boolean),
   );
+  const sourceLine = $derived(eewSourceLine(e));
 </script>
 
 <div class="detail stack">
@@ -58,9 +60,6 @@
         {:else}
           緊急地震速報 (予報)
         {/if}
-        {#if e.status !== "normal"}
-          <span class="tag">{STATUS_LABEL[e.status]}</span>
-        {/if}
       </h1>
       {#if !e.cancelled}
         {#if e.kind === "warning" && e.warnAreas.length > 0}
@@ -69,17 +68,14 @@
             {e.warnAreas.join("・")}
           </p>
         {/if}
-        <p class="small">
-          {#if e.hypocenter}
-            震源 {e.hypocenter.name}・深さ {depthText(e.hypocenter)}
-          {/if}
-          {#if e.magnitude !== undefined}
-            ・{magnitudeText(e)}
-          {/if}
-          {#if e.assumed}
-            <span class="tag">仮定震源 (震源と M は目安)</span>
-          {/if}
-        </p>
+        {#if sourceLine || e.assumed}
+          <p class="small">
+            {sourceLine}
+            {#if e.assumed}
+              <span class="tag">仮定震源 (震源と M は目安)</span>
+            {/if}
+          </p>
+        {/if}
       {/if}
       <p class="tiny">
         第 {e.serial} 報{e.final ? " (最終報)" : ""}・{jstClock(e.issuedAt)} 発表・{e.sources

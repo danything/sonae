@@ -83,7 +83,7 @@ export function readView(params: Params): View {
 }
 
 /**
- * いまの query に `patch` を当てたリンク。`null` の鍵は外す。選ぶもの (`q`・`t`・`e`・`v`・`w`・`i`・`f`) は 1 つだけなので、
+ * いまの query に `patch` を当てたリンク。`null` のキーは外す。選ぶもの (`q`・`t`・`e`・`v`・`w`・`i`・`f`) は 1 つだけなので、
  * どれかを入れたらほかは外す。前の一覧の種類 (`k`) と訓練・試験を出す印 (`training`) は使わないので外す
  */
 export function viewHref(
@@ -179,7 +179,7 @@ export function dayKey(iso: string | undefined): string {
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
 
-/** 日付の見出し (`11 月 13 日 (木)`)。日付の鍵 (`dayKey`) から作る */
+/** 日付の見出し (`11 月 13 日 (木)`)。日付のキー (`dayKey`) から作る */
 export function dayLabel(key: string): string {
   const [y, m, d] = key.split("-").map(Number);
   if (!y || !m || !d) return "日時の不明なもの";

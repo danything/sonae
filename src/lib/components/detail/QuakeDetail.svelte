@@ -130,7 +130,7 @@
       {#if lgAreas.length > 0}
         <dl class="ints">
           {#each lgAreas as g (g.lg)}
-            <dt><LgClass lg={g.lg} size="sm" /></dt>
+            <dt><LgClass lg={g.lg} /></dt>
             <dd class="small">{g.items.map((a) => a.name).join("、")}</dd>
           {/each}
         </dl>
@@ -142,7 +142,7 @@
         </h3>
         <dl class="ints">
           {#each lgStations as g (g.lg)}
-            <dt><LgClass lg={g.lg} size="sm" /></dt>
+            <dt><LgClass lg={g.lg} /></dt>
             <dd class="small">
               {g.items
                 .map((s) =>
