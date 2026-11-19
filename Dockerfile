@@ -1,4 +1,4 @@
-FROM oven/bun:1.4.4-slim AS base
+FROM oven/bun:1.4.5-slim AS base
 WORKDIR /usr/src/app
 EXPOSE 3000
 
@@ -18,7 +18,7 @@ RUN mkdir -p /rootfs/data && chown 1000:1000 /rootfs/data
 # 束ねられず、本番で見つからない)。
 #
 # 配信用は Bun の distroless (シェルもパッケージマネージャも無い)。uid 1000 で動かす
-FROM oven/bun:1.4.4-distroless
+FROM oven/bun:1.4.5-distroless
 WORKDIR /usr/src/app
 ENV NODE_ENV=production SONAE_DATA=/data TZ=Asia/Tokyo
 COPY --from=rootfs /rootfs/ /
