@@ -30,6 +30,7 @@
   import { coordLabel, coordText, longPressOk } from "#lib/map/press.ts";
   import { type MapView, ViewKeeper } from "#lib/map/restore.ts";
   import {
+    nearestStation,
     stationFeatures,
     type StationIndex,
     stationIndex,
@@ -262,13 +263,35 @@
         created.on("mouseleave", "shelters", () => {
           if (created) created.getCanvas().style.cursor = "";
         });
-        // 塗った市町村等を押すと、出ている警報・注意報の吹き出し。上の層 (避難場所の印) を押したときはそちらだけ
-        created.on("click", "warning-fill", (e) => {
+        // 観測点の丸を押すと、観測点の名前・震度・場所・設置者の吹き出し。押せる範囲は丸より広い (`stationHit`)。
+        // 上の層 (避難場所の印) を押したときはそちらだけ。震央の × と震度のラベルは吹き出しを持たないので、
+        // その下の丸を選ぶ (docs/map.md の「押せる所が重なったとき」)
+        created.on("click", (e) => {
           if (
             !created ||
             placeMenu ||
             created.queryRenderedFeatures(e.point, { layers: ["shelters"] })
               .length > 0
+          )
+            return;
+          const s = stationHit(e.point, e.originalEvent);
+          if (s) openStation(s.properties, s.at);
+        });
+        created.on("mouseenter", "intensity-stations", () => {
+          if (created) created.getCanvas().style.cursor = "pointer";
+        });
+        created.on("mouseleave", "intensity-stations", () => {
+          if (created) created.getCanvas().style.cursor = "";
+        });
+        // 塗った市町村等を押すと、出ている警報・注意報の吹き出し。上の層 (避難場所の印・観測点の丸) を押したときは
+        // そちらだけ
+        created.on("click", "warning-fill", (e) => {
+          if (
+            !created ||
+            placeMenu ||
+            created.queryRenderedFeatures(e.point, { layers: ["shelters"] })
+              .length > 0 ||
+            stationHit(e.point, e.originalEvent)
           )
             return;
           const code = e.features?.[0]?.properties?.code;
@@ -358,6 +381,9 @@
   let warningSig = "";
   /** 塗っている市町村等 (指の形にするか決める) */
   let paintedCities: ReadonlyMap<string, unknown> = new Map();
+  /** 塗っている市町村等があるか・特別警報の市町村等があるか (地震を選んでいる間に、隠していることを書くか決める) */
+  let warningsPainted = $state(false);
+  let specialPainted = $state(false);
   $effect(() => {
     if (!map) return;
     const next = sig(warnings.map((w) => [w.id, w.reportedAt]));
@@ -365,6 +391,9 @@
     warningSig = next;
     const levels = cityLevels(warnings);
     paintedCities = levels;
+    const ls = [...levels.values()];
+    warningsPainted = ls.some((l) => l > 0);
+    specialPainted = ls.includes(5);
     map.setPaintProperty(
       "warning-fill",
       "fill-color",
@@ -445,7 +474,7 @@
     fetch(STATIONS_URL)
       .then((r) => {
         // 読めなかったときは表を持たず、次に地震を選んだときに読み直す
-        if (!r.ok) throw new Error(`intensity-stations.json: ${r.status}`);
+        if (!r.ok) throw new Error(`intensity-stations-v2.json: ${r.status}`);
         return r.json() as Promise<StationTable>;
       })
       .then((t) => (stationIdx = stationIndex(t)))
@@ -473,6 +502,8 @@
       quakeFillOpacity((r?.data.features.length ?? 0) > 0) as never,
     );
     onstations?.(quake && r ? { id: quake.id, missing: r.missing } : null);
+    // 開いている吹き出しは前の地震 (前の報) の中身なので閉じる
+    stationPopup?.remove();
   });
 
   // 台湾の観測点 (TREM-RTS)。地震の間は 0.5 秒ごとに替わるので、この点だけを差し替える
@@ -800,15 +831,28 @@
     hazardMenu = false;
     writePref("map.hazard", id);
   }
+  /**
+   * 地震を選んでいる間は、気象警報・注意報の塗りを隠す (震度の色と重なって読み違えるため。特別警報は縁取りで残す。
+   * docs/map.md の「地震を選んでいる間」)
+   */
+  const quakeShown = $derived(quake !== undefined);
+  /**
+   * 地図の箱の高さ (px)。低い地図 (スマホの形の一覧のタブで上に残す地図) では、隠していることの一言が震央や丸を
+   * 覆うので出さない。地図のタブへ移って地図が高くなると出す
+   */
+  let boxHeight = $state(0);
+  const NOTE_MIN_HEIGHT = 420;
+  /** 気象警報・注意報の塗りを隠しているか (ハザードマップか、地震を選んでいるため) */
+  const warningsHidden = $derived(covered || quakeShown);
   $effect(() => {
     if (!map) return;
     for (const [layer, on] of Object.entries({
       ...hazardVisibility(hazard),
-      ...overlayVisibility(hazard, zoom),
+      ...overlayVisibility(hazard, zoom, quakeShown),
     }))
       map.setLayoutProperty(layer, "visibility", on ? "visible" : "none");
     // 塗りを隠している間は、塗った所の吹き出しも出さない
-    if (covered) warningPopup?.remove();
+    if (warningsHidden) warningPopup?.remove();
   });
 
   // ---- 住んでいる地域 (通知の条件) の縁取り ----
@@ -830,8 +874,7 @@
   function openPlace(x: number, y: number, lat: number, lon: number): void {
     place = { x, y, lat, lon };
     // 開いている吹き出しは閉じる (重なって読みにくい)
-    shelterPopup?.remove();
-    warningPopup?.remove();
+    closePopups();
     placeMenu = true;
   }
 
@@ -918,12 +961,25 @@
       const at = map.unproject([x, y]);
       openPlace(x, y, at.lat, at.lng);
     };
+    // 地図にフォーカスがあるときの Esc で、開いている吹き出しを閉じる。閉じたら Esc を使ったことにして
+    // (`preventDefault`)、読み上げは止めない (メニューと同じく、Esc はこちらが先)
+    const onkey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      const open = [shelterPopup, warningPopup, stationPopup].some((p) =>
+        p?.isOpen(),
+      );
+      if (!open) return;
+      closePopups();
+      e.preventDefault();
+    };
     el.addEventListener("touchstart", onstart, { passive: true });
     el.addEventListener("contextmenu", oncontext);
+    el.addEventListener("keydown", onkey);
     return () => {
       clearTimeout(noteTimer);
       el.removeEventListener("touchstart", onstart);
       el.removeEventListener("contextmenu", oncontext);
+      el.removeEventListener("keydown", onkey);
     };
   });
 
@@ -1050,8 +1106,7 @@
       "国土地理院のデータで、最新でないことがあります。避難先は市町村の情報で確かめてください。",
       "tiny muted",
     );
-    shelterPopup?.remove();
-    warningPopup?.remove();
+    closePopups();
     shelterPopup = new PopupClass(popupOptions())
       .setLngLat(at)
       .setDOMContent(box)
@@ -1064,8 +1119,8 @@
    */
   let warningPopup: Popup | undefined;
   function openWarning(code: string, at: LngLat): void {
-    // ハザードマップを重ねている間は塗りを隠しているので、吹き出しも出さない
-    if (!map || !PopupClass || covered) return;
+    // ハザードマップを重ねている間と地震を選んでいる間は塗りを隠しているので、吹き出しも出さない
+    if (!map || !PopupClass || warningsHidden) return;
     const c = cityWarnings(warnings, code);
     if (!c) return;
     const box = document.createElement("div");
@@ -1106,9 +1161,98 @@
       p.append(link);
       box.append(p);
     }
+    closePopups();
+    warningPopup = new PopupClass(popupOptions())
+      .setLngLat(at)
+      .setDOMContent(box)
+      .addTo(map);
+  }
+
+  /** 地図の上の吹き出しを全部閉じる (1 つだけ出す) */
+  function closePopups(): void {
     shelterPopup?.remove();
     warningPopup?.remove();
-    warningPopup = new PopupClass(popupOptions())
+    stationPopup?.remove();
+  }
+
+  /**
+   * 押した所の観測点の丸。丸は小さい (半径 2.5〜9 px) ので、押せる範囲を丸より広く取る。指は 44px 四方
+   * (denpa の design.md の押せる大きさ)、マウスは 20px 四方。範囲に幾つもあるときは押した所にいちばん近いもの
+   */
+  function stationHit(
+    pt: { x: number; y: number },
+    ev: MouseEvent | TouchEvent | undefined,
+  ): { properties: Record<string, unknown>; at: [number, number] } | undefined {
+    const m = map;
+    if (!m?.getLayer("intensity-stations")) return undefined;
+    const kind = (ev as PointerEvent | undefined)?.pointerType;
+    const touch =
+      kind === "touch" ||
+      (typeof TouchEvent !== "undefined" && ev instanceof TouchEvent) ||
+      (!kind &&
+        typeof matchMedia === "function" &&
+        matchMedia("(pointer: coarse)").matches);
+    const r = touch ? 22 : 10;
+    const hits = m
+      .queryRenderedFeatures(
+        [
+          [pt.x - r, pt.y - r],
+          [pt.x + r, pt.y + r],
+        ],
+        { layers: ["intensity-stations"] },
+      )
+      .flatMap((f) => {
+        if (f.geometry.type !== "Point") return [];
+        const at = f.geometry.coordinates as [number, number];
+        const p = m.project(at);
+        const d2 = (p.x - pt.x) ** 2 + (p.y - pt.y) ** 2;
+        return d2 <= r * r
+          ? [
+              {
+                properties: f.properties as Record<string, unknown>,
+                at,
+                d2,
+                order: Number(f.properties?.order ?? 0),
+              },
+            ]
+          : [];
+      });
+    return nearestStation(hits);
+  }
+
+  /**
+   * 押した観測点の名前・震度・都道府県と市町村・設置者 (`stationPopup` が組んだ中身)。震度のラベルは一覧の
+   * 震度 (Intensity.svelte) と同じ色。文は DOM で組み、HTML として読まない
+   */
+  let stationPopup: Popup | undefined;
+  function openStation(p: Record<string, unknown>, at: [number, number]): void {
+    if (!map || !PopupClass) return;
+    const box = document.createElement("div");
+    box.className = "station-pop";
+    box.dataset.testid = "station-pop";
+    const name = document.createElement("p");
+    name.className = "bold";
+    name.textContent = String(p.name ?? "");
+    const int = document.createElement("p");
+    const label = document.createElement("span");
+    const c = INTENSITY_COLORS[String(p.int ?? "")];
+    label.className = "level-label";
+    label.textContent = String(p.label ?? "");
+    if (c) {
+      label.style.background = c.bg;
+      label.style.color = c.fg;
+    }
+    int.append(label);
+    box.append(name, int);
+    for (const text of [p.place, p.owner]) {
+      if (!text) continue;
+      const el = document.createElement("p");
+      el.className = "small muted";
+      el.textContent = String(text);
+      box.append(el);
+    }
+    closePopups();
+    stationPopup = new PopupClass(popupOptions())
       .setLngLat(at)
       .setDOMContent(box)
       .addTo(map);
@@ -1282,7 +1426,7 @@
 {#if failed}
   <div class="map-failed empty-state"><p class="muted">{failed}</p></div>
 {:else}
-  <div class="map-box">
+  <div class="map-box" bind:clientHeight={boxHeight}>
     <div
       class="map"
       bind:this={container}
@@ -1397,6 +1541,14 @@
             </p>
           {/if}
         </figure>
+      {/if}
+      <!-- 地震を選んでいる間に、気象警報・注意報の塗りを隠していることと戻し方 (ハザードマップの凡例が書くときは出さない) -->
+      {#if quakeShown && warningsPainted && !covered && boxHeight >= NOTE_MIN_HEIGHT}
+        <p class="map-note tiny muted" data-testid="quake-hides-warnings">
+          地震を選んでいる間は、気象警報・注意報の塗りを隠しています{specialPainted
+            ? " (特別警報は縁取りで出します)"
+            : ""}。一覧へ戻ると元に戻ります。
+        </p>
       {/if}
       {#if locateNote}
         <p class="locate-note small" role="status">{locateNote}</p>
@@ -1608,11 +1760,18 @@
     display: none;
   }
   .map :global(.shelter-pop p),
-  .map :global(.warning-pop p) {
+  .map :global(.warning-pop p),
+  .map :global(.station-pop p) {
     margin: 0 0 var(--so-space-1);
   }
-  .map :global(.warning-pop p:last-child) {
+  .map :global(.warning-pop p:last-child),
+  .map :global(.station-pop p:last-child) {
     margin-bottom: 0;
+  }
+  /* 震度 1 の白い地も面の上で見えるよう、地図の震度のラベルと同じ細い縁を付ける */
+  .map :global(.station-pop .level-label) {
+    display: inline-block;
+    border: 1px solid rgb(0 0 0 / 0.35);
   }
   /* 気象警報・注意報の吹き出しの種類の並び。ラベルは WarningLevel.svelte と同じ形 */
   .map :global(.warning-kinds) {
@@ -1671,6 +1830,20 @@
     box-shadow: var(--so-shadow-pop);
     color: var(--so-fg);
     translate: -50% 0;
+  }
+  /* 地震を選んでいる間に警報・注意報を隠していることの一言。凡例と同じ面で、地図を隠しすぎないよう細く */
+  .map-note {
+    max-width: 16rem;
+    margin: 0;
+    padding: var(--so-space-1) var(--so-space-2);
+    border-radius: var(--so-item-radius);
+    background: var(--so-pop);
+    box-shadow: var(--so-shadow-pop);
+  }
+  @media (max-width: 639.98px) {
+    .map-note {
+      max-width: 12rem;
+    }
   }
   .locate-note {
     margin: 0;

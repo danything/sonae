@@ -1,6 +1,7 @@
 /**
- * 震度観測点の位置の表 (static/areas/intensity-stations.json) を作る (docs/map.md の「観測点ごとの震度」)。
- * 地図で、震度の電文に並ぶ観測点を震度の色の丸で置くのに使う。コンテナの中で動かす:
+ * 震度観測点の位置の表 (static/areas/intensity-stations-v2.json) を作る (docs/map.md の「観測点ごとの震度」)。
+ * 地図で、震度の電文に並ぶ観測点を震度の色の丸で置き、押したときの吹き出しに市町村と設置者を出すのに使う。
+ * コンテナの中で動かす:
  *
  *   wslc run --rm -v "$PWD:/w" -w /w oven/bun:1.4.4-slim bun tools/stations/build.ts <コード表の zip か xlsx> [stations.json]
  *
@@ -13,8 +14,15 @@
  *   コード表に無いが、移すまでは電文に並ぶ前の観測点もここに書く
  *
  * 2 つの表は名前で突き合わせる (都道府県が同じことも確かめる)。名前はどちらの表でも全国で重ならない。
- * 出力: 観測点のコード (7 桁) → [経度, 緯度, 名前, 別名…]。名前はコード表の名前 (＊は付かない。
- * コード表に無い観測点は位置の表の名前)。別名は、電文 (P2P) が前の名前で来ることがある観測点の、位置の表の名前
+ * 出力: `{ cities: [市町村の名前…], stations: { 観測点のコード (7 桁): [経度, 緯度, 設置者, 市町村, 名前, 別名…] } }`。
+ * - 設置者は位置の表の `affi` (0 は気象庁、1 は自治体、2 は防災科研)。分からなければ -1
+ * - 市町村は `cities` の番号 (コード表の市町村の名前。「札幌中央区」のような気象庁の書き方)。分からなければ -1。
+ *   都道府県は観測点のコードの上 2 桁で分かるので持たない
+ * - 名前はコード表の名前 (＊は付かない。コード表に無い観測点は位置の表の名前)。別名は、電文 (P2P) が前の名前で
+ *   来ることがある観測点の、位置の表の名前
+ *
+ * 前の形 (観測点のコード → [経度, 緯度, 名前, 別名…]) の `intensity-stations.json` は、開いたままの古い画面が
+ * 新しい形を読んで壊れないよう、名前を替えて消した (古い画面は 404 を受け、丸を出さないだけになる)
  */
 
 import { readFileSync } from "node:fs";
@@ -24,7 +32,7 @@ import { readZip, type ZipEntry } from "../areas/zip.ts";
 const STATIONS_URL =
   "https://www.jma.go.jp/jma/kishou/know/jishin/intens-st/stations.json";
 const DIR = import.meta.dir;
-const OUT = `${DIR}/../../static/areas/intensity-stations.json`;
+const OUT = `${DIR}/../../static/areas/intensity-stations-v2.json`;
 
 const [src, stationsPath] = process.argv.slice(2);
 if (!src) throw new Error("コード表の zip か xlsx を渡してください");
@@ -114,7 +122,30 @@ if (!rows.some((r) => r.G?.includes("震度観測点")))
   );
 const codes = rows
   .filter((r) => /^\d{7}$/.test(r.G ?? "") && r.H)
-  .map((r) => ({ code: r.G as string, name: (r.H as string).trim() }));
+  .map((r) => ({
+    code: r.G as string,
+    name: (r.H as string).trim(),
+    city: (r.E ?? "").trim(),
+  }));
+
+// 市町村の名前は番号にして 1 度だけ持つ (観測点ごとに名前を書くと表が大きくなる)
+const cities: string[] = [];
+const cityNo = new Map<string, number>();
+const cityIndex = (name: string) => {
+  if (!name) return -1;
+  let n = cityNo.get(name);
+  if (n === undefined) {
+    n = cities.length;
+    cities.push(name);
+    cityNo.set(name, n);
+  }
+  return n;
+};
+// コード表に無い観測点 (extra.tsv) の市町村は、観測点のコードの上 5 桁 (市町村のコードの上 5 桁と同じ) で引く
+const cityByPrefix = new Map<string, string>();
+for (const r of rows)
+  if (/^\d{7}$/.test(r.D ?? "") && r.E)
+    cityByPrefix.set((r.D as string).slice(0, 5), (r.E as string).trim());
 
 // ---- 位置の表 ----
 interface Pos {
@@ -122,7 +153,12 @@ interface Pos {
   lon: string;
   name: string;
   pref: string;
+  /** 設置者 (0 は気象庁、1 は自治体、2 は防災科研) */
+  affi?: string;
 }
+/** 設置者の数。知らない値は -1 */
+const affiOf = (p: Pos | undefined) =>
+  p && /^[012]$/.test(p.affi ?? "") ? Number(p.affi) : -1;
 const positions = (
   stationsPath
     ? JSON.parse(readFileSync(stationsPath, "utf8"))
@@ -162,7 +198,7 @@ const out: Record<string, (number | string)[]> = {};
 const used = new Set<string>();
 const missing: string[] = [];
 const seen = new Set<string>();
-for (const { code, name } of codes) {
+for (const { code, name, city } of codes) {
   if (seen.has(name)) throw new Error(`コード表で名前が重なります: ${name}`);
   seen.add(name);
   const p = byName.get(name);
@@ -177,12 +213,20 @@ for (const { code, name } of codes) {
         `都道府県が合いません: ${code} ${name} (位置の表は ${p.pref})`,
       );
     used.add(name);
-    out[code] = [round(Number(p.lon)), round(Number(p.lat)), name];
+    out[code] = [
+      round(Number(p.lon)),
+      round(Number(p.lat)),
+      affiOf(p),
+      cityIndex(city),
+      name,
+    ];
   } else if (x) {
     if (x.alias) used.add(x.alias);
     out[code] = [
       round(x.lon),
       round(x.lat),
+      affiOf(x.alias ? byName.get(x.alias) : undefined),
+      cityIndex(city),
       name,
       ...(x.alias ? [x.alias] : []),
     ];
@@ -198,11 +242,17 @@ for (const [code, x] of extra) {
       `extra.tsv の ${code} ${x.alias} はコード表の名前と重なります`,
     );
   used.add(x.alias);
-  out[code] = [round(x.lon), round(x.lat), x.alias];
+  out[code] = [
+    round(x.lon),
+    round(x.lat),
+    affiOf(byName.get(x.alias)),
+    cityIndex(cityByPrefix.get(code.slice(0, 5)) ?? ""),
+    x.alias,
+  ];
 }
 // 画面は名前 (別名も) → 位置の索引を作るので、どの名前も 1 つの観測点だけを指すようにする
 const owner = new Map<string, string>();
-for (const [code, [, , ...names]] of Object.entries(out))
+for (const [code, [, , , , ...names]] of Object.entries(out))
   for (const n of names) {
     const prev = owner.get(n as string);
     if (prev && prev !== code)
@@ -211,7 +261,9 @@ for (const [code, [, , ...names]] of Object.entries(out))
   }
 const unused = positions.filter((p) => !used.has(p.name)).map((p) => p.name);
 
-const text = JSON.stringify(out);
+const noAffi = Object.entries(out).filter(([, v]) => v[2] === -1);
+const noCity = Object.entries(out).filter(([, v]) => v[3] === -1);
+const text = JSON.stringify({ cities, stations: out });
 await Bun.write(OUT, text);
 console.log(
   `${Object.keys(out).length} 点 (コード表 ${codes.length} 点・位置の表 ${positions.length} 点)。` +
@@ -222,4 +274,10 @@ console.log(
 );
 console.log(
   `使わなかった位置 (${unused.length}): ${unused.join("、") || "なし"}`,
+);
+console.log(
+  `設置者の分からない観測点 (${noAffi.length}): ${noAffi.map(([c]) => c).join("、") || "なし"}`,
+);
+console.log(
+  `市町村の分からない観測点 (${noCity.length}): ${noCity.map(([c]) => c).join("、") || "なし"}`,
 );
