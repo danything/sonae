@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import {
+  listTop,
   nextRetract,
   RETRACT_SHORT,
   RETRACT_STEP,
@@ -32,16 +33,31 @@ describe("スマホの形で dock を引っ込める条件 (denpa と同じ)", (
   });
 });
 
-describe("人が一覧の箱の中を巻いたときだけ見る", () => {
+describe("一覧の巻いた量", () => {
+  const win = { scrollY: 320 };
+  const box = { scrollTop: 40 };
+
+  test("スマホの形は一覧を窓ごと巻くので、窓の値を見る (列の箱は巻かない)", () => {
+    expect(listTop(true, win, box)).toBe(320);
+    expect(listTop(true, win, undefined)).toBe(320);
+  });
+
+  test("広い形は列の箱の中で巻くので、箱の値を見る。箱がまだ無ければ 0", () => {
+    expect(listTop(false, win, box)).toBe(40);
+    expect(listTop(false, win, undefined)).toBe(0);
+  });
+});
+
+describe("人が一覧の中を巻いたときだけ見る", () => {
   const inside = { nodeType: 1 } as unknown as EventTarget;
   const outside = { nodeType: 1 } as unknown as EventTarget;
   const box = { contains: (n: Node | null) => n === (inside as unknown) };
 
-  test("最後に触った所が箱の中なら見る", () => {
+  test("最後に触った所が一覧の中なら見る", () => {
     expect(touchedInside(box, inside)).toBe(true);
   });
 
-  test("箱の外 (カレンダーのメニューなど)・まだ触っていない・window では見ない", () => {
+  test("一覧の外 (地図・dock・カレンダーのメニューなど)・まだ触っていない・window では見ない", () => {
     expect(touchedInside(box, outside)).toBe(false);
     expect(touchedInside(box, null)).toBe(false);
     // window は Node でない (nodeType が無い)
