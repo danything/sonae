@@ -16,12 +16,12 @@ https://github.com/user-attachments/assets/10623080-5ec4-4150-8a29-319a88e5f30b
 <table>
   <tr>
     <td align="center"><img src="docs/images/map.webp" alt="地図と一覧" width="380"><br><sub><b>地図と一覧</b> — 津波注意報の海岸と気象の警報・注意報を地図に、全部の種類を新しい順に 1 本の一覧に</sub></td>
-    <td align="center"><img src="docs/images/detail.webp" alt="詳しい内容" width="380"><br><sub><b>詳しい内容</b> — 行を押すと、震源・M・各地域の震度。地図も各地の震度で塗る</sub></td>
+    <td align="center"><img src="docs/images/detail.webp" alt="詳しい内容" width="380"><br><sub><b>詳しい内容</b> — 行を押すと、震源・M・各地域の震度。地図も各地の震度で塗り、観測点ごとの震度を丸で置く</sub></td>
     <td align="center"><img src="docs/images/notify.webp" alt="通知の窓の先頭。住んでいる地域 (千葉県千葉市) と、緊急地震速報・地震・津波・火山・気象の 3 択と、それぞれ何を知らせるかの 1 文" width="380"><br><sub><b>通知</b> — 種類ごとに全国・住んでいる地域と現在地・知らせないを選ぶ。音と読み上げ・Web Push・Webhook も</sub></td>
   </tr>
   <tr>
     <td align="center"><img src="docs/images/phone-map.webp" alt="スマホの地図" width="190"><br><sub><b>スマホ</b> — 地図が画面いっぱいに。下に選んだものの 1 行と 5 つのタブ</sub></td>
-    <td align="center"><img src="docs/images/phone-list.webp" alt="スマホの一覧" width="190"><br><sub><b>スマホの一覧</b> — 地図の上に重ねる面。種類のチップは下に</sub></td>
+    <td align="center"><img src="docs/images/phone-list.webp" alt="スマホの一覧" width="190"><br><sub><b>スマホの一覧</b> — 地図を上に残し、その下で一覧を巻く。種類のチップは下に</sub></td>
     <td></td>
   </tr>
 </table>
