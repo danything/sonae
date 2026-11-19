@@ -836,6 +836,12 @@
    * docs/map.md の「地震を選んでいる間」)
    */
   const quakeShown = $derived(quake !== undefined);
+  /**
+   * 地図の箱の高さ (px)。低い地図 (スマホの形の一覧のタブで上に残す地図) では、隠していることの一言が震央や丸を
+   * 覆うので出さない。地図のタブへ移って地図が高くなると出す
+   */
+  let boxHeight = $state(0);
+  const NOTE_MIN_HEIGHT = 420;
   /** 気象警報・注意報の塗りを隠しているか (ハザードマップか、地震を選んでいるため) */
   const warningsHidden = $derived(covered || quakeShown);
   $effect(() => {
@@ -1420,7 +1426,7 @@
 {#if failed}
   <div class="map-failed empty-state"><p class="muted">{failed}</p></div>
 {:else}
-  <div class="map-box">
+  <div class="map-box" bind:clientHeight={boxHeight}>
     <div
       class="map"
       bind:this={container}
@@ -1537,7 +1543,7 @@
         </figure>
       {/if}
       <!-- 地震を選んでいる間に、気象警報・注意報の塗りを隠していることと戻し方 (ハザードマップの凡例が書くときは出さない) -->
-      {#if quakeShown && warningsPainted && !covered}
+      {#if quakeShown && warningsPainted && !covered && boxHeight >= NOTE_MIN_HEIGHT}
         <p class="map-note tiny muted" data-testid="quake-hides-warnings">
           地震を選んでいる間は、気象警報・注意報の塗りを隠しています{specialPainted
             ? " (特別警報は縁取りで出します)"
