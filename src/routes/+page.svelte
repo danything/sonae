@@ -1,6 +1,6 @@
 <script lang="ts">
   import { browser } from "$app/env";
-  import { afterNavigate, goto } from "$app/navigation";
+  import { afterNavigate, goto, onNavigate, snapshot } from "$app/navigation";
   import { page } from "$app/state";
   import { tick, untrack } from "svelte";
   import { MediaQuery } from "svelte/reactivity";
@@ -99,7 +99,12 @@
     type ThemeMode,
     writePref,
   } from "#lib/prefs.ts";
-  import { nextRetract, RETRACT_SHORT, touchedInside } from "#lib/retract.ts";
+  import {
+    listTop,
+    nextRetract,
+    RETRACT_SHORT,
+    touchedInside,
+  } from "#lib/retract.ts";
   import {
     dayKey,
     dayLabel,
@@ -644,19 +649,12 @@
   let listBox = $state<HTMLElement>();
   /**
    * 低い画面で一覧を下へ読んでいる間は、dock を引っ込める (下のタブはいつも出す。denpa と同じ条件。`#lib/retract.ts`)。
-   * JS は印 (`data-retract`) を付け外しするだけで、動きは CSS
+   * スマホの形の一覧は窓ごと巻くので、窓の巻いた量を見る。JS は印 (`data-retract`) を付け外しするだけで、動きは CSS
    */
   let retract = $state(false);
   let lastTop = 0;
   /** 最後に人が触った所 (ホイール・指・押す・キー)。一覧の箱の中なら、その巻き取りを見る */
   let touched: EventTarget | null = null;
-  function onListScroll() {
-    if (!listBox) return;
-    const y = listBox.scrollTop;
-    if (touchedInside(listBox, touched))
-      retract = nextRetract(retract, y, lastTop, short.matches);
-    lastTop = y;
-  }
   const short =
     typeof matchMedia === "function"
       ? matchMedia(RETRACT_SHORT)
@@ -666,28 +664,96 @@
     const onShort = () => {
       if (!short.matches) retract = false;
     };
+    const onScroll = () => {
+      // 広い形の窓は巻けない (一覧は列の箱の中で巻く。dock も無い)
+      if (!phone.current) return;
+      const y = scrollY;
+      if (touchedInside(listBox, touched))
+        retract = nextRetract(retract, y, lastTop, short.matches);
+      lastTop = y;
+    };
     const OWN = ["wheel", "touchstart", "pointerdown", "keydown"] as const;
     for (const type of OWN)
       addEventListener(type, own, { capture: true, passive: true });
+    addEventListener("scroll", onScroll, { passive: true });
     (short as MediaQueryList).addEventListener?.("change", onShort);
     return () => {
       for (const type of OWN) removeEventListener(type, own, { capture: true });
+      removeEventListener("scroll", onScroll);
       (short as MediaQueryList).removeEventListener?.("change", onShort);
     };
+  });
+  /** いまの移動が戻る・進むか。そのときは見ていた位置へ帰す (下の snapshot) ので、先頭へ戻さない */
+  let popped = false;
+  onNavigate((navigation) => {
+    popped = navigation.type === "popstate";
   });
   // 画面を移ったら (選ぶ・戻る) 出し、触った所も忘れる
   afterNavigate(() => {
     retract = false;
     touched = null;
-    lastTop = listBox?.scrollTop ?? 0;
+    lastTop = scrollY;
   });
   $effect(() => {
     if (tab === "map") retract = false;
   });
-  // 選び直したら、一覧の箱を先頭へ戻す (詳しい内容の始まりから読む)
+  /**
+   * スマホの形の一覧のタブで巻いていた位置。地図のタブでは一覧を流れの外に出して窓が巻けなくなるので、
+   * 一覧のタブへ戻ったときにここへ帰す。地図のタブへ移る直前 (DOM を替える前) に控える
+   */
+  let listY = 0;
+  // svelte-ignore state_referenced_locally
+  let lastTab = tab;
+  $effect.pre(() => {
+    if (tab === "map" && lastTab === "list") listY = scrollY;
+  });
   $effect(() => {
-    void v.selected?.id;
-    listBox?.scrollTo({ top: 0, behavior: "instant" });
+    const from = lastTab;
+    lastTab = tab;
+    if (phone.current && tab === "list" && from === "map")
+      scrollTo({ top: listY, behavior: "instant" });
+  });
+  // 選び直したら、一覧を先頭へ戻す (詳しい内容の始まりから読む)。スマホの形は窓ごと巻くので窓を戻す。
+  // 開いたときと、戻る・進むでは動かさない (下の snapshot が見ていた位置へ帰す)
+  let opened = false;
+  // 窓 (`?about=1`) を開いただけでは替わらないよう、選んだものの種類と id だけを見る
+  const selectedKey = $derived(
+    v.selected ? `${v.selected.kind}:${v.selected.id}` : "",
+  );
+  $effect(() => {
+    void selectedKey;
+    untrack(() => {
+      const first = !opened;
+      const back = popped;
+      opened = true;
+      // 戻る・進むの印は 1 回だけ使う (onNavigate を通らない URL の替え方で残らないように)
+      popped = false;
+      if (first || back) return;
+      if (!phone.current) {
+        listBox?.scrollTo({ top: 0, behavior: "instant" });
+        return;
+      }
+      listY = 0;
+      scrollTo({ top: 0, behavior: "instant" });
+    });
+  });
+  /**
+   * 戻る・進むで、その画面で見ていた位置へ帰す。行を選ぶリンクは画面を替えずに URL だけを替える
+   * (`data-sveltekit-reset="false"`) ので、SvelteKit は窓の位置を戻さない。履歴ごとに控えて、ここで戻す
+   */
+  snapshot<number>({
+    capture: () =>
+      phone.current && tab === "map"
+        ? listY
+        : listTop(phone.current, window, listBox),
+    restore: (y) => {
+      if (!phone.current) {
+        listBox?.scrollTo({ top: y, behavior: "instant" });
+        return;
+      }
+      listY = y;
+      if (tab === "list") scrollTo({ top: y, behavior: "instant" });
+    },
   });
 
   // ---- カレンダー ----
@@ -1309,7 +1375,6 @@
         class="list-pane"
         aria-label={v.selected ? "詳しい内容" : "一覧"}
         bind:this={listBox}
-        onscroll={onListScroll}
         inert={phone.current && tab === "map" ? true : undefined}
         tabindex="-1"
       >
@@ -1421,7 +1486,6 @@
           selectHref(params, "weather", `${OFFICE_PREFIX}${code}`)}
         onoffice={() => (tab = "list")}
         {aboutHref}
-        shown={!phone.current || tab === "map"}
         {found}
         selected={v.selected !== null}
         onstations={(r) => (stationMiss = r)}
@@ -1584,8 +1648,9 @@
 
 <style>
   /*
-   * 1 つの画面の外枠。窓の高さいっぱいにし、ページそのものは巻かない (一覧は列の箱の中で巻く)。
-   * 広い形は ヘッダー / 一覧の列 | 地図。スマホの形は地図を画面いっぱいにし、一覧はその上に重ねる面
+   * 1 つの画面の外枠。窓の高さいっぱいにする。
+   * 広い形は ヘッダー / 一覧の列 | 地図で、ページそのものは巻かない (一覧は列の箱の中で巻く)。
+   * スマホの形は、一覧のタブで地図を上に貼り付けて一覧を窓ごと巻き、地図のタブで地図を画面いっぱいにする (下の「スマホの形」)
    */
   .shell {
     position: relative;
@@ -1874,9 +1939,19 @@
   }
 
   /* ---- スマホの形 (`<html data-phone>`) ---- */
+  /*
+   * 一覧のタブは窓ごと巻く (Android のブラウザは、窓が巻かれたときだけアドレスバーを隠す。戻ったときに見ていた位置へも帰る)。
+   * 地図は上に貼り付けて残し、一覧がその下を流れる。地図のタブは地図を画面いっぱいにし、窓は巻かない。
+   * 地図の高さは外枠の高さ (`html` から 100% で受け継いだもの) から採る。外枠を大きさの container にして、
+   * 中から `cqh` で読む (窓ごと巻くと、間の箱は中身の高さになって % では届かない。`vh`・`dvh` は言い当てる単位なので使わない)
+   */
   :global(:where(html[data-phone])) .shell {
     --so-tabbar: calc(4rem + 0.5rem + env(safe-area-inset-bottom));
     --dock-h: 2.75rem;
+    /* 一覧のタブで上に残す地図の高さ (docs/ui.md の「スマホの形」) */
+    --phone-map-h: 40cqh;
+    overflow: visible;
+    container-type: size;
   }
   :global(:where(html[data-phone])) .navbar,
   :global(:where(html[data-phone])) .list-bar {
@@ -1889,44 +1964,82 @@
     padding-inline: var(--so-space-3) var(--so-space-2);
     border-radius: 0;
   }
-  /* 列の箱は作らず、一覧をこれまでどおり地図の上に重ねる */
+  /* 列の箱は作らず、地図の下に一覧を積む */
   :global(:where(html[data-phone])) .list-col {
     display: contents;
   }
+  /* 一覧のタブは中身の高さまで伸ばし、外枠からはみ出したぶんを窓が巻く。地図 (DOM では一覧の後) を上に出す */
   :global(:where(html[data-phone])) .stage {
     position: relative;
-    display: block;
+    display: flex;
+    flex-direction: column;
+    flex: 1 0 auto;
   }
+  :global(:where(html[data-phone])) .shell[data-view="map"] .stage {
+    flex: 1 1 0%;
+    min-height: 0;
+    /* 下へずらした一覧の面のぶんも、窓を巻かせない */
+    overflow: clip;
+  }
+  /* 地図は上に貼り付く。一覧のタブでは地図の下に何も浮かないので、操作の置き場 (`--map-bottom`) は地図の下の端 */
   :global(:where(html[data-phone])) .map-pane {
     --map-radius: 0;
     --map-top: env(safe-area-inset-top);
+    --map-bottom: 0px;
+    position: sticky;
+    top: 0;
+    z-index: calc(var(--so-z-heading) + 1);
+    height: var(--phone-map-h);
+    flex: none;
+    order: -1;
+    padding: 0;
+  }
+  :global(:where(html[data-phone])) .shell[data-view="map"] .map-pane {
     --map-bottom: calc(
       var(--so-tabbar) + var(--so-dock-gap) + var(--dock-h) + var(--so-space-1)
     );
-    position: absolute;
-    inset: 0;
-    padding: 0;
+    height: 100%;
   }
-  /* 一覧は地図の上に重ねる面。地図のタブでは透明にして下へずらし、押せなくする (透明度と transform だけで動かす) */
+  /*
+   * 一覧のタブでは、地図の下を窓ごと巻く。地図のタブでは地図の上に重ねて透明にし、下へずらして押せなくする
+   * (透明度と transform だけで動かす)。重ねる間は中を切って、窓が巻けないようにする
+   */
   :global(:where(html[data-phone])) .list-pane {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    padding: calc(env(safe-area-inset-top) + var(--so-space-3))
-      var(--so-space-3)
+    position: relative;
+    flex: none;
+    overflow: visible;
+    padding: var(--so-space-3) var(--so-space-3)
       calc(var(--so-tabbar) + var(--dock-h) + var(--so-space-5));
-    background: var(--so-bg);
     transition:
       opacity var(--so-duration-enter) var(--so-ease),
       transform var(--so-duration-enter) var(--so-ease-spring),
       visibility var(--so-duration-enter) allow-discrete;
   }
   :global(:where(html[data-phone])) .shell[data-view="map"] .list-pane {
+    position: absolute;
+    inset: 0;
+    z-index: calc(var(--so-z-heading) + 2);
+    overflow: hidden;
+    background: var(--so-bg);
     visibility: hidden;
     opacity: 0;
     transform: translateY(0.5rem);
     transition-duration: var(--so-duration-exit);
     transition-timing-function: var(--so-ease-exit);
+  }
+  /*
+   * 窓ごと巻くので、貼り付く日付の見出しは地図のすぐ下に付ける。押すものへ移ったとき (Tab・飛んだ先) は、
+   * 上の地図と下の dock・下のタブに隠れない所まで巻く
+   */
+  :global(:where(html[data-phone])) .list-pane :global(.day-head) {
+    top: calc(var(--phone-map-h) + var(--so-space-2));
+  }
+  :global(:where(html[data-phone])) .list-pane :global(*) {
+    scroll-margin-block: calc(var(--phone-map-h) + var(--so-space-2))
+      calc(
+        var(--so-tabbar) + var(--so-dock-gap) + var(--dock-h) +
+          var(--so-space-2)
+      );
   }
   :global(:where(html[data-phone])) .phone-search {
     display: block;

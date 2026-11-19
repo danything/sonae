@@ -110,7 +110,6 @@
     officeHref,
     onoffice,
     aboutHref = "/?about=1",
-    shown = true,
     found = null,
     selected = false,
     onstations,
@@ -147,8 +146,6 @@
     /** Wolfx SeisJS の観測点の位置と、いまの揺れ (台湾の観測点と同じ扱い。docs/design.md の 2.10) */
     seisStations?: RtsStation[];
     seis?: RtsFrame | null;
-    /** 地図が見えているか (スマホの形で一覧の面が上にある間は false) */
-    shown?: boolean;
     /** 検索の欄で選んだ場所 (寄せて印を置く。`n` が替わるたびに寄せる) */
     found?: { place: Place; n: number } | null;
     /** 隅の出典を押したときに開く「出典と注意」の窓のリンク */
@@ -1181,7 +1178,6 @@
       // 住所は街区の代表の点なので、家のまわりが分かるくらいまで
       map.jumpTo({ center: p.at, zoom: Math.max(map.getZoom(), 16) });
     }
-    foundJumpedAt = Date.now();
     foundMarker?.remove();
     const el = document.createElement("div");
     el.className = "found-mark";
@@ -1192,8 +1188,8 @@
   });
 
   // 出ている緊急地震速報・選んだ火山・海外の地震・府県予報区・地震の順に、先にあるものへ寄せる。飛ばさない。
-  // 続報で中身が変わるたびに寄せ直すと、見ている所が勝手に動くので、寄せるのは寄せ先が替わったときと、
-  // 地図が見えたとき (スマホの形で地図のタブに移ったとき) に寄せ先が画面の外にあるときだけ
+  // 続報で中身が変わるたびに寄せ直すと、見ている所が勝手に動くので、寄せるのは寄せ先が替わったときだけ。
+  // スマホの形は一覧のタブでも地図を上に残すので、選んだときに寄せれば地図のタブでも見えている
   let focused = "";
   /** 詳しい内容を開く前の地図の位置 (閉じたら戻す。`#lib/map/restore.ts`) */
   const keeper = new ViewKeeper();
@@ -1215,9 +1211,6 @@
         untrack(() => selected),
       );
   }
-  /** 検索の欄で選んだ場所へ寄せた直後か (地図のタブへ移ったときに、震央へ寄せ直さない) */
-  let foundJumpedAt = 0;
-  let wasShown = false;
   $effect(() => {
     if (!map) return;
     const eew = eews.find((e) => !e.cancelled);
@@ -1248,21 +1241,9 @@
           : office
             ? `office:${office}`
             : `quake:${quake?.id ?? ""}`;
-    const appeared = shown && !wasShown;
-    wasShown = shown;
-    // 検索の欄で場所を選んで地図のタブへ移ったときは、そちらを見せる (震央へ戻さない)
-    if (appeared && Date.now() - foundJumpedAt < 2000) {
-      foundJumpedAt = 0;
-      return;
-    }
     if (office && !eew && !vm && !fq) {
       if (!ob) return;
-      const away =
-        appeared &&
-        !map
-          .getBounds()
-          .contains([(ob[0][0] + ob[1][0]) / 2, (ob[0][1] + ob[1][1]) / 2]);
-      if (key === focused && !away) return;
+      if (key === focused) return;
       const cam = map.cameraForBounds(ob, { padding: focusPadding() });
       if (!cam) return;
       focused = key;
@@ -1281,8 +1262,7 @@
           : undefined;
     if (!at) return;
     const center: [number, number] = at;
-    const away = appeared && !map.getBounds().contains(center);
-    if (key === focused && !away) return;
+    if (key === focused) return;
     focused = key;
     remember();
     map.jumpTo({ center, zoom: fq ? 4 : Math.max(map.getZoom(), 5.5) });
