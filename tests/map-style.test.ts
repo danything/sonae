@@ -11,6 +11,7 @@ import {
   HAZARDS,
   hazardVisibility,
   HIDDEN_UNDER_HAZARD,
+  HIDDEN_UNDER_QUAKE,
   hypocenterFeatures,
   intensityFill,
   intensityLabels,
@@ -284,6 +285,30 @@ test("ハザードマップを重ねている間は、面で塗る色を隠し�
       ]),
     ),
   ).toEqual(["in", ["get", "code"], ["literal", ["0110000"]]]);
+});
+
+test("地震を選んでいる間は、気象警報・注意報の塗りを隠し、特別警報は縁取りで残す", () => {
+  const q = overlayVisibility("none", 5, true);
+  for (const l of HIDDEN_UNDER_QUAKE) expect(q[l]).toBe(false);
+  for (const l of SHOWN_UNDER_HAZARD) expect(q[l]).toBe(true);
+  // 震度の塗り・緊急地震速報の地域は隠さない (津波の線・緊急地震速報の縁取りは、もともと出し入れしない)
+  expect(q["quake-fill"]).toBe(true);
+  expect(q["eew-fill"]).toBe(true);
+  const hidden: string[] = [...HIDDEN_UNDER_QUAKE];
+  for (const keep of ["quake-fill", "eew-fill", "eew-line", "tsunami"])
+    expect(hidden).not.toContain(keep);
+  // 選びを外すと元に戻る
+  const off = overlayVisibility("none", 5, false);
+  for (const l of HIDDEN_UNDER_QUAKE) expect(off[l]).toBe(true);
+  for (const l of SHOWN_UNDER_HAZARD) expect(off[l]).toBe(false);
+  // ハザードマップも重ねているときは、両方の隠す層を隠す
+  const both = overlayVisibility("flood", 5, true);
+  for (const l of [...HIDDEN_UNDER_HAZARD, ...HIDDEN_UNDER_QUAKE])
+    expect(both[l]).toBe(false);
+  // 図が重ならないズームの活断層でも、地震を選んでいれば警報・注意報は隠す (震度の塗りは出す)
+  const faults = overlayVisibility("faults", 5, true);
+  expect(faults["warning-fill"]).toBe(false);
+  expect(faults["quake-fill"]).toBe(true);
 });
 
 test("避難場所: 見ている範囲のズーム 10 のタイル。多すぎたら読まない", () => {

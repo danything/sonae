@@ -257,16 +257,42 @@ export function hazardCovers(id: HazardId, zoom: number): boolean {
   return h !== undefined && zoom >= h.minzoom;
 }
 
-/** ハザードマップが重なっているかで、重ねる層の出し入れを決める (隠す層・代わりに出す層) */
+/**
+ * 地震を選んでいる間に隠す層 (気象警報・注意報の塗りと、一覧で選んだ府県予報区の縁取り)。警報・注意報の黄・赤・紫が
+ * 震度の色 (黄・赤・紫) と重なって読み違えるため。特別警報は `SHOWN_UNDER_HAZARD` の縁取りで残す (docs/map.md の
+ * 「地震を選んでいる間」)。緊急地震速報と津波の線は隠さない
+ */
+export const HIDDEN_UNDER_QUAKE = [
+  "warning-fill",
+  "warning-focus-casing",
+  "warning-focus",
+] as const;
+
+/**
+ * ハザードマップが重なっているか・地震を選んでいるかで、重ねる層の出し入れを決める (隠す層・代わりに出す層)。
+ * ハザードマップが重なっている間は `HIDDEN_UNDER_HAZARD` を、地震を選んでいる間は `HIDDEN_UNDER_QUAKE` を隠し、
+ * どちらのときも特別警報の縁取りを出す
+ */
 export function overlayVisibility(
   id: HazardId,
   /** いまのズーム。ハザードマップのタイルが無いズーム (活断層はズーム 11 未満) では何も重ならないので隠さない */
   zoom = Number.POSITIVE_INFINITY,
+  /** 一覧で地震を選んでいるか */
+  quake = false,
 ): Record<string, boolean> {
   const on = hazardCovers(id, zoom);
+  const hidden = new Set<string>([
+    ...(on ? HIDDEN_UNDER_HAZARD : []),
+    ...(quake ? HIDDEN_UNDER_QUAKE : []),
+  ]);
   return {
-    ...Object.fromEntries(HIDDEN_UNDER_HAZARD.map((l) => [l, !on])),
-    ...Object.fromEntries(SHOWN_UNDER_HAZARD.map((l) => [l, on])),
+    ...Object.fromEntries(
+      [...HIDDEN_UNDER_HAZARD, ...HIDDEN_UNDER_QUAKE].map((l) => [
+        l,
+        !hidden.has(l),
+      ]),
+    ),
+    ...Object.fromEntries(SHOWN_UNDER_HAZARD.map((l) => [l, on || quake])),
   };
 }
 
@@ -414,7 +440,7 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   },
   {
     label: "観測点ごとの震度",
-    note: "一覧で選んだ地震の、震度観測点ごとの震度の色の丸 (大きい震度が上)。電文に並んだ観測点だけを置き、観測点の間の震度を補ったり推し量ったりはしていません。寄せると丸が大きくなり、地域の塗りは薄くなります。位置の分からない観測点は出さず、詳しい内容にその数を書きます",
+    note: "一覧で選んだ地震の、震度観測点ごとの震度の色の丸 (大きい震度が上)。電文に並んだ観測点だけを置き、観測点の間の震度を補ったり推し量ったりはしていません。寄せると丸が大きくなり、地域の塗りは薄くなります。丸を押すと、観測点の名前・震度・都道府県と市町村・設置者 (気象庁・地方公共団体・防災科学技術研究所) が出ます。位置の分からない観測点は出さず、詳しい内容にその数を書きます",
   },
   {
     label: "震源",
@@ -434,7 +460,7 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   },
   {
     label: "気象警報・注意報",
-    note: "市町村等を段の色で塗ります。特別警報 黒・危険警報 紫・警報 赤・注意報 黄 (気象庁の配色)。塗った所を押すと、市町村の名前と出ている警報・注意報が出ます。一覧で府県予報区の警報・注意報を選ぶと、その府県予報区の市町村等を白い線で縁取ります",
+    note: "市町村等を段の色で塗ります。特別警報 黒・危険警報 紫・警報 赤・注意報 黄 (気象庁の配色)。塗った所を押すと、市町村の名前と出ている警報・注意報が出ます。一覧で府県予報区の警報・注意報を選ぶと、その府県予報区の市町村等を白い線で縁取ります。地震を選んでいる間は、震度の色と重ならないよう塗りを隠します (特別警報は縁取りで出します)",
   },
   {
     label: "台湾の観測点の揺れ (非公式)",
