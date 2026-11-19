@@ -724,8 +724,11 @@
     void selectedKey;
     untrack(() => {
       const first = !opened;
+      const back = popped;
       opened = true;
-      if (first || popped) return;
+      // 戻る・進むの印は 1 回だけ使う (onNavigate を通らない URL の替え方で残らないように)
+      popped = false;
+      if (first || back) return;
       if (!phone.current) {
         listBox?.scrollTo({ top: 0, behavior: "instant" });
         return;
