@@ -295,6 +295,7 @@ export function roadSource(
       res = await doFetch(at, { headers, signal: timeout, redirect: "manual" });
       if (res.status < 300 || res.status >= 400 || res.status === 304) break;
       const next = res.headers.get("location");
+      await res.body?.cancel();
       if (!next || hop >= MAX_REDIRECTS)
         throw new Error(`${url} のリダイレクトを辿れません (${res.status})`);
       at = new URL(next, at).toString();
