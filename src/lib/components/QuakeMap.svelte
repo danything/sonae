@@ -891,6 +891,8 @@
           cache: "no-cache",
           credentials: "omit",
           referrerPolicy: "no-referrer",
+          // 返らないまま止まると次を取らないので、10 秒で失敗にして 1 分後に取り直す
+          signal: AbortSignal.timeout(10_000),
         });
         if (!r.ok) throw new Error(`targetTimes: ${r.status}`);
         const f = latestRain(await r.json());
