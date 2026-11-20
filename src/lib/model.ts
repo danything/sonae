@@ -973,8 +973,34 @@ export interface WeatherInfo {
    */
   areas: { code: string; name: string }[];
   typhoon?: TyphoonNow;
+  /**
+   * 指定河川洪水予報の水位観測所ごとの、実況と予想の水位 (電文の「水位・流量情報」)。基準観測所を先に並べる。
+   * 水位を持つようにした変更 (#359) より前に受けた報には無い
+   */
+  stations?: RiverStation[];
   cancelled: boolean;
   updatedAt: string;
+}
+
+/** 指定河川洪水予報の水位観測所 1 つ (docs/design.md の 2.8) */
+export interface RiverStation {
+  /** 観測所の名前 (「上川沿」) とコード (17 桁) */
+  name: string;
+  code: string;
+  /** 所在地 (「北見市」) */
+  location?: string;
+  /** 主文で名前の出る基準観測所か */
+  base: boolean;
+  /** 実況と予想の水位。電文の時刻の順 (先頭は「現況」)。欠測は m が無い */
+  levels: {
+    /** 時刻 (ISO 8601) */
+    time: string;
+    /** 電文の時刻の名前 (「現況」「１時間後」) */
+    label: string;
+    m?: number;
+  }[];
+  /** 基準の水位 (「レベル２氾濫注意水位」など。電文の名前のまま) */
+  criteria: { name: string; m: number }[];
 }
 
 /**
