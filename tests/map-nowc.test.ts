@@ -154,6 +154,13 @@ test("今後の雨: 予測のあるいちばん新しい basetime の行を、�
   ]);
   expect(frames[0]?.member).toBe("immed");
   expect(hoursAhead(frames[1]!)).toBe(2);
+  expect(
+    hoursAhead({
+      basetime: "20261120163000",
+      validtime: "20261120180000",
+      member: "immed",
+    }),
+  ).toBe(1.5);
   expect(rasrfTiles(frames[0]!)).toBe(
     "https://www.jma.go.jp/bosai/jmatile/data/rasrf/20261120163000/immed/20261120173000/surf/rasrf/{z}/{x}/{y}.png",
   );

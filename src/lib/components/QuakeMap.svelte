@@ -49,6 +49,7 @@
     forecastFrames,
     hoursAhead,
     latestAnalysis,
+    N3_STALE_MS,
     N3_TILE_ZOOMS,
     N3_TIMES_URL,
     nextN3Poll,
@@ -1258,20 +1259,36 @@
     if (!map || !pageVisible) return;
     const m = map;
     let last = "";
-    return pollTimes(
+    const aborter = new AbortController();
+    const clear = () => {
+      setData(m, "slmcs", { type: "FeatureCollection", features: [] });
+      slmcsAt = null;
+    };
+    const stop = pollTimes(
       N3_TIMES_URL,
       (raw) => {
         const f = latestAnalysis(raw, "slmcs_unify");
-        if (!f) return NOWC_RETRY_MS;
+        // 表から雨域が消えたときと、描いている雨域が古いまま新しい解析を読めないときは、古い線を残さない
+        const shown = untrack(() => slmcsAt);
+        if (shown && Date.now() - Date.parse(shown) > N3_STALE_MS) clear();
+        if (!f) {
+          last = "";
+          if (shown) clear();
+          return NOWC_RETRY_MS;
+        }
         if (f.validtime !== last) {
           last = f.validtime;
           void fetch(slmcsUrl(f), {
             credentials: "omit",
             referrerPolicy: "no-referrer",
-            signal: AbortSignal.timeout(10_000),
+            signal: AbortSignal.any([
+              aborter.signal,
+              AbortSignal.timeout(10_000),
+            ]),
           })
             .then((r) => (r.ok ? r.json() : null))
             .then((j: unknown) => {
+              if (aborter.signal.aborted) return;
               if (j === null) {
                 last = "";
                 return;
@@ -1281,7 +1298,7 @@
               slmcsAt = fc.features.length > 0 ? stampIso(f.validtime) : null;
             })
             .catch(() => {
-              // 読めなければ前の雨域のまま、次の時刻の表で読み直す
+              // 読めなければ前の雨域のまま、次の時刻の表で読み直す (古くなったら上で消す)
               last = "";
             });
         }
@@ -1289,6 +1306,10 @@
       },
       () => {},
     );
+    return () => {
+      aborter.abort();
+      stop();
+    };
   });
 
   /** 気象警報・注意報の塗りを隠しているか (重ねる図が重なっているか、地震を選んでいるため) */

@@ -198,12 +198,16 @@ export const nowcStale = (frame: NowcFrame, now: number) =>
 export const rasrfStale = (frame: NowcFrame, now: number) =>
   now - Date.parse(stampIso(frame.basetime)) > RASRF_STALE_MS;
 
-/** 予測の何時間先か (basetime から validtime まで。分は切り捨てない。30 分ごとの予報の 1 時間先は 1) */
+/**
+ * 予測の何時間先か (basetime から validtime まで、0.5 時間刻み)。2026-11-21 の表はどの basetime も 1 時間ごとの
+ * 予測だったが、30 分ずれた行が来ても「1 時間先」に丸めて取り違えないよう、半端は 1.5 のように出す
+ */
 export const hoursAhead = (f: NowcFrame) =>
   Math.round(
-    (Date.parse(stampIso(f.validtime)) - Date.parse(stampIso(f.basetime))) /
-      3_600_000,
-  );
+    ((Date.parse(stampIso(f.validtime)) - Date.parse(stampIso(f.basetime))) /
+      3_600_000) *
+      2,
+  ) / 2;
 
 /**
  * 今後の雨の凡例 (1 時間の雨量 mm。強いものから)。色は気象庁の画面の凡例 (`legend_jp_normal_rasrf.svg`) のまま
