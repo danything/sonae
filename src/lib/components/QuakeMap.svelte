@@ -2576,8 +2576,12 @@
     filter: drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff);
   }
   /* 火山の印。三角を警戒の段の色で塗り、段の数字を字でも出す (色だけに頼らない)。影は三角で切られないよう外の要素に */
+  /*
+   * 位置は MapLibre の印 (`.maplibregl-marker` の position: absolute) のまま。relative で上書きすると、
+   * 印が地図の幅いっぱいの箱になり、anchor の -50% で三角が左へずれる (2026-11-21 に直した)。
+   * 字 (.volcano-caption) は absolute の印を基準に置かれる
+   */
   .map :global(.volcano-wrap) {
-    position: relative;
     filter: drop-shadow(0 1px 1px rgb(0 0 0 / 0.7));
   }
   /*

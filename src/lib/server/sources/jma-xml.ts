@@ -26,7 +26,11 @@ import {
   type TsunamiGrade,
   type TsunamiObservation,
   UNRECEIVED,
+  type Volcano,
+  VOLCANO_CODES,
   type VolcanoArea,
+  type VolcanoAsh,
+  type VolcanoCode,
   volcanoLevel,
 } from "#lib/model.ts";
 
@@ -357,11 +361,68 @@ function readEarthquakeCount(body: V): {
   };
 }
 
-/** 火山: 噴火警報・予報と噴火速報 (docs/design.md の 3 章) */
-const VOLCANO_CODES = ["VFVO50", "VFVO56"] as const;
-type VolcanoCode = (typeof VOLCANO_CODES)[number];
+/** 火山: 噴火警報・予報・解説情報・観測報・降灰予報・噴火速報・推定噴煙流向報 (docs/design.md の 3 章) */
 const isVolcanoCode = (c: string): c is VolcanoCode =>
   (VOLCANO_CODES as readonly string[]).includes(c);
+
+/**
+ * 種別ごとの、対象の火山と対象の市町村等の VolcanoInfo の type。
+ * 降灰予報は令和 8 年 11 月の資料で「火山灰予報」に名前が変わる予定 (提供の時期は未定) なので、どちらも読む
+ */
+const VOLCANO_INFO: Record<
+  VolcanoCode,
+  { target: string[]; cities: string[] }
+> = {
+  VFVO50: {
+    target: ["噴火警報・予報（対象火山）"],
+    cities: ["噴火警報・予報（対象市町村等）"],
+  },
+  VFVO51: { target: ["火山の状況に関する解説情報（対象火山）"], cities: [] },
+  VFVO52: { target: ["噴火に関する火山観測報"], cities: [] },
+  VFVO53: {
+    target: ["降灰予報（対象火山）", "火山灰予報（対象火山）"],
+    cities: ["降灰予報（対象市町村等）", "火山灰予報（対象市町村等）"],
+  },
+  VFVO54: {
+    target: ["降灰予報（対象火山）", "火山灰予報（対象火山）"],
+    cities: ["降灰予報（対象市町村等）", "火山灰予報（対象市町村等）"],
+  },
+  VFVO55: {
+    target: ["降灰予報（対象火山）", "火山灰予報（対象火山）"],
+    cities: ["降灰予報（対象市町村等）", "火山灰予報（対象市町村等）"],
+  },
+  VFVO56: {
+    target: ["噴火速報"],
+    cities: ["噴火速報（対象市町村等）"],
+  },
+  VFVO60: { target: ["推定噴煙流向報"], cities: [] },
+};
+
+/**
+ * 警戒の段 (噴火警戒レベル) を種類のコードから取る種別。ほかの種別の種類のコード (降灰予報の 06・07、
+ * 観測報の 51 爆発・52 噴火など) は警報の種類ではないので段にしない (火山灰予報の 22 などと重なるため)
+ */
+const LEVELED: ReadonlySet<VolcanoCode> = new Set([
+  "VFVO50",
+  "VFVO51",
+  "VFVO56",
+]);
+
+/** 噴煙 (VolcanoObservation/ColorPlume)。電文の説明の文のまま */
+function readPlume(body: V): Volcano["plume"] {
+  const plume = at(body, "VolcanoObservation/ColorPlume");
+  if (plume === undefined) return undefined;
+  const desc = (name: string) => {
+    const el = child(plume, name);
+    return attr(el, "description") ?? textAt(el, "#text");
+  };
+  const out = {
+    height: desc("jmx_eb:PlumeHeightAboveCrater"),
+    seaLevel: desc("jmx_eb:PlumeHeightAboveSeaLevel"),
+    direction: desc("jmx_eb:PlumeDirection"),
+  };
+  return out.height || out.seaLevel || out.direction ? out : undefined;
+}
 
 /**
  * 火山の位置 (`+3624.38+13831.38+2568/`)。緯度・経度は「度分」(36 度 24.38 分) で、最後は標高 (m)。
@@ -391,15 +452,11 @@ export function readVolcanoCoordinate(
 
 function readVolcano(body: V, code: VolcanoCode) {
   const infos = children(body, "VolcanoInfo");
-  const ofType = (type: string) => infos.find((i) => attr(i, "type") === type);
-  const target =
-    code === "VFVO56"
-      ? ofType("噴火速報")
-      : ofType("噴火警報・予報（対象火山）");
-  const cityInfo =
-    code === "VFVO56"
-      ? ofType("噴火速報（対象市町村等）")
-      : ofType("噴火警報・予報（対象市町村等）");
+  const ofType = (types: string[]) =>
+    infos.find((i) => types.includes(attr(i, "type") ?? ""));
+  const target = ofType(VOLCANO_INFO[code].target);
+  const cityInfo = ofType(VOLCANO_INFO[code].cities);
+  const leveled = LEVELED.has(code);
   const volcanoes: VolcanoArea[] = children(target, "Item").flatMap((item) => {
     const kind = child(item, "Kind");
     const kindCode = textAt(kind, "Code");
@@ -417,12 +474,13 @@ function readVolcano(body: V, code: VolcanoCode) {
             kindCode,
             condition: textAt(kind, "Condition"),
             lastKind: textAt(item, "LastKind/Name"),
-            level: volcanoLevel(kindCode),
+            level: leveled ? volcanoLevel(kindCode) : undefined,
           },
         ];
       },
     );
   });
+  const ash = code === "VFVO53" || code === "VFVO54" || code === "VFVO55";
   const cityItems = children(cityInfo, "Item");
   const cities = cityItems.flatMap((item) =>
     children(child(item, "Areas"), "Area").flatMap((a) => {
@@ -439,6 +497,11 @@ function readVolcano(body: V, code: VolcanoCode) {
   const wKind = child(cityItems[0], "Kind");
   const warningName = textAt(wKind, "Name");
   const content = child(body, "VolcanoInfoContent");
+  const names = (item: V, key: "Name" | "Code") =>
+    children(child(item, "Areas"), "Area").flatMap((a) => {
+      const v = textAt(a, key);
+      return v ? [v] : [];
+    });
   return {
     volcanoes,
     warning:
@@ -451,10 +514,31 @@ function readVolcano(body: V, code: VolcanoCode) {
         : undefined,
     cities: [...new Set(cities)],
     cityCodes: [...new Set(cityCodes)],
-    eventTime: textAt(at(target, "Item/EventTime"), "EventDateTime"),
+    ash: ash
+      ? cityItems.flatMap((item): VolcanoAsh[] => {
+          const name = textAt(item, "Kind/Name");
+          return name
+            ? [
+                {
+                  name,
+                  code: textAt(item, "Kind/Code"),
+                  cities: names(item, "Name"),
+                  cityCodes: names(item, "Code"),
+                },
+              ]
+            : [];
+        })
+      : undefined,
+    eventTime:
+      textAt(at(target, "Item/EventTime"), "EventDateTime") ??
+      textAt(at(body, "VolcanoObservation/EventTime"), "EventDateTime"),
     contentHeadline: textAt(content, "VolcanoHeadline"),
     activity: textAt(content, "VolcanoActivity"),
     prevention: textAt(content, "VolcanoPrevention"),
+    nextAdvisory: textAt(content, "NextAdvisory"),
+    appendix: textAt(content, "Appendix"),
+    plume: readPlume(body),
+    observation: textAt(body, "VolcanoObservation/OtherObservation"),
   };
 }
 
@@ -620,6 +704,12 @@ export function parseJmaXml(xml: string, code: string): Normalized[] {
           cityCodes: v.cityCodes,
           activity: v.activity,
           prevention: v.prevention,
+          nextAdvisory: v.nextAdvisory,
+          appendix: v.appendix,
+          validUntil: textAt(head, "ValidDateTime"),
+          ash: v.ash,
+          plume: v.plume,
+          observation: v.observation,
         },
       },
     ];

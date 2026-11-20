@@ -178,7 +178,7 @@ describe("お知らせ", () => {
 test("フィード: 種別をリンクから取り、取る種別だけを残せる", () => {
   const entries = parseFeed(fixture("jma/made-feed.xml"));
   expect(entries.map((e) => e.code)).toEqual([
-    "VFVO53",
+    "VFSV50",
     "VXSE53",
     "VXSE52",
     "VXSE56",

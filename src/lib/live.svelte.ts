@@ -20,7 +20,7 @@ import type {
   WeatherInfo,
   WeatherWarning,
 } from "./model.ts";
-import { latestPerVolcano } from "./model.ts";
+import { collapseRoutineVolcanoes, latestPerVolcano } from "./model.ts";
 import {
   RTS_STALE_MS,
   type RtsFrame,
@@ -215,11 +215,10 @@ export class Live {
         return true;
       case "volcano":
         if (e.data.status !== "normal") return true;
-        this.volcanoes = upsert(
-          this.volcanoes,
-          e.data,
-          (v) => v.reportedAt,
-          50,
+        // いつも出る種別 (観測報・降灰予報 (定時)・推定噴煙流向報) は火山と種別ごとに新しい 1 つだけ残す
+        // (数が多く、ほかの報を押し出さないように)
+        this.volcanoes = collapseRoutineVolcanoes(
+          upsert(this.volcanoes, e.data, (v) => v.reportedAt, 80),
         );
         // 火山ごとのいまの姿は、新しい報 (取消なら前の報) を足して選び直す
         this.volcanoLevels = latestPerVolcano(
