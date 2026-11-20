@@ -28,5 +28,5 @@ Zero Quake のコードは読みません (README は可)。sonae は一から�
 ```sh
 # 新しく足したファイルは、先に git add <ファイル> しておく (.claude は無視していないので、git add -A は作業ツリーまで足す)
 files=$(git diff --name-only --diff-filter=d origin/main -- '*.ts' '*.svelte' '*.md' '*.json' '*.css' '*.yaml')
-[ -n "$files" ] && MSYS_NO_PATHCONV=1 wslc run --rm -v "D:/danything/sonae:/w" -w /w oven/bun:1.4.4 bun fmt $files
+[ -n "$files" ] && MSYS_NO_PATHCONV=1 wslc run --rm -v "D:/danything/sonae:/w" -w /w oven/bun:1.4.5 bun fmt $files
 ```

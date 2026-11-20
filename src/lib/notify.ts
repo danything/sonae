@@ -894,7 +894,7 @@ export function homeNote(home: Home | null): string {
     parts.push(
       home.tsunami.length > 0
         ? `津波は「${home.tsunami.map((t) => t.name).join("」「")}」の予報区で見ます`
-        : "海に面していないので、津波は現在地の予報区と、どこに出た大津波警報で見ます",
+        : "海に面していないので、津波は現在地の予報区と、どこに出たものでも大津波警報で見ます",
     );
   return `${parts.join("。")}。`;
 }

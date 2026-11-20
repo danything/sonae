@@ -1,7 +1,7 @@
 #!/bin/sh
 # 気象庁の予報区等 GIS データ (シェープファイル) から、地図に重ねる GeoJSON を作る。
 # 依存はホストに入れず、コンテナの中で動かす:
-#   wslc run --rm -v "$PWD:/w" -w /w oven/bun:1.4.4-slim sh tools/areas/build.sh <zip を置いた所>
+#   wslc run --rm -v "$PWD:/w" -w /w oven/bun:1.4.5-slim sh tools/areas/build.sh <zip を置いた所>
 #
 # 元: https://www.data.jma.go.jp/developer/gis.html
 #   - 20240520_AreaForecastLocalE_GIS.zip … 地震情報／細分区域 (面)

@@ -2,7 +2,7 @@
 # 活火山の位置の表 (static/areas/volcano-points.json) を作る。地図の火山の印を置くのに使う。
 # 噴火警報・予報 (VFVO50) には火山の位置が載っているが、噴火速報 (VFVO56) には無いので、この表で補う。
 # 依存はホストに入れず、コンテナの中で動かす (bun の slim には curl が無いので、取るのも bun の fetch):
-#   wslc run --rm -v "$PWD:/w" -w /w oven/bun:1.4.4-slim sh tools/volcanoes/build.sh
+#   wslc run --rm -v "$PWD:/w" -w /w oven/bun:1.4.5-slim sh tools/volcanoes/build.sh
 #
 # 元: 気象庁ホームページの活火山の一覧 (https://www.jma.go.jp/bosai/volcano/const/volcano_list.json)。
 # 気象庁のホームページの表示に使う JSON で、公式の API ではない (形が変わったら直す)。利用条件は気象庁ホームページの

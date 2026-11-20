@@ -36,7 +36,7 @@ https://github.com/user-attachments/assets/10623080-5ec4-4150-8a29-319a88e5f30b
 - [Zero Quake](https://github.com/0Quake/Zero-Quake) の機能を参考にした。コードは読んでも写してもいない (一から書いている)。
 - 地震・津波・火山 (噴火速報・噴火警報)・気象 (警報・注意報など) の情報を気象庁 (防災情報 XML) から、地震・津波を P2P地震情報・Wolfx Project からも、海外の地震を USGS・EMSC・GeoNet・中央氣象署 (台湾、授権碼があるとき) から、太平洋の津波の参考情報を PTWC (米国) と気象庁ホームページ (国際津波関連情報) から受け、画面には必ず出典と「公式の情報を優先してください」という注意文を出す。気象庁の情報は加工して出しているので、その旨も書く。
 - 地図には、台湾の観測点のいまの揺れ (ExpTech の [TREM](https://exptech.dev) の RTS。非公式) と、有志の観測点のいまの揺れ (Wolfx Project の [SeisJS](https://wolfx.jp/docs/seisjs-api/)。非公式) を点の色で出す。地図に出すだけで、一覧・音・読み上げ・通知では知らせない。
-- 地図の右下の選択で、気象庁の「いま」の雨雲 (高解像度降水ナウキャスト)・キキクル (土砂・大雨の危険度) か、ハザードマップ (洪水・土砂災害・津波・活断層) を 1 つ重ねられる。海上保安庁の海しるの海底地殻変動観測点と海域火山 (API のキーがあるとき) と、国土交通省の「通れるマップ」の災害時の通行止めと通れた道 (管理者が災害の URL を登録したとき) も地図に出す。
+- 地図の右下の「重ねる」で、気象庁の雨雲 (いま)・今後の雨 (降水短時間予報)・雷・竜巻・キキクル (土砂・大雨の危険度) か、国土地理院のハザードマップポータルサイトのハザードマップ (洪水・内水・高潮・津波・土砂災害)・活断層・防災科研の J-SHIS (揺れの確率・地盤の揺れやすさ) を 1 つ重ねられる。線状降水帯の雨域と台風の予報円・暴風警戒域は、出ている間いつも描く。海上保安庁の海しるの海底地殻変動観測点と海域火山 (API のキーがあるとき) と、国土交通省の「通れるマップ」の災害時の通行止めと通れた道 (道路局のページから自動で見つけたとき) も地図に出す。
 
 知らせる条件は、緊急地震速報・地震・津波・火山・気象のそれぞれで「全国のものを知らせる」「住んでいる地域と現在地のものだけ」「知らせない」から選ぶ。地震は、知らせる震度も選ぶ。
 ほかの段 (注意報も知らせるかなど) は決めてあり、選んだもので何を知らせるかを画面に 1 文で出す ([docs/design.md の 2.4](docs/design.md#24-web-push) の表)。
@@ -110,7 +110,7 @@ chart はリリースのたびに `oci://ghcr.io/danything/charts/sonae` に出�
 
 - 公開の URL (`PUBLIC_URL`・`ORIGIN`) は、書かなければ `httpRoute.hostnames` か `ingress.hosts` の先頭に `https://` を付けたもの。違うときは `sonae.publicUrl` に書く。
 - OIDC の 3 つ (issuer・client id・Secret の `oidc-client-secret`) が揃わないと、画面は開かず `/health` だけ答える。ただし `secrets.name` の Secret に `oidc-client-secret` が無いと、Pod が起動しない。chart は `TRUSTED_NETWORKS` を書かない (書くなら `sonae.extraEnv`。[docs/install.md の「ログイン」](docs/install.md#ログイン))。
-- VAPID の鍵が無ければ Web Push を切って動く。授権碼が無ければ中央氣象署の受信だけを、海しるのキーが無ければ海しるの点だけを切って動く。災害時の通行止めは `sonae.roadGeojson` に通れるマップの GeoJSON の URL を書いたときだけ出す (docs/design.md の 2.12)。
+- VAPID の鍵が無ければ Web Push を切って動く。授権碼が無ければ中央氣象署の受信だけを、海しるのキーが無ければ海しるの点だけを切って動く。災害時の通行止めは、国土交通省 道路局のページから通れるマップを自動で見つけて出す。`sonae.roadGeojson` は見つからない災害のための予備で、自動の発見を切るなら `sonae.extraEnv` に `SONAE_ROAD_DISCOVER=off` を書く (docs/design.md の 2.12)。
 - 既定の `image.tag` は `latest` (main に中身の変更が入るたびに動く)。固定するなら `ghcr.io/danything/sonae` のコミットの sha のタグを書く。
 - Ingress を使うなら `ingress.enabled: true` と `ingress.hosts`。SSE (`/api/stream`) が切れないよう、前段の読み込みのタイムアウトを長くする。
 - PVC は既定で Argo CD に消させない注釈が付く (`persistence.protectFromPruning`)。
@@ -135,7 +135,7 @@ docker の代わりに `wslc-compose` でもよい。
 手元ではログインを飛ばす (`AUTH_DISABLED=1`、compose.yml)。本番のログインの設定は [docs/entra.md](docs/entra.md)。
 Web Push は VAPID の鍵が無ければ切って動く。鍵の作り方と入れ方は [docs/push.md](docs/push.md)。
 
-起動すると気象庁・P2P地震情報・Wolfx・USGS・PTWC・EMSC・気象庁ホームページ (国際津波)・GeoNet・ExpTech TREM・Wolfx SeisJS (と、授権碼があれば中央氣象署、キーがあれば海しる、URL を登録すれば国土交通省の通れるマップ) に実際につなぐ。台湾の中央氣象署の授権碼の取り方は [docs/cwa.md](docs/cwa.md)。画面だけ触りたいときは `SONAE_RECEIVE=off` で止める。緊急地震速報の訓練・試験も一覧と地図に出すときは `SONAE_TRAINING=on` (知らせはしない)。
+起動すると気象庁・P2P地震情報・Wolfx・USGS・PTWC・EMSC・気象庁ホームページ (国際津波)・GeoNet・ExpTech TREM・Wolfx SeisJS (と、授権碼があれば中央氣象署、キーがあれば海しる) と、国土交通省 (道路局のページと、見つけた通れるマップ) に実際につなぐ。台湾の中央氣象署の授権碼の取り方は [docs/cwa.md](docs/cwa.md)。画面だけ触りたいときは `SONAE_RECEIVE=off` で止める。緊急地震速報の訓練・試験も一覧と地図に出すときは `SONAE_TRAINING=on` (知らせはしない)。
 
 ## ライセンス
 

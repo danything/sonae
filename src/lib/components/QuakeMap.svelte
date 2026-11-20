@@ -417,7 +417,7 @@
           });
         }
         // 塗った市町村等を押すと、出ている警報・注意報の吹き出し。上の層 (避難場所の印・観測点の丸・海しるの点・
-        // 通行止めと通れた道の線・震源の丸) を押したときはそちらだけ
+        // 台風の中心・通行止めと通れた道の線・震源の丸) を押したときはそちらだけ
         created.on("click", "warning-fill", (e) => {
           if (
             !created ||
@@ -930,7 +930,7 @@
     }
   });
 
-  // ---- 重ねる図 (なし・雨雲・キキクル・ハザードマップ・地震の備えの図から 1 つ。色がぶつかるので重ねない。端末に覚える) ----
+  // ---- 重ねる図 (なし・雨・雷・竜巻・キキクル・ハザードマップ・地震の備えの図から 1 つ。色がぶつかるので重ねない。端末に覚える) ----
   // 選んでいる間は、面で塗る警報・注意報や震度の色を隠す (`overlayVisibility`。特別警報は縁取りで残す)
   let hazard = $state<HazardId>("none");
   let hazardMenu = $state(false);
@@ -2277,7 +2277,7 @@
       aria-label="地図"
     ></div>
     <!--
-      地図の上に置く操作は、ハザードマップの選択と現在地のボタンだけ (docs/design.md の 6.2)。
+      地図の上に置く操作は、「重ねる」の選択と現在地のボタンだけ (docs/design.md の 6.2)。
       どちらも右下に、隅の出典の上にまとめる。並びは下から、操作の 1 行・凡例・知らせ (column-reverse)
     -->
     <div class="controls" bind:this={controlsEl} data-testid="map-controls">
@@ -2566,7 +2566,6 @@
           </p>
         {/if}
       {/if}
-      <!-- 地震を選んでいる間に、気象警報・注意報の塗りを隠していることと戻し方 (ハザードマップ・雨雲・キキクルの凡例が書くときは出さない) -->
       {#if chosenNowc}
         <!-- 雷・竜巻の凡例と、いつの解析か。古い解析をいまのものと取り違えないよう、時刻をいつも出す -->
         {#if nowcOn}
@@ -2584,7 +2583,10 @@
             {:else if nowcFailed}
               <p class="small rain-time" data-testid="nowc-time">
                 <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
-                読み込めませんでした。1 分後に再試行します
+                {chosenNowc.label.replace(
+                  / \(.*\)$/,
+                  "",
+                )}の解析を読み込めませんでした。1 分後に再試行します
               </p>
             {:else}
               <p class="small muted" data-testid="nowc-time">
@@ -2717,6 +2719,7 @@
           )} の解析・気象庁)
         </p>
       {/if}
+      <!-- 地震を選んでいる間に、気象警報・注意報の塗りを隠していることと戻し方 (重ねる図の凡例が書くときは出さない) -->
       {#if quakeShown && warningsPainted && !covered && hazard !== "rain" && !chosenRisk && !nowcOn && !chosenNowc && !forecastChosen && boxHeight >= NOTE_MIN_HEIGHT}
         <p class="map-note tiny muted" data-testid="quake-hides-warnings">
           地震を選んでいる間は、気象警報・注意報の塗りを隠しています{specialPainted
