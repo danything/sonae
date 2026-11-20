@@ -22,6 +22,14 @@ import {
   rainLayerZoom,
   rainTiles,
 } from "#lib/map/rain.ts";
+import {
+  RISK_ATTRIBUTION,
+  RISK_TILE_ZOOMS,
+  type RiskFrame,
+  riskOf,
+  RISKS,
+  riskTiles,
+} from "#lib/map/risk.ts";
 import type {
   AreaIntensity,
   AreaLongPeriod,
@@ -125,11 +133,19 @@ export const TEXT_FONT_CSS = '"Noto Sans JP", sans-serif';
 
 /**
  * 重ねる図 (重ねるラスタータイル)。選ぶのは 1 つだけ (色がぶつかるため)。
- * 雨雲 (気象庁の高解像度降水ナウキャスト。`#lib/map/rain.ts`) と、ハザードマップ (ハザードマップポータルサイトの 3 つと、
- * 地理院タイルの都市圏活断層図。活断層図は地形の分類で塗った全面の図なので、いつも重ねると写真が見づらい。選んだときだけ出す)
+ * 雨雲 (気象庁の高解像度降水ナウキャスト。`#lib/map/rain.ts`)、キキクル (気象庁の土砂・大雨の危険度。`#lib/map/risk.ts`) と、
+ * ハザードマップ (ハザードマップポータルサイトの 3 つと、地理院タイルの都市圏活断層図。活断層図は地形の分類で塗った
+ * 全面の図なので、いつも重ねると写真が見づらい。選んだときだけ出す)
  */
 export type HazardId =
-  "none" | "rain" | "flood" | "landslide" | "tsunami" | "faults";
+  | "none"
+  | "rain"
+  | "risk-land"
+  | "risk-heavyrain"
+  | "flood"
+  | "landslide"
+  | "tsunami"
+  | "faults";
 const DISAPORTAL = "https://disaportaldata.gsi.go.jp/raster";
 const LEGEND = "https://disaportal.gsi.go.jp/hazardmap/copyright/img";
 const HAZARD_ATTRIBUTION = `<a href="https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html" target="_blank" rel="noopener">ハザードマップポータルサイト</a>`;
@@ -137,7 +153,7 @@ const HAZARD_ATTRIBUTION = `<a href="https://disaportal.gsi.go.jp/hazardmap/copy
 const GSI_AFM_ABOUT = "https://www.gsi.go.jp/bousaichiri/active_fault.html";
 
 export interface Hazard {
-  id: Exclude<HazardId, "none" | "rain">;
+  id: Exclude<HazardId, "none" | "rain" | "risk-land" | "risk-heavyrain">;
   /** 選択肢の名前 */
   label: string;
   /** 凡例の上に出す、何の想定か */
@@ -313,11 +329,31 @@ export function rainVisibility(
   return Object.fromEntries(RAIN_TILE_ZOOMS.map((n) => [`rain-${n}`, on]));
 }
 
+/** キキクルを写真の上に重ねるときの不透明度 (雨雲と同じ。黄の「注意」も写真の上で見える) */
+export const RISK_OPACITY = 0.8;
+
+/**
+ * キキクルを出すか。雨雲と同じく、地震を選んでいる間は隠す。キキクルの黄・赤・紫は震度の色とぶつかるため
+ * (docs/map.md の「地震を選んでいる間」)
+ */
+export const riskShown = (id: HazardId, quake: boolean) =>
+  riskOf(id) !== undefined && !quake;
+
+/** キキクルの層ごとに出すかどうか。時刻の表をまだ読めていない (`ready` でない) 間は出さない */
+export function riskVisibility(
+  id: HazardId,
+  quake: boolean,
+  ready: boolean,
+): Record<string, boolean> {
+  const on = ready && riskShown(id, quake);
+  return Object.fromEntries(RISK_TILE_ZOOMS.map((n) => [`risk-${n}`, on]));
+}
+
 /**
  * 重ねる図が重なっているか・地震を選んでいるかで、重ねる層の出し入れを決める (隠す層・代わりに出す層)。
- * ハザードマップか雨雲が重なっている間は `HIDDEN_UNDER_HAZARD` を、地震を選んでいる間は `HIDDEN_UNDER_QUAKE` を隠し、
- * どちらのときも特別警報の縁取りを出す。雨雲は地震を選んでいる間は出さない (`rainShown`) ので、そのときは
- * 地震を選んでいる間の決まりだけになる
+ * ハザードマップ・雨雲・キキクルが重なっている間は `HIDDEN_UNDER_HAZARD` を、地震を選んでいる間は `HIDDEN_UNDER_QUAKE` を
+ * 隠し、どちらのときも特別警報の縁取りを出す。雨雲とキキクルは地震を選んでいる間は出さない (`rainShown`・`riskShown`)
+ * ので、そのときは地震を選んでいる間の決まりだけになる
  */
 export function overlayVisibility(
   id: HazardId,
@@ -326,7 +362,8 @@ export function overlayVisibility(
   /** 一覧で地震を選んでいるか */
   quake = false,
 ): Record<string, boolean> {
-  const on = hazardCovers(id, zoom) || rainShown(id, quake);
+  const on =
+    hazardCovers(id, zoom) || rainShown(id, quake) || riskShown(id, quake);
   const hidden = new Set<string>([
     ...(on ? HIDDEN_UNDER_HAZARD : []),
     ...(quake ? HIDDEN_UNDER_QUAKE : []),
@@ -353,7 +390,9 @@ export function specialWarningFilter(levels: Map<string, WarningLevel>): Expr {
 
 /** 端末に覚えた選択を読む。知らない値は「なし」 */
 export const readHazard = (raw: string | null): HazardId =>
-  raw === "rain" || HAZARDS.some((h) => h.id === raw)
+  raw === "rain" ||
+  RISKS.some((r) => r.id === raw) ||
+  HAZARDS.some((h) => h.id === raw)
     ? (raw as HazardId)
     : "none";
 
@@ -540,7 +579,7 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   },
   {
     label: "通れた道 (目安)",
-    note: "細い線。通れるマップの ETC2.0 の平均速度で、車が通った道です。橙は時速 20 km 以下、水色は 21 km 以上。いま通れるとは限らず、工事の車のこともあります。ハザードマップか雨雲を重ねている間は隠します",
+    note: "細い線。通れるマップの ETC2.0 の平均速度で、車が通った道です。橙は時速 20 km 以下、水色は 21 km 以上。いま通れるとは限らず、工事の車のこともあります。ハザードマップ・雨雲・キキクルを重ねている間は隠します",
   },
   {
     label: "道路・地名・施設の記号",
@@ -553,7 +592,7 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "ハザードマップ",
     note:
-      "地図の右下で、なし・雨雲・洪水 (想定最大規模の浸水)・土砂災害 (警戒区域)・津波 (浸水想定)・活断層から 1 つを選べます (雨雲は下の「雨雲」)。色の意味は選んだときに出る公式の凡例のとおりです。想定の無い川や地域は塗られていないので、色が無くても安全とは限りません。" +
+      "地図の右下で、なし・雨雲・キキクル (土砂・大雨)・洪水 (想定最大規模の浸水)・土砂災害 (警戒区域)・津波 (浸水想定)・活断層から 1 つを選べます (雨雲とキキクルは下の「雨雲」「キキクル」)。色の意味は選んだときに出る公式の凡例のとおりです。想定の無い川や地域は塗られていないので、色が無くても安全とは限りません。" +
       "選んでいる間は、色がぶつからないよう、気象警報・注意報の塗りと縁取り・震度の塗り (数字のラベルは残ります)・緊急地震速報の地域の塗りを隠します。いま出ている特別警報の市町村等は白い縁の黒い線で縁取り、緊急地震速報の地域は赤い縁取りで、津波の警報・注意報の線もそのまま残します。「なし」に戻すと元に戻ります",
   },
   {
@@ -561,6 +600,13 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
     note:
       "地図の右下で「雨雲」を選んだときだけ、気象庁の高解像度降水ナウキャストの、いまの降水強度 (mm/h) を重ねます。色は気象庁の配色で、凡例と、いつの観測か (5 分ごとに更新) を地図の右下に出します。15 分より古い雨雲しか取れていないときは、凡例にそう書きます。1 時間先までの予測は出しません。" +
       "選んでいる間は、色がぶつからないよう、ハザードマップと同じく気象警報・注意報の塗り・緊急地震速報の地域の塗り・通れた道 (目安) の線を隠し、特別警報と緊急地震速報は縁取りで残します。雨雲の色は震度の色と同じ色を使うので、地震を選んでいる間は雨雲を隠します",
+  },
+  {
+    label: "キキクル",
+    note:
+      "地図の右下で「キキクル」の土砂か大雨を選んだときだけ、気象庁のキキクル (危険度分布) を重ねます。土砂は土砂災害の、大雨は低地の浸水と中小河川の氾濫の危険度で、気象庁が雨の実況と予測から判定したものです。" +
+      "色は気象庁の配色のままで、黒は災害切迫 (警戒レベル 5 相当)、紫は危険 (4 相当)、赤は警戒 (3 相当)、黄は注意 (2 相当) です。いちばん低い「今後の情報等に留意」は塗りません。凡例と、いつの判定か (10 分ごとに更新) を地図の右下に出し、40 分より古いものしか取れていないときは凡例にそう書きます。" +
+      "大きな川の氾濫は、一覧の「気象」の指定河川洪水予報を見てください。選んでいる間は雨雲と同じく、気象警報・注意報の塗り・緊急地震速報の地域の塗り・通れた道 (目安) の線を隠し、地震を選んでいる間はキキクルを隠します",
   },
   {
     label: "現在地",
@@ -891,13 +937,24 @@ export function baseStyle(
   hazard: HazardId = "none",
   /** 雨雲のいまの 1 枚。まだ時刻の表を読んでいなければ null (雨雲の層は出さない) */
   rain: RainFrame | null = null,
+  /** キキクルのいまの 1 枚。まだ時刻の表を読んでいなければ null (キキクルの層は出さない) */
+  risk: RiskFrame | null = null,
 ): Record<string, unknown> {
   const hazardShown = hazardVisibility(hazard);
   const overlay = overlayVisibility(hazard);
   const rainOn = rainVisibility(hazard, false, rain !== null);
+  const riskOn = riskVisibility(hazard, false, risk !== null);
   // 時刻が分かるまでは、出さない層に仮の URL を持たせる (MapLibre は出さない層の source を読まない)
   const rainUrl = rainTiles(
     rain ?? { basetime: "19700101000000", validtime: "19700101000000" },
+  );
+  const riskUrl = riskTiles(
+    risk ?? {
+      basetime: "19700101000000",
+      validtime: "19700101000000",
+      member: "none",
+    },
+    riskOf(hazard)?.element ?? "land",
   );
   const vis = (id: string) => ({
     visibility: overlay[id] === false ? "none" : "visible",
@@ -938,6 +995,20 @@ export function baseStyle(
             minzoom: n,
             maxzoom: n,
             ...(i === 0 ? { attribution: RAIN_ATTRIBUTION } : {}),
+          },
+        ]),
+      ),
+      // キキクル。雨雲と同じく偶数のズームにしか無いので、段ごとに source を分ける。土砂と大雨は URL を替えて同じ source を使う
+      ...Object.fromEntries(
+        RISK_TILE_ZOOMS.map((n, i) => [
+          `risk-${n}`,
+          {
+            type: "raster",
+            tiles: [riskUrl],
+            tileSize: 256,
+            minzoom: n,
+            maxzoom: n,
+            ...(i === 0 ? { attribution: RISK_ATTRIBUTION } : {}),
           },
         ]),
       ),
@@ -1076,6 +1147,19 @@ export function baseStyle(
           "raster-fade-duration": 0,
         },
         layout: { visibility: rainOn[`rain-${n}`] ? "visible" : "none" },
+      })),
+      // キキクル (選んだときだけ。雨雲と同じ所・同じ出し方)。色は凡例の 4 色だけなので、引き伸ばしても混ぜない
+      ...RISK_TILE_ZOOMS.map((n) => ({
+        id: `risk-${n}`,
+        type: "raster",
+        source: `risk-${n}`,
+        ...rainLayerZoom(n),
+        paint: {
+          "raster-opacity": RISK_OPACITY,
+          "raster-resampling": "nearest",
+          "raster-fade-duration": 0,
+        },
+        layout: { visibility: riskOn[`risk-${n}`] ? "visible" : "none" },
       })),
       // プレート境界 (PB2002)。付加情報のいちばん下に、細い破線で引く (震源の丸や区域の色を邪魔しない)。
       // 研究の模型の線なので、寄せても太くしすぎない

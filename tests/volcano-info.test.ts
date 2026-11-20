@@ -196,4 +196,41 @@ describe("通知", () => {
     // 現在地 (開いている画面) が当たれば知らせる
     expect(matches(n, DEFAULT_PREFS, homeAt("4620100"))).toBe(true);
   });
+
+  test("取消: 保存は前の報 (降灰の範囲つき) に印を付けるので、同じ tag の閉じる通知になる", () => {
+    const { store } = memoryStore("2021-05-14T03:45:00.000Z");
+    const heavy = (xml: string) =>
+      xml.replace(
+        /<Name>やや多量の降灰<\/Name>(\s*)<Code>72<\/Code>/g,
+        "<Name>多量の降灰</Name>$1<Code>73</Code>",
+      );
+    const ingest = (body: string, key: string) =>
+      store.ingest({
+        source: "jma",
+        key,
+        code: "VFVO54",
+        body,
+        items: parseJmaXml(body, "VFVO54"),
+      });
+    const xml = heavy(fixture(`jma/${SOKUHO}`));
+    const [first] = ingest(xml, "first");
+    const [cancel] = ingest(
+      xml
+        .replace("<InfoType>発表</InfoType>", "<InfoType>取消</InfoType>")
+        .replace(
+          "<ReportDateTime>2021-05-14T12:40:00+09:00</ReportDateTime>",
+          "<ReportDateTime>2021-05-14T12:50:00+09:00</ReportDateTime>",
+        ),
+      "cancel",
+    );
+    if (first?.type !== "volcano" || cancel?.type !== "volcano")
+      throw new Error("火山ではありません");
+    expect(cancel.data.cancelled).toBe(true);
+    const at = Date.parse("2021-05-14T12:51:00+09:00");
+    const n1 = noticeOf(first, at);
+    const n2 = noticeOf(cancel, at);
+    expect(n2?.tag).toBe(n1?.tag);
+    expect(n2?.closing).toBe(true);
+    expect(n1?.title).toBe("桜島 降灰予報（速報）");
+  });
 });
