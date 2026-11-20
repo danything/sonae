@@ -12,12 +12,16 @@ import { XML } from "bun";
 import {
   floodLevel,
   NOTE_KINDS,
+  type OutlookKind,
+  type OutlookRank,
+  outlookRank,
   type TyphoonNow,
   WARNING_CODES,
   type WarningArea,
   type WarningCode,
   type WarningKind,
   warningLevel,
+  type WarningOutlook,
   type WeatherInfo,
   type WeatherInfoKind,
   type WeatherSection,
@@ -226,6 +230,9 @@ export function readSections(body: V): WeatherSection[] {
 const range = (prefix: string, from: number, to: number) =>
   Array.from({ length: to - from + 1 }, (_, i) => `${prefix}${from + i}`);
 
+/** 早期注意情報 (警報級の可能性)。定時のフィード (regular.xml) に載る */
+export const OUTLOOK_CODES = ["VPFD61", "VPFW60"] as const;
+
 /** 気象のフィードから取る種別 */
 export const WEATHER_CODES: ReadonlySet<string> = new Set<string>([
   ...WARNING_CODES,
@@ -244,12 +251,14 @@ export const WEATHER_CODES: ReadonlySet<string> = new Set<string>([
   "VPZI50",
   "VPCI50",
   "VPAW51",
+  ...OUTLOOK_CODES,
 ]);
 
 /** その時点の状態をまるごと持つ種別 (府県予報区ごとに、いちばん新しい電文だけを取る) */
-export const WEATHER_SNAPSHOT_CODES: ReadonlySet<string> = new Set<string>(
-  WARNING_CODES,
-);
+export const WEATHER_SNAPSHOT_CODES: ReadonlySet<string> = new Set<string>([
+  ...WARNING_CODES,
+  ...OUTLOOK_CODES,
+]);
 
 /** Item の中の Kind (1 つの Item に幾つも並ぶことがある。その他の注意報など) */
 function readKinds(item: V): {
@@ -335,6 +344,54 @@ const num = (v: string | undefined) => {
   return Number.isFinite(n) ? n : undefined;
 };
 
+/**
+ * 早期注意情報 (警報級の可能性) の地域ごとの、現象ごと・日ごとの段。時間帯 (明日までは 6 時間ごと) は
+ * 日本時間の暦日にまとめ、その日のいちばん高い段を採る。高・中だけを持ち、「なし」と値なしは持たない
+ */
+export function readOutlook(body: V): WarningOutlook["areas"] {
+  const out: WarningOutlook["areas"] = [];
+  for (const infos of children(body, "MeteorologicalInfos"))
+    for (const tsi of children(infos, "TimeSeriesInfo")) {
+      // 時刻は +09:00 で来るので、先頭の 10 字が日本時間の日付
+      const dates = new Map(
+        children(child(tsi, "TimeDefines"), "TimeDefine").map((d) => [
+          attr(d, "timeId") ?? "",
+          (textAt(d, "DateTime") ?? "").slice(0, 10),
+        ]),
+      );
+      for (const item of children(tsi, "Item")) {
+        const code = textAt(item, "Area/Code");
+        const name = textAt(item, "Area/Name");
+        if (!code || !name) continue;
+        const kinds: OutlookKind[] = [];
+        for (const kind of children(item, "Kind")) {
+          const prop = child(kind, "Property");
+          const type = textAt(prop, "Type") ?? "";
+          const best = new Map<string, OutlookRank>();
+          for (const r of children(
+            child(prop, "PossibilityRankOfWarningPart"),
+            "jmx_eb:PossibilityRankOfWarning",
+          )) {
+            const rank = text(r)?.trim();
+            const date = dates.get(attr(r, "refID") ?? "");
+            if ((rank !== "高" && rank !== "中") || !date) continue;
+            if (outlookRank(rank) > outlookRank(best.get(date)))
+              best.set(date, rank);
+          }
+          if (best.size > 0)
+            kinds.push({
+              name: type.replace(/の警報級の可能性$/, ""),
+              days: [...best]
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([date, rank]) => ({ date, rank })),
+            });
+        }
+        out.push({ code, name, kinds });
+      }
+    }
+  return out;
+}
+
 /** 台風解析・予報情報の、いちばん初めの「実況」 */
 function readTyphoon(body: V): TyphoonNow | undefined {
   const infos = children(
@@ -394,7 +451,11 @@ function readTyphoon(body: V): TyphoonNow | undefined {
  * 電文 1 通を読む。code は種別 (フィードのリンクのファイル名から取ったもの)。
  * 読めない形式なら例外を投げる (呼ぶ側が原文を残して記録する)。
  */
-export function parseWeatherXml(xml: string, code: string): Normalized[] {
+export function parseWeatherXml(
+  xml: string,
+  code: string,
+  url?: string,
+): Normalized[] {
   const doc = XML.parse(xml);
   const report = doc.Report;
   if (report === undefined || typeof report === "string")
@@ -428,6 +489,34 @@ export function parseWeatherXml(xml: string, code: string): Normalized[] {
           headline,
           areas: w.areas,
           released: w.released,
+        },
+      },
+    ];
+  }
+
+  if (code === "VPFD61" || code === "VPFW60") {
+    const areas = readOutlook(body);
+    // 府県予報区のコードはフィードのファイル名の後ろ (`_VPFD61_130000.xml`)。無ければ (fixture など) 最初の地域
+    const officeCode =
+      (url
+        ? new RegExp(`_${code}_(\\d{6})\\.xml$`).exec(url)?.[1]
+        : undefined) ?? areas[0]?.code;
+    if (!officeCode) throw new Error("府県予報区がありません");
+    return [
+      {
+        type: "outlook",
+        outlook: {
+          id: `${code}-${officeCode}${suffix}`,
+          code,
+          office: {
+            code: officeCode,
+            // 「香川県早期注意情報（明後日まで）」の前の部分
+            name: title.replace(/早期注意情報.*$/, "") || officeCode,
+          },
+          status,
+          reportedAt,
+          title,
+          areas,
         },
       },
     ];

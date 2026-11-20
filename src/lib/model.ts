@@ -1041,6 +1041,68 @@ export function floodLevel(code: string | undefined): WarningLevel {
   return 0;
 }
 
+/** 警報級の可能性の段 (早期注意情報。「高」「中」だけを持つ。「なし」と値なしは持たない) */
+export type OutlookRank = "高" | "中";
+
+/** 1 つの現象 (大雨・土砂災害・雪・風 (風雪)・波・潮位) の、日ごとの警報級の可能性 */
+export interface OutlookKind {
+  /** 現象の名前 (電文の Type から「の警報級の可能性」を外したもの。「大雨」「風（風雪）」) */
+  name: string;
+  /** 日ごと (日本時間の暦日) のいちばん高い段。高・中の日だけ */
+  days: { date: string; rank: OutlookRank }[];
+}
+
+/**
+ * 早期注意情報 (警報級の可能性)。明後日まで (VPFD61) と明々後日以降 (VPFW60) を、府県予報区と種別ごとに
+ * いまの 1 通だけ持つ (新しい報で置き換える)。知らせない (docs/design.md の 2.8)
+ */
+export interface WarningOutlook {
+  /** `<種別>-<府県予報区のコード>` */
+  id: string;
+  code: "VPFD61" | "VPFW60";
+  office: { code: string; name: string };
+  status: Status;
+  reportedAt: string;
+  title: string;
+  /** 一次細分区域ごと (明々後日以降は府県予報区ごとのこともある)。高・中のある現象だけ */
+  areas: { code: string; name: string; kinds: OutlookKind[] }[];
+  updatedAt: string;
+}
+
+/** 段の比べ方 (高いほど大きい) */
+export const outlookRank = (r: OutlookRank | undefined) =>
+  r === "高" ? 2 : r === "中" ? 1 : 0;
+
+/**
+ * 住んでいる地域 (一次細分区域か府県予報区) の警報級の可能性。明後日までと明々後日以降を日の順に並べ、
+ * 同じ日・同じ現象は高いほうを採る。高・中が無ければ空
+ */
+export function outlookFor(
+  outlooks: WarningOutlook[],
+  place: { office: string | null; ichiji: string | null },
+): { date: string; kinds: { name: string; rank: OutlookRank }[] }[] {
+  const byDate = new Map<string, Map<string, OutlookRank>>();
+  for (const o of outlooks) {
+    if (o.status !== "normal" || o.office.code !== place.office) continue;
+    const area =
+      o.areas.find((a) => a.code === place.ichiji) ??
+      o.areas.find((a) => a.code === place.office);
+    for (const k of area?.kinds ?? [])
+      for (const d of k.days) {
+        const m = byDate.get(d.date) ?? new Map<string, OutlookRank>();
+        if (outlookRank(d.rank) > outlookRank(m.get(k.name)))
+          m.set(k.name, d.rank);
+        byDate.set(d.date, m);
+      }
+  }
+  return [...byDate]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, m]) => ({
+      date,
+      kinds: [...m].map(([name, rank]) => ({ name, rank })),
+    }));
+}
+
 export type EventType =
   | "eew"
   | "quake"
@@ -1050,7 +1112,8 @@ export type EventType =
   | "volcano"
   | "foreign"
   | "warning"
-  | "weather";
+  | "weather"
+  | "outlook";
 
 /** SSE と DB の events に載る 1 件。中身はその時点のまるごとの姿 */
 export type SonaeEvent =
@@ -1062,7 +1125,8 @@ export type SonaeEvent =
   | { seq: number; type: "longperiod"; data: LongPeriod }
   | { seq: number; type: "foreign"; data: ForeignQuake }
   | { seq: number; type: "warning"; data: WeatherWarning }
-  | { seq: number; type: "weather"; data: WeatherInfo };
+  | { seq: number; type: "weather"; data: WeatherInfo }
+  | { seq: number; type: "outlook"; data: WarningOutlook };
 
 export interface SourceStatus {
   id: SourceId;

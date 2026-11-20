@@ -23,6 +23,7 @@ export const load: LayoutServerLoad = ({ locals }) => {
         .filter((w) => w.areas.length > 0)
         .map((w) => ({ ...w, released: [] })),
       weatherInfos: store.weatherInfos(100),
+      outlooks: store.outlooks(),
       statuses: statuses(),
     },
   };

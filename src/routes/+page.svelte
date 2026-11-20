@@ -31,6 +31,7 @@
   import DetailBar from "#lib/components/detail/DetailBar.svelte";
   import EewDetail from "#lib/components/detail/EewDetail.svelte";
   import ForeignDetail from "#lib/components/detail/ForeignDetail.svelte";
+  import OutlookSection from "#lib/components/detail/OutlookSection.svelte";
   import QuakeDetail from "#lib/components/detail/QuakeDetail.svelte";
   import TsunamiDetail from "#lib/components/detail/TsunamiDetail.svelte";
   import VolcanoDetail from "#lib/components/detail/VolcanoDetail.svelte";
@@ -55,10 +56,12 @@
     FOREIGN_SOURCE_SHORT,
     jst,
     jstClock,
+    jstDate,
     jstFull,
     jstTime,
     kindText,
     magnitudeText,
+    outlookDay,
     placeName,
     quakeName,
     sourceInTrouble,
@@ -78,6 +81,7 @@
     isTsunamiWarning,
     isUrgentAdvisory,
     type OfficeWarnings,
+    outlookFor,
     type Quake,
     type Tsunami,
     tsunamiGradeLabel,
@@ -628,6 +632,24 @@
         ) ?? null)
       : null,
   );
+  /** 選んだ府県予報区 (`w=office-<コード>`) の早期注意情報 (警報級の可能性)。警報・注意報が無くても出す */
+  const selOutlooks = $derived.by(() => {
+    const id = v.selected?.kind === "weather" ? v.selected.id : "";
+    if (!id.startsWith(OFFICE_PREFIX)) return [];
+    const code = id.slice(OFFICE_PREFIX.length);
+    return snap.outlooks.filter((o) => o.office.code === code);
+  });
+  /**
+   * 住んでいる地域の、今日から先の警報級の可能性 (「高」「中」の日)。一覧の先頭に控えた字で 1 行だけ出す。
+   * 知らせには使わない (docs/design.md の 2.8)
+   */
+  const homeOutlook = $derived.by(() => {
+    const home = alerter.prefs.home;
+    if (!home?.office) return null;
+    const today = jstDate(live.now);
+    const days = outlookFor(snap.outlooks, home).filter((d) => d.date >= today);
+    return days.length > 0 ? { office: home.office, days } : null;
+  });
   /** 選んだ府県予報区が一覧に無いとき、全部解除されたと分かればその府県予報区と解除した報の時刻 (分からなければ null) */
   const selLifted = $derived.by(() => {
     const id = v.selected?.kind === "weather" ? v.selected.id : "";
@@ -1027,7 +1049,9 @@
                   ? `${selInfo.title} ${jst(selInfo.reportedAt)} - sonae`
                   : selForeign
                     ? `${selForeign.place} ${jst(selForeign.originTime)} - sonae`
-                    : "sonae",
+                    : selOutlooks[0]
+                      ? `${selOutlooks[0].office.name}の警報級の可能性 - sonae`
+                      : "sonae",
   );
   /** 選んだ緊急地震速報が、いま出ているもの (取消・最終報の後 3 分まで) */
   const selEewLive = $derived(
@@ -1440,9 +1464,33 @@
           {:else if selInfo}
             <AdvisoryDetail a={selInfo} />
           {:else if selOffice}
-            <WarningDetail o={selOffice} />
+            <WarningDetail
+              o={selOffice}
+              outlooks={selOutlooks}
+              now={live.now}
+              home={alerter.prefs.home?.ichiji ?? null}
+            />
           {:else if selWeather}
             <WeatherDetail w={selWeather} now={live.now} />
+          {:else if selOutlooks.length > 0}
+            <!-- 警報・注意報の出ていない府県予報区も、早期注意情報があれば出す (住んでいる地域の 1 行から開く) -->
+            <div class="detail stack">
+              <header>
+                <h1 id="detail-title">
+                  {selOutlooks[0]?.office.name}の警報級の可能性
+                </h1>
+                <p class="small muted">
+                  {selLifted
+                    ? `警報・注意報は ${jstFull(selLifted.reportedAt)} に解除されました`
+                    : "いま出ている警報・注意報はありません"}
+                </p>
+              </header>
+              <OutlookSection
+                outlooks={selOutlooks}
+                now={live.now}
+                home={alerter.prefs.home?.ichiji ?? null}
+              />
+            </div>
           {:else if selLifted}
             <div class="empty-state" data-testid="office-lifted">
               <p class="bold">
@@ -1463,6 +1511,27 @@
         {:else}
           {#if hasPinned}
             {@render pinnedNotices()}
+          {/if}
+
+          {#if homeOutlook && shownKind("weather")}
+            <!-- 住んでいる地域の警報級の可能性。備えの情報なので、塗らず控えた字の 1 行だけ (docs/ui.md) -->
+            <a
+              class="outlook-line small"
+              href={selectHref(
+                params,
+                "weather",
+                `${OFFICE_PREFIX}${homeOutlook.office}`,
+              )}
+              data-testid="home-outlook"
+            >
+              <span class="muted">住んでいる地域の警報級の可能性</span>
+              {homeOutlook.days
+                .map(
+                  (d) =>
+                    `${outlookDay(d.date, live.now)} ${d.kinds.map((k) => `${k.name} ${k.rank}`).join("・")}`,
+                )
+                .join("、")}
+            </a>
           {/if}
 
           <h1 class="visually-hidden">一覧</h1>
@@ -1935,6 +2004,17 @@
   }
   .alerts-in-list {
     gap: var(--so-space-2);
+  }
+  /* 住んでいる地域の警報級の可能性 (早期注意情報)。面も色も付けず、控えた見出しと字の 1 行 */
+  .outlook-line {
+    display: flex;
+    flex-direction: column;
+    padding: var(--so-space-2) var(--so-space-1);
+    color: inherit;
+    text-decoration: none;
+  }
+  .outlook-line:hover {
+    text-decoration: underline;
   }
   .notice-link {
     color: inherit;
