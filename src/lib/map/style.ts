@@ -16,6 +16,17 @@ import {
   radiusExpr,
 } from "#lib/map/epicenters.ts";
 import {
+  JMATILE,
+  N3_TILE_ZOOMS,
+  NOWC_KINDS,
+  NOWC_PAGE,
+  nowcOf,
+  RASRF_PAGE,
+  RASRF_TILE_ZOOMS,
+  SLMCS_COLOR,
+  stepLayerZoom,
+} from "#lib/map/nowc.ts";
+import {
   RAIN_ATTRIBUTION,
   RAIN_TILE_ZOOMS,
   type RainFrame,
@@ -145,6 +156,9 @@ export const TEXT_FONT_CSS = '"Noto Sans JP", sans-serif';
 export type HazardId =
   | "none"
   | "rain"
+  | "rain-forecast"
+  | "thunder"
+  | "tornado"
   | "risk-land"
   | "risk-heavyrain"
   | "flood"
@@ -196,7 +210,16 @@ export const HAZARD_GROUPS: { id: HazardGroup; label: string }[] = [
 ];
 
 export interface Hazard {
-  id: Exclude<HazardId, "none" | "rain" | "risk-land" | "risk-heavyrain">;
+  id: Exclude<
+    HazardId,
+    | "none"
+    | "rain"
+    | "rain-forecast"
+    | "thunder"
+    | "tornado"
+    | "risk-land"
+    | "risk-heavyrain"
+  >;
   /** 選択肢の見出し */
   group: HazardGroup;
   /** 選択肢の名前 */
@@ -554,6 +577,42 @@ export function riskVisibility(
   return Object.fromEntries(RISK_TILE_ZOOMS.map((n) => [`risk-${n}`, on]));
 }
 
+/** 時刻の表を読む前に、出さない層に持たせる仮の URL (MapLibre は出さない層の source を読まない) */
+const PLACEHOLDER_TILE = `${JMATILE}/nowc/19700101000000/none/19700101000000/surf/none/{z}/{x}/{y}.png`;
+const NOWC_ATTRIBUTION = `<a href="${NOWC_PAGE}" target="_blank" rel="noopener">気象庁 雷・竜巻発生確度ナウキャスト</a> を加工`;
+const RASRF_ATTRIBUTION = `<a href="${RASRF_PAGE}" target="_blank" rel="noopener">気象庁 降水短時間予報</a> を加工`;
+const SLMCS_ATTRIBUTION = `<a href="${NOWC_PAGE}" target="_blank" rel="noopener">気象庁 線状降水帯の雨域</a> を加工`;
+
+/** 雷・竜巻・今後の雨を写真の上に重ねるときの不透明度 (雨雲と同じ) */
+export const NOWC_OPACITY = 0.8;
+
+/**
+ * 雷・竜巻・今後の雨を出すか。雨雲と同じく、地震を選んでいる間は隠す。どれも気象庁の配色 (震度の色と同じ赤・橙・黄・紫) で
+ * 塗るので、重ねると震度を読み違えるため (docs/map.md の「地震を選んでいる間」)
+ */
+export const nowcShown = (id: HazardId, quake: boolean) =>
+  (id === "rain-forecast" || nowcOf(id) !== undefined) && !quake;
+
+/** 雷・竜巻の層ごとに出すかどうか (`nowc-<ズーム>`。雷と竜巻は URL を替えて同じ source を使う) */
+export function nowcVisibility(
+  id: HazardId,
+  quake: boolean,
+  ready: boolean,
+): Record<string, boolean> {
+  const on = ready && nowcOf(id) !== undefined && nowcShown(id, quake);
+  return Object.fromEntries(N3_TILE_ZOOMS.map((n) => [`nowc-${n}`, on]));
+}
+
+/** 今後の雨の層ごとに出すかどうか (`rasrf-<ズーム>`) */
+export function rasrfVisibility(
+  id: HazardId,
+  quake: boolean,
+  ready: boolean,
+): Record<string, boolean> {
+  const on = ready && id === "rain-forecast" && nowcShown(id, quake);
+  return Object.fromEntries(RASRF_TILE_ZOOMS.map((n) => [`rasrf-${n}`, on]));
+}
+
 /**
  * 重ねる図が重なっているか・地震を選んでいるかで、重ねる層の出し入れを決める (隠す層・代わりに出す層)。
  * ハザードマップ・雨雲・キキクルが重なっている間は `HIDDEN_UNDER_HAZARD` を、地震を選んでいる間は `HIDDEN_UNDER_QUAKE` を
@@ -568,7 +627,10 @@ export function overlayVisibility(
   quake = false,
 ): Record<string, boolean> {
   const on =
-    hazardCovers(id, zoom) || rainShown(id, quake) || riskShown(id, quake);
+    hazardCovers(id, zoom) ||
+    rainShown(id, quake) ||
+    riskShown(id, quake) ||
+    nowcShown(id, quake);
   const hidden = new Set<string>([
     ...(on ? HIDDEN_UNDER_HAZARD : []),
     ...(quake ? HIDDEN_UNDER_QUAKE : []),
@@ -596,6 +658,8 @@ export function specialWarningFilter(levels: Map<string, WarningLevel>): Expr {
 /** 端末に覚えた選択を読む。知らない値は「なし」 */
 export const readHazard = (raw: string | null): HazardId =>
   raw === "rain" ||
+  raw === "rain-forecast" ||
+  NOWC_KINDS.some((k) => k.id === raw) ||
   RISKS.some((r) => r.id === raw) ||
   HAZARDS.some((h) => h.id === raw)
     ? (raw as HazardId)
@@ -820,7 +884,7 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "雨雲",
     note:
-      "地図の右下で「雨雲」を選んだときだけ、気象庁の高解像度降水ナウキャストの、いまの降水強度 (mm/h) を重ねます。色は気象庁の配色で、凡例と、いつの観測か (5 分ごとに更新) を地図の右下に出します。15 分より古い雨雲しか取れていないときは、凡例にそう書きます。1 時間先までの予測は出しません。" +
+      "地図の右下で「雨雲」を選んだときだけ、気象庁の高解像度降水ナウキャストの、いまの降水強度 (mm/h) を重ねます。色は気象庁の配色で、凡例と、いつの観測か (5 分ごとに更新) を地図の右下に出します。15 分より古い雨雲しか取れていないときは、凡例にそう書きます。雨雲の 1 時間先までの予測は出さず、先の雨は「今後の雨 (予測)」で見ます。" +
       "選んでいる間は、色がぶつからないよう、ハザードマップと同じく気象警報・注意報の塗り・緊急地震速報の地域の塗り・通れた道 (目安) の線を隠し、特別警報と緊急地震速報は縁取りで残します。雨雲の色は震度の色と同じ色を使うので、地震を選んでいる間は雨雲を隠します",
   },
   {
@@ -829,6 +893,18 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
       "地図の右下で「キキクル」の土砂か大雨を選んだときだけ、気象庁のキキクル (危険度分布) を重ねます。土砂は土砂災害の、大雨は低地の浸水と中小河川の氾濫の危険度で、気象庁が雨の実況と予測から判定したものです。" +
       "色は気象庁の配色のままで、黒は災害切迫 (警戒レベル 5 相当)、紫は危険 (4 相当)、赤は警戒 (3 相当)、黄は注意 (2 相当) です。いちばん低い「今後の情報等に留意」は塗りません。凡例と、いつの判定か (10 分ごとに更新) を地図の右下に出し、40 分より古いものしか取れていないときは凡例にそう書きます。" +
       "大きな川の氾濫は、一覧の「気象」の指定河川洪水予報を見てください。選んでいる間は雨雲と同じく、気象警報・注意報の塗り・緊急地震速報の地域の塗り・通れた道 (目安) の線を隠し、地震を選んでいる間はキキクルを隠します",
+  },
+  {
+    label: "今後の雨 (予測)",
+    note: "地図の右下で「今後の雨 (予測)」を選んだときだけ、気象庁の降水短時間予報の 1 時間の雨量の予測を重ねます。凡例の上に「◯時◯分までの 1 時間 (予測)」と何時間先かを大きく出し、‹ › で先の時刻へ動かせます (自動では動きません)。色は気象庁の配色のままで、sonae が先の雨を予想することはしません。雨雲と同じく、選んでいる間は警報・注意報の塗りを隠し、地震を選んでいる間は今後の雨を隠します",
+  },
+  {
+    label: "雷・竜巻",
+    note: "地図の右下で「雷 (いま)」か「竜巻 (いま)」を選んだときだけ、気象庁の雷ナウキャスト (雷活動度 1〜4) か竜巻発生確度ナウキャスト (確度 1・2) の、いまの解析を重ねます。色は気象庁の配色のままです。凡例と、いつの解析か (10 分ごとに更新) を地図の右下に出します。雨雲と同じく、選んでいる間は警報・注意報の塗りを隠し、地震を選んでいる間は隠します",
+  },
+  {
+    label: "線状降水帯",
+    note: "気象庁が線状降水帯の雨域を解析している間だけ、その範囲を白い縁の赤い線で囲み、地図の右下にいつの解析かを出します。重ねる図や地震の選択にかかわらず出します。出ていないときは何も描きません",
   },
   {
     label: "現在地",
@@ -1238,6 +1314,40 @@ export function baseStyle(
           },
         ]),
       ),
+      // 雷・竜巻 (選んだときだけ)。偶数のズームの 4〜8 にしか無いので、段ごとに source を分ける。URL は時刻の表を読んでから差し替える
+      ...Object.fromEntries(
+        N3_TILE_ZOOMS.map((n, i) => [
+          `nowc-${n}`,
+          {
+            type: "raster",
+            tiles: [PLACEHOLDER_TILE],
+            tileSize: 256,
+            minzoom: n,
+            maxzoom: n,
+            ...(i === 0 ? { attribution: NOWC_ATTRIBUTION } : {}),
+          },
+        ]),
+      ),
+      // 今後の雨 (選んだときだけ)。雨雲と同じく偶数のズームの 4〜10
+      ...Object.fromEntries(
+        RASRF_TILE_ZOOMS.map((n, i) => [
+          `rasrf-${n}`,
+          {
+            type: "raster",
+            tiles: [PLACEHOLDER_TILE],
+            tileSize: 256,
+            minzoom: n,
+            maxzoom: n,
+            ...(i === 0 ? { attribution: RASRF_ATTRIBUTION } : {}),
+          },
+        ]),
+      ),
+      // 線状降水帯の雨域 (出ている間だけ線が入る)。画面が時刻の表と GeoJSON を読んで差し込む (`#lib/map/nowc.ts`)
+      slmcs: {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+        attribution: SLMCS_ATTRIBUTION,
+      },
       shelters: {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -1389,6 +1499,31 @@ export function baseStyle(
         },
         layout: { visibility: riskOn[`risk-${n}`] ? "visible" : "none" },
       })),
+      // 雷・竜巻と今後の雨 (選んだときだけ。雨雲と同じ所・同じ出し方)。出し入れは画面が時刻の表を読んでから決める
+      ...N3_TILE_ZOOMS.map((n) => ({
+        id: `nowc-${n}`,
+        type: "raster",
+        source: `nowc-${n}`,
+        ...stepLayerZoom(n, N3_TILE_ZOOMS),
+        paint: {
+          "raster-opacity": NOWC_OPACITY,
+          "raster-resampling": "nearest",
+          "raster-fade-duration": 0,
+        },
+        layout: { visibility: "none" },
+      })),
+      ...RASRF_TILE_ZOOMS.map((n) => ({
+        id: `rasrf-${n}`,
+        type: "raster",
+        source: `rasrf-${n}`,
+        ...stepLayerZoom(n, RASRF_TILE_ZOOMS),
+        paint: {
+          "raster-opacity": NOWC_OPACITY,
+          "raster-resampling": "nearest",
+          "raster-fade-duration": 0,
+        },
+        layout: { visibility: "none" },
+      })),
       // プレート境界 (PB2002)。付加情報のいちばん下に、細い破線で引く (震源の丸や区域の色を邪魔しない)。
       // 研究の模型の線なので、寄せても太くしすぎない
       {
@@ -1513,6 +1648,22 @@ export function baseStyle(
           "line-width": 2.5,
           "line-dasharray": [2, 1],
         },
+      },
+      // 線状降水帯の雨域 (出ている間だけ)。気象庁の画面と同じ白い縁の赤い線。警報の面の上、震源の丸の下に置き、
+      // 重ねる図・地震の選択にかかわらずいつも出す (線なので面の色を隠さない。docs/map.md の「線状降水帯」)
+      {
+        id: "slmcs-casing",
+        type: "line",
+        source: "slmcs",
+        layout: { "line-join": "round" },
+        paint: { "line-color": "#ffffff", "line-width": 6 },
+      },
+      {
+        id: "slmcs-line",
+        type: "line",
+        source: "slmcs",
+        layout: { "line-join": "round" },
+        paint: { "line-color": SLMCS_COLOR, "line-width": 3 },
       },
       // 台湾の観測点のいまの揺れ (TREM-RTS)。見た目は下の stationLayer
       stationLayer("rts"),

@@ -45,6 +45,33 @@
     type MarineResponse,
     nearestMarine,
   } from "#lib/map/marine.ts";
+  import {
+    forecastFrames,
+    hoursAhead,
+    latestAnalysis,
+    N3_STALE_MS,
+    N3_TILE_ZOOMS,
+    N3_TIMES_URL,
+    nextN3Poll,
+    NOWC_KINDS,
+    NOWC_PAGE,
+    NOWC_RETRY_MS,
+    type NowcFrame,
+    type NowcKind,
+    nowcOf,
+    nowcStale,
+    nowcTiles,
+    RASRF_LEGEND,
+    RASRF_PAGE,
+    RASRF_POLL_MS,
+    RASRF_TILE_ZOOMS,
+    RASRF_TIMES_URL,
+    rasrfStale,
+    rasrfTiles,
+    slmcsFeatures,
+    slmcsUrl,
+    stampIso,
+  } from "#lib/map/nowc.ts";
   import { coordLabel, coordText, longPressOk } from "#lib/map/press.ts";
   import {
     latestRain,
@@ -113,6 +140,8 @@
     longPeriodLine,
     meFeatures,
     mergeShelters,
+    nowcShown,
+    nowcVisibility,
     officeBounds,
     officeFilter,
     type OfficeTable,
@@ -120,6 +149,7 @@
     quakeFillOpacity,
     rainShown,
     rainVisibility,
+    rasrfVisibility,
     readHazard,
     riskShown,
     riskVisibility,
@@ -1119,14 +1149,219 @@
     riskFrame !== null && riskFrame.element === chosenRisk?.element,
   );
 
-  /** 気象警報・注意報の塗りを隠しているか (ハザードマップ・雨雲・キキクルを重ねているか、地震を選んでいるため) */
-  const warningsHidden = $derived(covered || rainOn || riskOn || quakeShown);
+  // ---- 雷・竜巻 (気象庁のナウキャストのいまの解析。docs/map.md の「雷・竜巻」) ----
+  // キキクルと同じく、時刻の表をブラウザから直接取り、いまの 1 枚に差し替える。取るのは出している間だけ
+  /** 選んでいる雷か竜巻 */
+  const chosenNowc = $derived(nowcOf(hazard));
+  /** 雷・竜巻・今後の雨を出しているか (選んでいて、地震を選んでいない) */
+  const nowcOn = $derived(nowcShown(hazard, quakeShown));
+  let nowcFrame = $state<(NowcFrame & { element: NowcKind["element"] }) | null>(
+    null,
+  );
+  let nowcChecked = $state(0);
+  let nowcFailed = $state(false);
+  /**
+   * 時刻の表を、出している間だけ取り直す。`pick` は表から 1 枚 (か予測の並び) を選び、`next` は次に取るまでのミリ秒。
+   * 返らないまま止まらないよう 10 秒で失敗にし、1 分後に取り直す。止めるときは返した関数を呼ぶ
+   */
+  function pollTimes(
+    url: string,
+    use: (raw: unknown) => number,
+    fail: () => void,
+  ): () => void {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = async () => {
+      let wait = NOWC_RETRY_MS;
+      try {
+        const r = await fetch(url, {
+          cache: "no-cache",
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!r.ok) throw new Error(`targetTimes: ${r.status}`);
+        const raw: unknown = await r.json();
+        if (stopped) return;
+        wait = use(raw);
+      } catch (err) {
+        if (stopped) return;
+        console.warn(`気象庁の時刻の表を読めませんでした (${url}): ${err}`);
+        fail();
+      }
+      timer = setTimeout(() => void poll(), wait);
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }
+  $effect(() => {
+    const element = chosenNowc?.element;
+    if (!map || !element || !nowcOn || !pageVisible) return;
+    if (untrack(() => nowcFrame?.element) !== element) {
+      nowcFrame = null;
+      nowcFailed = false;
+    }
+    nowcChecked = Date.now();
+    return pollTimes(
+      N3_TIMES_URL,
+      (raw) => {
+        const f = latestAnalysis(raw, element);
+        nowcChecked = Date.now();
+        if (!f) throw new Error("targetTimes: 解析の時刻がありません");
+        const now = untrack(() => nowcFrame);
+        if (now?.element !== element || now.validtime !== f.validtime)
+          nowcFrame = { ...f, element };
+        nowcFailed = false;
+        return nextN3Poll(f, Date.now());
+      },
+      () => {
+        nowcChecked = Date.now();
+        nowcFailed = true;
+      },
+    );
+  });
+  $effect(() => {
+    if (!map || !nowcFrame) return;
+    const url = nowcTiles(nowcFrame, nowcFrame.element);
+    for (const n of N3_TILE_ZOOMS) {
+      const src = map.getSource(`nowc-${n}`);
+      if (src && "setTiles" in src)
+        (src as { setTiles(t: string[]): void }).setTiles([url]);
+    }
+  });
+  const nowcOld = $derived(
+    nowcFrame !== null && nowcChecked > 0 && nowcStale(nowcFrame, nowcChecked),
+  );
+  const nowcReady = $derived(
+    nowcFrame !== null && nowcFrame.element === chosenNowc?.element,
+  );
+
+  // ---- 今後の雨 (気象庁の降水短時間予報。docs/map.md の「今後の雨」) ----
+  // 予測の並び (1 時間ごと) を取り、選んでいる何時間先かの 1 枚を出す。時刻は ‹ › で人が動かす (自動では動かさない)
+  const forecastChosen = $derived(hazard === "rain-forecast");
+  let forecast = $state<NowcFrame[]>([]);
+  /** 選んでいる予測 (並びの何番目か)。新しい予測が来ても、何時間先かを保つ */
+  let forecastStep = $state(0);
+  let forecastChecked = $state(0);
+  let forecastFailed = $state(false);
+  $effect(() => {
+    if (!map || !forecastChosen || !nowcOn || !pageVisible) return;
+    forecastChecked = Date.now();
+    return pollTimes(
+      RASRF_TIMES_URL,
+      (raw) => {
+        const frames = forecastFrames(raw);
+        forecastChecked = Date.now();
+        if (frames.length === 0)
+          throw new Error("targetTimes: 予測の時刻がありません");
+        const now = untrack(() => forecast);
+        if (
+          now.length !== frames.length ||
+          now[0]?.basetime !== frames[0]?.basetime
+        )
+          forecast = frames;
+        forecastFailed = false;
+        return RASRF_POLL_MS;
+      },
+      () => {
+        forecastChecked = Date.now();
+        forecastFailed = true;
+      },
+    );
+  });
+  const forecastFrame = $derived(
+    forecast[Math.min(forecastStep, forecast.length - 1)] ?? null,
+  );
+  $effect(() => {
+    if (!map || !forecastFrame) return;
+    const url = rasrfTiles(forecastFrame);
+    for (const n of RASRF_TILE_ZOOMS) {
+      const src = map.getSource(`rasrf-${n}`);
+      if (src && "setTiles" in src)
+        (src as { setTiles(t: string[]): void }).setTiles([url]);
+    }
+  });
+  const forecastOld = $derived(
+    forecastFrame !== null &&
+      forecastChecked > 0 &&
+      rasrfStale(forecastFrame, forecastChecked),
+  );
+
+  // ---- 線状降水帯の雨域 (出ている間だけ、いつも描く。docs/map.md の「線状降水帯」) ----
+  // 画面が見えている間は 10 分ごとに時刻の表を取り、いちばん新しい解析の雨域の GeoJSON を読む (無いときは空が返る)
+  let slmcsAt = $state<string | null>(null);
+  $effect(() => {
+    if (!map || !pageVisible) return;
+    const m = map;
+    let last = "";
+    const aborter = new AbortController();
+    const clear = () => {
+      setData(m, "slmcs", { type: "FeatureCollection", features: [] });
+      slmcsAt = null;
+    };
+    const stop = pollTimes(
+      N3_TIMES_URL,
+      (raw) => {
+        const f = latestAnalysis(raw, "slmcs_unify");
+        // 表から雨域が消えたときと、描いている雨域が古いまま新しい解析を読めないときは、古い線を残さない
+        const shown = untrack(() => slmcsAt);
+        if (shown && Date.now() - Date.parse(shown) > N3_STALE_MS) clear();
+        if (!f) {
+          last = "";
+          if (shown) clear();
+          return NOWC_RETRY_MS;
+        }
+        if (f.validtime !== last) {
+          last = f.validtime;
+          void fetch(slmcsUrl(f), {
+            credentials: "omit",
+            referrerPolicy: "no-referrer",
+            signal: AbortSignal.any([
+              aborter.signal,
+              AbortSignal.timeout(10_000),
+            ]),
+          })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((j: unknown) => {
+              if (aborter.signal.aborted) return;
+              if (j === null) {
+                last = "";
+                return;
+              }
+              const fc = slmcsFeatures(j);
+              setData(m, "slmcs", fc);
+              slmcsAt = fc.features.length > 0 ? stampIso(f.validtime) : null;
+            })
+            .catch(() => {
+              // 読めなければ前の雨域のまま、次の時刻の表で読み直す (古くなったら上で消す)
+              last = "";
+            });
+        }
+        return nextN3Poll(f, Date.now());
+      },
+      () => {},
+    );
+    return () => {
+      aborter.abort();
+      stop();
+    };
+  });
+
+  /** 気象警報・注意報の塗りを隠しているか (重ねる図が重なっているか、地震を選んでいるため) */
+  const warningsHidden = $derived(
+    covered || rainOn || riskOn || nowcOn || quakeShown,
+  );
   $effect(() => {
     if (!map) return;
     for (const [layer, on] of Object.entries({
       ...hazardVisibility(hazard),
       ...rainVisibility(hazard, quakeShown, rainFrame !== null),
       ...riskVisibility(hazard, quakeShown, riskReady),
+      ...nowcVisibility(hazard, quakeShown, nowcReady),
+      ...rasrfVisibility(hazard, quakeShown, forecastFrame !== null),
       ...overlayVisibility(hazard, zoom, quakeShown),
     }))
       map.setLayoutProperty(layer, "visibility", on ? "visible" : "none");
@@ -2075,13 +2310,26 @@
                   ? chosenHazard.pill
                   : chosenRisk
                     ? `キキクル: ${chosenRisk.label.replace(/ \(.*\)$/, "")}`
-                    : hazard === "rain"
-                      ? "雨雲"
-                      : "重ねる: なし"}
+                    : chosenNowc
+                      ? chosenNowc.pill
+                      : hazard === "rain-forecast"
+                        ? "今後の雨 (予測)"
+                        : hazard === "rain"
+                          ? "雨雲"
+                          : "重ねる: なし"}
               </button>
             {/snippet}
             <!-- 重ねる図は 1 つだけ (色がぶつかるため)。雨雲・キキクルといまのハザードマップを同じ選択に並べる -->
-            {#each [{ id: "none" as const, label: "なし" }, { id: "rain" as const, label: "雨雲 (いま)" }] as h (h.id)}
+            <button
+              type="button"
+              role="menuitemradio"
+              class="menu-item"
+              aria-checked={hazard === "none"}
+              onclick={() => pickHazard("none")}
+              data-testid="hazard-none">なし</button
+            >
+            <p class="menu-head">雨・雷・竜巻</p>
+            {#each [{ id: "rain" as const, label: "雨雲 (いま)" }, { id: "rain-forecast" as const, label: "今後の雨 (予測)" }, ...NOWC_KINDS] as h (h.id)}
               <button
                 type="button"
                 role="menuitemradio"
@@ -2237,7 +2485,7 @@
             <p class="tiny muted">
               出典: <a href={RAIN_PAGE} target="_blank" rel="noopener"
                 >{RAIN_CREDIT}</a
-              >。予測は出しません。
+              >。先の雨は「今後の雨 (予測)」で見られます。
             </p>
             <p class="tiny muted" data-testid="hazard-hidden">
               色がぶつからないよう、警報・注意報の塗り{roadSpeedShown
@@ -2319,7 +2567,157 @@
         {/if}
       {/if}
       <!-- 地震を選んでいる間に、気象警報・注意報の塗りを隠していることと戻し方 (ハザードマップ・雨雲・キキクルの凡例が書くときは出さない) -->
-      {#if quakeShown && warningsPainted && !covered && hazard !== "rain" && !chosenRisk && boxHeight >= NOTE_MIN_HEIGHT}
+      {#if chosenNowc}
+        <!-- 雷・竜巻の凡例と、いつの解析か。古い解析をいまのものと取り違えないよう、時刻をいつも出す -->
+        {#if nowcOn}
+          <figure class="legend rain-legend" data-testid="nowc-legend">
+            <figcaption class="small bold">{chosenNowc.title}</figcaption>
+            {#if nowcFrame && nowcReady}
+              <p class="small rain-time" data-testid="nowc-time">
+                {#if nowcOld}
+                  <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
+                  {jst(stampIso(nowcFrame.validtime))} の解析です。新しい解析を読めていないため、いまのものではありません
+                {:else}
+                  {jst(stampIso(nowcFrame.validtime))} の解析 (10 分ごとに更新)
+                {/if}
+              </p>
+            {:else if nowcFailed}
+              <p class="small rain-time" data-testid="nowc-time">
+                <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
+                読み込めませんでした。1 分後に再試行します
+              </p>
+            {:else}
+              <p class="small muted" data-testid="nowc-time">
+                読み込んでいます…
+              </p>
+            {/if}
+            <ul class="risk-scale">
+              {#each chosenNowc.legend as l (l.label)}
+                <li>
+                  <span class="rain-swatch" style:background={l.color}
+                  ></span><span class="tiny"
+                    >{l.label} <span class="muted">({l.note})</span></span
+                  >
+                </li>
+              {/each}
+            </ul>
+            <p class="tiny muted">{chosenNowc.about}</p>
+            <p class="tiny muted">
+              出典: <a href={NOWC_PAGE} target="_blank" rel="noopener"
+                >{chosenNowc.credit}</a
+              >
+            </p>
+            <p class="tiny muted" data-testid="hazard-hidden">
+              色がぶつからないよう、警報・注意報の塗り{roadSpeedShown
+                ? "・通れた道 (目安) の線"
+                : ""}を隠しています
+              (特別警報・緊急地震速報は縁取りで出します)。「なし」に戻すと元に戻ります。
+            </p>
+          </figure>
+        {:else if boxHeight >= NOTE_MIN_HEIGHT}
+          <p class="map-note tiny muted" data-testid="quake-hides-nowc">
+            地震を選んでいる間は、{chosenNowc.label.replace(
+              / \(.*\)$/,
+              "",
+            )}{warningsPainted ? "と気象警報・注意報の塗り" : ""}を隠しています
+            (震度の色と重なるため){specialPainted
+              ? "。特別警報は縁取りで出します"
+              : ""}。一覧へ戻ると元に戻ります。
+          </p>
+        {/if}
+      {/if}
+      {#if forecastChosen}
+        <!--
+          今後の雨の凡例。いまの雨と取り違えないよう、何時までの予測かを大きく出し、‹ › で先の時刻へ動かす
+          (自動では動かさない。docs/map.md の「今後の雨」)
+        -->
+        {#if nowcOn}
+          <figure class="legend rain-legend" data-testid="forecast-legend">
+            <figcaption class="small bold">
+              今後の雨 (1 時間の雨量 mm)
+            </figcaption>
+            {#if forecastFrame}
+              <p class="forecast-time bold" data-testid="forecast-time">
+                {jst(stampIso(forecastFrame.validtime))} までの予測
+              </p>
+              <div class="forecast-step">
+                <button
+                  type="button"
+                  class="ghost small step"
+                  aria-label="1 つ前の予測"
+                  disabled={forecastStep <= 0}
+                  onclick={() => (forecastStep = Math.max(0, forecastStep - 1))}
+                  data-testid="forecast-prev">‹</button
+                >
+                <span class="small">{hoursAhead(forecastFrame)} 時間先</span>
+                <button
+                  type="button"
+                  class="ghost small step"
+                  aria-label="1 つ先の予測"
+                  disabled={forecastStep >= forecast.length - 1}
+                  onclick={() =>
+                    (forecastStep = Math.min(
+                      forecast.length - 1,
+                      forecastStep + 1,
+                    ))}
+                  data-testid="forecast-next">›</button
+                >
+              </div>
+              <p class="tiny muted">
+                {#if forecastOld}
+                  <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
+                {/if}
+                {jst(stampIso(forecastFrame.basetime))} の解析にもとづく気象庁の予測です{forecastOld
+                  ? "。新しい予測を読めていません"
+                  : ""}。いまの雨ではありません。
+              </p>
+            {:else if forecastFailed}
+              <p class="small rain-time">
+                <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
+                今後の雨を読み込めませんでした。1 分後に再試行します
+              </p>
+            {:else}
+              <p class="small muted">読み込んでいます…</p>
+            {/if}
+            <ul class="rain-scale">
+              {#each RASRF_LEGEND as l (l.label)}
+                <li>
+                  <span class="rain-swatch" style:background={l.color}
+                  ></span><span class="tiny">{l.label}</span>
+                </li>
+              {/each}
+            </ul>
+            <p class="tiny muted">
+              出典: <a href={RASRF_PAGE} target="_blank" rel="noopener"
+                >気象庁 (今後の雨)</a
+              >
+            </p>
+            <p class="tiny muted" data-testid="hazard-hidden">
+              色がぶつからないよう、警報・注意報の塗り{roadSpeedShown
+                ? "・通れた道 (目安) の線"
+                : ""}を隠しています
+              (特別警報・緊急地震速報は縁取りで出します)。「なし」に戻すと元に戻ります。
+            </p>
+          </figure>
+        {:else if boxHeight >= NOTE_MIN_HEIGHT}
+          <p class="map-note tiny muted" data-testid="quake-hides-forecast">
+            地震を選んでいる間は、今後の雨{warningsPainted
+              ? "と気象警報・注意報の塗り"
+              : ""}を隠しています (震度の色と重なるため){specialPainted
+              ? "。特別警報は縁取りで出します"
+              : ""}。一覧へ戻ると元に戻ります。
+          </p>
+        {/if}
+      {/if}
+      {#if slmcsAt && boxHeight >= NOTE_MIN_HEIGHT}
+        <!-- 線状降水帯の雨域を描いている間だけ、赤い線が何かを書く (いつも描く層なので、凡例の代わり) -->
+        <p class="map-note tiny" data-testid="slmcs-note">
+          <span class="slmcs-mark"></span>赤い線: 線状降水帯の雨域 ({jst(
+            slmcsAt,
+          )} の解析・気象庁)
+        </p>
+      {/if}
+      {#if quakeShown && warningsPainted && !covered && hazard !== "rain" && !chosenRisk && !nowcOn && !chosenNowc && !forecastChosen && boxHeight >= NOTE_MIN_HEIGHT}
         <p class="map-note tiny muted" data-testid="quake-hides-warnings">
           地震を選んでいる間は、気象警報・注意報の塗りを隠しています{specialPainted
             ? " (特別警報は縁取りで出します)"
@@ -2514,6 +2912,34 @@
   .legend figcaption,
   .legend p {
     margin: 0;
+  }
+  /* 今後の雨の時刻。何時までの予測かを大きく出し、左右に ‹ › */
+  .forecast-step {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--so-space-1);
+  }
+  .forecast-step .step {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    margin: 0;
+    padding: 0;
+    font-size: var(--so-text-lg);
+  }
+  .forecast-time {
+    font-size: var(--so-text-lg);
+    text-align: center;
+  }
+  /* 線状降水帯の雨域の線の見本 (地図の線と同じ白い縁の赤) */
+  .slmcs-mark {
+    display: inline-block;
+    width: 1rem;
+    height: 0.25rem;
+    margin-inline-end: var(--so-space-1);
+    vertical-align: middle;
+    border: 1px solid #fff;
+    background: rgb(255 0 0);
   }
   /* 洪水の図の切り替え。凡例の幅に収まるよう詰め、入りきらなければ折り返す */
   .legend .variants {
