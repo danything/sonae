@@ -11,6 +11,11 @@ import {
   WARNING_COLORS,
 } from "#lib/format.ts";
 import {
+  FOREIGN_RADIUS,
+  HYPO_RADIUS,
+  radiusExpr,
+} from "#lib/map/epicenters.ts";
+import {
   RAIN_ATTRIBUTION,
   RAIN_TILE_ZOOMS,
   type RainFrame,
@@ -1279,6 +1284,39 @@ export function baseStyle(
           "line-dasharray": [2, 1],
         },
       },
+      // 台湾の観測点のいまの揺れ (TREM-RTS)。見た目は下の stationLayer
+      stationLayer("rts"),
+      // 有志の観測点のいまの揺れ (Wolfx SeisJS)。見た目は台湾の観測点と同じ
+      stationLayer("seis"),
+      // 震源の丸 (新しい 50 件。押すとその地震を選ぶ)。通行止めと通れた道の線・海しるの点の下に置く。
+      // 大きく透けた丸の上に細い線と小さな点を描くと、両方が見えて押し分けられる (docs/map.md の「押せる所が重なったとき」)
+      {
+        id: "hypocenters",
+        type: "circle",
+        source: "hypocenters",
+        paint: {
+          "circle-radius": radiusExpr(HYPO_RADIUS),
+          "circle-color": depthColorExpr(),
+          "circle-opacity": 0.8,
+          "circle-stroke-color": "rgba(0,0,0,0.6)",
+          "circle-stroke-width": 1,
+        },
+        layout: { "circle-sort-key": ["get", "order"] },
+      },
+      // 海外の地震の丸 (白い縁。押すとその地震を選ぶ)
+      {
+        id: "foreign",
+        type: "circle",
+        source: "foreign",
+        paint: {
+          "circle-radius": radiusExpr(FOREIGN_RADIUS),
+          "circle-color": depthColorExpr(),
+          "circle-opacity": 0.55,
+          "circle-stroke-color": "#fff",
+          "circle-stroke-width": 1.5,
+        },
+        layout: { "circle-sort-key": ["get", "order"] },
+      },
       // 通れた道 (目安)。ETC2.0 の平均速度の細い線。時速 20 km 以下は橙、21 km 以上は水色 (通れるマップの凡例の色の向き)
       {
         id: "road-speed",
@@ -1345,7 +1383,7 @@ export function baseStyle(
         },
       },
       // 海しるの点 (海底地殻変動観測点は水色のひし形、海域火山は黒い縁の白い三角の輪郭)。いつも出し、押すと吹き出し。
-      // 震源の丸と観測点の揺れの下 (めったに変わらない、場所の見当のための点なので)
+      // 震源の丸と観測点の揺れの上 (小さな点なので、大きく透けた丸の下に隠れないように)。観測点ごとの震度の丸の下
       {
         id: "marine",
         type: "symbol",
@@ -1371,56 +1409,6 @@ export function baseStyle(
             1.5,
           ],
         },
-      },
-      // 台湾の観測点のいまの揺れ (TREM-RTS)。見た目は下の stationLayer
-      stationLayer("rts"),
-      // 有志の観測点のいまの揺れ (Wolfx SeisJS)。見た目は台湾の観測点と同じ
-      stationLayer("seis"),
-      {
-        id: "hypocenters",
-        type: "circle",
-        source: "hypocenters",
-        paint: {
-          "circle-radius": [
-            "interpolate",
-            ["linear"],
-            ["get", "m"],
-            1,
-            3,
-            5,
-            7,
-            8,
-            16,
-          ],
-          "circle-color": depthColorExpr(),
-          "circle-opacity": 0.8,
-          "circle-stroke-color": "rgba(0,0,0,0.6)",
-          "circle-stroke-width": 1,
-        },
-        layout: { "circle-sort-key": ["get", "order"] },
-      },
-      {
-        id: "foreign",
-        type: "circle",
-        source: "foreign",
-        paint: {
-          "circle-radius": [
-            "interpolate",
-            ["linear"],
-            ["get", "m"],
-            4,
-            5,
-            6,
-            9,
-            9,
-            18,
-          ],
-          "circle-color": depthColorExpr(),
-          "circle-opacity": 0.55,
-          "circle-stroke-color": "#fff",
-          "circle-stroke-width": 1.5,
-        },
-        layout: { "circle-sort-key": ["get", "order"] },
       },
       // 観測点ごとの震度 (選んだ地震だけ)。気象庁の地図と同じく震度の色の丸で、大きい震度を上に描く。
       // 震源の丸より上 (選んだ地震の中身なので)。震度 1 の白い丸も写真の上で見えるよう、黒い細い縁を付ける

@@ -1485,6 +1485,11 @@
         officeHref={(code) =>
           selectHref(params, "weather", `${OFFICE_PREFIX}${code}`)}
         onoffice={() => (tab = "list")}
+        onpick={(kind, id) => {
+          // 震源の丸を押した。一覧の行を押したのと同じリンクへ移り、スマホの形は一覧のタブで詳しい内容を出す
+          tab = "list";
+          void goto(selectHref(params, kind, id), { reset: false });
+        }}
         {aboutHref}
         {found}
         selected={v.selected !== null}
