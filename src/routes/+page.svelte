@@ -71,6 +71,7 @@
     weatherTitle,
   } from "#lib/format.ts";
   import { live } from "#lib/live.svelte.ts";
+  import { typhoonsOnMap } from "#lib/map/typhoon.ts";
   import {
     type Advisory,
     collapseNotes,
@@ -670,6 +671,8 @@
   const mapQuake = $derived(selQuake ?? undefined);
   const mapLongPeriod = $derived(selQuake ? selLongPeriod : null);
   const mapTsunamis = $derived(selTsunami ? [selTsunami] : activeTsunamis);
+  /** 地図に描く台風 (台風ごとにいちばん新しい報。何も選んでいなくても描く。docs/map.md の「台風」) */
+  const mapTyphoons = $derived(typhoonsOnMap(snap.weatherInfos, live.now));
   /** 緊急地震速報は、出ている間はほかのものを選んでいても出す (選んだ前の報は、それに足す) */
   const mapEews = $derived(
     selEew && !liveEews.some((e) => e.eventId === selEew.eventId)
@@ -1581,6 +1584,8 @@
         seisStations={live.seisStations}
         seis={live.seis}
         warnings={snap.warnings}
+        typhoons={mapTyphoons}
+        typhoon={selWeather?.kind === "typhoon" ? selWeather : null}
         office={selOffice?.office.code ?? null}
         officeHref={(code) =>
           selectHref(params, "weather", `${OFFICE_PREFIX}${code}`)}
