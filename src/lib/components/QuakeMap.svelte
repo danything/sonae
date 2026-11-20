@@ -880,6 +880,9 @@
     if (!map || !rainOn || !pageVisible) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // 選び直したときと画面に戻ったときは、取れるまでの間も前の雨雲が古いかを今の時刻で決める
+    // (長く裏にいた後に、前の雨雲を「5 分ごとに更新」と出さない)
+    rainChecked = Date.now();
     const poll = async () => {
       let wait = RAIN_RETRY_MS;
       try {

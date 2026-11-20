@@ -1,3 +1,5 @@
+import { RAIN_PAGE } from "#lib/map/rain.ts";
+
 /**
  * 画面に出す注意文と出典 (docs/design.md の 5 章「法と表示」)。文言を変えるときは設計書も直す
  */
@@ -16,8 +18,6 @@ export interface Credit {
   label: string;
   parts: CreditPart[];
 }
-
-import { RAIN_PAGE } from "#lib/map/rain.ts";
 
 const JMA_FEED = "https://xml.kishou.go.jp/xmlpull.html";
 const JMA_GIS = "https://www.data.jma.go.jp/developer/gis.html";
