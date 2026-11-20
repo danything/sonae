@@ -52,6 +52,7 @@
   import { activeEews } from "#lib/eew.ts";
   import {
     depthText,
+    floodStationsText,
     FOREIGN_SOURCE_SHORT,
     jst,
     jstClock,
@@ -223,6 +224,7 @@
         x.headline,
         x.kindName,
         ...x.areas.map((a) => a.name),
+        ...(x.stations ?? []).map((s) => s.name),
       );
     });
   });
@@ -342,6 +344,8 @@
         WEATHER_INFO_LABEL[x.kind],
         x.typhoon?.remark ?? "",
         x.kind === "bosai" ? x.kindName : "",
+        // 洪水予報は基準観測所のいまの水位を見出しの前に (行は 1 行で切れるため)
+        floodStationsText(x),
         x.headline.replace(/\s+/g, " ").trim(),
       ]
         .filter(Boolean)

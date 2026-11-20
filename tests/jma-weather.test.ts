@@ -153,6 +153,49 @@ describe("気象の報", () => {
     expect(info("16_14_01_251222_VXKOii.xml", "VXKO53").level).toBe(0);
   });
 
+  test("指定河川洪水予報 (VXKO): 観測所ごとの実況と予想の水位と基準の水位。基準観測所が先で、欠測は値が無い", () => {
+    const r = info("16_14_01_251222_VXKOii.xml", "VXKO53");
+    // 電文の順は置戸・北見・上川沿。主文で名前の出る基準観測所 (上川沿) を先に
+    expect(r.stations?.map((s) => [s.name, s.base])).toEqual([
+      ["上川沿", true],
+      ["置戸", false],
+      ["北見", false],
+    ]);
+    const s = r.stations?.[0];
+    expect(s?.code).toBe("81011100010000016");
+    expect(s?.location).toBe("北見市");
+    expect(s?.levels).toHaveLength(7);
+    expect(s?.levels[0]).toEqual({
+      time: "2025-11-02T14:50:00+09:00",
+      label: "現況",
+      m: 6.19,
+    });
+    expect(s?.levels[6]).toEqual({
+      time: "2025-11-02T20:50:00+09:00",
+      label: "６時間後",
+      m: 5.72,
+    });
+    expect(s?.criteria).toEqual([
+      { name: "レベル１水防団待機水位", m: 5.3 },
+      { name: "レベル２氾濫注意水位", m: 6.2 },
+      { name: "レベル３避難判断水位", m: 7.4 },
+      { name: "レベル４氾濫危険水位", m: 7.6 },
+      { name: "レベル４計画高水位等", m: 9.3 },
+    ]);
+
+    const ushizu = info("16_09_01_260312_VXKOii.xml", "VXKO53").stations;
+    expect(ushizu?.map((x) => x.name)).toEqual(["妙見橋"]);
+    expect(ushizu?.[0]?.levels[0]?.m).toBe(3.74);
+    expect(ushizu?.[0]?.levels[6]).toEqual({
+      time: ushizu?.[0]?.levels[6]?.time ?? "",
+      label: "６時間後",
+    });
+    // 洪水予報でない報には持たない
+    expect(
+      info("57_03_01_240401_VPFT50.xml", "VPFT50").stations,
+    ).toBeUndefined();
+  });
+
   test("熱中症警戒アラート (VPFT50): 本文だけで地域のコードは無い", () => {
     const r = info("57_03_01_240401_VPFT50.xml", "VPFT50");
     expect(r.kind).toBe("heat");

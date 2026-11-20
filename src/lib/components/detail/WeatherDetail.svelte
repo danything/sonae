@@ -1,9 +1,12 @@
 <script lang="ts">
+  import "@anyblades/blades/content/table";
+
   import {
     jst,
     jstFull,
     kindText,
     STATUS_LABEL,
+    waterLevelText,
     weatherTitle,
   } from "#lib/format.ts";
   import {
@@ -111,6 +114,47 @@
     </section>
   {/if}
 
+  {#if w.stations && w.stations.length > 0}
+    <!-- 指定河川洪水予報の観測所ごとの実況と予想の水位 (電文の値のまま。docs/design.md の 2.8) -->
+    <section data-testid="flood-stations">
+      <h2>観測所の水位</h2>
+      <p class="small muted">
+        水位は観測所ごとの基準からの高さで、観測所どうしでは比べられません。下の基準の水位と比べて読んでください。
+      </p>
+      {#each w.stations as s (s.code)}
+        <h3 class="small bold station">
+          {s.name}
+          <span class="muted"
+            >{[s.location, s.base ? "基準観測所" : ""]
+              .filter(Boolean)
+              .join("・")}</span
+          >
+        </h3>
+        <table class="small">
+          <thead>
+            <tr><th>時刻</th><th>実況・予想</th><th class="num">水位</th></tr>
+          </thead>
+          <tbody>
+            {#each s.levels as l (l.time)}
+              <tr>
+                <td>{jst(l.time)}</td>
+                <td>{kindText(l.label)}</td>
+                <td class="num">{waterLevelText(l.m)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+        {#if s.criteria.length > 0}
+          <p class="tiny muted">
+            基準の水位: {s.criteria
+              .map((c) => `${kindText(c.name)} ${waterLevelText(c.m)}`)
+              .join("・")}
+          </p>
+        {/if}
+      {/each}
+    </section>
+  {/if}
+
   {#if areas.length > 0}
     <section>
       <h2>{w.kind === "flood" ? "河川と府県" : "対象の地域"}</h2>
@@ -128,5 +172,22 @@
   }
   .facts dd {
     margin: 0;
+  }
+  .station {
+    margin: var(--so-space-3) 0 0;
+  }
+  table {
+    margin-top: var(--so-space-1);
+  }
+  td,
+  th {
+    padding-inline: var(--so-space-2);
+    /* 7 行が 3 つの観測所ぶん並ぶので、行を詰める */
+    padding-block: var(--so-space-1);
+  }
+  /* 水位の小数点をそろえる */
+  .num {
+    text-align: end;
+    font-variant-numeric: tabular-nums;
   }
 </style>
