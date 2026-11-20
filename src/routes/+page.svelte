@@ -73,6 +73,7 @@
     type Eew,
     type ForeignQuake,
     isExpired,
+    isFarNote,
     isPinnedAdvisory,
     isTsunamiActive,
     isTsunamiWarning,
@@ -226,19 +227,8 @@
       ),
     ),
   );
-  /**
-   * 「すべて」を出しているときに隠す、ほかの府県の解説 (府県気象解説情報と府県の潮位の解説)。全国で 1 日に数十通出て
-   * 一覧を埋めるので、住んでいる地域を選んでいれば、その府県予報区・一次細分区域のものだけを出す。
-   * 住んでいる地域を選んでいなければ全部を隠す。気象のチップでは全部を出す (docs/ui.md)
-   */
-  function farNote(x: WeatherInfo): boolean {
-    const home = alerter.prefs.home;
-    if (x.code !== "VPFJ51" && x.code !== "VMCJ55") return false;
-    if (!home) return true;
-    return !x.areas.some(
-      (a) => a.code === home.ichiji || a.code === home.office,
-    );
-  }
+  /** 「すべて」で隠す、ほかの府県の解説 (気象のチップでは全部を出す。`isFarNote`) */
+  const farNote = (x: WeatherInfo) => isFarNote(x, alerter.prefs.home);
   const counts = $derived<Record<Kind, number>>({
     quake: quakes.length,
     tsunami: tsunamis.length,

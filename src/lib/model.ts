@@ -960,6 +960,20 @@ export function collapseNotes<T extends Pick<WeatherInfo, "kind" | "series">>(
   });
 }
 
+/**
+ * 一覧で「すべて」を出しているときに隠す、ほかの府県の解説 (府県気象解説情報 VPFJ51 と府県の潮位の解説 VMCJ55)。
+ * 全国で 1 日に数十通出て一覧を埋めるので、住んでいる地域の府県予報区・一次細分区域 (どちらも電文の地域と同じ
+ * 「府県予報区・細分区域等」のコード) のものだけを出す。住んでいる地域を選んでいなければ全部を隠す (docs/ui.md)
+ */
+export function isFarNote(
+  x: Pick<WeatherInfo, "code" | "areas">,
+  home: { office: string | null; ichiji: string | null } | null,
+): boolean {
+  if (x.code !== "VPFJ51" && x.code !== "VMCJ55") return false;
+  if (!home) return true;
+  return !x.areas.some((a) => a.code === home.ichiji || a.code === home.office);
+}
+
 /** 解説の情報の本文の 1 つの節 (「気象概況」「防災事項」「雨の予想」など。行は電文の文のまま) */
 export interface WeatherSection {
   title: string;
