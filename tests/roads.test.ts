@@ -292,6 +292,9 @@ describe("画面", () => {
     expect(
       roadPopup({ kind: "speed", slow: true, updated: UPDATED })[1]?.text,
     ).toBe("ETC2.0 の平均速度が時速 20 km 以下");
+    expect(
+      roadPopup({ kind: "speed", slow: false, updated: UPDATED }).at(-1)?.text,
+    ).toBe("出典：国土交通省「通れるマップ」を加工して作成");
     expect(jstShort("2026-11-20T15:05:00Z")).toBe("2026/11/21 00:05");
   });
 
