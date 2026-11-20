@@ -67,6 +67,9 @@ const RTS_ATTRIBUTION =
 const SEIS_ATTRIBUTION =
   '<a href="https://wolfx.jp/docs/seisjs-api/" target="_blank" rel="noopener">Wolfx Project (SeisJS)</a>・非公式';
 
+const ROADS_ATTRIBUTION =
+  '出典：<a href="https://www.mlit.go.jp/road/road_fr4_000201.html" target="_blank" rel="noopener">国土交通省「通れるマップ」</a>を加工して作成';
+
 const MARINE_ATTRIBUTION =
   '出典：<a href="https://www.msil.go.jp/" target="_blank" rel="noopener">海洋状況表示システム</a> (海底地殻変動観測点・海域火山DB を加工)';
 
@@ -99,6 +102,10 @@ const PLATES_ATTRIBUTION =
  * 深さの色 (赤・黄・緑・青) と津波の色 (紫・赤・黄) のどれとも違う色にする
  */
 export const PLATE_COLOR = "rgba(255, 196, 150, 0.55)";
+/** 通行止め (災害) の線の色と、通れた道 (目安) の線の色 (docs/map.md の「災害時の通行止め」) */
+export const ROAD_CLOSED_COLOR = "#e60012";
+export const ROAD_SLOW_COLOR = "#ff9900";
+export const ROAD_FAST_COLOR = "#3cc8ff";
 
 /**
  * 地理院地図Vector (国土地理院最適化ベクトルタイル) の PMTiles。試験公開で URL が変わりうる (docs/map.md)。
@@ -255,6 +262,8 @@ export const HIDDEN_UNDER_HAZARD = [
   "warning-focus",
   "quake-fill",
   "eew-fill",
+  // 通れた道 (目安) の橙と青の細い線は、浸水想定などの色と重なる。通行止めの赤い線は残す
+  "road-speed",
 ] as const;
 /** ハザードマップを重ねている間だけ出す層 (いま出ている特別警報の市町村等の縁取り) */
 export const SHOWN_UNDER_HAZARD = [
@@ -519,6 +528,14 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "海底地殻変動観測点・海域火山 (海しる)",
     note: "海上保安庁の海しるから取った点です。水色のひし形は海底地殻変動観測点 (GNSS-A。海底の動きを測る所)、白い縁の三角の輪郭は海域火山データベースの火山です。押すと、名前と設置水深・標高などが出ます。サーバーが 1 日 1 回取り直します。海しるの API のキーが無いサーバーでは出ません。三角の輪郭は火山の警戒の段とは関係がありません (噴火警報・予報の火山は、色で塗った三角です)",
+  },
+  {
+    label: "通行止め (災害)",
+    note: "白い縁の赤い太い線。国土交通省が災害ごとに出す「通れるマップ」の道路規制情報のうち、いま全面通行止めの区間です。押すと、路線名・区間・規制の内容と理由・更新の時刻が出ます。サーバーの管理者が災害の URL を登録したときだけ出ます (30 分ごとに取り直します)。ここに無くても通れるとは限りません",
+  },
+  {
+    label: "通れた道 (目安)",
+    note: "細い線。通れるマップの ETC2.0 の平均速度で、車が通った道です。橙は時速 20 km 以下、水色は 21 km 以上。いま通れるとは限らず、工事の車のこともあります。ハザードマップを重ねている間は隠します",
   },
   {
     label: "道路・地名・施設の記号",
@@ -975,6 +992,12 @@ export function baseStyle(
         data: { type: "FeatureCollection", features: [] },
         attribution: SEIS_ATTRIBUTION,
       },
+      // 災害時の通行止めと通れた道 (目安)。画面が /api/roads から読んで差し込む (`#lib/map/roads.ts`)
+      roads: {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+        attribution: ROADS_ATTRIBUTION,
+      },
       // 海しるの点 (海底地殻変動観測点・海域火山)。画面が /api/marine から読んで差し込む (`#lib/map/marine.ts`)
       marine: {
         type: "geojson",
@@ -1170,6 +1193,71 @@ export function baseStyle(
           "line-color": HOME_COLOR,
           "line-width": 2.5,
           "line-dasharray": [2, 1],
+        },
+      },
+      // 通れた道 (目安)。ETC2.0 の平均速度の細い線。時速 20 km 以下は橙、21 km 以上は水色 (通れるマップの凡例の色の向き)
+      {
+        id: "road-speed",
+        type: "line",
+        source: "roads",
+        filter: ["==", ["get", "kind"], "speed"],
+        layout: {
+          "line-cap": "round",
+          "line-join": "round",
+          ...vis("road-speed"),
+        },
+        paint: {
+          "line-color": [
+            "case",
+            ["get", "slow"],
+            ROAD_SLOW_COLOR,
+            ROAD_FAST_COLOR,
+          ],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1, 14, 2.5],
+          "line-opacity": 0.85,
+        },
+      },
+      // 通行止め (災害)。白い縁の上に赤の太い線。面の赤 (震度・警報) と見分けられるよう、縁を付けて線で引く
+      {
+        id: "road-closed-casing",
+        type: "line",
+        source: "roads",
+        filter: ["==", ["get", "kind"], "closed"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "#ffffff",
+          "line-width": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            6,
+            4,
+            10,
+            7,
+            14,
+            11,
+          ],
+        },
+      },
+      {
+        id: "road-closed",
+        type: "line",
+        source: "roads",
+        filter: ["==", ["get", "kind"], "closed"],
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": ROAD_CLOSED_COLOR,
+          "line-width": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            6,
+            2.5,
+            10,
+            4.5,
+            14,
+            7,
+          ],
         },
       },
       // 海しるの点 (海底地殻変動観測点は水色のひし形、海域火山は白い縁の三角の輪郭)。いつも出し、押すと吹き出し。

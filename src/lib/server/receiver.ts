@@ -21,6 +21,7 @@ import { jmaSource, jmaWeatherSource } from "./sources/jma.ts";
 import { msilKey, msilSource } from "./sources/msil.ts";
 import { p2pSource } from "./sources/p2p.ts";
 import { ptwcSource } from "./sources/ptwc.ts";
+import { roadSource, roadUrls } from "./sources/roads.ts";
 import { seisSource } from "./sources/seisjs.ts";
 import { tremSource } from "./sources/trem.ts";
 import type { Incoming, Source, SourceContext } from "./sources/types.ts";
@@ -184,6 +185,20 @@ export function startReceiving(): void {
       "[msil] 海しるの API のキー (MSIL_API_KEY) が無いので、海しるの層は出しません",
     );
   }
+  // 災害時の通行止め (国土交通省の通れるマップの GeoJSON)。URL を `SONAE_ROAD_GEOJSON` に登録したときだけ取る
+  // (docs/design.md の 2.12)。取ったものは表 layer_cache に置くだけで、知らせには届かない
+  const road = roadUrls();
+  for (const r of road.rejected)
+    console.warn(`[roads] ${r.url} は使いません (${r.why})`);
+  const roads = roadSource(a.store.db, road.urls, { onStatus: ctx.onStatus });
+  if (roads) a.sources.push(roads);
+  else
+    a.off.push({
+      id: "roads",
+      state: "off",
+      reason: "URL が登録されていません",
+      since: new Date().toISOString(),
+    });
   for (const s of a.sources) {
     s.run(controller.signal).catch((err: unknown) =>
       console.error(`[${s.id}] 受信が止まりました: ${err}`),

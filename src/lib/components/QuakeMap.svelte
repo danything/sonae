@@ -54,6 +54,13 @@
   } from "#lib/map/rain.ts";
   import { type MapView, ViewKeeper } from "#lib/map/restore.ts";
   import {
+    type RoadLine,
+    roadPopup,
+    type RoadResponse,
+    ROADS_REFRESH_MS,
+    ROADS_URL,
+  } from "#lib/map/roads.ts";
+  import {
     nearestStation,
     stationFeatures,
     type StationIndex,
@@ -267,6 +274,7 @@
         for (const [id, img] of Object.entries(marineIcons()))
           created.addImage(id, img, { pixelRatio: 2 });
         void loadMarine(created);
+        void loadRoads(created);
         for (const l of anno as { id: string }[])
           if (!created.getLayer(l.id)) created.addLayer(l as never, "shelters");
         created.on("moveend", () => {
@@ -307,8 +315,19 @@
           if (s) return openStation(s.properties, s.at);
           // 海しるの点 (観測点の丸の下に描いている)
           const mk = marineHit(e.point, e.originalEvent);
-          if (mk) openMarine(mk.properties, mk.at);
+          if (mk) return openMarine(mk.properties, mk.at);
+          // 災害時の通行止めと通れた道 (目安) の線 (点の下に描いている)
+          const rd = roadHit(e.point, e.originalEvent);
+          if (rd) openRoad(rd, e.lngLat);
         });
+        for (const id of ["road-closed", "road-speed"]) {
+          created.on("mouseenter", id, () => {
+            if (created) created.getCanvas().style.cursor = "pointer";
+          });
+          created.on("mouseleave", id, () => {
+            if (created) created.getCanvas().style.cursor = "";
+          });
+        }
         created.on("mouseenter", "marine", () => {
           if (created) created.getCanvas().style.cursor = "pointer";
         });
@@ -330,7 +349,8 @@
             created.queryRenderedFeatures(e.point, { layers: ["shelters"] })
               .length > 0 ||
             stationHit(e.point, e.originalEvent) ||
-            marineHit(e.point, e.originalEvent)
+            marineHit(e.point, e.originalEvent) ||
+            roadHit(e.point, e.originalEvent)
           )
             return;
           const code = e.features?.[0]?.properties?.code;
@@ -1080,6 +1100,7 @@
         warningPopup,
         stationPopup,
         marinePopupEl,
+        roadPopupEl,
       ].some((p) => p?.isOpen());
       if (!open) return;
       closePopups();
@@ -1287,6 +1308,7 @@
     warningPopup?.remove();
     stationPopup?.remove();
     marinePopupEl?.remove();
+    roadPopupEl?.remove();
   }
 
   /**
@@ -1442,6 +1464,80 @@
     }
     closePopups();
     marinePopupEl = new PopupClass(popupOptions())
+      .setLngLat(at)
+      .setDOMContent(box)
+      .addTo(map);
+  }
+
+  // ---- 災害時の通行止めと通れた道 (目安)。docs/map.md の「災害時の通行止め」 ----
+  /** 通れた道 (目安) の線を出しているか (ハザードマップの凡例の下で、隠していることを書くため) */
+  let roadSpeedShown = $state(false);
+  /**
+   * サーバーが 30 分ごとに取って置いたものを読み、開いている間は 10 分ごとに読み直す。
+   * URL を登録していないサーバーでは空 (層を出さない)
+   */
+  async function loadRoads(m: MapLibreMap): Promise<void> {
+    try {
+      const r = await fetch(ROADS_URL);
+      if (r.ok) {
+        const body = (await r.json()) as RoadResponse;
+        if (map !== m) return;
+        setData(m, "roads", body.data);
+        roadSpeedShown = body.data.features.some(
+          (f) => f.properties.kind === "speed",
+        );
+        if (!body.enabled) return;
+      }
+    } catch {
+      // 読めなくても地図はそのまま (次の回にまた読む)
+    }
+    setTimeout(() => {
+      if (map === m) void loadRoads(m);
+    }, ROADS_REFRESH_MS);
+  }
+
+  /** 押した所の線。通行止めを先に見る。線は細いので、押せる範囲は指 22px・マウス 8px */
+  function roadHit(
+    pt: { x: number; y: number },
+    ev: MouseEvent | TouchEvent | undefined,
+  ): RoadLine | undefined {
+    const m = map;
+    if (!m?.getLayer("road-closed")) return undefined;
+    const kind = (ev as PointerEvent | undefined)?.pointerType;
+    const r =
+      kind === "touch" ||
+      (!kind &&
+        typeof matchMedia === "function" &&
+        matchMedia("(pointer: coarse)").matches)
+        ? 22
+        : 8;
+    const box: [[number, number], [number, number]] = [
+      [pt.x - r, pt.y - r],
+      [pt.x + r, pt.y + r],
+    ];
+    for (const layer of ["road-closed", "road-speed"]) {
+      if (m.getLayoutProperty(layer, "visibility") === "none") continue;
+      const f = m.queryRenderedFeatures(box, { layers: [layer] })[0];
+      if (f) return f.properties as RoadLine;
+    }
+    return undefined;
+  }
+
+  /** 押した線の路線名・区間・規制の内容・更新の時刻 (`roadPopup` が組んだ中身)。文は DOM で組む */
+  let roadPopupEl: Popup | undefined;
+  function openRoad(p: RoadLine, at: LngLat): void {
+    if (!map || !PopupClass) return;
+    const box = document.createElement("div");
+    box.className = "station-pop";
+    box.dataset.testid = "road-pop";
+    for (const line of roadPopup(p)) {
+      const el = document.createElement("p");
+      if (line.cls) el.className = line.cls;
+      el.textContent = line.text;
+      box.append(el);
+    }
+    closePopups();
+    roadPopupEl = new PopupClass(popupOptions())
       .setLngLat(at)
       .setDOMContent(box)
       .addTo(map);
@@ -1736,12 +1832,16 @@
           <!-- 隠している層があることと、戻し方。図が重ならないズーム (活断層の 11 未満) では隠さない -->
           {#if covered}
             <p class="tiny muted" data-testid="hazard-hidden">
-              色がぶつからないよう、警報・注意報と震度の塗りを隠しています
+              色がぶつからないよう、警報・注意報と震度の塗り{roadSpeedShown
+                ? "・通れた道 (目安) の線"
+                : ""}を隠しています
               (特別警報・緊急地震速報は縁取りで出します)。「なし」に戻すと元に戻ります。
             </p>
           {:else}
             <p class="tiny muted" data-testid="hazard-hidden">
-              寄せて図が重なると、色がぶつからないよう、警報・注意報と震度の塗りを隠します。
+              寄せて図が重なると、色がぶつからないよう、警報・注意報と震度の塗り{roadSpeedShown
+                ? "・通れた道 (目安) の線"
+                : ""}を隠します。
             </p>
           {/if}
         </figure>
