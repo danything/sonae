@@ -229,6 +229,15 @@ const MIGRATIONS: string[] = [
   );
   CREATE INDEX tide_latency_fetched ON tide_latency (fetched_at);
   `,
+  `
+  -- 地図の層のために外から取って置いておくもの (layer-cache.ts)。id は層の名前 (msil-gnssa など)、data は JSON。
+  -- 取り直すまで前のものを出すために置く。時刻は ISO 8601 の UTC
+  CREATE TABLE layer_cache (
+    id TEXT PRIMARY KEY,
+    fetched_at TEXT NOT NULL,
+    data TEXT NOT NULL
+  );
+  `,
 ];
 
 export function openDb(path: string): Database {

@@ -60,6 +60,9 @@ const RTS_ATTRIBUTION =
 const SEIS_ATTRIBUTION =
   '<a href="https://wolfx.jp/docs/seisjs-api/" target="_blank" rel="noopener">Wolfx Project (SeisJS)</a>・非公式';
 
+const MARINE_ATTRIBUTION =
+  '出典：<a href="https://www.msil.go.jp/" target="_blank" rel="noopener">海洋状況表示システム</a> (海底地殻変動観測点・海域火山DB を加工)';
+
 const JMA_GIS_ATTRIBUTION =
   '<a href="https://www.data.jma.go.jp/developer/gis.html" target="_blank" rel="noopener">気象庁 予報区等 GIS データ</a> を加工';
 
@@ -481,6 +484,10 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "火山",
     note: "噴火警戒レベル 2 以上の火山と、選んだ情報の火山の三角。中の数字はレベルです。レベルが分からない火山は灰色の三角で、右に種類の名前 (噴火速報は「噴火速報」) を出します",
+  },
+  {
+    label: "海底地殻変動観測点・海域火山 (海しる)",
+    note: "海上保安庁の海しるから取った点です。水色のひし形は海底地殻変動観測点 (GNSS-A。海底の動きを測る所)、白い縁の三角の輪郭は海域火山データベースの火山です。押すと、名前と設置水深・標高などが出ます。サーバーが 1 日 1 回取り直します。海しるの API のキーが無いサーバーでは出ません。三角の輪郭は火山の警戒の段とは関係がありません (噴火警報・予報の火山は、色で塗った三角です)",
   },
   {
     label: "道路・地名・施設の記号",
@@ -910,6 +917,12 @@ export function baseStyle(
         data: { type: "FeatureCollection", features: [] },
         attribution: SEIS_ATTRIBUTION,
       },
+      // 海しるの点 (海底地殻変動観測点・海域火山)。画面が /api/marine から読んで差し込む (`#lib/map/marine.ts`)
+      marine: {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+        attribution: MARINE_ATTRIBUTION,
+      },
       hypocenters: {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -1085,6 +1098,34 @@ export function baseStyle(
           "line-color": HOME_COLOR,
           "line-width": 2.5,
           "line-dasharray": [2, 1],
+        },
+      },
+      // 海しるの点 (海底地殻変動観測点は水色のひし形、海域火山は白い縁の三角の輪郭)。いつも出し、押すと吹き出し。
+      // 震源の丸と観測点の揺れの下 (めったに変わらない、場所の見当のための点なので)
+      {
+        id: "marine",
+        type: "symbol",
+        source: "marine",
+        layout: {
+          "icon-image": [
+            "match",
+            ["get", "kind"],
+            "gnssa",
+            "marine-gnssa",
+            "marine-volcano",
+          ],
+          "icon-allow-overlap": true,
+          "icon-size": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            4,
+            0.9,
+            8,
+            1.2,
+            12,
+            1.5,
+          ],
         },
       },
       // 台湾の観測点のいまの揺れ (TREM-RTS)。見た目は下の stationLayer
