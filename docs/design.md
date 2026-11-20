@@ -796,7 +796,7 @@ VOICEVOX が止まっている・つながらないときは、画面が端末�
   - 道路規制情報 (`規制内容`・`規制開始_内容`・`路線名` などを持つ行) は、規制の内容が全面通行止めで、まだ解除されていないものだけを「通行止め (災害)」にする。解除は、`規制内容` の「通行止め解除」と、通れるマップの色で見分ける。県道などは解除されても `規制開始_内容` が「全面通行止」のまま残り、色だけが灰色 (`#999999`、凡例の「規制解除後」) になるため。「緊急車両のみ通行可」や紫の線 (属性の無い線) などは採らない
   - ETC2.0 の平均速度 (属性が `_color`・`_weight` だけの行) は、色で区分にする (凡例の橙 `#ff9900` が時速 20 km 以下、青 `#0000ff` が 21 km 以上)
   - 座標は 0.00001 度に丸め、吹き出しに使う項目 (路線名・区間・規制の内容と理由・始めた時刻・延長) と、ファイルの更新の時刻 (Last-Modified) だけを残す
-- **入れないもの:** 道路情報提供システム・NEXCO・VICS・JARTIC の渋滞と規制と、ITS Japan の通行実績は、有料か転載が禁じられているので取らない。「出典と注意」の窓に外へのリンクだけを置く (`#lib/map/roads.ts` の `ROAD_LINKS`)。熊本のデータ一式にある `tukoujisseki.geojson` (通行実績) も読まない。交通量 API は規約の 4 条があいまいなので入れない
+- **入れないもの:** 道路情報提供システム・NEXCO・VICS・JARTIC の渋滞と規制と、ITS Japan の通行実績は、有料か転載が禁じられているので取らない。このうち道路情報提供システム・JARTIC・NEXCO 3 社は、「出典と注意」の窓に外へのリンクだけを置く (`#lib/map/roads.ts` の `ROAD_LINKS`)。熊本のデータ一式にある `tukoujisseki.geojson` (通行実績) も読まない。交通量 API は規約の 4 条があいまいなので入れない
 - **配り方:** 画面は `/api/roads` を開いたときと 10 分ごとに読む。サーバーは置いてあるものを返すだけ。登録から外した URL のものは返さない
 - **画面:** 線の見た目と重ね順は [map.md](map.md) の「災害時の通行止め」。一覧・音・読み上げ・通知には使わない
 - **出典:** 「出典と注意」の窓・吹き出しの下・地図の source の `attribution` に「出典：国土交通省「通れるマップ」」と加工したこと。受信の状態には「国土交通省 (災害時の通行止め)」と並ぶ
@@ -877,7 +877,7 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 - **気象の警報・注意報と気象の報も、気象庁の発表を中継するだけにする。** 種類の名前・見出し・本文は電文のまま出し、段も電文の種類のコードから取る。地点の雨や風を予想したり、警報を自分で判断したりしない (警報は気象庁以外はできない、気象業務法 23 条)。出典は「気象庁ホームページ」
 - **雨雲は気象庁の観測の 1 枚をそのまま重ねるだけにする。** 高解像度降水ナウキャストの「いま」のタイルを、色も値も変えずに透かして重ね、いつの観測かを出す。外挿・合成・補間で先の雨を予想しない (観測資料に基づく独自の予想を繰り返し提供するのは予報業務で、気象業務法 17 条の許可が要る)。出典は「出典：気象庁ホームページ」と「気象庁「高解像度降水ナウキャスト」を加工して作成」([map.md](map.md) の「雨雲」)
 - **火山の警報は気象庁の文のまま出す。** 噴火警報・予報と噴火速報は、見出し・活動の状況・防災上の警戒事項を言い換えずに出し、警戒の段も電文の種類から取る (自分で警戒を判断しない。噴火の警報も気象庁以外はできない、気象業務法 23 条)。
-- **注意文と短い出典は一覧のいちばん下 (どちらの形も) に、出典の全文は「出典と注意」の窓にいつも出す。地図には短い出典を隅にいつも出す。** 文言は `src/lib/notice.ts` の `NOTICE`・`CREDITS`・`SHORT_CREDIT`・`mapCredit`・`EEW_NOTICE` の 1 か所に持つ。
+- **注意文と短い出典は一覧のいちばん下 (どちらの形も) に、出典の全文は「出典と注意」の窓にいつも出す。地図には短い出典を隅にいつも出す。** 文言は `src/lib/notice.ts` の `NOTICE`・`CREDITS`・`SHORT_CREDIT`・`mapCredit`・`EEW_NOTICE` に持つ (層の規約の文とリンク先は、層の部品 (`#lib/map/marine.ts` の `MSIL_DISCLAIMER`・`#lib/map/roads.ts` の `ROAD_LINKS` など) に置き、`notice.ts` が読む)。
   一覧の下は注意文と「出典: 気象庁ホームページ・国土地理院 ほか。全文は「出典と注意」にあります」(窓へのリンク) にし、全文を二重に並べない (2026-11-15。窓はヘッダーと「その他」からいつも開ける)。入れる理由と、規約の文言は次のとおり。
   - 気象庁の情報は加工して出しているので、「出典：気象庁ホームページ（URL）」と「気象庁「名称」（URL）を加工して作成」の形で書き、編集の責任を書く (気象庁の[留意事項](https://www.data.jma.go.jp/developer/ryuui.pdf)と[利用規約](https://www.jma.go.jp/jma/kishou/info/coment.html)。公共データ利用規約 第 1.0 版)
   - 利用者に見える形で Wolfx Project を出す (窓の出典と、緊急地震速報の詳しい内容の `EEW_NOTICE`)。2026-11-14 の改訂で出典の義務 (旧 6 条) は消えたが、どこから中継したかを利用者が分かるよう続ける (Wolfx の三条も、非公式で公的機関とつながりが無いと断る)。P2P地震情報は緊急地震速報と、地震情報・津波予報の速報 (気象庁の XML の前に出す仮のもの) に使う。Wolfx Project は地震情報の速報の予備 (P2P地震情報の予備) にも使い、窓の出典に「地震情報の速報 (P2P地震情報の予備)」の項目で出す
@@ -885,6 +885,8 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
     文言は[地理院タイル一覧](https://maps.gsi.go.jp/development/ichiran.html)の「「国土地理院」または「地理院タイル」等と記載し、地理院タイル一覧ページへのリンク」と、加工したものの「地理院タイルに○○を追記して掲載」に合わせる。写真は備考どおり GRUS 画像の範囲で「GRUS画像（© Axelspace）」、都市圏活断層図は調査者 (図ごとに違うので、国土地理院の各図の案内へのリンクと例)
   - ハザードマップは[出典の記載方法](https://disaportal.gsi.go.jp/hazardmap/copyright/copyright.html)の「出典：「ハザードマップポータルサイト」」と「「ハザードマップポータルサイト」を加工して作成」。元の機関 (国土交通省各地方整備局等・都道府県・国土数値情報) も書く
   - USGS は「courtesy of the U.S. Geological Survey」、EMSC は「EMSC-CSEM SeismicPortal, https://www.seismicportal.eu」(CC BY 4.0)
+  - 海しるは「出典：海洋状況表示システム（URL）」と、加工したこと、海しる API 利用規約 5 条の文 (2.11)
+  - 通れるマップは「出典：国土交通省「通れるマップ」」と、加工したこと (公共データ利用規約 1.0。2.12)。有料か転載禁止の道路交通の情報は取らず、外へのリンクだけを置く
   - 注意文は「公式ではない・遅れたり欠けたりする・公式の情報を優先する」の 3 つを言う。緊急地震速報の画面には、Wolfx と P2P のどちらも非公式で無保証であることも書く
 - **Wolfx:** 原文 (`OriginalText`) は保存も公開もしない (中身は気象庁の緊急地震速報の電文で、規約の五条で気象庁の条件に従う。配り直してよいと確かめられない)。
   2026-11-14 の改訂で、許可が要るのは `jma_eew` のデータを独立したデータ源として再配信することだけになった (二条)。sonae は受けたものを家族の画面と通知に出すだけで、ほかの人やアプリが使えるデータ源として出さないので、これに当たらない (二条の「最終利用者への表示・通知と、そのためのサーバーでの処理・通信・キャッシュ」)。
@@ -974,7 +976,7 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 
 - chart (`charts/sonae`): sonae の Deployment (レプリカ 1・Recreate・uid 1000・`/health` のプローブ (起きていることだけを見る。情報源の受信の状態は見ない))・Service・HTTPRoute か Ingress・PVC `sonae-data`・VOICEVOX のエンジン (公式のイメージ `voicevox/voicevox_engine:<バージョン>` (CPU 用) の Deployment・Service。CPU は絞らず (limits 無し・requests 2)、合成のスレッドはマシンの全部を使う (`voicevox.cpuThreads`)。メモリの上限 3Gi。PVC は持たない。イメージは Renovate が上げる)・NetworkPolicy (VOICEVOX は sonae の Pod からしか受けず外へ出ない。sonae の外向きは DNS と公開のインターネットと VOICEVOX だけ)。リソースの名前は素のマニフェストのころと同じにしてあり、変えない (PVC を作り直すとデータが消える)。
 - 家の値 (`deploy/application.yaml`): ホスト名 `s.doany.io` (Cilium Gateway の `doany`)、OIDC は docs/entra.md の表のとおり (Entra は共用の Main で、リダイレクト URI `https://s.doany.io/auth/callback` は gitops の `pulumi/entra.ts` で足した)、Secret は `sonae-secrets`、PVC は `local-path` 1Gi で `dataSourceRef` で VolSync から戻す、外向きの NetworkPolicy を出す。
-- chart に入れないもの (`deploy/` に素のまま): `argocd.yaml`・`volsync.yaml` (毎日 19:00 UTC に R2 へ)・`secrets.sops.yaml` (`oidc-client-secret` (Main の共用のもの)・VolSync の restic。VAPID の秘密鍵 `vapid-private-jwk` と中央氣象署の授権碼 `cwa-api-key`・海しるの API のキー `msil-api-key` は任意で、入れ方は docs/push.md と docs/cwa.md と 2.11)。R2 にまだバックアップが無い最初の 1 回は、populator が空の PVC を作る (gitops の recovery/README.md の 6)。`.sops.yaml` はほかのリポジトリと同じ鍵。この家の Argo CD は Secret を同期しないので、chart は Secret を作らず、名前 (`secrets.name`) で指す。
+- chart に入れないもの (`deploy/` に素のまま): `argocd.yaml`・`volsync.yaml` (毎日 19:30 UTC に R2 へ。時刻はアプリごとに gitops で散らしてある)・`secrets.sops.yaml` (`oidc-client-secret` (Main の共用のもの)・VolSync の restic。VAPID の秘密鍵 `vapid-private-jwk` と中央氣象署の授権碼 `cwa-api-key`・海しるの API のキー `msil-api-key` は任意で、入れ方は docs/push.md と docs/cwa.md と 2.11)。R2 にまだバックアップが無い最初の 1 回は、populator が空の PVC を作る (gitops の recovery/README.md の 6)。`.sops.yaml` はほかのリポジトリと同じ鍵。この家の Argo CD は Secret を同期しないので、chart は Secret を作らず、名前 (`secrets.name`) で指す。
   `secrets.name` の Secret に `oidc-client-secret` のキーが無いと、Pod は起動しない (`secretKeyRef` に `optional` を付けない。持ち主の決定、2026-11-19)。ログインの設定の漏れに、起動したときすぐ気づけるようにするため。付けると Pod は起動するが、画面は開かず `/health` だけ答えるので、漏れに気づくのが遅れる。任意の `vapid-private-jwk`・`cwa-api-key`・`msil-api-key` は `optional: true` で、無ければその機能だけを切って動く。
 - 環境変数 (chart の `templates/deployment.yaml`): `PUBLIC_URL` と `ORIGIN` (adapter-bun) はどちらも `sonae.publicUrl` (家は `https://s.doany.io`)。`CONNECTION_IDLE_TIMEOUT=255` (既定の 10 秒だと 30 秒ごとの `: ping` を待つ間に SSE が切れる)。`SHUTDOWN_TIMEOUT=5` (SSE は終わらないので長く待たない)。`VOICEVOX_URL=http://voicevox:50021` (2.4 の「読み上げ」)。
 - 外向きの NetworkPolicy は ashi と同じ形 (kube-dns と、プライベートでないアドレス全部)。クラスタに既定で閉じるポリシーは無いので、これが無くても外へは出られる。家の LAN とクラスタの中を閉じるために置く。DNS の Pod のラベルはクラスタで違うので、chart の既定では出さない。
