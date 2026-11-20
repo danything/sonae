@@ -103,10 +103,10 @@ test("層はいつも全部出す。淡色地図の下地は無い", () => {
     sources: Record<string, unknown>;
     layers: { id: string; layout?: { visibility?: string } }[];
   };
-  // ハザードマップの層と、ハザードマップを重ねている間だけ出す層のほかは、いつも出す
+  // 重ねる図 (ハザードマップと雨雲) の層と、ハザードマップを重ねている間だけ出す層のほかは、いつも出す
   const underHazard: string[] = [...SHOWN_UNDER_HAZARD];
   for (const l of style.layers)
-    if (!l.id.startsWith("hazard-"))
+    if (!l.id.startsWith("hazard-") && !l.id.startsWith("rain-"))
       expect(l.layout?.visibility ?? "visible").toBe(
         underHazard.includes(l.id) ? "none" : "visible",
       );
@@ -375,7 +375,7 @@ test("長周期地震動の枠: 階級 1 以上の地域だけを、階級の色
 });
 
 test("地図の style は MapLibre の決まりに合う (式の形の誤りで地図が出なくなるのを防ぐ)", () => {
-  for (const hazard of ["none", "flood", "faults"] as const) {
+  for (const hazard of ["none", "rain", "flood", "faults"] as const) {
     const errors = validateStyleMin(
       baseStyle("https://s.example", hazard) as never,
     );
