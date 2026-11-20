@@ -16,6 +16,7 @@
   } from "#lib/model.ts";
 
   import WarningLevel from "../WarningLevel.svelte";
+  import TyphoonSection from "./TyphoonSection.svelte";
 
   /**
    * 気象の報 (記録的短時間大雨情報・気象防災速報・竜巻注意情報・指定河川洪水予報・熱中症警戒アラート・台風情報)
@@ -105,6 +106,7 @@
         {/if}
       </dl>
     </section>
+    <TyphoonSection {w} />
   {/if}
 
   {#if w.text}

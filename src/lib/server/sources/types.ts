@@ -9,6 +9,7 @@ import type {
   Status,
   TsunamiArea,
   TsunamiObservation,
+  TyphoonProbability,
   Volcano,
   WeatherInfo,
   WeatherWarning,
@@ -49,6 +50,12 @@ export type Normalized =
   | { type: "longperiod"; report: LongPeriodReport }
   | { type: "warning"; warning: Omit<WeatherWarning, "updatedAt"> }
   | { type: "weather"; info: Omit<WeatherInfo, "updatedAt" | "cancelled"> }
+  /** 台風の暴風域に入る確率 (台風ごとに、いちばん新しい報だけを持つ) */
+  | {
+      type: "typhoonprob";
+      infoType: "発表" | "訂正" | "取消";
+      probability: TyphoonProbability;
+    }
   /** 原文を保存するだけで、読まない電文 (取る種別のうち、中身を使わないもの) */
   | { type: "other"; code: string };
 

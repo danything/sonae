@@ -943,6 +943,72 @@ export interface TyphoonNow {
   maxWindMs?: number;
   /** 最大瞬間風速 (m/s) */
   maxGustMs?: number;
+  /** 暴風域 (風速 25 m/s 以上)。無い台風は持たない。予報を読むようにする前に受けた報にも無い */
+  storm?: TyphoonCircle;
+  /** 強風域 (風速 15 m/s 以上) */
+  gale?: TyphoonCircle;
+}
+
+/**
+ * 円の半径 1 つ (電文の `jmx_eb:Axis`)。方向は 8 方位 (「北東」)。全域で同じなら方向は無い。
+ * 強風域が「北東 560 km・南西 440 km」のように片寄るときは、方向の違う 2 つが並ぶ
+ */
+export interface CircleAxis {
+  direction?: string;
+  km: number;
+}
+
+/** 台風の中心と、そこからの半径 (暴風域・強風域・予報円・暴風警戒域) */
+export interface TyphoonCircle {
+  lat: number;
+  lon: number;
+  axes: CircleAxis[];
+}
+
+/**
+ * 台風の予報 1 つ (台風解析・予報情報の 24 時間後などの予報)。気象庁の予報の値をそのまま持つ
+ * (docs/design.md の 2.8)
+ */
+export interface TyphoonForecast {
+  /** 何時間後の予報か (電文の DateTime の type の「２４時間後」の 24) */
+  hours: number;
+  /** 予報の時刻 (ISO 8601) */
+  time: string;
+  /** 予報円 (中心が 70% の確率で入る円)。中心は予報円の中心 */
+  circle: TyphoonCircle;
+  /** 暴風警戒域の半径 (予報円の中心から)。「なし」は持たない */
+  stormWarning?: CircleAxis[];
+  className?: string;
+  areaClass?: string;
+  intensityClass?: string;
+  location?: string;
+  direction?: string;
+  speed?: string;
+  pressureHpa?: number;
+  maxWindMs?: number;
+  maxGustMs?: number;
+}
+
+/**
+ * 台風の暴風域に入る確率 (VPTA50〜55) の、いちばん新しい報 1 つ。地域は市町村等をまとめた地域 (6 桁。
+ * 電文の 375 の地域)。どの時刻も 0% の地域は持たない (電文は全部の地域を並べるので、無ければ 0%)
+ */
+export interface TyphoonProbability {
+  /** 一連の情報の鍵 (`typhoon-TC2001`。台風解析・予報情報の series と同じ) */
+  series: string;
+  status: Status;
+  reportedAt: string;
+  /** 確率の起点の時刻 */
+  baseTime: string;
+  /** 台風番号と名前 */
+  number?: string;
+  name?: string;
+  /** 3 時間ごとの区切りの始まりの時刻 (ISO 8601)。並びは `areas` の `steps` と同じ */
+  stepTimes: string[];
+  /** 積算の時間 (24・48・72・96・120)。並びは `areas` の `days` と同じ */
+  dayHours: number[];
+  /** 地域のコード → 名前と、3 時間ごと・積算の確率 (%) */
+  areas: Record<string, { name: string; steps: number[]; days: number[] }>;
 }
 
 /** 気象の、報ごとの情報 1 つ。報ごとに 1 行で、一覧には新しい順に並べる */
@@ -973,6 +1039,8 @@ export interface WeatherInfo {
    */
   areas: { code: string; name: string }[];
   typhoon?: TyphoonNow;
+  /** 台風の予報 (時刻の順)。予報の無い報 (消滅) と、前に受けた報には無い */
+  typhoonForecasts?: TyphoonForecast[];
   /**
    * 指定河川洪水予報の水位観測所ごとの、実況と予想の水位 (電文の「水位・流量情報」)。基準観測所を先に並べる。
    * 水位を持つようにした変更 (#359) より前に受けた報には無い

@@ -131,6 +131,13 @@
     warningFill,
   } from "#lib/map/style.ts";
   import {
+    nearestTyphoonPoint,
+    typhoonBounds,
+    typhoonFeatures,
+    type TyphoonPoint,
+    typhoonPopup,
+  } from "#lib/map/typhoon.ts";
+  import {
     cityLevels,
     cityWarnings,
     type Eew,
@@ -140,6 +147,7 @@
     type Quake,
     type Tsunami,
     type Volcano,
+    type WeatherInfo,
     type WeatherWarning,
   } from "#lib/model.ts";
   import { mapCredit, showsGrus } from "#lib/notice.ts";
@@ -167,6 +175,8 @@
     seisStations = [],
     seis = null,
     warnings = [],
+    typhoons = [],
+    typhoon = null,
     office = null,
     officeHref,
     onoffice,
@@ -188,6 +198,10 @@
     onstations?: (r: { id: string; missing: string[] } | null) => void;
     /** いまの気象警報・注意報 (市町村等を段の色で塗る。押すと吹き出し) */
     warnings?: WeatherWarning[];
+    /** 地図に描く台風 (台風ごとにいちばん新しい報。`#lib/map/typhoon.ts` の `typhoonsOnMap`) */
+    typhoons?: WeatherInfo[];
+    /** 一覧で選んだ台風の報 (線を太くし、予報円が収まるよう寄せる) */
+    typhoon?: WeatherInfo | null;
     /** 一覧で選んだ府県予報区のコード (その市町村等を縁取り、寄せる) */
     office?: string | null;
     /** 府県予報区の警報・注意報の詳しい内容のリンク (一覧の行と同じ `?w=office-<コード>`) */
@@ -343,6 +357,9 @@
           // 海しるの点 (観測点の丸の下に描いている)
           const mk = marineHit(e.point, e.originalEvent);
           if (mk) return openMarine(mk.properties, mk.at);
+          // 台風の実況の中心と予報円の中心 (海しるの点の下、通行止めの線の上に描いている)
+          const ty = typhoonHit(e.point, e.originalEvent);
+          if (ty) return openTyphoon(ty.properties, ty.at);
           // 災害時の通行止めと通れた道 (目安) の線 (点の下に描いている)
           const rd = roadHit(e.point, e.originalEvent);
           if (rd) return openRoad(rd, e.lngLat);
@@ -372,6 +389,7 @@
               .length > 0 ||
             stationHit(e.point, e.originalEvent) ||
             marineHit(e.point, e.originalEvent) ||
+            typhoonHit(e.point, e.originalEvent) ||
             roadHit(e.point, e.originalEvent) ||
             epicenterHit(e.point, e.originalEvent)
           )
@@ -587,6 +605,26 @@
     onstations?.(quake && r ? { id: quake.id, missing: r.missing } : null);
     // 開いている吹き出しは前の地震 (前の報) の中身なので閉じる
     stationPopup?.remove();
+  });
+
+  // 台風の予報円・暴風警戒域・暴風域・強風域と中心 (docs/map.md の「台風」)。中身が変わったときだけ差し替える
+  let typhoonSig = "";
+  const typhoonById = new Map<string, WeatherInfo>();
+  $effect(() => {
+    if (!map) return;
+    const next = sig(
+      typhoons.map((w) => [w.id, w.updatedAt]),
+      typhoon?.series ?? null,
+    );
+    if (next === typhoonSig) return;
+    typhoonSig = next;
+    typhoonById.clear();
+    for (const w of typhoons) typhoonById.set(w.id, w);
+    const f = typhoonFeatures(typhoons, typhoon?.series ?? null);
+    setData(map, "typhoon", f.lines);
+    setData(map, "typhoon-points", f.points);
+    // 前の中身の吹き出しは閉じる
+    untrack(() => typhoonPopupEl?.remove());
   });
 
   // 台湾の観測点 (TREM-RTS)。地震の間は 0.5 秒ごとに替わるので、この点だけを差し替える
@@ -1409,6 +1447,7 @@
     "shelters",
     "intensity-stations",
     "marine",
+    "typhoon-center",
     "road-closed",
     "road-speed",
     "hypocenters",
@@ -1469,6 +1508,7 @@
     warningPopup?.remove();
     stationPopup?.remove();
     marinePopupEl?.remove();
+    typhoonPopupEl?.remove();
     roadPopupEl?.remove();
   }
 
@@ -1625,6 +1665,64 @@
     }
     closePopups();
     marinePopupEl = new PopupClass(popupOptions())
+      .setLngLat(at)
+      .setDOMContent(box)
+      .addTo(map);
+  }
+
+  // ---- 台風の中心 (docs/map.md の「台風」) ----
+  /** 押した所の台風の中心か予報円の中心。海しるの点と同じく、押せる範囲は点より広い (指 22px・マウス 10px) */
+  function typhoonHit(
+    pt: { x: number; y: number },
+    ev: MouseEvent | TouchEvent | undefined,
+  ): { properties: TyphoonPoint; at: [number, number] } | undefined {
+    const m = map;
+    if (!m?.getLayer("typhoon-center")) return undefined;
+    const kind = (ev as PointerEvent | undefined)?.pointerType;
+    const r =
+      kind === "touch" ||
+      (!kind &&
+        typeof matchMedia === "function" &&
+        matchMedia("(pointer: coarse)").matches)
+        ? 22
+        : 10;
+    const hits = m
+      .queryRenderedFeatures(
+        [
+          [pt.x - r, pt.y - r],
+          [pt.x + r, pt.y + r],
+        ],
+        { layers: ["typhoon-center"] },
+      )
+      .flatMap((f) => {
+        if (f.geometry.type !== "Point") return [];
+        const at = f.geometry.coordinates as [number, number];
+        const p = m.project(at);
+        const d2 = (p.x - pt.x) ** 2 + (p.y - pt.y) ** 2;
+        const props = f.properties as TyphoonPoint;
+        return d2 <= r * r
+          ? [{ properties: props, at, d2, index: Number(props.index) }]
+          : [];
+      });
+    return nearestTyphoonPoint(hits);
+  }
+
+  /** 押した中心の名前・号数・中心気圧・最大風速・予報の時刻 (`typhoonPopup` が組んだ中身)。DOM で組み、HTML として読まない */
+  let typhoonPopupEl: Popup | undefined;
+  function openTyphoon(p: TyphoonPoint, at: [number, number]): void {
+    const w = typhoonById.get(String(p.id));
+    if (!map || !PopupClass || !w) return;
+    const box = document.createElement("div");
+    box.className = "station-pop";
+    box.dataset.testid = "typhoon-pop";
+    for (const line of typhoonPopup(w, Number(p.index), jst)) {
+      const el = document.createElement("p");
+      if (line.cls) el.className = line.cls;
+      el.textContent = line.text;
+      box.append(el);
+    }
+    closePopups();
+    typhoonPopupEl = new PopupClass(popupOptions())
       .setLngLat(at)
       .setDOMContent(box)
       .addTo(map);
@@ -1822,6 +1920,8 @@
               .flatMap((w) => w.areas.map((a) => a.code)),
           )
         : undefined;
+    // 選んだ台風は、いまの強風域と予報円・暴風警戒域が収まるように (続報では寄せ直さない)
+    const ty = !eew && !vm && !fq && !office ? typhoon : null;
     const key = eew
       ? `eew:${eew.eventId}`
       : vm
@@ -1830,7 +1930,39 @@
           ? `foreign:${fq.id}`
           : office
             ? `office:${office}`
-            : `quake:${quake?.id ?? ""}`;
+            : ty
+              ? `typhoon:${ty.series}`
+              : `quake:${quake?.id ?? ""}`;
+    if (ty) {
+      if (key === focused) return;
+      // 5 日先の予報円は大きいので、低い地図 (スマホの形の一覧のタブ) で全部を収めると世界が見えるほど引いてしまう。
+      // ズーム 3.5 に収まらなければ、72 時間後・24 時間後までに縮めて、いまの中心に近い所を見せる
+      const m = map;
+      const camFor = (h: number) => {
+        const b = typhoonBounds(ty, h);
+        return b
+          ? m.cameraForBounds(
+              [
+                [b[0], b[1]],
+                [b[2], b[3]],
+              ],
+              { padding: focusPadding() },
+            )
+          : undefined;
+      };
+      const cam = [Number.POSITIVE_INFINITY, 72, 24]
+        .map(camFor)
+        .find((c, i, all) => (c?.zoom ?? 0) >= 3.5 || i === all.length - 1);
+      if (!cam) return;
+      focused = key;
+      remember();
+      // 小さな熱帯低気圧でも寄せすぎない (まわりの陸が分かるように)
+      map.jumpTo({
+        ...cam,
+        zoom: Math.max(3.5, Math.min(cam.zoom ?? 5, 6)),
+      });
+      return;
+    }
     if (office && !eew && !vm && !fq) {
       if (!ob) return;
       if (key === focused) return;

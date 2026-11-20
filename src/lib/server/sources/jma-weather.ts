@@ -23,6 +23,11 @@ import {
 } from "#lib/model.ts";
 
 import {
+  readForecasts,
+  readNowAreas,
+  readTyphoonProbability,
+} from "./jma-typhoon.ts";
+import {
   at,
   attr,
   child,
@@ -64,6 +69,7 @@ export const WEATHER_CODES: ReadonlySet<string> = new Set<string>([
   "VPFT50",
   ...range("VXKO", 50, 89),
   ...range("VPTW", 60, 65),
+  ...range("VPTA", 50, 55),
 ]);
 
 /** その時点の状態をまるごと持つ種別 (府県予報区ごとに、いちばん新しい電文だけを取る) */
@@ -288,6 +294,10 @@ function readTyphoon(body: V): TyphoonNow | undefined {
     pressureHpa: num(textAt(center, "jmx_eb:Pressure")),
     maxWindMs: ms("最大風速"),
     maxGustMs: ms("最大瞬間風速"),
+    ...readNowAreas(now, {
+      lat: m ? Number(m[1]) : undefined,
+      lon: m ? Number(m[2]) : undefined,
+    }),
   };
 }
 
@@ -330,6 +340,24 @@ export function parseWeatherXml(xml: string, code: string): Normalized[] {
           areas: w.areas,
           released: w.released,
         },
+      },
+    ];
+  }
+
+  // 台風の暴風域に入る確率。一覧には並べず、台風の詳しい内容に出す (docs/design.md の 2.8)
+  if (/^VPTA5[0-5]$/.test(code)) {
+    const { eventId, ...p } = readTyphoonProbability(
+      head,
+      body,
+      status,
+      reportedAt,
+    );
+    if (!eventId) throw new Error("EventID がありません");
+    return [
+      {
+        type: "typhoonprob",
+        infoType: infoTypeOf(textAt(head, "InfoType")),
+        probability: { ...p, series: `typhoon-${eventId}${suffix}` },
       },
     ];
   }
@@ -386,6 +414,7 @@ export function parseWeatherXml(xml: string, code: string): Normalized[] {
       kindName,
       areas,
       typhoon: kind === "typhoon" ? readTyphoon(body) : undefined,
+      typhoonForecasts: kind === "typhoon" ? readForecasts(body) : undefined,
       stations: kind === "flood" ? readStations(body) : undefined,
     };
     return [{ type: "weather", info }];
