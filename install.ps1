@@ -269,7 +269,11 @@ function Initialize-Env([string]$Bun, [string]$Work) {
                     '# 外から https で開くなら、その URL (ログインの戻り先と Webhook の本文のリンクに使う)',
                     '# PUBLIC_URL=https://sonae.example.com',
                     '# 台湾の中央氣象署の授権碼 (docs/cwa.md)',
-                    '# CWA_API_KEY='
+                    '# CWA_API_KEY=',
+                    '# 海しる (海上保安庁) の API のキー。無ければ海しるの点を出さない (docs/design.md の 2.11)',
+                    '# MSIL_API_KEY=',
+                    '# 災害時の通行止め。国土交通省の「通れるマップ」の GeoJSON の URL (https の *.go.jp。カンマか空白で区切る。docs/design.md の 2.12)',
+                    '# SONAE_ROAD_GEOJSON='
                 ) -join "`n") + "`n")
     }
     if (-not (Test-EnvKey $envFile 'VAPID_PRIVATE_JWK')) {
