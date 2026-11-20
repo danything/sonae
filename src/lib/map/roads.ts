@@ -95,13 +95,17 @@ export function jstShort(iso: string): string {
 }
 
 /**
- * 押した線の吹き出しの中身 (上から)。通行止めは路線名・区間・規制の内容と理由・始めた時刻・延長・更新の時刻、
- * 通れた道は平均速度の区分と更新の時刻。文は DOM で組み、HTML として読まない
+ * 押した線の吹き出しの中身 (上から)。通行止めは路線名・区間・規制の内容と理由・始めた時刻・延長・更新の時刻・出典、
+ * 通れた道は平均速度の区分と更新の時刻・出典。文は DOM で組み、HTML として読まない
  */
 export function roadPopup(p: RoadLine): PopupLine[] {
   const updated = {
     text: `${jstShort(p.updated)} 更新 (国土交通省)`,
     cls: "small muted",
+  };
+  const credit = {
+    text: "出典：国土交通省「通れるマップ」を加工して作成",
+    cls: "tiny muted",
   };
   if (p.kind === "speed")
     return [
@@ -117,6 +121,7 @@ export function roadPopup(p: RoadLine): PopupLine[] {
         cls: "tiny muted",
       },
       updated,
+      credit,
     ];
   const lines: PopupLine[] = [
     { text: p.route ?? "道路", cls: "bold" },
@@ -129,10 +134,6 @@ export function roadPopup(p: RoadLine): PopupLine[] {
     p.lengthKm !== undefined ? `延長 ${p.lengthKm} km` : "",
   ].filter(Boolean);
   if (why.length > 0) lines.push({ text: why.join("・"), cls: "small muted" });
-  lines.push(updated);
-  lines.push({
-    text: "出典：国土交通省「通れるマップ」を加工して作成",
-    cls: "tiny muted",
-  });
+  lines.push(updated, credit);
   return lines;
 }
