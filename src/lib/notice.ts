@@ -3,6 +3,7 @@
  */
 import { MSIL_DISCLAIMER, MSIL_SITE } from "#lib/map/marine.ts";
 import { RAIN_PAGE } from "#lib/map/rain.ts";
+import { MLIT_ROAD_DISASTER, ROAD_LINKS } from "#lib/map/roads.ts";
 
 export const NOTICE =
   "このアプリは気象庁の公式のものではありません。情報は遅れたり欠けたりすることがあります。身の安全に関わる判断は、気象庁・自治体・テレビやラジオの公式の情報を優先してください。";
@@ -174,6 +175,23 @@ export const CREDITS: Credit[] = [
       `${MSIL_DISCLAIMER}。`,
       "海しるの API のキーがあるサーバーでだけ出します",
     ],
+  },
+  {
+    // 公共データ利用規約 1.0 の出典の書き方 (出典と、加工したこと)
+    label: "災害時の通行止め・通れた道 (目安)",
+    parts: [
+      "出典：国土交通省「",
+      { text: "通れるマップ", href: MLIT_ROAD_DISASTER },
+      "」(災害ごとのページ。道路規制情報・ETC2.0速度データ)。国土交通省のデータを加工して作成 (全面通行止めで解除されていない区間と、平均速度の区分を選んで表示)。サーバーの管理者が災害の URL を登録したときだけ出します。ここに無くても通れるとは限りません",
+    ],
+  },
+  {
+    // 有料か転載が禁じられているので、データは取らずにリンクだけを置く (docs/design.md の 2.12)
+    label: "渋滞・通行規制 (外のサイト)",
+    parts: ROAD_LINKS.flatMap((l, i) => [
+      ...(i > 0 ? ["・"] : []),
+      { text: l.text, href: l.href },
+    ]).concat(["。sonae には取り込んでいません"]),
   },
   {
     label: "緊急地震速報",

@@ -1,5 +1,3 @@
-| `MSIL_API_KEY` | 海しる (海上保安庁) の API のキー ([design.md の 2.11](design.md#211-海しるの点の層-海底地殻変動観測点海域火山))。無ければ海しるの点の層 (海底地殻変動観測点・海域火山) だけを出さない |
-
 # 立てる
 
 Mac と Windows でインストーラがすることと置き場は [install-mac.md](install-mac.md) と [install-windows.md](install-windows.md)。Kubernetes (Helm chart) は [README](../README.md#kubernetes-に立てる-helm-chart)。
@@ -117,18 +115,20 @@ Windows は cmd が読むので、値に `"`・`&`・`^`・`%` を入れると�
 
 置き場・ポート・VOICEVOX の宛先はインストーラが決めるので、書いても効きません (Linux は `compose.override.yml` で変えられる)。
 
-| 名前                                                       | 中身                                                                                                                                                                                   |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `TRUSTED_NETWORKS`・`ALLOWED_HOSTS`・`TRUSTED_PROXIES`     | ログインなしで開ける範囲 (上の「ログイン」)                                                                                                                                            |
-| `OIDC_ISSUER`・`OIDC_CLIENT_ID`・`OIDC_CLIENT_SECRET` など | ログイン ([entra.md](entra.md))                                                                                                                                                        |
-| `PUBLIC_URL`                                               | 外から https で開くときの URL。ログインの戻り先と Webhook の本文のリンクに使う                                                                                                         |
-| `VAPID_PRIVATE_JWK`・`VAPID_SUBJECT`                       | Web Push の鍵と連絡先 (下の「Web Push の鍵」と [push.md](push.md))                                                                                                                     |
-| `CWA_API_KEY`                                              | 台湾の中央氣象署の授権碼 ([cwa.md](cwa.md))。無ければ中央氣象署の受信だけを切る                                                                                                        |
-| `SONAE_TRAINING=on`                                        | 緊急地震速報の訓練・試験も一覧と地図に出す。既定は出さない。出しても音・読み上げ・通知・Web Push・Webhook では知らせない ([design.md の 2.2](design.md#22-正規化したイベントのモデル)) |
-| `SONAE_TREM=off`                                           | 台湾の観測点の揺れ (ExpTech の TREM-RTS) を受けない。商用で立てて ExpTech の同意が無いときは切る ([README の「ライセンス」](../README.md#ライセンス))                                  |
-| `SONAE_SEISJS=off`                                         | 有志の観測点の揺れ (Wolfx SeisJS) を受けない。受けると 1 日 800MB ほど使うので、回線の量が気になるときは切る ([design.md の 2.10](design.md#210-有志の観測点の揺れ-wolfx-seisjs))      |
-| `SONAE_TIDE_PROBE=off`                                     | 津波・大きな地震・波浪警報の間に、気象庁の潮位観測情報の遅れを測らない ([design.md の「情報源の判断」にある「測り直し」](design.md#情報源の判断))                                      |
-| `SONAE_RECEIVE=off`                                        | 情報源につながない (画面だけ触りたいとき)                                                                                                                                              |
+| 名前                                                       | 中身                                                                                                                                                                                                                                           |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TRUSTED_NETWORKS`・`ALLOWED_HOSTS`・`TRUSTED_PROXIES`     | ログインなしで開ける範囲 (上の「ログイン」)                                                                                                                                                                                                    |
+| `OIDC_ISSUER`・`OIDC_CLIENT_ID`・`OIDC_CLIENT_SECRET` など | ログイン ([entra.md](entra.md))                                                                                                                                                                                                                |
+| `PUBLIC_URL`                                               | 外から https で開くときの URL。ログインの戻り先と Webhook の本文のリンクに使う                                                                                                                                                                 |
+| `VAPID_PRIVATE_JWK`・`VAPID_SUBJECT`                       | Web Push の鍵と連絡先 (下の「Web Push の鍵」と [push.md](push.md))                                                                                                                                                                             |
+| `CWA_API_KEY`                                              | 台湾の中央氣象署の授権碼 ([cwa.md](cwa.md))。無ければ中央氣象署の受信だけを切る                                                                                                                                                                |
+| `MSIL_API_KEY`                                             | 海しる (海上保安庁) の API のキー ([design.md の 2.11](design.md#211-海しるの点の層-海底地殻変動観測点海域火山))。無ければ海しるの点の層 (海底地殻変動観測点・海域火山) だけを出さない                                                         |
+| `SONAE_ROAD_GEOJSON`                                       | 災害時の通行止め。国土交通省が災害ごとに出す「通れるマップ」の GeoJSON の URL (https の `*.go.jp`。カンマか空白で区切る)。サーバーが 30 分ごとに取り、地図に出す。書かなければ何もしない ([design.md の 2.12](design.md#212-災害時の通行止め)) |
+| `SONAE_TRAINING=on`                                        | 緊急地震速報の訓練・試験も一覧と地図に出す。既定は出さない。出しても音・読み上げ・通知・Web Push・Webhook では知らせない ([design.md の 2.2](design.md#22-正規化したイベントのモデル))                                                         |
+| `SONAE_TREM=off`                                           | 台湾の観測点の揺れ (ExpTech の TREM-RTS) を受けない。商用で立てて ExpTech の同意が無いときは切る ([README の「ライセンス」](../README.md#ライセンス))                                                                                          |
+| `SONAE_SEISJS=off`                                         | 有志の観測点の揺れ (Wolfx SeisJS) を受けない。受けると 1 日 800MB ほど使うので、回線の量が気になるときは切る ([design.md の 2.10](design.md#210-有志の観測点の揺れ-wolfx-seisjs))                                                              |
+| `SONAE_TIDE_PROBE=off`                                     | 津波・大きな地震・波浪警報の間に、気象庁の潮位観測情報の遅れを測らない ([design.md の「情報源の判断」にある「測り直し」](design.md#情報源の判断))                                                                                              |
+| `SONAE_RECEIVE=off`                                        | 情報源につながない (画面だけ触りたいとき)                                                                                                                                                                                                      |
 
 読み上げの声と通知の条件・Webhook は環境変数では決めず、画面の「通知」で選びます (声を選んでいなければ剣崎雌雄で読む)。
 前の `VOICEVOX_SPEAKER` (chart の `sonae.voicevoxSpeaker`) は読みません。

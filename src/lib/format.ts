@@ -103,6 +103,7 @@ export const SOURCE_LABEL: Record<SourceId, string> = {
   trem: "ExpTech TREM (台湾の観測点の揺れ・非公式)",
   seisjs: "Wolfx SeisJS (有志の観測点の揺れ・非公式)",
   msil: "海しる (海上保安庁。海底地殻変動観測点・海域火山)",
+  roads: "国土交通省 (災害時の通行止め)",
 };
 
 const SOURCE_STATE: Record<SourceStatus["state"], string> = {

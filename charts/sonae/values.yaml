@@ -38,6 +38,10 @@ sonae:
   # 緊急地震速報の訓練・試験も一覧と地図に出す。true で SONAE_TRAINING=on。出しても音・読み上げ・Web Push・
   # Webhook では知らせない (docs/design.md の 2.2)
   training: false
+  # 災害時の通行止め。国土交通省が災害ごとに出す「通れるマップ」などの GeoJSON の URL (https の *.go.jp)。
+  # 書くと SONAE_ROAD_GEOJSON に渡し、サーバーが 30 分ごとに取って地図に出す。空なら何もしない (docs/design.md の 2.12)
+  # 例: ["https://www.mlit.go.jp/road/saigai/r8kumamoto/map/json/dourokisei.geojson"]
+  roadGeojson: []
   # 追加の環境変数。そのまま container.env に入る。例: 信頼するネットワークの `TRUSTED_NETWORKS`・`TRUSTED_PROXIES`・
   # `ALLOWED_HOSTS` (docs/install.md の「ログイン」)、商用で立てるときに台湾の TREM-RTS の受信を切る `SONAE_TREM=off` (README)、
   # 回線の量 (1 日 800MB ほど) を減らしたいときに有志の観測点の揺れ (Wolfx SeisJS) を切る `SONAE_SEISJS=off` (docs/install.md)、
