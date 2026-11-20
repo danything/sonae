@@ -1064,6 +1064,8 @@ export interface WarningOutlook {
   status: Status;
   reportedAt: string;
   title: string;
+  /** この報が見ている日 (日本時間の暦日。明後日までと明々後日以降が重なる日は、明後日までの報を採る) */
+  dates: string[];
   /** 一次細分区域ごと (明々後日以降は府県予報区ごとのこともある)。高・中のある現象だけ */
   areas: { code: string; name: string; kinds: OutlookKind[] }[];
   updatedAt: string;
@@ -1082,13 +1084,20 @@ export function outlookFor(
   place: { office: string | null; ichiji: string | null },
 ): { date: string; kinds: { name: string; rank: OutlookRank }[] }[] {
   const byDate = new Map<string, Map<string, OutlookRank>>();
-  for (const o of outlooks) {
-    if (o.status !== "normal" || o.office.code !== place.office) continue;
+  const mine = outlooks.filter(
+    (o) => o.status === "normal" && o.office.code === place.office,
+  );
+  // 明後日までの報が見ている日は、明々後日以降の報を使わない (明後日までのほうが新しく細かい)
+  const near = new Set(
+    mine.filter((o) => o.code === "VPFD61").flatMap((o) => o.dates ?? []),
+  );
+  for (const o of mine) {
     const area =
       o.areas.find((a) => a.code === place.ichiji) ??
       o.areas.find((a) => a.code === place.office);
     for (const k of area?.kinds ?? [])
       for (const d of k.days) {
+        if (o.code === "VPFW60" && near.has(d.date)) continue;
         const m = byDate.get(d.date) ?? new Map<string, OutlookRank>();
         if (outlookRank(d.rank) > outlookRank(m.get(k.name)))
           m.set(k.name, d.rank);

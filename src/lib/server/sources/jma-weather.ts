@@ -516,6 +516,15 @@ export function parseWeatherXml(
           status,
           reportedAt,
           title,
+          // 時刻は +09:00 で来るので、先頭の 10 字が日本時間の日付
+          dates: [
+            ...new Set(
+              [...descendants(body)]
+                .filter(([name]) => name === "TimeDefine")
+                .map(([, d]) => (textAt(d, "DateTime") ?? "").slice(0, 10))
+                .filter(Boolean),
+            ),
+          ].sort(),
           areas,
         },
       },

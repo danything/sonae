@@ -103,6 +103,23 @@ describe("住んでいる地域の警報級の可能性", () => {
       { name: "大雨", rank: "中" },
       { name: "土砂災害", rank: "中" },
     ]);
+    // 明後日までの報が見ている日 (21〜23 日) は、明々後日以降の報を使わない
+    expect(a.dates).toEqual(["2024-09-21", "2024-09-22", "2024-09-23"]);
+    const overlap: WarningOutlook = {
+      ...b,
+      areas: [
+        {
+          code: "370000",
+          name: "香川県",
+          kinds: [{ name: "雨", days: [{ date: "2024-09-23", rank: "高" }] }],
+        },
+      ],
+    };
+    expect(
+      outlookFor([a, overlap], { office: "370000", ichiji: "370000" }).map(
+        (d) => d.date,
+      ),
+    ).toEqual(["2024-09-21", "2024-09-22"]);
     // ほかの府県予報区は当たらない
     expect(outlookFor([a, b], { office: "130000", ichiji: "130010" })).toEqual(
       [],
