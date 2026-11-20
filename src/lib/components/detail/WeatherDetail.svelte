@@ -135,7 +135,7 @@
             <tr><th>時刻</th><th>実況・予想</th><th class="num">水位</th></tr>
           </thead>
           <tbody>
-            {#each s.levels as l (l.time)}
+            {#each s.levels as l, i (i)}
               <tr>
                 <td>{jst(l.time)}</td>
                 <td>{kindText(l.label)}</td>

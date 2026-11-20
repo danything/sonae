@@ -896,7 +896,7 @@ export interface WeatherInfo {
   typhoon?: TyphoonNow;
   /**
    * 指定河川洪水予報の水位観測所ごとの、実況と予想の水位 (電文の「水位・流量情報」)。基準観測所を先に並べる。
-   * 2026-11-21 より前に受けた報には無い
+   * 水位を持つようにした変更 (#359) より前に受けた報には無い
    */
   stations?: RiverStation[];
   cancelled: boolean;
