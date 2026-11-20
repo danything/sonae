@@ -245,6 +245,26 @@ export const kindText = (name: string) =>
     String.fromCharCode(c.charCodeAt(0) - 0xfee0),
   );
 
+/** 水位 (m)。電文と同じ小数 2 桁。値の無いもの (欠測など) は「—」 */
+export const waterLevelText = (m: number | undefined) =>
+  m === undefined ? "—" : `${m.toFixed(2)} m`;
+
+/**
+ * 一覧の行に添える、基準観測所の実況の水位 (「上川沿 6.19 m (14:50)」)。
+ * 基準観測所が無い・実況の値が無いときは空
+ */
+export function floodStationsText(w: Pick<WeatherInfo, "stations">): string {
+  return (w.stations ?? [])
+    .filter((s) => s.base)
+    .flatMap((s) => {
+      const now = s.levels[0];
+      return now?.m === undefined
+        ? []
+        : [`${s.name} ${waterLevelText(now.m)} (${jstTime(now.time)})`];
+    })
+    .join("・");
+}
+
 /**
  * 気象の報のタイトル。台風は電文の題名がどれも「台風解析・予報情報」なので、台風番号と名前にする
  * (「台風第 32 号 CEMPAKA」。番号の上 2 桁は年)

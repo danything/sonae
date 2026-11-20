@@ -960,6 +960,20 @@ export function collapseNotes<T extends Pick<WeatherInfo, "kind" | "series">>(
   });
 }
 
+/**
+ * 一覧で「すべて」を出しているときに隠す、ほかの府県の解説 (府県気象解説情報 VPFJ51 と府県の潮位の解説 VMCJ55)。
+ * 全国で 1 日に数十通出て一覧を埋めるので、住んでいる地域の府県予報区・一次細分区域 (どちらも電文の地域と同じ
+ * 「府県予報区・細分区域等」のコード) のものだけを出す。住んでいる地域を選んでいなければ全部を隠す (docs/ui.md)
+ */
+export function isFarNote(
+  x: Pick<WeatherInfo, "code" | "areas">,
+  home: { office: string | null; ichiji: string | null } | null,
+): boolean {
+  if (x.code !== "VPFJ51" && x.code !== "VMCJ55") return false;
+  if (!home) return true;
+  return !x.areas.some((a) => a.code === home.ichiji || a.code === home.office);
+}
+
 /** 解説の情報の本文の 1 つの節 (「気象概況」「防災事項」「雨の予想」など。行は電文の文のまま) */
 export interface WeatherSection {
   title: string;
@@ -1023,8 +1037,34 @@ export interface WeatherInfo {
    */
   areas: { code: string; name: string }[];
   typhoon?: TyphoonNow;
+  /**
+   * 指定河川洪水予報の水位観測所ごとの、実況と予想の水位 (電文の「水位・流量情報」)。基準観測所を先に並べる。
+   * 水位を持つようにした変更 (#359) より前に受けた報には無い
+   */
+  stations?: RiverStation[];
   cancelled: boolean;
   updatedAt: string;
+}
+
+/** 指定河川洪水予報の水位観測所 1 つ (docs/design.md の 2.8) */
+export interface RiverStation {
+  /** 観測所の名前 (「上川沿」) とコード (17 桁) */
+  name: string;
+  code: string;
+  /** 所在地 (「北見市」) */
+  location?: string;
+  /** 主文で名前の出る基準観測所か */
+  base: boolean;
+  /** 実況と予想の水位。電文の時刻の順 (先頭は「現況」)。欠測は m が無い */
+  levels: {
+    /** 時刻 (ISO 8601) */
+    time: string;
+    /** 電文の時刻の名前 (「現況」「１時間後」) */
+    label: string;
+    m?: number;
+  }[];
+  /** 基準の水位 (「レベル２氾濫注意水位」など。電文の名前のまま) */
+  criteria: { name: string; m: number }[];
 }
 
 /**

@@ -15,6 +15,7 @@ import {
   type OutlookKind,
   type OutlookRank,
   outlookRank,
+  type RiverStation,
   type TyphoonNow,
   WARNING_CODES,
   type WarningArea,
@@ -392,6 +393,87 @@ export function readOutlook(body: V): WarningOutlook["areas"] {
   return out;
 }
 
+/**
+ * 指定河川洪水予報の水位観測所ごとの実況と予想の水位 (解説資料の「水位・流量情報」)。
+ * 基準観測所は Warning の Item の Stations にある観測所 (主文で名前の出るもの)。
+ * 基準の水位は AdditionalInfo の FloodForecastAddition の Criteria (有効のものだけ)。
+ * 水位の「レベル」(段の数) は意味を解説資料で確かめていないので持たない
+ */
+function readStations(body: V): RiverStation[] {
+  const base = new Set(
+    children(
+      children(body, "Warning").find(
+        (w) => attr(w, "type") === "指定河川洪水予報",
+      ),
+      "Item",
+    )
+      .flatMap((i) => children(child(i, "Stations"), "Station"))
+      .map((s) => textAt(s, "Code"))
+      .filter((c): c is string => !!c),
+  );
+  const criteria = new Map<string, { name: string; m: number }[]>();
+  for (const part of children(
+    at(body, "AdditionalInfo/FloodForecastAddition"),
+    "HydrometricStationPart",
+  )) {
+    const code = textAt(part, "Area/Code");
+    if (!code) continue;
+    criteria.set(
+      code,
+      children(child(part, "Criteria"), "jmx_eb:WaterLevel").flatMap((w) => {
+        const name = attr(w, "type");
+        const m = num(text(w));
+        return name && m !== undefined && attr(w, "condition") !== "無効"
+          ? [{ name, m }]
+          : [];
+      }),
+    );
+  }
+  const out: RiverStation[] = [];
+  for (const info of children(body, "MeteorologicalInfos")) {
+    if (attr(info, "type") !== "水位・流量情報") continue;
+    for (const series of children(info, "TimeSeriesInfo")) {
+      const times = new Map<string, { time: string; label: string }>();
+      for (const d of children(child(series, "TimeDefines"), "TimeDefine")) {
+        const id = attr(d, "timeId");
+        const time = textAt(d, "DateTime");
+        if (id && time) times.set(id, { time, label: textAt(d, "Name") ?? "" });
+      }
+      for (const item of children(series, "Item")) {
+        const code = textAt(item, "Station/Code");
+        const name = textAt(item, "Station/Name");
+        if (!code || !name || out.some((s) => s.code === code)) continue;
+        const levels: RiverStation["levels"] = [];
+        for (const kind of children(item, "Kind")) {
+          const prop = child(kind, "Property");
+          if (textAt(prop, "Type") !== "水位") continue;
+          for (const w of children(
+            child(prop, "WaterLevelPart"),
+            "jmx_eb:WaterLevel",
+          )) {
+            if (attr(w, "type") !== "水位") continue;
+            const t = times.get(attr(w, "refID") ?? "");
+            if (!t) continue;
+            const m = attr(w, "unit") === "m" ? num(text(w)) : undefined;
+            levels.push(m === undefined ? { ...t } : { ...t, m });
+          }
+        }
+        if (levels.length === 0) continue;
+        out.push({
+          name,
+          code,
+          location: textAt(item, "Station/Location"),
+          base: base.has(code),
+          levels,
+          criteria: criteria.get(code) ?? [],
+        });
+      }
+    }
+  }
+  // 基準観測所を先に (ほかは電文の順のまま)
+  return [...out.filter((s) => s.base), ...out.filter((s) => !s.base)];
+}
+
 /** 台風解析・予報情報の、いちばん初めの「実況」 */
 function readTyphoon(body: V): TyphoonNow | undefined {
   const infos = children(
@@ -600,6 +682,7 @@ export function parseWeatherXml(
               return c && n ? [{ code: c, name: n }] : [];
             }),
       typhoon: kind === "typhoon" ? readTyphoon(body) : undefined,
+      stations: kind === "flood" ? readStations(body) : undefined,
     };
     return [{ type: "weather", info }];
   }

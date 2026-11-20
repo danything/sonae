@@ -205,14 +205,21 @@ function feedSource(
             await feed(opts.longFeedUrl ?? kind.longFeedUrl, signal);
           await feed(opts.feedUrl ?? kind.feedUrl, signal);
           lastOk = Date.now();
+          // 急がないほかのフィードの失敗は、記録して次の間隔に回すだけにする
+          // (主のフィードの状態と間隔に響かせない。警報などの取得を遅らせないため)
           for (const m of kind.more ?? []) {
             const now = Date.now();
             if (now < (moreNext.get(m.feedUrl) ?? 0)) continue;
-            if (now - (moreOk.get(m.feedUrl) ?? 0) > GAP_MS + m.everyMs)
-              await feed(m.longFeedUrl, signal);
-            await feed(m.feedUrl, signal);
-            moreOk.set(m.feedUrl, Date.now());
-            moreNext.set(m.feedUrl, Date.now() + m.everyMs - 1000);
+            moreNext.set(m.feedUrl, now + m.everyMs - 1000);
+            try {
+              if (now - (moreOk.get(m.feedUrl) ?? 0) > GAP_MS + m.everyMs)
+                await feed(m.longFeedUrl, signal);
+              await feed(m.feedUrl, signal);
+              moreOk.set(m.feedUrl, Date.now());
+            } catch (err) {
+              if (signal.aborted) throw err;
+              log(`${tag} ${m.feedUrl} を取れませんでした: ${err}`);
+            }
           }
           status.seen(false);
           status.set("connected");

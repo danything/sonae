@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   collapseNotes,
+  isFarNote,
   type SonaeEvent,
   type WeatherInfo,
 } from "#lib/model.ts";
@@ -9,7 +10,13 @@ import { noticeOf } from "#lib/notify.ts";
 import { WEATHER_CODES } from "#lib/server/sources/jma-weather.ts";
 import { jmaWeatherSource } from "#lib/server/sources/jma.ts";
 
-import { fixture, memoryStore, sourceContext, weatherInfo } from "./helpers.ts";
+import {
+  fixture,
+  homeAt,
+  memoryStore,
+  sourceContext,
+  weatherInfo,
+} from "./helpers.ts";
 
 /** 気象解説情報・潮位の解説・天候情報・早期天候情報 (docs/design.md の 2.8) */
 const FUKEN = "85_01_01_250630_VPFJ51.xml"; // 東京都気象解説情報 (台風第 13 号)
@@ -153,6 +160,21 @@ describe("一覧と保存", () => {
   });
 });
 
+describe("「すべて」で隠すほかの府県の解説", () => {
+  test("電文の地域 (府県予報区・細分区域等) を、住んでいる地域の一次細分区域・府県予報区と突き合わせる", () => {
+    const tokyo = homeAt("1310100"); // 千代田区 (東京地方)
+    const tomakomai = homeAt("0121300"); // 苫小牧市 (胆振地方)
+    expect(isFarNote(info(FUKEN), tokyo)).toBe(false);
+    expect(isFarNote(info(FUKEN), tomakomai)).toBe(true);
+    expect(isFarNote(info(FUKUSHINDO), tomakomai)).toBe(false);
+    expect(isFarNote(info(FUKUSHINDO), tokyo)).toBe(true);
+    // 住んでいる地域を選んでいなければ府県の解説は全部隠し、全般・地方は隠さない
+    expect(isFarNote(info(FUKEN), null)).toBe(true);
+    expect(isFarNote(info(CHIHO), null)).toBe(false);
+    expect(isFarNote(info(OSHIO), null)).toBe(false);
+  });
+});
+
 describe("通知", () => {
   test("解説の情報は知らせない", () => {
     for (const f of [FUKEN, CHIHO, ZENPAN, FUKUSHINDO, OSHIO, TENKO, SOUKI]) {
@@ -212,5 +234,31 @@ describe("フィード", () => {
     expect(urls).toContain(tide);
     expect(urls).not.toContain(umi);
     expect(got.map((m) => m.code)).toEqual(["VMCJ55"]);
+  });
+
+  test("その他のフィードが取れなくても、情報源はつながったままで、次の間隔まで取り直さない", async () => {
+    const { ctx } = sourceContext();
+    const urls: string[] = [];
+    const empty = `<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom"></feed>`;
+    const fakeFetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.includes("/other")) return new Response("", { status: 503 });
+      return new Response(empty);
+    }) as typeof fetch;
+    const ac = new AbortController();
+    let rounds = 0;
+    const src = jmaWeatherSource(ctx, {
+      fetch: fakeFetch,
+      log: () => {},
+      sleep: async () => {
+        expect(src.status().state).toBe("connected");
+        if (++rounds >= 2) ac.abort();
+      },
+    });
+    await src.run(ac.signal);
+    // 1 回目に失敗した other_l.xml は、2 回目 (60 秒後) には取りに行かない (5 分ごと)
+    expect(urls.filter((u) => u.includes("/other")).length).toBe(1);
+    expect(urls.filter((u) => u.endsWith("extra.xml")).length).toBe(2);
   });
 });
