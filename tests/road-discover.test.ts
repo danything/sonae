@@ -261,6 +261,30 @@ describe("見つけた URL を取る", () => {
     expect(r.data.etag).toBeUndefined();
   });
 
+  test("地図のページが読めなかったら、3 時間を待たずに 30 分後に一覧を読み直す", async () => {
+    const db = openDb(":memory:");
+    const { calls, doFetch } = site({
+      [ROAD_LIST_URL]: ok(fixture("roads/road-index.html"), '"l1"'),
+    });
+    let t = 0;
+    let s = {} as SourceStatus;
+    const controller = new AbortController();
+    const source = roadSource(db, [], {
+      discover: true,
+      log: () => {},
+      fetch: doFetch,
+      now: () => t,
+      sleep: async (ms) => {
+        s = source?.status() as SourceStatus;
+        t += ms;
+        if (t > 60 * 60_000) controller.abort();
+      },
+    });
+    await source?.run(controller.signal);
+    expect(calls.filter((c) => c.url === ROAD_LIST_URL)).toHaveLength(2);
+    expect(s.roads?.problem).toBe("r8kumamotoの地図のページが読めません");
+  });
+
   test("災害が無ければ何も取らず、受信中のまま", async () => {
     const db = openDb(":memory:");
     const { calls, doFetch } = site({

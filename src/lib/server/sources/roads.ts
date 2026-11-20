@@ -420,7 +420,10 @@ export function roadSource(
             log(
               `[roads] 一覧を読みました (災害 ${r.data.disasters.length} 件${r.data.disasters.map((d) => `・${d.name}`).join("")})`,
             );
-            nextDiscover = now() + DISCOVER_INTERVAL_MS;
+            // 地図のページが読めない災害があれば、一覧が読めないときと同じく 30 分後に読み直す
+            nextDiscover =
+              now() +
+              (r.problems.length > 0 ? ROAD_INTERVAL_MS : DISCOVER_INTERVAL_MS);
           } catch (err) {
             if (signal.aborted) break;
             problem = "一覧が読めません";
