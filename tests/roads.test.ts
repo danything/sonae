@@ -6,6 +6,7 @@ import { CREDITS, creditText } from "#lib/notice.ts";
 import { openDb } from "#lib/server/db.ts";
 import {
   parseRoads,
+  readLimited,
   ROAD_INTERVAL_MS,
   roadResponse,
   roadSource,
@@ -210,6 +211,60 @@ describe("取りに行く輪", () => {
     await source?.run(controller.signal);
     expect(waits).toEqual([5 * 60_000, 10 * 60_000, 20 * 60_000, 30 * 60_000]);
     expect(source?.status().lastError).toContain("503");
+  });
+});
+describe("リダイレクトと大きさ", () => {
+  const run = async (
+    responses: Record<string, () => Response>,
+  ): Promise<{
+    urls: string[];
+    error?: string;
+    db: ReturnType<typeof openDb>;
+  }> => {
+    const db = openDb(":memory:");
+    const urls: string[] = [];
+    const controller = new AbortController();
+    const source = roadSource(db, [KUMAMOTO], {
+      log: () => {},
+      fetch: (async (url: string, init: RequestInit) => {
+        expect(init.redirect).toBe("manual");
+        urls.push(url);
+        return (responses[url] ?? (() => new Response("", { status: 404 })))();
+      }) as unknown as typeof fetch,
+      sleep: async () => controller.abort(),
+    });
+    await source?.run(controller.signal);
+    return { urls, error: source?.status().lastError, db };
+  };
+
+  test("go.jp の外へのリダイレクトは辿らない", async () => {
+    const r = await run({
+      [KUMAMOTO]: () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "http://169.254.169.254/latest" },
+        }),
+    });
+    expect(r.urls).toEqual([KUMAMOTO]);
+    expect(r.error).toContain("リダイレクト先");
+  });
+
+  test("go.jp の中のリダイレクトは辿る", async () => {
+    const moved = "https://www.qsr.mlit.go.jp/x/dourokisei.geojson";
+    const r = await run({
+      [KUMAMOTO]: () =>
+        new Response(null, { status: 301, headers: { location: moved } }),
+      [moved]: () => new Response(fixture("roads/dourokisei.geojson")),
+    });
+    expect(r.urls).toEqual([KUMAMOTO, moved]);
+    expect(roadResponse(r.db, [KUMAMOTO]).data.features).toHaveLength(2);
+  });
+
+  test("上限を超える本文は読みながら打ち切る", async () => {
+    await expect(
+      readLimited(new Response("x".repeat(100)), 10, "u"),
+    ).rejects.toThrow("大きすぎます");
+    expect(await readLimited(new Response("あい"), 10, "u")).toBe("あい");
   });
 });
 

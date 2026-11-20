@@ -208,6 +208,31 @@ export function parseRoads(text: string, updated: string): RoadFeature[] {
   });
 }
 
+const MAX_REDIRECTS = 3;
+
+/** 本文を数えながら読み、上限を超えたらそこでやめる (content-length の無い応答のため) */
+export async function readLimited(
+  res: Response,
+  max: number,
+  url: string,
+): Promise<string> {
+  if (!res.body) return "";
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel();
+      throw new Error(`${url} が大きすぎます (${max} バイトより多い)`);
+    }
+    chunks.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
+}
+
 interface CachedRoads {
   etag?: string;
   modified?: string;
@@ -262,18 +287,27 @@ export function roadSource(
     };
     if (prev?.data.etag) headers["if-none-match"] = prev.data.etag;
     if (prev?.data.modified) headers["if-modified-since"] = prev.data.modified;
-    const res = await doFetch(url, {
-      headers,
-      signal: AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]),
-      redirect: "follow",
-    });
+    const timeout = AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]);
+    // リダイレクトは自分で辿り、行き先も https の go.jp か確かめる (go.jp に絞った意味を、リダイレクトで崩さない)
+    let at = url;
+    let res: Response | undefined;
+    for (let hop = 0; ; hop++) {
+      res = await doFetch(at, { headers, signal: timeout, redirect: "manual" });
+      if (res.status < 300 || res.status >= 400 || res.status === 304) break;
+      const next = res.headers.get("location");
+      if (!next || hop >= MAX_REDIRECTS)
+        throw new Error(`${url} のリダイレクトを辿れません (${res.status})`);
+      at = new URL(next, at).toString();
+      const why = roadUrlProblem(at);
+      if (why)
+        throw new Error(`${url} のリダイレクト先 ${at} は使いません (${why})`);
+    }
     if (res.status === 304) return false;
     if (!res.ok) throw new Error(`${url} が ${res.status} を返しました`);
     const size = Number(res.headers.get("content-length") ?? 0);
     if (size > MAX_BYTES)
       throw new Error(`${url} が大きすぎます (${size} バイト)`);
-    const text = await res.text();
-    if (text.length > MAX_BYTES) throw new Error(`${url} が大きすぎます`);
+    const text = await readLimited(res, MAX_BYTES, url);
     const modified = res.headers.get("last-modified") ?? undefined;
     const t = Date.parse(modified ?? "");
     const updated = new Date(Number.isFinite(t) ? t : now()).toISOString();
