@@ -1,0 +1,772 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<Report xmlns="http://xml.kishou.go.jp/jmaxml1/" xmlns:jmx="http://xml.kishou.go.jp/jmaxml1/">
+<Control>
+<Title>台風の暴風域に入る確率</Title>
+<DateTime>2021-03-19T07:54:29Z</DateTime>
+<Status>通常</Status>
+<EditorialOffice>気象庁本庁</EditorialOffice>
+<PublishingOffice>気象庁</PublishingOffice>
+</Control>
+<Head xmlns="http://xml.kishou.go.jp/jmaxml1/informationBasis1/">
+<Title>台風の暴風域に入る確率</Title>
+<ReportDateTime>2021-03-19T16:55:00+09:00</ReportDateTime>
+<TargetDateTime>2020-09-30T15:00:00+09:00</TargetDateTime>
+<TargetDuration>PT120H</TargetDuration>
+<EventID>TC2001</EventID>
+<InfoType>発表</InfoType>
+<Serial>13</Serial>
+<InfoKind>台風の暴風域に入る確率</InfoKind>
+<InfoKindVersion>1.4_0</InfoKindVersion>
+<Headline>
+<Text/>
+</Headline>
+</Head>
+<Body xmlns="http://xml.kishou.go.jp/jmaxml1/body/meteorology1/" xmlns:jmx_eb="http://xml.kishou.go.jp/jmaxml1/elementBasis1/">
+<MeteorologicalInfos type="台風情報">
+<MeteorologicalInfo type="台風呼称">
+<DateTime>2020-09-30T15:00:00+09:00</DateTime>
+<Item>
+<Kind>
+<Property>
+<Type>呼称</Type>
+<TyphoonNamePart>
+<Name>DAMREY</Name>
+<NameKana>ダムレイ</NameKana>
+<Number>2001</Number>
+</TyphoonNamePart>
+</Property>
+</Kind>
+</Item>
+</MeteorologicalInfo>
+<MeteorologicalInfo type="台風の暴風域に入る確率（1日積算）">
+<DateTime>2020-09-30T15:00:00+09:00</DateTime>
+<Duration>PT24H</Duration>
+<Name>24時間先</Name>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>宗谷北部</Name>
+<Code>011011</Code>
+<Prefecture>宗谷地方</Prefecture>
+<PrefectureCode>011000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>２３区西部</Name>
+<Code>130011</Code>
+<Prefecture>東京都</Prefecture>
+<PrefectureCode>130000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>嶺南西部</Name>
+<Code>180022</Code>
+<Prefecture>福井県</Prefecture>
+<PrefectureCode>180000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>阪神</Name>
+<Code>280011</Code>
+<Prefecture>兵庫県</Prefecture>
+<PrefectureCode>280000</PrefectureCode>
+</Area>
+</Item>
+</MeteorologicalInfo>
+<MeteorologicalInfo type="台風の暴風域に入る確率（2日積算）">
+<DateTime>2020-09-30T15:00:00+09:00</DateTime>
+<Duration>PT48H</Duration>
+<Name>48時間先</Name>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>宗谷北部</Name>
+<Code>011011</Code>
+<Prefecture>宗谷地方</Prefecture>
+<PrefectureCode>011000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>２３区西部</Name>
+<Code>130011</Code>
+<Prefecture>東京都</Prefecture>
+<PrefectureCode>130000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>嶺南西部</Name>
+<Code>180022</Code>
+<Prefecture>福井県</Prefecture>
+<PrefectureCode>180000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>阪神</Name>
+<Code>280011</Code>
+<Prefecture>兵庫県</Prefecture>
+<PrefectureCode>280000</PrefectureCode>
+</Area>
+</Item>
+</MeteorologicalInfo>
+<MeteorologicalInfo type="台風の暴風域に入る確率（3日積算）">
+<DateTime>2020-09-30T15:00:00+09:00</DateTime>
+<Duration>PT72H</Duration>
+<Name>72時間先</Name>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>宗谷北部</Name>
+<Code>011011</Code>
+<Prefecture>宗谷地方</Prefecture>
+<PrefectureCode>011000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">1</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>２３区西部</Name>
+<Code>130011</Code>
+<Prefecture>東京都</Prefecture>
+<PrefectureCode>130000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">34</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>嶺南西部</Name>
+<Code>180022</Code>
+<Prefecture>福井県</Prefecture>
+<PrefectureCode>180000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">38</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>阪神</Name>
+<Code>280011</Code>
+<Prefecture>兵庫県</Prefecture>
+<PrefectureCode>280000</PrefectureCode>
+</Area>
+</Item>
+</MeteorologicalInfo>
+<MeteorologicalInfo type="台風の暴風域に入る確率（4日積算）">
+<DateTime>2020-09-30T15:00:00+09:00</DateTime>
+<Duration>PT96H</Duration>
+<Name>96時間先</Name>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>宗谷北部</Name>
+<Code>011011</Code>
+<Prefecture>宗谷地方</Prefecture>
+<PrefectureCode>011000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">1</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>２３区西部</Name>
+<Code>130011</Code>
+<Prefecture>東京都</Prefecture>
+<PrefectureCode>130000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">34</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>嶺南西部</Name>
+<Code>180022</Code>
+<Prefecture>福井県</Prefecture>
+<PrefectureCode>180000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">38</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>阪神</Name>
+<Code>280011</Code>
+<Prefecture>兵庫県</Prefecture>
+<PrefectureCode>280000</PrefectureCode>
+</Area>
+</Item>
+</MeteorologicalInfo>
+<MeteorologicalInfo type="台風の暴風域に入る確率（5日積算）">
+<DateTime>2020-09-30T15:00:00+09:00</DateTime>
+<Duration>PT120H</Duration>
+<Name>120時間先</Name>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>宗谷北部</Name>
+<Code>011011</Code>
+<Prefecture>宗谷地方</Prefecture>
+<PrefectureCode>011000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">1</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>２３区西部</Name>
+<Code>130011</Code>
+<Prefecture>東京都</Prefecture>
+<PrefectureCode>130000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">34</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>嶺南西部</Name>
+<Code>180022</Code>
+<Prefecture>福井県</Prefecture>
+<PrefectureCode>180000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability unit="%">38</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>阪神</Name>
+<Code>280011</Code>
+<Prefecture>兵庫県</Prefecture>
+<PrefectureCode>280000</PrefectureCode>
+</Area>
+</Item>
+</MeteorologicalInfo>
+<TimeSeriesInfo>
+<TimeDefines>
+<TimeDefine timeId="1">
+<DateTime>2020-09-30T15:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="2">
+<DateTime>2020-09-30T18:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="3">
+<DateTime>2020-09-30T21:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="4">
+<DateTime>2020-10-01T00:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="5">
+<DateTime>2020-10-01T03:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="6">
+<DateTime>2020-10-01T06:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="7">
+<DateTime>2020-10-01T09:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="8">
+<DateTime>2020-10-01T12:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="9">
+<DateTime>2020-10-01T15:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="10">
+<DateTime>2020-10-01T18:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="11">
+<DateTime>2020-10-01T21:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="12">
+<DateTime>2020-10-02T00:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="13">
+<DateTime>2020-10-02T03:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="14">
+<DateTime>2020-10-02T06:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="15">
+<DateTime>2020-10-02T09:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="16">
+<DateTime>2020-10-02T12:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="17">
+<DateTime>2020-10-02T15:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="18">
+<DateTime>2020-10-02T18:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="19">
+<DateTime>2020-10-02T21:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="20">
+<DateTime>2020-10-03T00:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="21">
+<DateTime>2020-10-03T03:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="22">
+<DateTime>2020-10-03T06:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="23">
+<DateTime>2020-10-03T09:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="24">
+<DateTime>2020-10-03T12:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="25">
+<DateTime>2020-10-03T15:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="26">
+<DateTime>2020-10-03T18:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="27">
+<DateTime>2020-10-03T21:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="28">
+<DateTime>2020-10-04T00:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="29">
+<DateTime>2020-10-04T03:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="30">
+<DateTime>2020-10-04T06:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="31">
+<DateTime>2020-10-04T09:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="32">
+<DateTime>2020-10-04T12:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="33">
+<DateTime>2020-10-04T15:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="34">
+<DateTime>2020-10-04T18:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="35">
+<DateTime>2020-10-04T21:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="36">
+<DateTime>2020-10-05T00:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="37">
+<DateTime>2020-10-05T03:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="38">
+<DateTime>2020-10-05T06:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="39">
+<DateTime>2020-10-05T09:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+<TimeDefine timeId="40">
+<DateTime>2020-10-05T12:00:00+09:00</DateTime>
+<Duration>PT3H</Duration>
+</TimeDefine>
+</TimeDefines>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability refID="1" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="2" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="3" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="4" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="5" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="6" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="7" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="8" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="9" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="10" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="11" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="12" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="13" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="14" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="15" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="16" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="17" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="18" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="19" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="20" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="21" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="22" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="23" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="24" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="25" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="26" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="27" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="28" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="29" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="30" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="31" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="32" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="33" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="34" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="35" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="36" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="37" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="38" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="39" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="40" unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>宗谷北部</Name>
+<Code>011011</Code>
+<Prefecture>宗谷地方</Prefecture>
+<PrefectureCode>011000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability refID="1" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="2" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="3" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="4" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="5" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="6" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="7" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="8" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="9" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="10" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="11" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="12" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="13" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="14" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="15" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="16" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="17" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="18" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="19" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="20" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="21" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="22" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="23" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="24" unit="%">1</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="25" unit="%">1</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="26" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="27" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="28" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="29" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="30" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="31" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="32" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="33" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="34" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="35" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="36" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="37" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="38" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="39" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="40" unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>２３区西部</Name>
+<Code>130011</Code>
+<Prefecture>東京都</Prefecture>
+<PrefectureCode>130000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability refID="1" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="2" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="3" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="4" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="5" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="6" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="7" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="8" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="9" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="10" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="11" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="12" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="13" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="14" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="15" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="16" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="17" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="18" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="19" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="20" unit="%">4</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="21" unit="%">12</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="22" unit="%">23</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="23" unit="%">29</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="24" unit="%">26</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="25" unit="%">16</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="26" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="27" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="28" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="29" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="30" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="31" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="32" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="33" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="34" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="35" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="36" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="37" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="38" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="39" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="40" unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>嶺南西部</Name>
+<Code>180022</Code>
+<Prefecture>福井県</Prefecture>
+<PrefectureCode>180000</PrefectureCode>
+</Area>
+</Item>
+<Item>
+<Kind>
+<Property>
+<Type>台風の暴風域に入る確率</Type>
+<FiftyKtWindProbabilityPart>
+<FiftyKtWindProbability refID="1" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="2" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="3" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="4" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="5" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="6" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="7" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="8" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="9" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="10" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="11" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="12" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="13" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="14" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="15" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="16" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="17" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="18" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="19" unit="%">3</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="20" unit="%">11</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="21" unit="%">23</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="22" unit="%">31</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="23" unit="%">32</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="24" unit="%">24</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="25" unit="%">13</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="26" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="27" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="28" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="29" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="30" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="31" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="32" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="33" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="34" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="35" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="36" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="37" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="38" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="39" unit="%">0</FiftyKtWindProbability>
+<FiftyKtWindProbability refID="40" unit="%">0</FiftyKtWindProbability>
+</FiftyKtWindProbabilityPart>
+</Property>
+</Kind>
+<Area>
+<Name>阪神</Name>
+<Code>280011</Code>
+<Prefecture>兵庫県</Prefecture>
+<PrefectureCode>280000</PrefectureCode>
+</Area>
+</Item>
+</TimeSeriesInfo>
+</MeteorologicalInfos>
+</Body>
+</Report>

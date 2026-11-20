@@ -18,6 +18,7 @@ import type {
   SourceId,
   Status,
   Tsunami,
+  TyphoonProbability,
   Volcano,
   WarningOutlook,
   WeatherInfo,
@@ -213,6 +214,9 @@ export class Store {
         return this.applyWeatherInfo(item.info, now);
       case "outlook":
         return this.applyOutlook(item.outlook, now);
+      case "typhoonprob":
+        this.applyTyphoonProbability(item.probability, item.infoType);
+        return [];
       case "other":
         return [];
     }
@@ -292,6 +296,42 @@ export class Store {
         JSON.stringify(next),
       );
     return [this.event("weather", next.id, next)];
+  }
+
+  /**
+   * 台風の暴風域に入る確率。台風ごとにいちばん新しい報だけを持ち、古い報 (長期フィードで後から読んだもの) は捨てる。
+   * 取消はその台風の確率を消す。画面は詳しい内容を開いたときに読むので、イベントは出さない
+   */
+  private applyTyphoonProbability(
+    p: TyphoonProbability,
+    infoType: "発表" | "訂正" | "取消",
+  ): void {
+    if (infoType === "取消") {
+      this.db.query("DELETE FROM typhoon_probs WHERE series = ?").run(p.series);
+      return;
+    }
+    const prev = this.typhoonProbability(p.series);
+    if (prev) {
+      const d = ms(p.reportedAt) - ms(prev.reportedAt);
+      if (d < 0 || (d === 0 && infoType !== "訂正")) return;
+    }
+    this.db
+      .query(
+        `INSERT INTO typhoon_probs (series, status, reported_at, data) VALUES (?, ?, ?, ?)
+         ON CONFLICT (series) DO UPDATE SET status = excluded.status,
+           reported_at = excluded.reported_at, data = excluded.data`,
+      )
+      .run(p.series, p.status, p.reportedAt, JSON.stringify(p));
+  }
+
+  /** 台風 (series) のいちばん新しい暴風域に入る確率 */
+  typhoonProbability(series: string): TyphoonProbability | undefined {
+    const row = this.db
+      .query<{ data: string }, [string]>(
+        "SELECT data FROM typhoon_probs WHERE series = ?",
+      )
+      .get(series);
+    return row ? (JSON.parse(row.data) as TyphoonProbability) : undefined;
   }
 
   /**
@@ -803,6 +843,12 @@ export class Store {
     this.db
       .query(
         "DELETE FROM events WHERE type IN ('warning', 'weather', 'outlook') AND at < ?",
+      )
+      .run(before);
+    // 台風の暴風域に入る確率も同じ期間で捨てる (終わった台風の確率は使わない)
+    this.db
+      .query(
+        "DELETE FROM typhoon_probs WHERE datetime(reported_at) < datetime(?)",
       )
       .run(before);
     return this.db

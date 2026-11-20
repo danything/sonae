@@ -250,6 +250,16 @@ const MIGRATIONS: string[] = [
     data TEXT NOT NULL
   );
   `,
+  `
+  -- 台風の暴風域に入る確率 (VPTA50〜55)。series (typhoon-<TC 番号>) ごとに、いちばん新しい報だけを持つ。
+  -- data は TyphoonProbability の JSON (どれも 0% の地域は持たない)
+  CREATE TABLE typhoon_probs (
+    series TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    reported_at TEXT NOT NULL,
+    data TEXT NOT NULL
+  );
+  `,
 ];
 
 export function openDb(path: string): Database {
