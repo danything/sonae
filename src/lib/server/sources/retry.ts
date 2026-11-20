@@ -56,6 +56,11 @@ export class StatusTracker {
     delete this.value.lastError;
     this.onChange?.(this.get());
   }
+  /** 状態に添える中身 (災害時の通行止めの見つけた災害) を替えて知らせる */
+  detail(d: Pick<SourceStatus, "roads">): void {
+    this.value = { ...this.value, ...d };
+    this.onChange?.(this.get());
+  }
   seen(message: boolean): void {
     const at = nowIso();
     this.value.lastSeenAt = at;
