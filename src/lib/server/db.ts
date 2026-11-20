@@ -238,6 +238,18 @@ const MIGRATIONS: string[] = [
     data TEXT NOT NULL
   );
   `,
+  `
+  -- 早期注意情報 (警報級の可能性。VPFD61・VPFW60)。府県予報区と種別ごとに、いまの 1 通を 1 行。
+  -- id は「種別-府県予報区のコード」(訓練・試験は後ろに -training・-test)
+  CREATE TABLE weather_outlooks (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL,
+    office TEXT NOT NULL,
+    status TEXT NOT NULL,
+    reported_at TEXT NOT NULL,
+    data TEXT NOT NULL
+  );
+  `,
 ];
 
 export function openDb(path: string): Database {

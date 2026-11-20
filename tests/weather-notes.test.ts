@@ -227,6 +227,8 @@ describe("フィード", () => {
       "extra.xml",
       "other_l.xml",
       "other.xml",
+      "regular_l.xml",
+      "regular.xml",
     ]);
     // 取る種別 (VMCJ55) だけを取り、海上警報 (VPCU51) は取らない
     expect(urls).toContain(tide);

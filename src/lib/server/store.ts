@@ -19,6 +19,7 @@ import type {
   Status,
   Tsunami,
   Volcano,
+  WarningOutlook,
   WeatherInfo,
   WeatherWarning,
 } from "#lib/model.ts";
@@ -210,6 +211,8 @@ export class Store {
         return this.applyWarning(item.warning, now);
       case "weather":
         return this.applyWeatherInfo(item.info, now);
+      case "outlook":
+        return this.applyOutlook(item.outlook, now);
       case "other":
         return [];
     }
@@ -289,6 +292,48 @@ export class Store {
         JSON.stringify(next),
       );
     return [this.event("weather", next.id, next)];
+  }
+
+  /**
+   * 早期注意情報。府県予報区と種別ごとのいまの 1 通を、新しい報で置き換える (気象警報・注意報と同じ。
+   * 前の報より古い報は捨てる)
+   */
+  private applyOutlook(
+    o: Omit<WarningOutlook, "updatedAt">,
+    now: string,
+  ): SonaeEvent[] {
+    const row = this.db
+      .query<{ reported_at: string }, [string]>(
+        "SELECT reported_at FROM weather_outlooks WHERE id = ?",
+      )
+      .get(o.id);
+    if (row && ms(o.reportedAt) <= ms(row.reported_at)) return [];
+    const next: WarningOutlook = { ...o, updatedAt: now };
+    this.db
+      .query(
+        `INSERT INTO weather_outlooks (id, code, office, status, reported_at, data)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET reported_at = excluded.reported_at, data = excluded.data`,
+      )
+      .run(
+        next.id,
+        next.code,
+        next.office.code,
+        next.status,
+        next.reportedAt,
+        JSON.stringify(next),
+      );
+    return [this.event("outlook", next.id, next)];
+  }
+
+  /** いまの早期注意情報 (府県予報区と種別ごと)。訓練・試験は除く */
+  outlooks(): WarningOutlook[] {
+    return this.db
+      .query<{ data: string }, []>(
+        "SELECT data FROM weather_outlooks WHERE status = 'normal'",
+      )
+      .all()
+      .map((r) => JSON.parse(r.data) as WarningOutlook);
   }
 
   weatherInfo(id: string): WeatherInfo | undefined {
@@ -757,7 +802,7 @@ export class Store {
     // (いまの状態は weather_warnings にある。SSE の埋め直しは新しいものしか使わない)
     this.db
       .query(
-        "DELETE FROM events WHERE type IN ('warning', 'weather') AND at < ?",
+        "DELETE FROM events WHERE type IN ('warning', 'weather', 'outlook') AND at < ?",
       )
       .run(before);
     return this.db

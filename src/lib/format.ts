@@ -287,3 +287,24 @@ export const volcanoKindText = (kind: string) =>
     .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
     .replace(/（([^（）]*)）$/, " $1")
     .trim();
+
+/** 日本時間の暦日 (`YYYY-MM-DD`) */
+export const jstDate = (ms: number) =>
+  new Date(ms + 9 * 60 * 60_000).toISOString().slice(0, 10);
+
+/**
+ * 早期注意情報の日 (`YYYY-MM-DD`) を、いまから見た言い方にする。今日・明日・明後日と、
+ * その先は「11/24 (火)」。日本時間で数える
+ */
+export function outlookDay(date: string, now: number): string {
+  const day = Date.parse(`${date}T00:00:00+09:00`);
+  const today = Date.parse(`${jstDate(now)}T00:00:00+09:00`);
+  const n = Math.round((day - today) / (24 * 60 * 60_000));
+  if (n === 0) return "今日";
+  if (n === 1) return "明日";
+  if (n === 2) return "明後日";
+  const [, m, d] = date.split("-");
+  // 暦日の曜日 (その日の UTC の正午で数える)
+  const w = "日月火水木金土"[new Date(`${date}T12:00:00Z`).getUTCDay()];
+  return `${Number(m)}/${Number(d)} (${w})`;
+}

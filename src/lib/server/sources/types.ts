@@ -10,6 +10,7 @@ import type {
   TsunamiArea,
   TsunamiObservation,
   Volcano,
+  WarningOutlook,
   WeatherInfo,
   WeatherWarning,
 } from "#lib/model.ts";
@@ -49,6 +50,7 @@ export type Normalized =
   | { type: "longperiod"; report: LongPeriodReport }
   | { type: "warning"; warning: Omit<WeatherWarning, "updatedAt"> }
   | { type: "weather"; info: Omit<WeatherInfo, "updatedAt" | "cancelled"> }
+  | { type: "outlook"; outlook: Omit<WarningOutlook, "updatedAt"> }
   /** 原文を保存するだけで、読まない電文 (取る種別のうち、中身を使わないもの) */
   | { type: "other"; code: string };
 

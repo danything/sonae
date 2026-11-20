@@ -37,6 +37,8 @@ const JMA_EXTRA_FEED = `${FEED_BASE}/extra.xml`;
 const JMA_EXTRA_LONG_FEED = `${FEED_BASE}/extra_l.xml`;
 const JMA_OTHER_FEED = `${FEED_BASE}/other.xml`;
 const JMA_OTHER_LONG_FEED = `${FEED_BASE}/other_l.xml`;
+const JMA_REGULAR_FEED = `${FEED_BASE}/regular.xml`;
+const JMA_REGULAR_LONG_FEED = `${FEED_BASE}/regular_l.xml`;
 
 export interface JmaOptions {
   feedUrl?: string;
@@ -56,7 +58,8 @@ interface FeedKind {
   wanted: ReadonlySet<string>;
   /** その時点の状態をまるごと持つ種別 (府県予報区ごとに、いちばん新しいものだけ取る) */
   snapshot?: ReadonlySet<string>;
-  parse(xml: string, code: string): Normalized[];
+  /** 電文を読む。url はフィードのリンク (府県予報区のコードがファイル名の後ろにある) */
+  parse(xml: string, code: string, url?: string): Normalized[];
   /**
    * 一緒に取るほかのフィード (同じ種別の振り分けと読み方を使う)。`everyMs` ごとに取る (急がない電文だけが載るフィード)。
    * 長期フィードは、初めてと、取れない間が 10 分を超えた後に読む
@@ -169,7 +172,7 @@ function feedSource(
           key: e.id,
           code: e.code,
           body,
-          items: kind.parse(body, e.code),
+          items: kind.parse(body, e.code, e.url),
         });
       } catch (err) {
         // 読めない電文も原文は残す (読み方を直したら流し直す)
@@ -268,6 +271,13 @@ export function jmaWeatherSource(
           feedUrl: JMA_OTHER_FEED,
           longFeedUrl: JMA_OTHER_LONG_FEED,
           everyMs: 5 * 60_000,
+        },
+        // 定時のフィード (regular.xml) には早期注意情報 (VPFD61・VPFW60) が載る。天気予報など取らない電文が
+        // 多く (約 300KB。1 回に 10 時間ほどの分が並ぶ)、早期注意情報は 1 日 3 回の定時が主なので 10 分ごと
+        {
+          feedUrl: JMA_REGULAR_FEED,
+          longFeedUrl: JMA_REGULAR_LONG_FEED,
+          everyMs: 10 * 60_000,
         },
       ],
     },
