@@ -2,6 +2,7 @@
  * 画面に出す注意文と出典 (docs/design.md の 5 章「法と表示」)。文言を変えるときは設計書も直す
  */
 import { MSIL_DISCLAIMER, MSIL_SITE } from "#lib/map/marine.ts";
+import { RAIN_PAGE } from "#lib/map/rain.ts";
 
 export const NOTICE =
   "このアプリは気象庁の公式のものではありません。情報は遅れたり欠けたりすることがあります。身の安全に関わる判断は、気象庁・自治体・テレビやラジオの公式の情報を優先してください。";
@@ -83,6 +84,14 @@ export const CREDITS: Credit[] = [
         href: "https://www.jma.go.jp/bosai/",
       },
       "）を加工して作成",
+    ],
+  },
+  {
+    label: "雨雲",
+    parts: [
+      "出典：気象庁ホームページ（",
+      { text: RAIN_PAGE, href: RAIN_PAGE },
+      "）。気象庁「高解像度降水ナウキャスト」を加工して作成 (透かして地図に重ねて表示)。地図の右下で「雨雲」を選んだときに、観測から作ったいまの降水強度を重ねます。1 時間先までの予測は出さず、sonae が先の雨を予想することもしません。タイルは、ブラウザから気象庁ホームページへ直接読みに行きます",
     ],
   },
   {

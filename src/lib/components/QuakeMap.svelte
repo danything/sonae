@@ -7,6 +7,7 @@
   import { untrack } from "svelte";
   import Locate from "~icons/lucide/locate";
   import LocateFixed from "~icons/lucide/locate-fixed";
+  import TriangleAlert from "~icons/lucide/triangle-alert";
 
   import { alerter } from "#lib/alerter.svelte.ts";
   import Icon from "#lib/components/Icon.svelte";
@@ -14,6 +15,7 @@
   import { failureText } from "#lib/failure.ts";
   import {
     INTENSITY_COLORS,
+    jst,
     jstFull,
     kindText,
     VOLCANO_COLORS,
@@ -36,6 +38,20 @@
     nearestMarine,
   } from "#lib/map/marine.ts";
   import { coordLabel, coordText, longPressOk } from "#lib/map/press.ts";
+  import {
+    latestRain,
+    nextRainPoll,
+    RAIN_CREDIT,
+    RAIN_LEGEND,
+    RAIN_PAGE,
+    RAIN_RETRY_MS,
+    RAIN_TILE_ZOOMS,
+    RAIN_TIMES_URL,
+    type RainFrame,
+    rainIso,
+    rainStale,
+    rainTiles,
+  } from "#lib/map/rain.ts";
   import { type MapView, ViewKeeper } from "#lib/map/restore.ts";
   import {
     nearestStation,
@@ -66,6 +82,8 @@
     type OfficeTable,
     overlayVisibility,
     quakeFillOpacity,
+    rainShown,
+    rainVisibility,
     readHazard,
     SHELTER_DISASTERS,
     SHELTER_LAYERS,
@@ -863,12 +881,83 @@
    */
   let boxHeight = $state(0);
   const NOTE_MIN_HEIGHT = 420;
-  /** 気象警報・注意報の塗りを隠しているか (ハザードマップか、地震を選んでいるため) */
-  const warningsHidden = $derived(covered || quakeShown);
+  // ---- 雨雲 (気象庁の高解像度降水ナウキャストのいま。docs/map.md の「雨雲」) ----
+  // 時刻の表をブラウザから直接取り、いまの 1 枚のタイルに差し替える。取るのは雨雲を出している間だけで、
+  // 画面が見えていない間 (裏のタブ・閉じた画面) と地震を選んでいる間 (雨雲を隠す) は止める
+  /** 雨雲を出しているか (選んでいて、地震を選んでいない) */
+  const rainOn = $derived(rainShown(hazard, quakeShown));
+  let rainFrame = $state<RainFrame | null>(null);
+  /** 最後に時刻の表を取りに行った時刻 (雨雲が古いかを決める) と、そのとき読めなかったか */
+  let rainChecked = $state(0);
+  let rainFailed = $state(false);
+  let pageVisible = $state(true);
+  $effect(() => {
+    const seen = () => (pageVisible = document.visibilityState === "visible");
+    seen();
+    document.addEventListener("visibilitychange", seen);
+    return () => document.removeEventListener("visibilitychange", seen);
+  });
+  $effect(() => {
+    if (!map || !rainOn || !pageVisible) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // 選び直したときと画面に戻ったときは、取れるまでの間も前の雨雲が古いかを今の時刻で決める
+    // (長く裏にいた後に、前の雨雲を「5 分ごとに更新」と出さない)
+    rainChecked = Date.now();
+    const poll = async () => {
+      let wait = RAIN_RETRY_MS;
+      try {
+        // 表は配信の CDN が 60 秒覚える。ブラウザのキャッシュは ETag で確かめ直す
+        const r = await fetch(RAIN_TIMES_URL, {
+          cache: "no-cache",
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+          // 返らないまま止まると次を取らないので、10 秒で失敗にして 1 分後に取り直す
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!r.ok) throw new Error(`targetTimes: ${r.status}`);
+        const f = latestRain(await r.json());
+        if (!f) throw new Error("targetTimes: 観測の時刻がありません");
+        if (stopped) return;
+        if (f.validtime !== untrack(() => rainFrame?.validtime)) rainFrame = f;
+        rainFailed = false;
+        wait = nextRainPoll(f, Date.now());
+      } catch (err) {
+        if (stopped) return;
+        console.warn(`雨雲の時刻を読めませんでした: ${err}`);
+        rainFailed = true;
+      }
+      rainChecked = Date.now();
+      timer = setTimeout(() => void poll(), wait);
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  });
+  // いまの 1 枚に差し替える (5 分ごと)。段ごとの source の URL を替える
+  $effect(() => {
+    if (!map || !rainFrame) return;
+    const url = rainTiles(rainFrame);
+    for (const n of RAIN_TILE_ZOOMS) {
+      const src = map.getSource(`rain-${n}`);
+      if (src && "setTiles" in src)
+        (src as { setTiles(t: string[]): void }).setTiles([url]);
+    }
+  });
+  /** 雨雲が古いか (15 分より前の観測しか取れていない) */
+  const rainOld = $derived(
+    rainFrame !== null && rainChecked > 0 && rainStale(rainFrame, rainChecked),
+  );
+
+  /** 気象警報・注意報の塗りを隠しているか (ハザードマップか雨雲を重ねているか、地震を選んでいるため) */
+  const warningsHidden = $derived(covered || rainOn || quakeShown);
   $effect(() => {
     if (!map) return;
     for (const [layer, on] of Object.entries({
       ...hazardVisibility(hazard),
+      ...rainVisibility(hazard, quakeShown, rainFrame !== null),
       ...overlayVisibility(hazard, zoom, quakeShown),
     }))
       map.setLayoutProperty(layer, "visibility", on ? "visible" : "none");
@@ -1563,11 +1652,26 @@
                 data-testid="hazard"
                 onclick={hazardClick}
               >
-                ハザードマップ: {chosenHazard?.label ?? "なし"}
+                {chosenHazard
+                  ? `ハザードマップ: ${chosenHazard.label}`
+                  : hazard === "rain"
+                    ? "雨雲"
+                    : "重ねる: なし"}
               </button>
             {/snippet}
+            <!-- 重ねる図は 1 つだけ (色がぶつかるため)。雨雲といまのハザードマップを同じ選択に並べる -->
+            {#each [{ id: "none" as const, label: "なし" }, { id: "rain" as const, label: "雨雲 (いま)" }] as h (h.id)}
+              <button
+                type="button"
+                role="menuitemradio"
+                class="menu-item"
+                aria-checked={hazard === h.id}
+                onclick={() => pickHazard(h.id)}
+                data-testid="hazard-{h.id}">{h.label}</button
+              >
+            {/each}
             <p class="menu-head">ハザードマップ</p>
-            {#each [{ id: "none" as const, label: "なし" }, ...HAZARDS] as h (h.id)}
+            {#each HAZARDS as h (h.id)}
               <button
                 type="button"
                 role="menuitemradio"
@@ -1642,8 +1746,63 @@
           {/if}
         </figure>
       {/if}
-      <!-- 地震を選んでいる間に、気象警報・注意報の塗りを隠していることと戻し方 (ハザードマップの凡例が書くときは出さない) -->
-      {#if quakeShown && warningsPainted && !covered && boxHeight >= NOTE_MIN_HEIGHT}
+      {#if hazard === "rain"}
+        <!--
+          雨雲の凡例と、いつの観測か。古い雨雲をいまの雨と取り違えないよう、時刻をいつも出す。
+          地震を選んでいる間は雨雲を隠すので、そのことと戻し方だけを書く (低い地図では出さない)
+        -->
+        {#if rainOn}
+          <figure class="legend rain-legend" data-testid="rain-legend">
+            <figcaption class="small bold">雨雲 (降水強度 mm/h)</figcaption>
+            {#if rainFrame}
+              <p class="small rain-time" data-testid="rain-time">
+                {#if rainOld}
+                  <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
+                  {jst(rainIso(rainFrame))} の観測です。新しい雨雲を読めていないため、いまの雨ではありません
+                {:else}
+                  {jst(rainIso(rainFrame))} の観測 (5 分ごとに更新)
+                {/if}
+              </p>
+            {:else if rainFailed}
+              <p class="small rain-time" data-testid="rain-time">
+                <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
+                雨雲を読み込めませんでした。1 分後に再試行します
+              </p>
+            {:else}
+              <p class="small muted" data-testid="rain-time">
+                読み込んでいます…
+              </p>
+            {/if}
+            <ul class="rain-scale">
+              {#each RAIN_LEGEND as l (l.label)}
+                <li>
+                  <span class="rain-swatch" style:background={l.color}
+                  ></span><span class="tiny">{l.label}</span>
+                </li>
+              {/each}
+            </ul>
+            <p class="tiny muted">
+              出典: <a href={RAIN_PAGE} target="_blank" rel="noopener"
+                >{RAIN_CREDIT}</a
+              >。予測は出しません。
+            </p>
+            <p class="tiny muted" data-testid="hazard-hidden">
+              色がぶつからないよう、警報・注意報の塗りを隠しています
+              (特別警報・緊急地震速報は縁取りで出します)。「なし」に戻すと元に戻ります。
+            </p>
+          </figure>
+        {:else if boxHeight >= NOTE_MIN_HEIGHT}
+          <p class="map-note tiny muted" data-testid="quake-hides-rain">
+            地震を選んでいる間は、雨雲{warningsPainted
+              ? "と気象警報・注意報の塗り"
+              : ""}を隠しています (震度の色と重なるため){specialPainted
+              ? "。特別警報は縁取りで出します"
+              : ""}。一覧へ戻ると元に戻ります。
+          </p>
+        {/if}
+      {/if}
+      <!-- 地震を選んでいる間に、気象警報・注意報の塗りを隠していることと戻し方 (ハザードマップか雨雲の凡例が書くときは出さない) -->
+      {#if quakeShown && warningsPainted && !covered && hazard !== "rain" && boxHeight >= NOTE_MIN_HEIGHT}
         <p class="map-note tiny muted" data-testid="quake-hides-warnings">
           地震を選んでいる間は、気象警報・注意報の塗りを隠しています{specialPainted
             ? " (特別警報は縁取りで出します)"
@@ -1847,6 +2006,38 @@
     padding: var(--so-space-1);
     border-radius: var(--so-radius-sm);
     background: #fff;
+  }
+  /* 雨雲の凡例。8 色を 2 列に並べ、色の見本の右に mm/h の区切り (強いものから) */
+  .rain-scale {
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    grid-auto-flow: column;
+    grid-template-rows: repeat(4, auto);
+    justify-content: start;
+    gap: 0.125rem var(--so-space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .rain-scale li {
+    display: flex;
+    align-items: center;
+    gap: var(--so-space-1);
+    margin: 0;
+    list-style: none;
+  }
+  /* 0〜1 の淡い色も面の上で見えるよう、細い縁を付ける */
+  .rain-swatch {
+    width: 1rem;
+    height: 0.75rem;
+    border: 1px solid rgb(0 0 0 / 0.35);
+    border-radius: 2px;
+  }
+  /* 古い雨雲・読めないときの印。字は本文の色のまま、アイコンだけ注意の色 (denpa の 6 章「通知」) */
+  .rain-time .warn-mark {
+    display: inline-flex;
+    vertical-align: -0.125em;
+    color: var(--so-warn-text);
   }
   /* 避難場所と気象警報・注意報の吹き出し (MapLibre が DOM に置くので :global)。メニューと同じ面 */
   .map :global(.maplibregl-popup-content) {
