@@ -69,6 +69,7 @@
   import { live } from "#lib/live.svelte.ts";
   import {
     type Advisory,
+    collapseNotes,
     type Eew,
     type ForeignQuake,
     isExpired,
@@ -210,23 +211,21 @@
       ),
     ),
   );
-  /** 気象の報。台風は報が数時間ごとに出るので、台風ごとにいちばん新しい報だけを並べる */
-  const weathers = $derived.by(() => {
-    const seen = new Set<string>();
-    return snap.weatherInfos.filter((x) => {
-      if (x.kind === "typhoon") {
-        if (seen.has(x.series)) return false;
-        seen.add(x.series);
-      }
-      return matches(
+  /**
+   * 気象の報。台風と解説の情報 (気象解説情報・潮位・天候情報・早期天候情報) は報が続けて出るので、
+   * 一連の情報ごとにいちばん新しい報だけを並べる
+   */
+  const weathers = $derived(
+    collapseNotes(snap.weatherInfos).filter((x) =>
+      matches(
         query,
         x.title,
         x.headline,
         x.kindName,
         ...x.areas.map((a) => a.name),
-      );
-    });
-  });
+      ),
+    ),
+  );
   const counts = $derived<Record<Kind, number>>({
     quake: quakes.length,
     tsunami: tsunamis.length,

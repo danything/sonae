@@ -904,10 +904,21 @@ export const isExpired = (i: Pick<WeatherInfo, "validUntil">, now: number) =>
 /**
  * 気象の、報ごとに出す情報の種類。記録的短時間大雨情報 (VPOA50)・府県気象防災速報 (VPBS50)・
  * 竜巻注意情報 (VPHW50)・指定河川洪水予報 (VXKO50〜89)・熱中症警戒アラート (VPFT50)・
- * 台風解析・予報情報 (VPTW60〜65)
+ * 台風解析・予報情報 (VPTW60〜65)。
+ * 文の情報 (`NOTE_KINDS`) は、全般・地方・府県の気象解説情報 (VPZJ51・VPCJ51・VPFJ51)・
+ * 同じく潮位 (VMCJ53〜55)・天候に関する情報 (VPZI50・VPCI50)・早期天候情報 (VPAW51)
  */
 export type WeatherInfoKind =
-  "rain" | "bosai" | "tornado" | "flood" | "heat" | "typhoon";
+  | "rain"
+  | "bosai"
+  | "tornado"
+  | "flood"
+  | "heat"
+  | "typhoon"
+  | "commentary"
+  | "tide"
+  | "climate"
+  | "earlyClimate";
 
 export const WEATHER_INFO_LABEL: Record<WeatherInfoKind, string> = {
   rain: "記録的短時間大雨情報",
@@ -916,7 +927,44 @@ export const WEATHER_INFO_LABEL: Record<WeatherInfoKind, string> = {
   flood: "指定河川洪水予報",
   heat: "熱中症警戒アラート",
   typhoon: "台風情報",
+  commentary: "気象解説情報",
+  tide: "気象解説情報 (潮位)",
+  climate: "天候情報",
+  earlyClimate: "早期天候情報",
 };
+
+/**
+ * 文で読む解説の情報 (気象解説情報・潮位・天候情報・早期天候情報)。知らせず、一覧と詳しい内容に出すだけ。
+ * 一覧には一連の情報 (`series`) ごとにいちばん新しい報だけを並べる (台風情報と同じ)
+ */
+export const NOTE_KINDS: ReadonlySet<WeatherInfoKind> = new Set([
+  "commentary",
+  "tide",
+  "climate",
+  "earlyClimate",
+]);
+
+/**
+ * 新しい順に並んだ気象の報から、解説の情報 (`NOTE_KINDS`) と台風情報を一連の情報ごとにいちばん新しい 1 つにする。
+ * ほかの種類はそのまま。並びは新しい順のまま
+ */
+export function collapseNotes<T extends Pick<WeatherInfo, "kind" | "series">>(
+  infos: T[],
+): T[] {
+  const seen = new Set<string>();
+  return infos.filter((x) => {
+    if (!NOTE_KINDS.has(x.kind) && x.kind !== "typhoon") return true;
+    if (seen.has(x.series)) return false;
+    seen.add(x.series);
+    return true;
+  });
+}
+
+/** 解説の情報の本文の 1 つの節 (「気象概況」「防災事項」「雨の予想」など。行は電文の文のまま) */
+export interface WeatherSection {
+  title: string;
+  lines: string[];
+}
 
 /** 台風の実況 (台風解析・予報情報のいちばん初めの「実況」) */
 export interface TyphoonNow {
@@ -963,6 +1011,8 @@ export interface WeatherInfo {
   headline: string;
   /** 本文 (熱中症警戒アラート) */
   text?: string;
+  /** 本文の節 (解説の情報。気象概況・防災事項・雨の予想・付加情報など。電文の順) */
+  sections?: WeatherSection[];
   /** 段 (指定河川洪水予報だけ。氾濫注意報 2 から氾濫特別警報 5、解除は 0) */
   level?: WarningLevel;
   /** 種類の名前 (「レベル３氾濫警報」「記録雨」など) */
