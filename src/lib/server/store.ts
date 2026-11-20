@@ -23,6 +23,7 @@ import type {
   WeatherWarning,
 } from "#lib/model.ts";
 import {
+  collapseRoutineVolcanoes,
   foreignFromReports,
   latestPerVolcano,
   sameForeignQuake,
@@ -638,15 +639,40 @@ export class Store {
     return row ? (JSON.parse(row.data) as Volcano) : undefined;
   }
 
-  /** 新しい順の火山の報 */
+  /**
+   * 新しい順の火山の報。いつも出る種別 (噴火に関する火山観測報・降灰予報 (定時)・推定噴煙流向報) は数が多いので
+   * 数に入れず、この 2 日の分から火山と種別ごとにいちばん新しい報だけを足す (`collapseRoutineVolcanoes`)
+   */
   volcanoes(limit = 50): Volcano[] {
-    return this.db
-      .query<{ data: string }, [number]>(
-        `SELECT data FROM volcanoes WHERE status = 'normal'
-         ORDER BY datetime(reported_at) DESC LIMIT ?`,
-      )
-      .all(limit)
-      .map((r) => JSON.parse(r.data) as Volcano);
+    const parse = (rows: { data: string }[]) =>
+      rows.map((r) => JSON.parse(r.data) as Volcano);
+    const main = parse(
+      this.db
+        .query<{ data: string }, [number]>(
+          `SELECT data FROM volcanoes WHERE status = 'normal'
+             AND series NOT LIKE 'VFVO52-%' AND series NOT LIKE 'VFVO53-%'
+             AND series NOT LIKE 'VFVO60-%'
+           ORDER BY datetime(reported_at) DESC LIMIT ?`,
+        )
+        .all(limit),
+    );
+    const since = new Date(ms(this.now()) - 2 * DAY).toISOString();
+    const routine = collapseRoutineVolcanoes(
+      parse(
+        this.db
+          .query<{ data: string }, [string]>(
+            `SELECT data FROM volcanoes WHERE status = 'normal'
+               AND (series LIKE 'VFVO52-%' OR series LIKE 'VFVO53-%'
+                 OR series LIKE 'VFVO60-%')
+               AND datetime(reported_at) > datetime(?)
+             ORDER BY datetime(reported_at) DESC LIMIT 2000`,
+          )
+          .all(since),
+      ),
+    );
+    return [...main, ...routine].sort(
+      (a, b) => ms(b.reportedAt) - ms(a.reportedAt),
+    );
   }
 
   /**

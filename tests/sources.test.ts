@@ -80,7 +80,7 @@ describe("気象庁のフィード", () => {
     expect(feeds[2]?.headers["if-none-match"]).toBe('"abc"');
     expect(feeds[2]?.headers["if-modified-since"]).toBeTruthy();
     expect(got.map((m) => m.code)).toEqual(["VXSE56", "VXSE52", "VXSE53"]);
-    expect(calls.some((c) => c.url.includes("VFVO53"))).toBe(false);
+    expect(calls.some((c) => c.url.includes("VFSV50"))).toBe(false);
     expect(src.status().state).toBe("stopped");
   });
 

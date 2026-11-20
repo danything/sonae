@@ -20,6 +20,7 @@ import {
   intensityLabel,
   intensityRank,
   isExpired,
+  isHeavyAsh,
   isUrgentAdvisory,
   type Quake,
   type SonaeEvent,
@@ -172,6 +173,17 @@ function eewNearby(e: Eew, places: Home[]): boolean {
 /** 噴火速報・噴火警報の対象の市町村等に、住んでいる地域か現在地が入るか */
 const volcanoNearby = (v: Volcano, places: Home[]): boolean =>
   (v.cityCodes ?? []).some((c) => places.some((p) => p.code === c));
+
+/** 降灰予報 (速報・詳細) の「多量の降灰」の市町村等に、住んでいる地域か現在地が入るか */
+const heavyAshNearby = (v: Volcano, places: Home[]): boolean =>
+  (v.ash ?? [])
+    .filter(isHeavyAsh)
+    .some((a) => a.cityCodes.some((c) => places.some((p) => p.code === c)));
+
+/** 知らせる降灰予報か (速報・詳細で、どこかに「多量の降灰」がある) */
+const isHeavyAshForecast = (v: Volcano) =>
+  (v.code === "VFVO54" || v.code === "VFVO55") &&
+  (v.ash ?? []).some(isHeavyAsh);
 
 function eewNotice(e: Eew, event: SonaeEvent): Notice {
   const place = e.hypocenter?.name;
@@ -345,6 +357,30 @@ function volcanoNotice(v: Volcano, event: SonaeEvent): Notice {
     sticky: !v.cancelled && (flash || top >= VOLCANO_RESIDENTIAL),
     closing: v.cancelled || ended,
     at: Date.parse(v.eventTime ?? v.reportedAt),
+    event,
+  };
+}
+
+/**
+ * 降灰予報 (速報・詳細) の「多量の降灰」。噴火ごとに tag を分け (同じ噴火の速報と詳細は同じ tag で、
+ * 詳細は鳴らさずに置き換える)、見出しと文は電文のまま出す
+ */
+function ashNotice(v: Volcano, event: SonaeEvent): Notice {
+  return {
+    tag: `volcano:ash:${v.volcanoes.map((a) => a.code).join(",") || v.eventId}:${v.eventTime ?? v.reportedAt}`,
+    level: v.cancelled ? 0 : 1,
+    title: v.cancelled ? `${v.title} (取消)` : v.title,
+    body: clip(
+      v.cancelled
+        ? "先ほどの火山の情報は取り消されました。"
+        : v.headline.replace(/\s+/g, " ").trim(),
+    ),
+    url: selectHref(NONE, "volcano", v.id),
+    urgency: "normal",
+    ttl: TTL.volcano,
+    sticky: false,
+    closing: v.cancelled,
+    at: Date.parse(v.reportedAt),
     event,
   };
 }
@@ -621,9 +657,16 @@ export function noticeOf(event: SonaeEvent, now: number): Notice | null {
       if (!isUrgentAdvisory(event.data)) return null;
       n = advisoryNotice(event.data, event);
       break;
-    case "volcano":
-      n = volcanoNotice(event.data, event);
+    case "volcano": {
+      // 知らせるのは噴火警報・予報と噴火速報と、「多量の降灰」のある降灰予報 (速報・詳細) だけ。
+      // 解説情報・観測報・降灰予報 (定時)・推定噴煙流向報は一覧と詳しい内容に出すだけ (docs/design.md の 2.4)
+      const v = event.data;
+      if (v.code === "VFVO50" || v.code === "VFVO56")
+        n = volcanoNotice(v, event);
+      else if (isHeavyAshForecast(v)) n = ashNotice(v, event);
+      else return null;
       break;
+    }
     case "longperiod":
       // 長周期地震動は地震情報の後に出る観測の詳しい内容なので、知らせない (地震情報で知らせている)
       return null;
@@ -695,6 +738,9 @@ export function matches(
       // 南海トラフ地震臨時情報等はいつも知らせる (選ばせない。持ち主の決定、2026-11-16)
       return true;
     case "volcano": {
+      // 降灰予報は、住んでいる地域か現在地に「多量の降灰」が予想されるときだけ (全国でも、ほかの所の降灰は知らせない)
+      if (e.data.code === "VFVO54" || e.data.code === "VFVO55")
+        return prefs.volcano !== "off" && heavyAshNearby(e.data, places);
       // 噴火警報 (居住地域。レベル 4・5) は特別警報なので、どこに出ても、「知らせない」でも知らせる (2026-11-16)
       if (e.data.code !== "VFVO56" && n.level >= VOLCANO_RESIDENTIAL)
         return true;
@@ -911,9 +957,9 @@ export function scopeText(
     },
     volcano: {
       everywhere:
-        "どこに出た噴火速報と噴火警報 (レベル 4・5) も知らせます。住んでいる地域か現在地が対象なら、火口周辺警報 (レベル 2・3) も知らせます。",
+        "どこに出た噴火速報と噴火警報 (レベル 4・5) も知らせます。住んでいる地域か現在地が対象なら、火口周辺警報 (レベル 2・3) と多量の降灰の降灰予報も知らせます。",
       nearby:
-        "住んでいる地域か現在地が対象の噴火速報・火口周辺警報と、どこに出た噴火警報 (レベル 4・5) も知らせます。",
+        "住んでいる地域か現在地が対象の噴火速報・火口周辺警報・多量の降灰の降灰予報と、どこに出た噴火警報 (レベル 4・5) も知らせます。",
     },
     weather: {
       everywhere: `住んでいる地域か現在地の注意報以上と記録的短時間大雨情報・竜巻注意情報に加え、どこに出た危険警報 (レベル 4) と特別警報も知らせます。${advisory}`,
