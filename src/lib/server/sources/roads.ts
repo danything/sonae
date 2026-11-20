@@ -1,9 +1,10 @@
 /**
  * 災害時の通行止め。国土交通省が災害ごとに出す GeoJSON (「通れるマップ」の道路規制情報と ETC2.0 の平均速度) を、
- * 登録した URL から 30 分ごとに取る (docs/design.md の 2.12)。
+ * 30 分ごとに取る (docs/design.md の 2.12)。
  *
- * - URL は環境変数 `SONAE_ROAD_GEOJSON` に書く (カンマか空白で区切る)。無ければ何もしない
- * - 取りに行くのは https の `*.go.jp` だけ (サーバーが取りに行く先を、国の機関に絞る)
+ * - URL は、国土交通省 道路局のページから 3 時間ごとに自動で見つける (`./road-discover.ts`。`SONAE_ROAD_DISCOVER=off` で切る) のと、
+ *   環境変数 `SONAE_ROAD_GEOJSON` に書いたもの (カンマか空白で区切る。見つからないときの予備) を合わせる
+ * - 取得するのは https の `*.go.jp` だけ (サーバーが取得する先を、国の機関に絞る)
  * - `If-None-Match`・`If-Modified-Since` を付ける。取ったものは表 `layer_cache` に置き、取れない間は前のものを出す
  * - 道路規制情報は、全面通行止めで、まだ解除されていないものだけを採る。解除は、規制内容の「解除」と、
  *   通れるマップの色 (灰色は「規制解除後」) で見分ける (色の意味は通れるマップの凡例)
@@ -23,6 +24,13 @@ import type {
 
 import { LayerCache } from "../layer-cache.ts";
 import { sleep, StatusTracker, USER_AGENT } from "./retry.ts";
+import {
+  DISCOVER_INTERVAL_MS,
+  discovered,
+  discoveredUrls,
+  discoverOnce,
+  roadDiscoverOn,
+} from "./road-discover.ts";
 import type { Source, SourceContext } from "./types.ts";
 
 export const ROAD_INTERVAL_MS = 30 * 60_000;
@@ -233,6 +241,54 @@ export async function readLimited(
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
+/**
+ * https の go.jp の URL を、`If-None-Match`・`If-Modified-Since` を付けて取る。304 なら undefined。
+ * リダイレクトは自分で 3 回まで辿り、行き先も https の go.jp か確かめる (go.jp に絞った意味を、リダイレクトで崩さない)。
+ * 200 でなければ例外。content-length が上限を超えていれば読まずに例外
+ */
+export async function fetchGoJp(
+  doFetch: typeof fetch,
+  url: string,
+  signal: AbortSignal,
+  o: { accept: string; etag?: string; modified?: string; maxBytes?: number },
+): Promise<Response | undefined> {
+  const first = roadUrlProblem(url);
+  if (first) throw new Error(`${url} は使いません (${first})`);
+  const headers: Record<string, string> = {
+    "user-agent": USER_AGENT,
+    accept: o.accept,
+  };
+  if (o.etag) headers["if-none-match"] = o.etag;
+  if (o.modified) headers["if-modified-since"] = o.modified;
+  const timeout = AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]);
+  let at = url;
+  let res: Response | undefined;
+  for (let hop = 0; ; hop++) {
+    res = await doFetch(at, { headers, signal: timeout, redirect: "manual" });
+    if (res.status < 300 || res.status >= 400 || res.status === 304) break;
+    const next = res.headers.get("location");
+    await res.body?.cancel();
+    if (!next || hop >= MAX_REDIRECTS)
+      throw new Error(`${url} のリダイレクトを辿れません (${res.status})`);
+    at = new URL(next, at).toString();
+    const why = roadUrlProblem(at);
+    if (why)
+      throw new Error(`${url} のリダイレクト先 ${at} は使いません (${why})`);
+  }
+  if (res.status === 304) return undefined;
+  if (!res.ok) {
+    await res.body?.cancel();
+    throw new Error(`${url} が ${res.status} を返しました`);
+  }
+  const max = o.maxBytes ?? MAX_BYTES;
+  const size = Number(res.headers.get("content-length") ?? 0);
+  if (size > max) {
+    await res.body?.cancel();
+    throw new Error(`${url} が大きすぎます (${size} バイト)`);
+  }
+  return res;
+}
+
 interface CachedRoads {
   etag?: string;
   modified?: string;
@@ -256,21 +312,38 @@ export function roadResponse(db: Database, urls: string[]): RoadResponse {
   };
 }
 
+/** 地図に出す URL。環境変数で登録したものと、自動で見つけたもの (`/api/roads` と取得する輪で同じものを使う) */
+export function activeRoadUrls(
+  db: Database,
+  manual: string[] = roadUrls().urls,
+  discover: boolean = roadDiscoverOn(),
+): string[] {
+  return [
+    ...new Set([
+      ...manual,
+      ...(discover ? discoveredUrls(discovered(db)) : []),
+    ]),
+  ];
+}
+
 export interface RoadOptions {
   fetch?: typeof fetch;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
   now?: () => number;
   log?: (m: string) => void;
   onStatus?: SourceContext["onStatus"];
+  /** 国土交通省 道路局のページから災害を自動で見つけるか (既定はしない。receiver が環境変数から渡す) */
+  discover?: boolean;
 }
 
-/** URL があれば情報源を作る。無ければ undefined (「受信の状態」には `off` で並べる) */
+/** 登録した URL があるか、自動の発見を使うなら情報源を作る。どちらも無ければ undefined (「受信の状態」には `off` で並べる) */
 export function roadSource(
   db: Database,
-  urls: string[],
+  manual: string[],
   o: RoadOptions = {},
 ): Source | undefined {
-  if (urls.length === 0) return undefined;
+  const discover = o.discover ?? false;
+  if (manual.length === 0 && !discover) return undefined;
   const cache = new LayerCache(db);
   const status = new StatusTracker("roads", o.onStatus);
   const doFetch = o.fetch ?? fetch;
@@ -281,33 +354,12 @@ export function roadSource(
   async function fetchOne(url: string, signal: AbortSignal): Promise<boolean> {
     const id = roadCacheId(url);
     const prev = cache.get<CachedRoads>(id);
-    const headers: Record<string, string> = {
-      "user-agent": USER_AGENT,
+    const res = await fetchGoJp(doFetch, url, signal, {
       accept: "application/geo+json, application/json",
-    };
-    if (prev?.data.etag) headers["if-none-match"] = prev.data.etag;
-    if (prev?.data.modified) headers["if-modified-since"] = prev.data.modified;
-    const timeout = AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]);
-    // リダイレクトは自分で辿り、行き先も https の go.jp か確かめる (go.jp に絞った意味を、リダイレクトで崩さない)
-    let at = url;
-    let res: Response | undefined;
-    for (let hop = 0; ; hop++) {
-      res = await doFetch(at, { headers, signal: timeout, redirect: "manual" });
-      if (res.status < 300 || res.status >= 400 || res.status === 304) break;
-      const next = res.headers.get("location");
-      await res.body?.cancel();
-      if (!next || hop >= MAX_REDIRECTS)
-        throw new Error(`${url} のリダイレクトを辿れません (${res.status})`);
-      at = new URL(next, at).toString();
-      const why = roadUrlProblem(at);
-      if (why)
-        throw new Error(`${url} のリダイレクト先 ${at} は使いません (${why})`);
-    }
-    if (res.status === 304) return false;
-    if (!res.ok) throw new Error(`${url} が ${res.status} を返しました`);
-    const size = Number(res.headers.get("content-length") ?? 0);
-    if (size > MAX_BYTES)
-      throw new Error(`${url} が大きすぎます (${size} バイト)`);
+      etag: prev?.data.etag,
+      modified: prev?.data.modified,
+    });
+    if (!res) return false;
     const text = await readLimited(res, MAX_BYTES, url);
     const modified = res.headers.get("last-modified") ?? undefined;
     const t = Date.parse(modified ?? "");
@@ -328,15 +380,61 @@ export function roadSource(
     return true;
   }
 
+  // 自動の発見の状態 (「受信の状態」に出す)
+  let problem: string | undefined;
+  const showDetail = () => {
+    const d = discover ? discovered(db) : undefined;
+    status.detail({
+      roads: {
+        discover,
+        disasters: d?.disasters.map((x) => x.name) ?? [],
+        manual: manual.length,
+        checkedAt: d?.checkedAt,
+        problem,
+      },
+    });
+  };
+  showDetail();
+
   return {
     id: "roads",
     status: () => status.get(),
     async run(signal) {
       let failures = 0;
+      // 起動し直したときは、前に一覧を読んだ時刻から 3 時間たつまで読み直さない
+      const last = Date.parse(discovered(db)?.checkedAt ?? "");
+      let nextDiscover = Number.isFinite(last)
+        ? last + DISCOVER_INTERVAL_MS
+        : 0;
       while (!signal.aborted) {
         const errors: string[] = [];
         let fresh = false;
-        // 1 つずつ順に取る (同じ所へ並べて取りに行かない)
+        if (discover && now() >= nextDiscover) {
+          try {
+            const r = await discoverOnce(db, doFetch, signal, now);
+            problem =
+              r.problems.length > 0
+                ? `${r.problems.map((p) => p.name).join("、")}の地図のページが読めません`
+                : undefined;
+            errors.push(...r.problems.map((p) => p.error));
+            log(
+              `[roads] 一覧を読みました (災害 ${r.data.disasters.length} 件${r.data.disasters.map((d) => `・${d.name}`).join("")})`,
+            );
+            // 地図のページが読めない災害があれば、一覧が読めないときと同じく 30 分後に読み直す
+            nextDiscover =
+              now() +
+              (r.problems.length > 0 ? ROAD_INTERVAL_MS : DISCOVER_INTERVAL_MS);
+          } catch (err) {
+            if (signal.aborted) break;
+            problem = "一覧が読めません";
+            errors.push(`一覧が読めません: ${err}`);
+            // 読めなければ、次の取得 (30 分か、失敗が続けばそれより早い) で読み直す
+            nextDiscover = now() + ROAD_INTERVAL_MS;
+          }
+          showDetail();
+        }
+        const urls = activeRoadUrls(db, manual, discover);
+        // 1 つずつ順に取る (同じ所へ並べて取得しない)
         for (const url of urls) {
           if (signal.aborted) break;
           try {
@@ -357,8 +455,10 @@ export function roadSource(
           failures++;
           const why = errors.join(" / ");
           log(`[roads] 取れませんでした: ${why}`);
-          // 前に取ったものがあれば出し続けているので「受信中」のまま、直近のエラーだけを出す
-          const cached = urls.some((u) => cache.get(roadCacheId(u)));
+          // 前に取ったものがあれば出し続けているので「受信中」のまま、直近のエラーだけを出す。
+          // 取得する URL が無いとき (一覧が読めないだけ) も「受信中」のまま
+          const cached =
+            urls.length === 0 || urls.some((u) => cache.get(roadCacheId(u)));
           status.set(cached ? "connected" : "retrying", why);
           delay = Math.min(ROAD_INTERVAL_MS, RETRY_MS * 2 ** (failures - 1));
         }

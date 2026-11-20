@@ -947,6 +947,22 @@ export interface SourceStatus {
   lastMessageAt?: string;
   lastError?: string;
   since: string;
+  /** 災害時の通行止め (`roads`) の、自動で見つけた災害 (docs/design.md の 2.12) */
+  roads?: RoadDiscoverStatus;
+}
+
+/** 災害時の通行止めの、国土交通省 道路局のページから自動で見つけたもの */
+export interface RoadDiscoverStatus {
+  /** 自動の発見を使っているか (`SONAE_ROAD_DISCOVER=off` で切る) */
+  discover: boolean;
+  /** いま一覧にある災害の名前 (「令和8年熊本地震」) */
+  disasters: string[];
+  /** 環境変数で登録した URL の数 */
+  manual: number;
+  /** 最後に一覧を読めた時刻 */
+  checkedAt?: string;
+  /** 一覧や地図のページが読めないときの一言 (「一覧が読めません」) */
+  problem?: string;
 }
 
 /**

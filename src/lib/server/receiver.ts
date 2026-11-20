@@ -21,6 +21,7 @@ import { jmaSource, jmaWeatherSource } from "./sources/jma.ts";
 import { msilKey, msilSource } from "./sources/msil.ts";
 import { p2pSource } from "./sources/p2p.ts";
 import { ptwcSource } from "./sources/ptwc.ts";
+import { roadDiscoverOn } from "./sources/road-discover.ts";
 import { roadSource, roadUrls } from "./sources/roads.ts";
 import { seisSource } from "./sources/seisjs.ts";
 import { tremSource } from "./sources/trem.ts";
@@ -185,18 +186,27 @@ export function startReceiving(): void {
       "[msil] 海しるの API のキー (MSIL_API_KEY) が無いので、海しるの層は出しません",
     );
   }
-  // 災害時の通行止め (国土交通省の通れるマップの GeoJSON)。URL を `SONAE_ROAD_GEOJSON` に登録したときだけ取る
-  // (docs/design.md の 2.12)。取ったものは表 layer_cache に置くだけで、知らせには届かない
+  // 災害時の通行止め (国土交通省の通れるマップの GeoJSON)。URL は国土交通省 道路局のページから自動で見つけ、
+  // `SONAE_ROAD_GEOJSON` に登録したものと合わせる (docs/design.md の 2.12)。`SONAE_ROAD_DISCOVER=off` で自動の発見を切る。
+  // 取ったものは表 layer_cache に置くだけで、知らせには届かない
   const road = roadUrls();
   for (const r of road.rejected)
     console.warn(`[roads] ${r.url} は使いません (${r.why})`);
-  const roads = roadSource(a.store.db, road.urls, { onStatus: ctx.onStatus });
+  const discover = roadDiscoverOn();
+  if (!discover)
+    console.log(
+      "[roads] SONAE_ROAD_DISCOVER=off なので、災害を自動では見つけません",
+    );
+  const roads = roadSource(a.store.db, road.urls, {
+    onStatus: ctx.onStatus,
+    discover,
+  });
   if (roads) a.sources.push(roads);
   else
     a.off.push({
       id: "roads",
       state: "off",
-      reason: "URL が登録されていません",
+      reason: "SONAE_ROAD_DISCOVER=off で切ってあり、URL も登録されていません",
       since: new Date().toISOString(),
     });
   for (const s of a.sources) {

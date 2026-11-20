@@ -118,12 +118,40 @@ const SOURCE_STATE: Record<SourceStatus["state"], string> = {
 export function sourceStateText(s: SourceStatus): string {
   const state = SOURCE_STATE[s.state] ?? s.state;
   if (s.state === "off") return s.reason ? `${state} (${s.reason})` : state;
+  const road = roadDiscoverText(s, state);
+  if (road) return road;
   return s.lastSeenAt ? `${state}・${jst(s.lastSeenAt)}` : state;
 }
 
-/** 注意の色で出す状態か。受信中と、設定で切ってあるものは問題ではない */
+/**
+ * 災害時の通行止めを自動で見つけているときの 1 行 (docs/design.md の 2.12)。
+ * 「受信中・令和8年熊本地震 (1 件)・11/21 10:00 に一覧を確かめた」「災害の通行止めはありません (11/21 10:00 に確かめた)」
+ * 「一覧が読めません (最後に読めたのは 11/21 07:00)」。自動の発見を使っていなければ undefined
+ */
+function roadDiscoverText(s: SourceStatus, state: string): string | undefined {
+  const r = s.roads;
+  if (s.id !== "roads" || !r?.discover || s.state === "stopped")
+    return undefined;
+  if (r.problem)
+    return r.checkedAt
+      ? `${r.problem} (最後に読めたのは ${jst(r.checkedAt)})`
+      : r.problem;
+  if (!r.checkedAt) return "一覧を確かめています";
+  const at = jst(r.checkedAt);
+  const manual = r.manual > 0 ? `登録した URL ${r.manual} 件` : undefined;
+  const n = r.disasters.length;
+  if (n === 0)
+    return manual
+      ? `${state}・${manual}・一覧に災害はありません (${at} に確かめた)`
+      : `災害の通行止めはありません (${at} に確かめた)`;
+  const found = `${r.disasters.join("、")} (${n} 件)`;
+  return `${state}・${manual ? `${found}、${manual}` : found}・${at} に一覧を確かめた`;
+}
+
+/** 注意の色で出す状態か。受信中と、設定で切ってあるものは問題ではない。通行止めの一覧が読めないときは出す */
 export const sourceInTrouble = (s: SourceStatus) =>
-  s.state !== "connected" && s.state !== "off";
+  (s.state !== "connected" && s.state !== "off") ||
+  (s.id === "roads" && s.state !== "off" && !!s.roads?.problem);
 
 /** M の書き方 (「M3.5」)。M が無ければ電文の文のまま、それも無ければ「—」 */
 export function magnitudeText(

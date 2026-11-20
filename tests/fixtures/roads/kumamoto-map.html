@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>道路：令和８年熊本地震　通れるマップ - 国土交通省</title>
+</head>
+<body>
+<div id="mapdiv">
+<script>
+var targetLayers = {
+  '道路規制情報': {
+    'geojson': './json/dourokisei.geojson',
+    'zindex': 8000,
+    'checked': true
+ },
+  '【熊本】ETC2.0速度データ（平均速度）': {
+    'geojson': './json/ETC2.0_speed_data.geojson',
+    'zindex': 0,
+    'checked': true
+ }
+};
+</script>
+</div>
+</body>
+</html>
