@@ -2,7 +2,7 @@
 # プレート境界 (PB2002) の線を簡略化して、地図に重ねる GeoJSON を作る (docs/map.md)。
 # 依存はホストに入れず、コンテナの中で動かす:
 #
-#   wslc run --rm -v "$PWD:/usr/src/app" -w /usr/src/app oven/bun:1.4.4-slim sh tools/plates/build.sh
+#   wslc run --rm -v "$PWD:/usr/src/app" -w /usr/src/app oven/bun:1.4.5-slim sh tools/plates/build.sh
 #
 # 元: Peter Bird (2003) の PB2002 を Hugo Ahlenius (Nordpil) が整え、GeoJSON にしたもの
 #   https://github.com/fraxen/tectonicplates (GeoJSON/PB2002_boundaries.json)

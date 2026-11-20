@@ -2,7 +2,7 @@
  * 地理院地図Vector (国土地理院最適化ベクトルタイル) の注記の層とスプライトを、sonae が自分で配る形にする
  * (docs/map.md)。コンテナの中で動かす:
  *
- *   wslc run --rm -v "$PWD:/usr/src/app" -w /usr/src/app oven/bun:1.4.4-slim bun tools/gsi/build.ts
+ *   wslc run --rm -v "$PWD:/usr/src/app" -w /usr/src/app oven/bun:1.4.5-slim bun tools/gsi/build.ts
  *
  * - 元は国土地理院が公開しているスタイル (https://github.com/gsi-cyberjapan/optimal_bvmap の
  *   style/std.json) とスプライト。国土地理院コンテンツ利用規約 (公共データ利用規約 第 1.0 版) で、出典を書けば使える

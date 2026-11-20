@@ -1,6 +1,6 @@
 #!/bin/sh
 # 気象警報・注意報を塗る市町村等の面と、市町村等の表を作る。ホストに何も入れず、コンテナの中で動かす:
-#   wslc run --rm -v "$PWD:/w" -w /w oven/bun:1.4.4-slim sh tools/areas/build-weather.sh <zip を置いた所>
+#   wslc run --rm -v "$PWD:/w" -w /w oven/bun:1.4.5-slim sh tools/areas/build-weather.sh <zip を置いた所>
 #
 # 元 (どれも気象庁ホームページの利用規約。出典は docs/map.md):
 #   - https://www.data.jma.go.jp/developer/gis.html

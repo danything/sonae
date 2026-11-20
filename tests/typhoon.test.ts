@@ -236,7 +236,7 @@ describe("地図の台風", () => {
     const now = typhoonPopup(a, -1, fmt).map((l) => l.text);
     expect(now[0]).toBe("台風第 18 号 (TALIM)");
     expect(now).toContain("中心気圧 950 hPa");
-    expect(now.at(-1)).toBe("出典：気象庁 (台風解析・予報情報)");
+    expect(now.at(-1)).toBe("出典：気象庁「台風解析・予報情報」を加工して作成");
     const f24 = typhoonPopup(a, 7, fmt).map((l) => l.text);
     expect(f24[1]).toBe("09-14T21:00 の予報 (24 時間後)");
     expect(f24).toContain("最大風速 45 m/s (最大瞬間風速 65 m/s)");

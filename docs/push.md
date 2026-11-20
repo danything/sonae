@@ -27,7 +27,7 @@ chart は `secrets.name` の Secret の `vapid-private-jwk` (`secrets.keys.vapid
 1. 鍵を作る (ホストに何も入れず、Bun のコンテナの中で WebCrypto を使う。出た 1 行が秘密鍵):
 
    ```sh
-   wslc run --rm oven/bun:1.4.4 bun -e 'const k = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]); console.log(JSON.stringify(await crypto.subtle.exportKey("jwk", k.privateKey)))'
+   wslc run --rm oven/bun:1.4.5 bun -e 'const k = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]); console.log(JSON.stringify(await crypto.subtle.exportKey("jwk", k.privateKey)))'
    ```
 
    `{"crv":"P-256","d":"...","ext":true,"key_ops":["sign"],"kty":"EC","x":"...","y":"..."}` の形が出る。

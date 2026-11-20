@@ -1,7 +1,7 @@
 /**
  * 市町村等の表 `static/areas/cities.json` に、その市町村等の沿岸が入る津波予報区を足す (7 列目)。
  * tools/areas/build-weather.sh から cities.ts の後に呼ぶ。単独でも動く:
- *   wslc run --rm -v "$PWD:/w" -w /w oven/bun:1.4.4-slim bun tools/areas/tsunami-cities.ts
+ *   wslc run --rm -v "$PWD:/w" -w /w oven/bun:1.4.5-slim bun tools/areas/tsunami-cities.ts
  *
  * 元は気象庁の「津波予報区に対応する沿岸の市町村対応表」(令和 8 年 3 月 26 日時点。
  * https://www.jma.go.jp/jma/kishou/know/jishin/joho/tsunami-yohoku.html の PDF) を

@@ -3,7 +3,7 @@
  * 地図で、震度の電文に並ぶ観測点を震度の色の丸で置き、押したときの吹き出しに市町村と設置者を出すのに使う。
  * コンテナの中で動かす:
  *
- *   wslc run --rm -v "$PWD:/w" -w /w oven/bun:1.4.4-slim bun tools/stations/build.ts <コード表の zip か xlsx> [stations.json]
+ *   wslc run --rm -v "$PWD:/w" -w /w oven/bun:1.4.5-slim bun tools/stations/build.ts <コード表の zip か xlsx> [stations.json]
  *
  * 元 (どれも気象庁ホームページの利用規約。公共データ利用規約 第 1.0 版):
  * - 観測点のコードと名前: 気象庁防災情報 XML の技術資料 (https://xml.kishou.go.jp/tec_material.html) の

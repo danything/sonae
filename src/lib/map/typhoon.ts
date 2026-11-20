@@ -402,7 +402,10 @@ export function typhoonPopup(
   } else if (t.location) {
     lines.push({ text: t.location, cls: "small muted" });
   }
-  lines.push({ text: "出典：気象庁 (台風解析・予報情報)", cls: "tiny muted" });
+  lines.push({
+    text: "出典：気象庁「台風解析・予報情報」を加工して作成",
+    cls: "tiny muted",
+  });
   return lines;
 }
 
