@@ -11,6 +11,7 @@ import type {
   TsunamiObservation,
   TyphoonProbability,
   Volcano,
+  WarningOutlook,
   WeatherInfo,
   WeatherWarning,
 } from "#lib/model.ts";
@@ -50,6 +51,7 @@ export type Normalized =
   | { type: "longperiod"; report: LongPeriodReport }
   | { type: "warning"; warning: Omit<WeatherWarning, "updatedAt"> }
   | { type: "weather"; info: Omit<WeatherInfo, "updatedAt" | "cancelled"> }
+  | { type: "outlook"; outlook: Omit<WarningOutlook, "updatedAt"> }
   /** 台風の暴風域に入る確率 (台風ごとに、いちばん新しい報だけを持つ) */
   | {
       type: "typhoonprob";

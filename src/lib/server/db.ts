@@ -239,6 +239,18 @@ const MIGRATIONS: string[] = [
   );
   `,
   `
+  -- 早期注意情報 (警報級の可能性。VPFD61・VPFW60)。府県予報区と種別ごとに、いまの 1 通を 1 行。
+  -- id は「種別-府県予報区のコード」(訓練・試験は後ろに -training・-test)
+  CREATE TABLE weather_outlooks (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL,
+    office TEXT NOT NULL,
+    status TEXT NOT NULL,
+    reported_at TEXT NOT NULL,
+    data TEXT NOT NULL
+  );
+  `,
+  `
   -- 台風の暴風域に入る確率 (VPTA50〜55)。series (typhoon-<TC 番号>) ごとに、いちばん新しい報だけを持つ。
   -- data は TyphoonProbability の JSON (どれも 0% の地域は持たない)
   CREATE TABLE typhoon_probs (

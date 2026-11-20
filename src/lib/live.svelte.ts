@@ -17,10 +17,15 @@ import type {
   SourceStatus,
   Tsunami,
   Volcano,
+  WarningOutlook,
   WeatherInfo,
   WeatherWarning,
 } from "./model.ts";
-import { collapseRoutineVolcanoes, latestPerVolcano } from "./model.ts";
+import {
+  collapseNotes,
+  collapseRoutineVolcanoes,
+  latestPerVolcano,
+} from "./model.ts";
 import {
   RTS_STALE_MS,
   type RtsFrame,
@@ -43,6 +48,8 @@ export interface Snapshot {
   warnings: WeatherWarning[];
   /** 気象の報 (新しい順) */
   weatherInfos: WeatherInfo[];
+  /** いまの早期注意情報 (府県予報区と種別ごと。知らせず、住んでいる地域の警報級の可能性に使う) */
+  outlooks: WarningOutlook[];
   statuses: SourceStatus[];
 }
 
@@ -81,6 +88,7 @@ export class Live {
    */
   liftedOffices = $state<Record<string, LiftedOffice>>({});
   weatherInfos = $state<WeatherInfo[]>([]);
+  outlooks = $state<WarningOutlook[]>([]);
   statuses = $state<SourceStatus[]>([]);
   /**
    * 台湾の観測点 (TREM-RTS) の位置と、いまの揺れ (docs/design.md の 2.9)。地図の点の色だけに使い、
@@ -117,6 +125,7 @@ export class Live {
     this.longPeriods = s.longPeriods;
     this.warnings = s.warnings;
     this.weatherInfos = s.weatherInfos;
+    this.outlooks = s.outlooks;
     this.statuses = s.statuses;
     this.seeded = true;
   }
@@ -136,6 +145,7 @@ export class Live {
       longPeriods: this.longPeriods,
       warnings: this.warnings,
       weatherInfos: this.weatherInfos,
+      outlooks: this.outlooks,
       statuses: this.statuses,
     };
   }
@@ -206,12 +216,17 @@ export class Live {
       }
       case "weather":
         if (e.data.status !== "normal") return true;
-        this.weatherInfos = upsert(
-          this.weatherInfos,
-          e.data,
-          (v) => v.reportedAt,
-          100,
+        // 解説の情報と台風情報は一連の情報ごとに新しい 1 つだけ残す (数が多く、ほかの報を押し出さないように)
+        this.weatherInfos = collapseNotes(
+          upsert(this.weatherInfos, e.data, (v) => v.reportedAt, 160),
         );
+        return true;
+      case "outlook":
+        if (e.data.status !== "normal") return true;
+        this.outlooks = [
+          e.data,
+          ...this.outlooks.filter((x) => x.id !== e.data.id),
+        ];
         return true;
       case "volcano":
         if (e.data.status !== "normal") return true;

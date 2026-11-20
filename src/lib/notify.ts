@@ -670,6 +670,9 @@ export function noticeOf(event: SonaeEvent, now: number): Notice | null {
     case "longperiod":
       // 長周期地震動は地震情報の後に出る観測の詳しい内容なので、知らせない (地震情報で知らせている)
       return null;
+    case "outlook":
+      // 早期注意情報 (警報級の可能性) は備えの情報なので、知らせない (docs/design.md の 2.8)
+      return null;
     case "warning":
       n = weatherBase(event, Date.parse(event.data.reportedAt), TTL.warning);
       break;
@@ -765,6 +768,7 @@ export function matches(
       return prefs.weather !== "off";
     case "longperiod":
     case "foreign":
+    case "outlook":
       return false;
   }
 }

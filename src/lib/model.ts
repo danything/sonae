@@ -904,10 +904,21 @@ export const isExpired = (i: Pick<WeatherInfo, "validUntil">, now: number) =>
 /**
  * 気象の、報ごとに出す情報の種類。記録的短時間大雨情報 (VPOA50)・府県気象防災速報 (VPBS50)・
  * 竜巻注意情報 (VPHW50)・指定河川洪水予報 (VXKO50〜89)・熱中症警戒アラート (VPFT50)・
- * 台風解析・予報情報 (VPTW60〜65)
+ * 台風解析・予報情報 (VPTW60〜65)。
+ * 文の情報 (`NOTE_KINDS`) は、全般・地方・府県の気象解説情報 (VPZJ51・VPCJ51・VPFJ51)・
+ * 同じく潮位 (VMCJ53〜55)・天候に関する情報 (VPZI50・VPCI50)・早期天候情報 (VPAW51)
  */
 export type WeatherInfoKind =
-  "rain" | "bosai" | "tornado" | "flood" | "heat" | "typhoon";
+  | "rain"
+  | "bosai"
+  | "tornado"
+  | "flood"
+  | "heat"
+  | "typhoon"
+  | "commentary"
+  | "tide"
+  | "climate"
+  | "earlyClimate";
 
 export const WEATHER_INFO_LABEL: Record<WeatherInfoKind, string> = {
   rain: "記録的短時間大雨情報",
@@ -916,7 +927,58 @@ export const WEATHER_INFO_LABEL: Record<WeatherInfoKind, string> = {
   flood: "指定河川洪水予報",
   heat: "熱中症警戒アラート",
   typhoon: "台風情報",
+  commentary: "気象解説情報",
+  tide: "気象解説情報 (潮位)",
+  climate: "天候情報",
+  earlyClimate: "早期天候情報",
 };
+
+/**
+ * 文で読む解説の情報 (気象解説情報・潮位・天候情報・早期天候情報)。知らせず、一覧と詳しい内容に出すだけ。
+ * 一覧には一連の情報 (`series`) ごとにいちばん新しい報だけを並べる (台風情報と同じ)
+ */
+export const NOTE_KINDS: ReadonlySet<WeatherInfoKind> = new Set([
+  "commentary",
+  "tide",
+  "climate",
+  "earlyClimate",
+]);
+
+/**
+ * 新しい順に並んだ気象の報から、解説の情報 (`NOTE_KINDS`) と台風情報を一連の情報ごとにいちばん新しい 1 つにする。
+ * ほかの種類はそのまま。並びは新しい順のまま
+ */
+export function collapseNotes<T extends Pick<WeatherInfo, "kind" | "series">>(
+  infos: T[],
+): T[] {
+  const seen = new Set<string>();
+  return infos.filter((x) => {
+    if (!NOTE_KINDS.has(x.kind) && x.kind !== "typhoon") return true;
+    if (seen.has(x.series)) return false;
+    seen.add(x.series);
+    return true;
+  });
+}
+
+/**
+ * 一覧で「すべて」を出しているときに隠す、ほかの府県の解説 (府県気象解説情報 VPFJ51 と府県の潮位の解説 VMCJ55)。
+ * 全国で 1 日に数十通出て一覧を埋めるので、住んでいる地域の府県予報区・一次細分区域 (どちらも電文の地域と同じ
+ * 「府県予報区・細分区域等」のコード) のものだけを出す。住んでいる地域を選んでいなければ全部を隠す (docs/ui.md)
+ */
+export function isFarNote(
+  x: Pick<WeatherInfo, "code" | "areas">,
+  home: { office: string | null; ichiji: string | null } | null,
+): boolean {
+  if (x.code !== "VPFJ51" && x.code !== "VMCJ55") return false;
+  if (!home) return true;
+  return !x.areas.some((a) => a.code === home.ichiji || a.code === home.office);
+}
+
+/** 解説の情報の本文の 1 つの節 (「気象概況」「防災事項」「雨の予想」など。行は電文の文のまま) */
+export interface WeatherSection {
+  title: string;
+  lines: string[];
+}
 
 /** 台風の実況 (台風解析・予報情報のいちばん初めの「実況」) */
 export interface TyphoonNow {
@@ -1029,6 +1091,8 @@ export interface WeatherInfo {
   headline: string;
   /** 本文 (熱中症警戒アラート) */
   text?: string;
+  /** 本文の節 (解説の情報。気象概況・防災事項・雨の予想・付加情報など。電文の順) */
+  sections?: WeatherSection[];
   /** 段 (指定河川洪水予報だけ。氾濫注意報 2 から氾濫特別警報 5、解除は 0) */
   level?: WarningLevel;
   /** 種類の名前 (「レベル３氾濫警報」「記録雨」など) */
@@ -1085,6 +1149,77 @@ export function floodLevel(code: string | undefined): WarningLevel {
   return 0;
 }
 
+/** 警報級の可能性の段 (早期注意情報。「高」「中」だけを持つ。「なし」と値なしは持たない) */
+export type OutlookRank = "高" | "中";
+
+/** 1 つの現象 (大雨・土砂災害・雪・風 (風雪)・波・潮位) の、日ごとの警報級の可能性 */
+export interface OutlookKind {
+  /** 現象の名前 (電文の Type から「の警報級の可能性」を外したもの。「大雨」「風（風雪）」) */
+  name: string;
+  /** 日ごと (日本時間の暦日) のいちばん高い段。高・中の日だけ */
+  days: { date: string; rank: OutlookRank }[];
+}
+
+/**
+ * 早期注意情報 (警報級の可能性)。明後日まで (VPFD61) と明々後日以降 (VPFW60) を、府県予報区と種別ごとに
+ * いまの 1 通だけ持つ (新しい報で置き換える)。知らせない (docs/design.md の 2.8)
+ */
+export interface WarningOutlook {
+  /** `<種別>-<府県予報区のコード>` */
+  id: string;
+  code: "VPFD61" | "VPFW60";
+  office: { code: string; name: string };
+  status: Status;
+  reportedAt: string;
+  title: string;
+  /** この報が見ている日 (日本時間の暦日。明後日までと明々後日以降が重なる日は、明後日までの報を採る) */
+  dates: string[];
+  /** 一次細分区域ごと (明々後日以降は府県予報区ごとのこともある)。高・中のある現象だけ */
+  areas: { code: string; name: string; kinds: OutlookKind[] }[];
+  updatedAt: string;
+}
+
+/** 段の比べ方 (高いほど大きい) */
+export const outlookRank = (r: OutlookRank | undefined) =>
+  r === "高" ? 2 : r === "中" ? 1 : 0;
+
+/**
+ * 住んでいる地域 (一次細分区域か府県予報区) の警報級の可能性。明後日までと明々後日以降を日の順に並べ、
+ * 同じ日・同じ現象は高いほうを採る。高・中が無ければ空
+ */
+export function outlookFor(
+  outlooks: WarningOutlook[],
+  place: { office: string | null; ichiji: string | null },
+): { date: string; kinds: { name: string; rank: OutlookRank }[] }[] {
+  const byDate = new Map<string, Map<string, OutlookRank>>();
+  const mine = outlooks.filter(
+    (o) => o.status === "normal" && o.office.code === place.office,
+  );
+  // 明後日までの報が見ている日は、明々後日以降の報を使わない (明後日までのほうが新しく細かい)
+  const near = new Set(
+    mine.filter((o) => o.code === "VPFD61").flatMap((o) => o.dates ?? []),
+  );
+  for (const o of mine) {
+    const area =
+      o.areas.find((a) => a.code === place.ichiji) ??
+      o.areas.find((a) => a.code === place.office);
+    for (const k of area?.kinds ?? [])
+      for (const d of k.days) {
+        if (o.code === "VPFW60" && near.has(d.date)) continue;
+        const m = byDate.get(d.date) ?? new Map<string, OutlookRank>();
+        if (outlookRank(d.rank) > outlookRank(m.get(k.name)))
+          m.set(k.name, d.rank);
+        byDate.set(d.date, m);
+      }
+  }
+  return [...byDate]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, m]) => ({
+      date,
+      kinds: [...m].map(([name, rank]) => ({ name, rank })),
+    }));
+}
+
 export type EventType =
   | "eew"
   | "quake"
@@ -1094,7 +1229,8 @@ export type EventType =
   | "volcano"
   | "foreign"
   | "warning"
-  | "weather";
+  | "weather"
+  | "outlook";
 
 /** SSE と DB の events に載る 1 件。中身はその時点のまるごとの姿 */
 export type SonaeEvent =
@@ -1106,7 +1242,8 @@ export type SonaeEvent =
   | { seq: number; type: "longperiod"; data: LongPeriod }
   | { seq: number; type: "foreign"; data: ForeignQuake }
   | { seq: number; type: "warning"; data: WeatherWarning }
-  | { seq: number; type: "weather"; data: WeatherInfo };
+  | { seq: number; type: "weather"; data: WeatherInfo }
+  | { seq: number; type: "outlook"; data: WarningOutlook };
 
 export interface SourceStatus {
   id: SourceId;

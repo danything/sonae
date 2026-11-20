@@ -35,6 +35,10 @@ export const JMA_FEED = `${FEED_BASE}/eqvol.xml`;
 const JMA_LONG_FEED = `${FEED_BASE}/eqvol_l.xml`;
 const JMA_EXTRA_FEED = `${FEED_BASE}/extra.xml`;
 const JMA_EXTRA_LONG_FEED = `${FEED_BASE}/extra_l.xml`;
+const JMA_OTHER_FEED = `${FEED_BASE}/other.xml`;
+const JMA_OTHER_LONG_FEED = `${FEED_BASE}/other_l.xml`;
+const JMA_REGULAR_FEED = `${FEED_BASE}/regular.xml`;
+const JMA_REGULAR_LONG_FEED = `${FEED_BASE}/regular_l.xml`;
 
 export interface JmaOptions {
   feedUrl?: string;
@@ -54,7 +58,13 @@ interface FeedKind {
   wanted: ReadonlySet<string>;
   /** その時点の状態をまるごと持つ種別 (府県予報区ごとに、いちばん新しいものだけ取る) */
   snapshot?: ReadonlySet<string>;
-  parse(xml: string, code: string): Normalized[];
+  /** 電文を読む。url はフィードのリンク (府県予報区のコードがファイル名の後ろにある) */
+  parse(xml: string, code: string, url?: string): Normalized[];
+  /**
+   * 一緒に取るほかのフィード (同じ種別の振り分けと読み方を使う)。`everyMs` ごとに取る (急がない電文だけが載るフィード)。
+   * 長期フィードは、初めてと、取れない間が 10 分を超えた後に読む
+   */
+  more?: { feedUrl: string; longFeedUrl: string; everyMs: number }[];
 }
 
 const GAP_MS = 10 * 60_000;
@@ -162,7 +172,7 @@ function feedSource(
           key: e.id,
           code: e.code,
           body,
-          items: kind.parse(body, e.code),
+          items: kind.parse(body, e.code, e.url),
         });
       } catch (err) {
         // 読めない電文も原文は残す (読み方を直したら流し直す)
@@ -186,12 +196,31 @@ function feedSource(
     status: () => status.get(),
     async run(signal) {
       let lastOk = 0;
+      /** 一緒に取るほかのフィードの、次に取る時刻と、最後に取れた時刻 */
+      const moreNext = new Map<string, number>();
+      const moreOk = new Map<string, number>();
       while (!signal.aborted) {
         try {
           if (Date.now() - lastOk > GAP_MS)
             await feed(opts.longFeedUrl ?? kind.longFeedUrl, signal);
           await feed(opts.feedUrl ?? kind.feedUrl, signal);
           lastOk = Date.now();
+          // 急がないほかのフィードの失敗は、記録して次の間隔に回すだけにする
+          // (主のフィードの状態と間隔に響かせない。警報などの取得を遅らせないため)
+          for (const m of kind.more ?? []) {
+            const now = Date.now();
+            if (now < (moreNext.get(m.feedUrl) ?? 0)) continue;
+            moreNext.set(m.feedUrl, now + m.everyMs - 1000);
+            try {
+              if (now - (moreOk.get(m.feedUrl) ?? 0) > GAP_MS + m.everyMs)
+                await feed(m.longFeedUrl, signal);
+              await feed(m.feedUrl, signal);
+              moreOk.set(m.feedUrl, Date.now());
+            } catch (err) {
+              if (signal.aborted) throw err;
+              log(`${tag} ${m.feedUrl} を取れませんでした: ${err}`);
+            }
+          }
           status.seen(false);
           status.set("connected");
         } catch (err) {
@@ -221,7 +250,7 @@ export function jmaSource(ctx: SourceContext, opts: JmaOptions = {}): Source {
   );
 }
 
-/** 気象の随時のフィード (extra.xml。警報・注意報・竜巻・洪水・台風など) */
+/** 気象の随時のフィード (extra.xml。警報・注意報・竜巻・洪水・台風・解説情報など) と、その他のフィード (other.xml。潮位の解説情報) */
 export function jmaWeatherSource(
   ctx: SourceContext,
   opts: JmaOptions = {},
@@ -235,6 +264,22 @@ export function jmaWeatherSource(
       wanted: WEATHER_CODES,
       snapshot: WEATHER_SNAPSHOT_CODES,
       parse: parseWeatherXml,
+      // その他のフィード (other.xml) には、潮位の気象解説情報 (VMCJ53〜55) が載る。海上警報などほかの電文が
+      // 多く、急ぐ電文は無いので 5 分ごと
+      more: [
+        {
+          feedUrl: JMA_OTHER_FEED,
+          longFeedUrl: JMA_OTHER_LONG_FEED,
+          everyMs: 5 * 60_000,
+        },
+        // 定時のフィード (regular.xml) には早期注意情報 (VPFD61・VPFW60) が載る。天気予報など取らない電文が
+        // 多く (約 300KB。1 回に 10 時間ほどの分が並ぶ)、早期注意情報は 1 日 3 回の定時が主なので 10 分ごと
+        {
+          feedUrl: JMA_REGULAR_FEED,
+          longFeedUrl: JMA_REGULAR_LONG_FEED,
+          everyMs: 10 * 60_000,
+        },
+      ],
     },
     opts,
   );
