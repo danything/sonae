@@ -17,6 +17,8 @@ export interface Credit {
   parts: CreditPart[];
 }
 
+import { RAIN_PAGE } from "#lib/map/rain.ts";
+
 const JMA_FEED = "https://xml.kishou.go.jp/xmlpull.html";
 const JMA_GIS = "https://www.data.jma.go.jp/developer/gis.html";
 const JMA_STATIONS = "https://www.jma.go.jp/jma/kishou/know/jishin/intens-st/";
@@ -81,6 +83,14 @@ export const CREDITS: Credit[] = [
         href: "https://www.jma.go.jp/bosai/",
       },
       "）を加工して作成",
+    ],
+  },
+  {
+    label: "雨雲",
+    parts: [
+      "出典：気象庁ホームページ（",
+      { text: RAIN_PAGE, href: RAIN_PAGE },
+      "）。気象庁「高解像度降水ナウキャスト」を加工して作成 (透かして地図に重ねて表示)。地図の右下で「雨雲」を選んだときに、観測から作ったいまの降水強度を重ねます。1 時間先までの予測は出さず、sonae が先の雨を予想することもしません。タイルは、ブラウザから気象庁ホームページへ直接読みに行きます",
     ],
   },
   {
