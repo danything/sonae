@@ -102,6 +102,7 @@ export const SOURCE_LABEL: Record<SourceId, string> = {
   "jma-bosai": "気象庁ホームページ (国際津波)",
   trem: "ExpTech TREM (台湾の観測点の揺れ・非公式)",
   seisjs: "Wolfx SeisJS (有志の観測点の揺れ・非公式)",
+  msil: "海しる (海上保安庁。海底地殻変動観測点・海域火山)",
 };
 
 const SOURCE_STATE: Record<SourceStatus["state"], string> = {

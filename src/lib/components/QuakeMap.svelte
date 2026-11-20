@@ -29,6 +29,14 @@
     LOCATE_PREF,
     readLocate,
   } from "#lib/map/locate.ts";
+  import {
+    MARINE_URL,
+    marineIcons,
+    type MarinePoint,
+    marinePopup,
+    type MarineResponse,
+    nearestMarine,
+  } from "#lib/map/marine.ts";
   import { coordLabel, coordText, longPressOk } from "#lib/map/press.ts";
   import {
     latestRain,
@@ -256,6 +264,9 @@
       created.on("load", () => {
         if (disposed || !created) return;
         created.addImage("shelter", shelterIcon(), { pixelRatio: 2 });
+        for (const [id, img] of Object.entries(marineIcons()))
+          created.addImage(id, img, { pixelRatio: 2 });
+        void loadMarine(created);
         for (const l of anno as { id: string }[])
           if (!created.getLayer(l.id)) created.addLayer(l as never, "shelters");
         created.on("moveend", () => {
@@ -293,7 +304,16 @@
           )
             return;
           const s = stationHit(e.point, e.originalEvent);
-          if (s) openStation(s.properties, s.at);
+          if (s) return openStation(s.properties, s.at);
+          // 海しるの点 (観測点の丸の下に描いている)
+          const mk = marineHit(e.point, e.originalEvent);
+          if (mk) openMarine(mk.properties, mk.at);
+        });
+        created.on("mouseenter", "marine", () => {
+          if (created) created.getCanvas().style.cursor = "pointer";
+        });
+        created.on("mouseleave", "marine", () => {
+          if (created) created.getCanvas().style.cursor = "";
         });
         created.on("mouseenter", "intensity-stations", () => {
           if (created) created.getCanvas().style.cursor = "pointer";
@@ -301,15 +321,16 @@
         created.on("mouseleave", "intensity-stations", () => {
           if (created) created.getCanvas().style.cursor = "";
         });
-        // 塗った市町村等を押すと、出ている警報・注意報の吹き出し。上の層 (避難場所の印・観測点の丸) を押したときは
-        // そちらだけ
+        // 塗った市町村等を押すと、出ている警報・注意報の吹き出し。上の層 (避難場所の印・観測点の丸・海しるの点) を
+        // 押したときはそちらだけ
         created.on("click", "warning-fill", (e) => {
           if (
             !created ||
             placeMenu ||
             created.queryRenderedFeatures(e.point, { layers: ["shelters"] })
               .length > 0 ||
-            stationHit(e.point, e.originalEvent)
+            stationHit(e.point, e.originalEvent) ||
+            marineHit(e.point, e.originalEvent)
           )
             return;
           const code = e.features?.[0]?.properties?.code;
@@ -1054,9 +1075,12 @@
     // (`preventDefault`)、読み上げは止めない (メニューと同じく、Esc はこちらが先)
     const onkey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      const open = [shelterPopup, warningPopup, stationPopup].some((p) =>
-        p?.isOpen(),
-      );
+      const open = [
+        shelterPopup,
+        warningPopup,
+        stationPopup,
+        marinePopupEl,
+      ].some((p) => p?.isOpen());
       if (!open) return;
       closePopups();
       e.preventDefault();
@@ -1262,6 +1286,7 @@
     shelterPopup?.remove();
     warningPopup?.remove();
     stationPopup?.remove();
+    marinePopupEl?.remove();
   }
 
   /**
@@ -1342,6 +1367,81 @@
     }
     closePopups();
     stationPopup = new PopupClass(popupOptions())
+      .setLngLat(at)
+      .setDOMContent(box)
+      .addTo(map);
+  }
+
+  // ---- 海しるの点 (海底地殻変動観測点・海域火山。docs/map.md の「海しるの点」) ----
+  /** サーバーが 1 日 1 回取って置いたものを 1 度だけ読む。キーの無いサーバーでは空 (層を出さない) */
+  async function loadMarine(m: MapLibreMap): Promise<void> {
+    try {
+      const r = await fetch(MARINE_URL);
+      if (!r.ok) return;
+      const body = (await r.json()) as MarineResponse;
+      if (body.enabled && map === m) setData(m, "marine", body.data);
+    } catch {
+      // 読めなくても地図はそのまま (点を出さないだけ)
+    }
+  }
+
+  /** 押した所の海しるの点。観測点の丸と同じく、押せる範囲は点より広い (指 22px・マウス 10px) */
+  function marineHit(
+    pt: { x: number; y: number },
+    ev: MouseEvent | TouchEvent | undefined,
+  ): { properties: MarinePoint; at: [number, number] } | undefined {
+    const m = map;
+    if (!m?.getLayer("marine")) return undefined;
+    const kind = (ev as PointerEvent | undefined)?.pointerType;
+    const r =
+      kind === "touch" ||
+      (!kind &&
+        typeof matchMedia === "function" &&
+        matchMedia("(pointer: coarse)").matches)
+        ? 22
+        : 10;
+    const hits = m
+      .queryRenderedFeatures(
+        [
+          [pt.x - r, pt.y - r],
+          [pt.x + r, pt.y + r],
+        ],
+        { layers: ["marine"] },
+      )
+      .flatMap((f) => {
+        if (f.geometry.type !== "Point") return [];
+        const at = f.geometry.coordinates as [number, number];
+        const p = m.project(at);
+        const d2 = (p.x - pt.x) ** 2 + (p.y - pt.y) ** 2;
+        return d2 <= r * r
+          ? [{ properties: f.properties as MarinePoint, at, d2 }]
+          : [];
+      });
+    return nearestMarine(hits);
+  }
+
+  /** 押した点の名前・種類・水深か標高など (`marinePopup` が組んだ中身)。文は DOM で組み、HTML として読まない */
+  let marinePopupEl: Popup | undefined;
+  function openMarine(p: MarinePoint, at: [number, number]): void {
+    if (!map || !PopupClass) return;
+    const box = document.createElement("div");
+    box.className = "station-pop";
+    box.dataset.testid = "marine-pop";
+    for (const line of marinePopup(p)) {
+      const el = document.createElement("p");
+      if (line.cls) el.className = line.cls;
+      if (line.href) {
+        const a = document.createElement("a");
+        a.href = line.href;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = line.text;
+        el.append(a);
+      } else el.textContent = line.text;
+      box.append(el);
+    }
+    closePopups();
+    marinePopupEl = new PopupClass(popupOptions())
       .setLngLat(at)
       .setDOMContent(box)
       .addTo(map);
