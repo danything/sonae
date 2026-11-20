@@ -18,6 +18,7 @@ import { emscSource } from "./sources/emsc.ts";
 import { geonetSource } from "./sources/geonet.ts";
 import { bosaiTsunamiSource } from "./sources/jma-bosai.ts";
 import { jmaSource, jmaWeatherSource } from "./sources/jma.ts";
+import { msilKey, msilSource } from "./sources/msil.ts";
 import { p2pSource } from "./sources/p2p.ts";
 import { ptwcSource } from "./sources/ptwc.ts";
 import { seisSource } from "./sources/seisjs.ts";
@@ -166,6 +167,21 @@ export function startReceiving(): void {
     });
     console.log(
       "[cwa] 授権碼 (CWA_API_KEY) が無いので、中央氣象署の受信は切ってあります",
+    );
+  }
+  // 海しるの点の層 (海底地殻変動観測点・海域火山)。API のキーが要り、無ければ層を出さないだけ (docs/design.md の 2.11)。
+  // 取ったものは表 layer_cache に置くだけで、知らせには届かない
+  const msil = msilSource(a.store.db, msilKey(), { onStatus: ctx.onStatus });
+  if (msil) a.sources.push(msil);
+  else {
+    a.off.push({
+      id: "msil",
+      state: "off",
+      reason: "API のキーがありません",
+      since: new Date().toISOString(),
+    });
+    console.log(
+      "[msil] 海しるの API のキー (MSIL_API_KEY) が無いので、海しるの層は出しません",
     );
   }
   for (const s of a.sources) {

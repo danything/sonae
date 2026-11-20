@@ -1,3 +1,5 @@
+| `MSIL_API_KEY` | 海しる (海上保安庁) の API のキー ([design.md の 2.11](design.md#211-海しるの点の層-海底地殻変動観測点海域火山))。無ければ海しるの点の層 (海底地殻変動観測点・海域火山) だけを出さない |
+
 # 立てる
 
 Mac と Windows でインストーラがすることと置き場は [install-mac.md](install-mac.md) と [install-windows.md](install-windows.md)。Kubernetes (Helm chart) は [README](../README.md#kubernetes-に立てる-helm-chart)。

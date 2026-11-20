@@ -131,6 +131,16 @@ spec:
                   key: {{ .Values.secrets.keys.cwaApiKey }}
                   optional: true
             {{- end }}
+            {{- if .Values.secrets.name }}
+            # 海しる (海上保安庁の海洋状況表示システム) の API のキー。Secret に無ければ環境変数が入らず、海しるの点の層だけを
+            # 出さずに普通に動く (optional)。docs/design.md の 2.11
+            - name: MSIL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.keys.msilApiKey }}
+                  optional: true
+            {{- end }}
             {{- if .Values.voicevox.enabled }}
             # 読み上げの声を作る VOICEVOX (templates/voicevox.yaml)。止まっていると、画面は端末の読み上げで読む
             - name: VOICEVOX_URL

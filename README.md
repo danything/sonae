@@ -80,8 +80,8 @@ chart はリリースのたびに `oci://ghcr.io/danything/charts/sonae` に出�
    kubectl create namespace sonae
    kubectl -n sonae create secret generic sonae-secrets \
      --from-literal=oidc-client-secret=<クライアントシークレット>
-   # 任意: Web Push の VAPID の秘密鍵 (docs/push.md) と、台湾の中央氣象署の授権碼 (docs/cwa.md)
-   #   --from-file=vapid-private-jwk=vapid.jwk --from-literal=cwa-api-key=<授権碼>
+   # 任意: Web Push の VAPID の秘密鍵 (docs/push.md)・台湾の中央氣象署の授権碼 (docs/cwa.md)・海しるの API のキー (docs/design.md の 2.11)
+   #   --from-file=vapid-private-jwk=vapid.jwk --from-literal=cwa-api-key=<授権碼> --from-literal=msil-api-key=<キー>
    ```
 
 3. 値を書いて入れる。
