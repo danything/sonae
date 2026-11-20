@@ -3,6 +3,7 @@
  */
 import { MSIL_DISCLAIMER, MSIL_SITE } from "#lib/map/marine.ts";
 import { RAIN_PAGE } from "#lib/map/rain.ts";
+import { RISK_PAGE } from "#lib/map/risk.ts";
 import { MLIT_ROAD_DISASTER, ROAD_LINKS } from "#lib/map/roads.ts";
 
 export const NOTICE =
@@ -93,6 +94,14 @@ export const CREDITS: Credit[] = [
       "出典：気象庁ホームページ（",
       { text: RAIN_PAGE, href: RAIN_PAGE },
       "）。気象庁「高解像度降水ナウキャスト」を加工して作成 (透かして地図に重ねて表示)。地図の右下で「雨雲」を選んだときに、観測から作ったいまの降水強度を重ねます。1 時間先までの予測は出さず、sonae が先の雨を予想することもしません。タイルは、ブラウザから気象庁ホームページへ直接読みに行きます",
+    ],
+  },
+  {
+    label: "キキクル",
+    parts: [
+      "出典：気象庁ホームページ（",
+      { text: RISK_PAGE, href: RISK_PAGE },
+      "）。気象庁「キキクル（危険度分布）」の土砂キキクル・大雨キキクルを加工して作成 (透かして地図に重ねて表示)。地図の右下で選んだときに、気象庁が判定した危険度の色をそのまま重ねます。sonae が危険度を判定し直したり、色を変えたりはしません。タイルは、ブラウザから気象庁ホームページへ直接読みに行きます",
     ],
   },
   {

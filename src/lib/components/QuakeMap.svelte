@@ -62,6 +62,23 @@
   } from "#lib/map/rain.ts";
   import { type MapView, ViewKeeper } from "#lib/map/restore.ts";
   import {
+    latestRisk,
+    nextRiskPoll,
+    RISK_CREDIT,
+    RISK_LEGEND,
+    RISK_PAGE,
+    RISK_RETRY_MS,
+    RISK_TILE_ZOOMS,
+    RISK_TIMES_URL,
+    type RiskFrame,
+    riskIso,
+    type RiskKind,
+    riskOf,
+    RISKS,
+    riskStale,
+    riskTiles,
+  } from "#lib/map/risk.ts";
+  import {
     type RoadLine,
     roadPopup,
     type RoadResponse,
@@ -100,6 +117,8 @@
     rainShown,
     rainVisibility,
     readHazard,
+    riskShown,
+    riskVisibility,
     SHELTER_DISASTERS,
     SHELTER_LAYERS,
     SHELTER_MIN_ZOOM,
@@ -976,13 +995,91 @@
     rainFrame !== null && rainChecked > 0 && rainStale(rainFrame, rainChecked),
   );
 
-  /** 気象警報・注意報の塗りを隠しているか (ハザードマップか雨雲を重ねているか、地震を選んでいるため) */
-  const warningsHidden = $derived(covered || rainOn || quakeShown);
+  // ---- キキクル (気象庁の土砂・大雨の危険度。docs/map.md の「キキクル」) ----
+  // 雨雲と同じく、時刻の表をブラウザから直接取り、いまの 1 枚のタイルに差し替える。取るのはキキクルを出している間だけ
+  /** 選んでいるキキクル (土砂・大雨) */
+  const chosenRisk = $derived(riskOf(hazard));
+  /** キキクルを出しているか (選んでいて、地震を選んでいない) */
+  const riskOn = $derived(riskShown(hazard, quakeShown));
+  /** いまの 1 枚と、それがどのキキクルのものか (土砂と大雨を選び替えたら、前の 1 枚は使わない) */
+  let riskFrame = $state<(RiskFrame & { element: RiskKind["element"] }) | null>(
+    null,
+  );
+  let riskChecked = $state(0);
+  let riskFailed = $state(false);
+  $effect(() => {
+    const element = chosenRisk?.element;
+    if (!map || !element || !riskOn || !pageVisible) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (untrack(() => riskFrame?.element) !== element) {
+      riskFrame = null;
+      riskFailed = false;
+    }
+    riskChecked = Date.now();
+    const poll = async () => {
+      let wait = RISK_RETRY_MS;
+      try {
+        const r = await fetch(RISK_TIMES_URL, {
+          cache: "no-cache",
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!r.ok) throw new Error(`targetTimes: ${r.status}`);
+        const f = latestRisk(await r.json(), element);
+        if (!f) throw new Error("targetTimes: キキクルの時刻がありません");
+        if (stopped) return;
+        const now = untrack(() => riskFrame);
+        if (
+          now?.element !== element ||
+          now.validtime !== f.validtime ||
+          now.member !== f.member
+        )
+          riskFrame = { ...f, element };
+        riskFailed = false;
+        wait = nextRiskPoll(f, Date.now());
+      } catch (err) {
+        if (stopped) return;
+        console.warn(`キキクルの時刻を読めませんでした: ${err}`);
+        riskFailed = true;
+      }
+      riskChecked = Date.now();
+      timer = setTimeout(() => void poll(), wait);
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  });
+  // いまの 1 枚に差し替える (10 分ごと・土砂と大雨を選び替えたとき)
+  $effect(() => {
+    if (!map || !riskFrame) return;
+    const url = riskTiles(riskFrame, riskFrame.element);
+    for (const n of RISK_TILE_ZOOMS) {
+      const src = map.getSource(`risk-${n}`);
+      if (src && "setTiles" in src)
+        (src as { setTiles(t: string[]): void }).setTiles([url]);
+    }
+  });
+  /** キキクルが古いか (40 分より前の判定しか取れていない) */
+  const riskOld = $derived(
+    riskFrame !== null && riskChecked > 0 && riskStale(riskFrame, riskChecked),
+  );
+  /** いまのキキクルの 1 枚が、選んでいるキキクルのものか (選び替えた直後の前の 1 枚は出さない) */
+  const riskReady = $derived(
+    riskFrame !== null && riskFrame.element === chosenRisk?.element,
+  );
+
+  /** 気象警報・注意報の塗りを隠しているか (ハザードマップ・雨雲・キキクルを重ねているか、地震を選んでいるため) */
+  const warningsHidden = $derived(covered || rainOn || riskOn || quakeShown);
   $effect(() => {
     if (!map) return;
     for (const [layer, on] of Object.entries({
       ...hazardVisibility(hazard),
       ...rainVisibility(hazard, quakeShown, rainFrame !== null),
+      ...riskVisibility(hazard, quakeShown, riskReady),
       ...overlayVisibility(hazard, zoom, quakeShown),
     }))
       map.setLayoutProperty(layer, "visibility", on ? "visible" : "none");
@@ -1814,12 +1911,14 @@
               >
                 {chosenHazard
                   ? `ハザードマップ: ${chosenHazard.label}`
-                  : hazard === "rain"
-                    ? "雨雲"
-                    : "重ねる: なし"}
+                  : chosenRisk
+                    ? `キキクル: ${chosenRisk.label.replace(/ \(.*\)$/, "")}`
+                    : hazard === "rain"
+                      ? "雨雲"
+                      : "重ねる: なし"}
               </button>
             {/snippet}
-            <!-- 重ねる図は 1 つだけ (色がぶつかるため)。雨雲といまのハザードマップを同じ選択に並べる -->
+            <!-- 重ねる図は 1 つだけ (色がぶつかるため)。雨雲・キキクルといまのハザードマップを同じ選択に並べる -->
             {#each [{ id: "none" as const, label: "なし" }, { id: "rain" as const, label: "雨雲 (いま)" }] as h (h.id)}
               <button
                 type="button"
@@ -1828,6 +1927,17 @@
                 aria-checked={hazard === h.id}
                 onclick={() => pickHazard(h.id)}
                 data-testid="hazard-{h.id}">{h.label}</button
+              >
+            {/each}
+            <p class="menu-head">キキクル (危険度分布)</p>
+            {#each RISKS as r (r.id)}
+              <button
+                type="button"
+                role="menuitemradio"
+                class="menu-item"
+                aria-checked={hazard === r.id}
+                onclick={() => pickHazard(r.id)}
+                data-testid="hazard-{r.id}">{r.label}</button
               >
             {/each}
             <p class="menu-head">ハザードマップ</p>
@@ -1967,8 +2077,70 @@
           </p>
         {/if}
       {/if}
-      <!-- 地震を選んでいる間に、気象警報・注意報の塗りを隠していることと戻し方 (ハザードマップか雨雲の凡例が書くときは出さない) -->
-      {#if quakeShown && warningsPainted && !covered && hazard !== "rain" && boxHeight >= NOTE_MIN_HEIGHT}
+      {#if chosenRisk}
+        <!--
+          キキクルの凡例と、いつの判定か。古い危険度をいまの危険度と取り違えないよう、時刻をいつも出す。
+          地震を選んでいる間はキキクルを隠すので、そのことと戻し方だけを書く (低い地図では出さない)
+        -->
+        {#if riskOn}
+          <figure class="legend rain-legend" data-testid="risk-legend">
+            <figcaption class="small bold">{chosenRisk.title}</figcaption>
+            {#if riskFrame && riskReady}
+              <p class="small rain-time" data-testid="risk-time">
+                {#if riskOld}
+                  <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
+                  {jst(riskIso(riskFrame))} の危険度です。新しいキキクルを読めていないため、いまの危険度ではありません
+                {:else}
+                  {jst(riskIso(riskFrame))} の危険度 (10 分ごとに更新)
+                {/if}
+              </p>
+            {:else if riskFailed}
+              <p class="small rain-time" data-testid="risk-time">
+                <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
+                キキクルを読み込めませんでした。1 分後に再試行します
+              </p>
+            {:else}
+              <p class="small muted" data-testid="risk-time">
+                読み込んでいます…
+              </p>
+            {/if}
+            <ul class="risk-scale">
+              {#each RISK_LEGEND as l (l.label)}
+                <li>
+                  <span class="rain-swatch" style:background={l.color}
+                  ></span><span class="tiny"
+                    >{l.label} <span class="muted">({l.level})</span></span
+                  >
+                </li>
+              {/each}
+            </ul>
+            <p class="tiny muted">
+              {chosenRisk.about}色が無い所は「今後の情報等に留意」です。
+            </p>
+            <p class="tiny muted">
+              出典: <a href={RISK_PAGE} target="_blank" rel="noopener"
+                >{RISK_CREDIT}</a
+              >
+            </p>
+            <p class="tiny muted" data-testid="hazard-hidden">
+              色がぶつからないよう、警報・注意報の塗り{roadSpeedShown
+                ? "・通れた道 (目安) の線"
+                : ""}を隠しています
+              (特別警報・緊急地震速報は縁取りで出します)。「なし」に戻すと元に戻ります。
+            </p>
+          </figure>
+        {:else if boxHeight >= NOTE_MIN_HEIGHT}
+          <p class="map-note tiny muted" data-testid="quake-hides-risk">
+            地震を選んでいる間は、キキクル{warningsPainted
+              ? "と気象警報・注意報の塗り"
+              : ""}を隠しています (震度の色と重なるため){specialPainted
+              ? "。特別警報は縁取りで出します"
+              : ""}。一覧へ戻ると元に戻ります。
+          </p>
+        {/if}
+      {/if}
+      <!-- 地震を選んでいる間に、気象警報・注意報の塗りを隠していることと戻し方 (ハザードマップ・雨雲・キキクルの凡例が書くときは出さない) -->
+      {#if quakeShown && warningsPainted && !covered && hazard !== "rain" && !chosenRisk && boxHeight >= NOTE_MIN_HEIGHT}
         <p class="map-note tiny muted" data-testid="quake-hides-warnings">
           地震を選んでいる間は、気象警報・注意報の塗りを隠しています{specialPainted
             ? " (特別警報は縁取りで出します)"
@@ -2185,7 +2357,16 @@
     padding: 0;
     list-style: none;
   }
-  .rain-scale li {
+  /* キキクルの凡例。4 段を 1 列に、危険度の高いものから (気象庁の凡例と同じ並び) */
+  .risk-scale {
+    display: grid;
+    gap: 0.125rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .rain-scale li,
+  .risk-scale li {
     display: flex;
     align-items: center;
     gap: var(--so-space-1);
