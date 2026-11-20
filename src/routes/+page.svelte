@@ -83,6 +83,7 @@
     tsunamiGradeLabel,
     tsunamiTop,
     type Volcano,
+    VOLCANO_LABEL,
     VOLCANO_RESIDENTIAL,
     volcanoTop,
     type WarningLevel as Level,
@@ -389,6 +390,7 @@
   }
   function volcanoRow(x: Volcano): RowData {
     const flash = x.code === "VFVO56";
+    const warning = x.code === "VFVO50";
     const first = x.volcanoes[0];
     const top = volcanoTop(x);
     return {
@@ -399,19 +401,34 @@
       title: flash
         ? `${x.volcanoes.map((a) => a.name).join("・")} 噴火速報`
         : x.title,
+      // 噴火警報・予報は前からの形 (引上げ・継続と対象の市町村)。ほかの種別 (解説情報・観測報・降灰予報など) は
+      // 種別の名前と見出しを出す。行の左のラベルは段のあるもの (噴火警報・予報と解説情報) だけ
       meta: flash
         ? x.headline.replace(/[＜＞]/g, " ").trim()
-        : [first?.condition, x.cities.slice(0, 4).join("、")]
-            .filter(Boolean)
-            .join("・"),
+        : warning
+          ? [first?.condition, x.cities.slice(0, 4).join("、")]
+              .filter(Boolean)
+              .join("・")
+          : [VOLCANO_LABEL[x.code], volcanoMeta(x)].filter(Boolean).join("・"),
       volcano: flash
         ? { level: 5, label: "噴火速報" }
-        : {
-            level: top || undefined,
-            label: first ? volcanoKindText(first.kind) : "火山",
-          },
+        : warning || top > 0
+          ? {
+              level: top || undefined,
+              label: first ? volcanoKindText(first.kind) : "火山",
+            }
+          : undefined,
       states: x.cancelled ? [{ label: "取消", tone: "error" }] : [],
     };
+  }
+  /** 噴火警報・予報と噴火速報でない火山の行の補足 (見出しの 1 行目か、噴煙) */
+  function volcanoMeta(x: Volcano): string {
+    const head = x.headline
+      .replace(/[＜＞]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (head && x.code !== "VFVO52") return head;
+    return [x.plume?.height, x.plume?.direction].filter(Boolean).join("・");
   }
   /** 長周期地震動に関する観測情報 (VXSE62) を地震識別番号で引く (P2P で先に受けた地震は id が番号ではないので、id では引かない) */
   const longPeriodOf = (q: Quake | null | undefined) =>

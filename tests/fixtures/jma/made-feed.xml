@@ -5,11 +5,11 @@
   <updated>2026-11-13T08:00:56+09:00</updated>
   <id>https://example.invalid/eqvol.xml#made</id>
   <entry>
-    <title>降灰予報（定時）</title>
-    <id>https://example.invalid/data/20261112230034_0_VFVO53_010000.xml</id>
+    <title>火山現象に関する海上警報・海上予報</title>
+    <id>https://example.invalid/data/20261112230034_0_VFSV50_010000.xml</id>
     <updated>2026-11-12T23:00:00Z</updated>
     <author><name>気象庁</name></author>
-    <link type="application/xml" href="https://example.invalid/data/20261112230034_0_VFVO53_010000.xml"/>
+    <link type="application/xml" href="https://example.invalid/data/20261112230034_0_VFSV50_010000.xml"/>
     <content type="text">火山の電文 (sonae は取らない)</content>
   </entry>
   <entry>

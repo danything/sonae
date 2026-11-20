@@ -50,11 +50,19 @@ const full = (file: string, over: Partial<Volcano> = {}): Volcano => ({
 });
 
 describe("電文を読む", () => {
-  test("取る種別に噴火警報・予報と噴火速報が入っている", () => {
-    expect(WANTED_CODES.has("VFVO50")).toBe(true);
-    expect(WANTED_CODES.has("VFVO56")).toBe(true);
-    // 降灰予報・解説情報などはまだ取らない
-    expect(WANTED_CODES.has("VFVO53")).toBe(false);
+  test("取る種別に、火山の電文が全部入っている (火山に関するお知らせ VZVO40 は公開の一覧に無い)", () => {
+    for (const c of [
+      "VFVO50",
+      "VFVO51",
+      "VFVO52",
+      "VFVO53",
+      "VFVO54",
+      "VFVO55",
+      "VFVO56",
+      "VFVO60",
+    ])
+      expect(WANTED_CODES.has(c)).toBe(true);
+    expect(WANTED_CODES.has("VZVO40")).toBe(false);
   });
 
   test("火山の位置は度分 (36 度 24.38 分) で、度に直す", () => {

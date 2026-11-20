@@ -375,13 +375,80 @@ export const isPinnedAdvisory = (a: Pick<Advisory, "code">) =>
   a.code.startsWith("VYSE") || a.code === "VZSE40";
 
 /**
- * 噴火警報・予報 (VFVO50) と噴火速報 (VFVO56) の 1 つの報。一覧には報ごとに並べる。
+ * 火山の電文の種別。噴火警報・予報 (VFVO50)・火山の状況に関する解説情報 (VFVO51)・噴火に関する火山観測報 (VFVO52)・
+ * 降灰予報 (定時 VFVO53・速報 VFVO54・詳細 VFVO55)・噴火速報 (VFVO56)・推定噴煙流向報 (VFVO60)
+ */
+export const VOLCANO_CODES = [
+  "VFVO50",
+  "VFVO51",
+  "VFVO52",
+  "VFVO53",
+  "VFVO54",
+  "VFVO55",
+  "VFVO56",
+  "VFVO60",
+] as const;
+export type VolcanoCode = (typeof VOLCANO_CODES)[number];
+
+/** 一覧と詳しい内容に出す、種別の名前 */
+export const VOLCANO_LABEL: Record<VolcanoCode, string> = {
+  VFVO50: "噴火警報・予報",
+  VFVO51: "火山の状況に関する解説情報",
+  VFVO52: "噴火に関する火山観測報",
+  VFVO53: "降灰予報 (定時)",
+  VFVO54: "降灰予報 (速報)",
+  VFVO55: "降灰予報 (詳細)",
+  VFVO56: "噴火速報",
+  VFVO60: "推定噴煙流向報",
+};
+
+/**
+ * 決まった時刻や噴火のたびに出て数の多い種別 (噴火に関する火山観測報・降灰予報 (定時)・推定噴煙流向報)。
+ * 一覧には火山と種別ごとにいちばん新しい報だけを並べる (桜島は降灰予報 (定時) が 3 時間ごと、観測報は噴火ごとに出る)
+ */
+export const isRoutineVolcano = (v: Pick<Volcano, "code">) =>
+  v.code === "VFVO52" || v.code === "VFVO53" || v.code === "VFVO60";
+
+/**
+ * 新しい順に並んだ火山の報から、いつも出る種別 (`isRoutineVolcano`) を火山と種別ごとに
+ * いちばん新しい 1 つにする。ほかの種別はそのまま。並びは新しい順のまま
+ */
+export function collapseRoutineVolcanoes<
+  T extends Pick<Volcano, "code" | "volcanoes" | "eventId">,
+>(reports: T[]): T[] {
+  const seen = new Set<string>();
+  return reports.filter((r) => {
+    if (!isRoutineVolcano(r)) return true;
+    const key = `${r.code}:${r.volcanoes.map((a) => a.code).join(",") || r.eventId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** 降灰予報の、降灰の量などの種類ごとの対象の市町村等 (電文の「降灰予報（対象市町村等）」) */
+export interface VolcanoAsh {
+  /** 種類の名前 (「やや多量の降灰」「小さな噴石の落下」など。電文のまま) */
+  name: string;
+  /** 種類のコード (71 少量・72 やや多量・73 多量・75 小さな噴石の落下・70 降灰 (定時) など) */
+  code?: string;
+  cities: string[];
+  /** 市町村等のコード (気象・地震・火山情報／市町村等、7 桁) */
+  cityCodes: string[];
+}
+
+/** 降灰予報の「多量の降灰」の種類か (コード 73。名前でも見る) */
+export const isHeavyAsh = (a: Pick<VolcanoAsh, "name" | "code">) =>
+  a.code === "73" || a.name === "多量の降灰";
+
+/**
+ * 火山の 1 つの報 (噴火警報・予報・解説情報・観測報・降灰予報・噴火速報・推定噴煙流向報)。一覧には報ごとに並べる。
  * 取消を受けたら、同じ一連の情報 (種別と識別番号) のいちばん新しい報に印を付ける
  */
 export interface Volcano {
   /** `<種別>-<識別番号>-<発表の時刻 (数字だけ)>` */
   id: string;
-  code: "VFVO50" | "VFVO56";
+  code: VolcanoCode;
   /** 識別番号。噴火警報・予報は火山のコード、噴火速報は発表の時刻と火山のコード */
   eventId: string;
   status: Status;
@@ -401,9 +468,21 @@ export interface Volcano {
    * (docs/design.md の 2.4)。2026-11-16 より前に受けた報には無い
    */
   cityCodes?: string[];
-  /** 火山の活動の状況と、防災上の警戒事項 (噴火警報・予報) */
+  /** 火山の活動の状況と、防災上の警戒事項 (噴火警報・予報・解説情報・降灰予報) */
   activity?: string;
   prevention?: string;
+  /** 次の発表の予定 (解説情報) */
+  nextAdvisory?: string;
+  /** 付け足しの文 (降灰予報の降灰量階級の説明など) */
+  appendix?: string;
+  /** 有効期限 (降灰予報) */
+  validUntil?: string;
+  /** 降灰予報の、種類ごとの対象の市町村等 (VFVO53〜55) */
+  ash?: VolcanoAsh[];
+  /** 噴煙 (観測報・降灰予報・推定噴煙流向報)。電文の説明の文のまま (「火口上2200m」) */
+  plume?: { height?: string; seaLevel?: string; direction?: string };
+  /** そのほかの観測 (降灰予報の OtherObservation。複数行の文) */
+  observation?: string;
   cancelled: boolean;
   updatedAt: string;
 }
