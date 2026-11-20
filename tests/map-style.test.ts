@@ -328,8 +328,22 @@ test("避難場所: 災害ごとの層と指定避難所を、同じ施設 1 つ
     { layer: "sih", features: [f("A小"), f("B中")] },
   ]);
   expect(merged.map((m) => m.properties)).toEqual([
-    { name: "A小", address: "東京都", disasters: [1, 4], shelter: true },
-    { name: "B中", address: "東京都", disasters: [], shelter: true },
+    {
+      name: "A小",
+      address: "東京都",
+      disasters: [1, 4],
+      shelter: true,
+      welfare: false,
+      accept: "",
+    },
+    {
+      name: "B中",
+      address: "東京都",
+      disasters: [],
+      shelter: true,
+      welfare: false,
+      accept: "",
+    },
   ]);
 });
 
@@ -375,7 +389,14 @@ test("長周期地震動の枠: 階級 1 以上の地域だけを、階級の色
 });
 
 test("地図の style は MapLibre の決まりに合う (式の形の誤りで地図が出なくなるのを防ぐ)", () => {
-  for (const hazard of ["none", "rain", "flood", "faults"] as const) {
+  for (const hazard of [
+    "none",
+    "rain",
+    "flood",
+    "flood-collapse",
+    "faults",
+    "quake-prob",
+  ] as const) {
     const errors = validateStyleMin(
       baseStyle("https://s.example", hazard) as never,
     );

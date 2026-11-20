@@ -38,6 +38,9 @@ const PB2002 = "https://github.com/fraxen/tectonicplates";
 const ODC_BY = "https://opendatacommons.org/licenses/by/1-0/";
 const DISAPORTAL =
   "https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html";
+const JSHIS_SITE = "https://www.j-shis.bosai.go.jp/";
+const JSHIS_Z_RULES =
+  "https://www.j-shis.bosai.go.jp/map/JSHIS2/data/DOC/DataFileRule/Z-RULES.pdf";
 
 /**
  * 出典。「出典と注意」の窓にいつも全部出す。文は各機関の規約の例に合わせる (docs/design.md の 5 章):
@@ -163,7 +166,7 @@ export const CREDITS: Credit[] = [
     parts: [
       "出典：国土地理院「",
       { text: "指定緊急避難場所・指定避難所データ", href: GSI_SHELTERS },
-      "」",
+      "」(指定緊急避難場所・指定避難所 (一般)・指定避難所 (福祉))。最新でない場合や載っていない場合があるので、最新の状況は市町村で確かめてください",
     ],
   },
   {
@@ -171,7 +174,18 @@ export const CREDITS: Credit[] = [
     parts: [
       "出典：「",
       { text: "ハザードマップポータルサイト", href: DISAPORTAL },
-      "」。「ハザードマップポータルサイト」を加工して作成 (透かして重ねて表示)。元のデータ: 洪水浸水想定区域（想定最大規模）は国土交通省各地方整備局等・都道府県、土砂災害警戒区域は国土数値情報（土砂災害警戒区域）をもとに国土地理院が加工、津波浸水想定は都道府県",
+      "」。「ハザードマップポータルサイト」を加工して作成 (透かして重ねて表示)。元のデータ: 洪水浸水想定区域（想定最大規模）・浸水継続時間（想定最大規模）・家屋倒壊等氾濫想定区域は国土交通省各地方整備局等・都道府県、内水（雨水出水）浸水想定区域は市町村（流域下水道、一部事務組合を含む）、高潮浸水想定区域は都道府県、土砂災害警戒区域は国土数値情報（土砂災害警戒区域）をもとに国土地理院が加工、津波浸水想定は都道府県",
+    ],
+  },
+  {
+    // J-SHIS 利用規約の 4 条 (出典元が J-SHIS であることを明示する。地震動予測地図データを転載したらその旨を書く)
+    label: "地震の揺れの確率・地盤の揺れやすさ",
+    parts: [
+      "出典：防災科学技術研究所「",
+      { text: "J-SHIS 地震ハザードステーション", href: JSHIS_SITE },
+      "」の WMS の地図画像 (確率論的地震動予測地図 2024 年版の「30 年間で震度 6 弱以上となる確率」(平均ケース・全ての地震)・表層地盤 V4 の「地盤増幅率」)。地図の右下で選んだときに、ブラウザから J-SHIS へ直接読みに行き、透かして地図に重ねます。sonae は地図画像を保存も配布もしません。表層地盤のデータの参考文献は J-SHIS の「",
+      { text: "表層地盤データ記述ファイル規約", href: JSHIS_Z_RULES },
+      "」にあります",
     ],
   },
   {
