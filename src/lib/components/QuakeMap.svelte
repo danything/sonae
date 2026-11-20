@@ -24,6 +24,14 @@
   } from "#lib/format.ts";
   import { type Box, edgePadding } from "#lib/map/edges.ts";
   import {
+    type EpicenterHit,
+    epicenterReach,
+    FOREIGN_RADIUS,
+    HYPO_RADIUS,
+    nearestEpicenter,
+    radiusAt,
+  } from "#lib/map/epicenters.ts";
+  import {
     autoLocate,
     type GeoPermission,
     LOCATE_PREF,
@@ -147,7 +155,13 @@
     found = null,
     selected = false,
     onstations,
+    onpick,
   }: {
+    /**
+     * 震源の丸を押したとき (一覧でその地震を選んだのと同じにする)。`kind` は国内の地震 (`quake`) か海外の地震
+     * (`foreign`)。docs/map.md の「震源の丸を押したとき」
+     */
+    onpick?: (kind: "quake" | "foreign", id: string) => void;
     /**
      * 選んだ地震の観測点を地図に置いたとき、位置の引けなかった観測点の名前を渡す (詳しい内容に数を出す)。
      * 置いていないとき (地震を選んでいない・位置の表をまだ読んでいない) は null
@@ -294,15 +308,9 @@
           const f = e.features?.[0];
           if (f) openShelter(f.properties as Record<string, unknown>, e.lngLat);
         });
-        created.on("mouseenter", "shelters", () => {
-          if (created) created.getCanvas().style.cursor = "pointer";
-        });
-        created.on("mouseleave", "shelters", () => {
-          if (created) created.getCanvas().style.cursor = "";
-        });
         // 観測点の丸を押すと、観測点の名前・震度・場所・設置者の吹き出し。押せる範囲は丸より広い (`stationHit`)。
         // 上の層 (避難場所の印) を押したときはそちらだけ。震央の × と震度のラベルは吹き出しを持たないので、
-        // その下の丸を選ぶ (docs/map.md の「押せる所が重なったとき」)
+        // その下の丸を選ぶ。どれでもなければ海しるの点・線・震源の丸の順 (docs/map.md の「押せる所が重なったとき」)
         created.on("click", (e) => {
           if (
             !created ||
@@ -318,9 +326,16 @@
           if (mk) return openMarine(mk.properties, mk.at);
           // 災害時の通行止めと通れた道 (目安) の線 (点の下に描いている)
           const rd = roadHit(e.point, e.originalEvent);
-          if (rd) openRoad(rd, e.lngLat);
+          if (rd) return openRoad(rd, e.lngLat);
+          // 震源の丸 (線と点の下に描いている)。押すと一覧でその地震を選んだのと同じにする
+          const ep = epicenterHit(e.point, e.originalEvent);
+          if (ep) {
+            closePopups();
+            onpick?.(ep.kind, ep.id);
+          }
         });
-        for (const id of ["road-closed", "road-speed"]) {
+        // マウスでは押せるものの上でだけ指の形にする
+        for (const id of POINTER_LAYERS) {
           created.on("mouseenter", id, () => {
             if (created) created.getCanvas().style.cursor = "pointer";
           });
@@ -328,20 +343,8 @@
             if (created) created.getCanvas().style.cursor = "";
           });
         }
-        created.on("mouseenter", "marine", () => {
-          if (created) created.getCanvas().style.cursor = "pointer";
-        });
-        created.on("mouseleave", "marine", () => {
-          if (created) created.getCanvas().style.cursor = "";
-        });
-        created.on("mouseenter", "intensity-stations", () => {
-          if (created) created.getCanvas().style.cursor = "pointer";
-        });
-        created.on("mouseleave", "intensity-stations", () => {
-          if (created) created.getCanvas().style.cursor = "";
-        });
-        // 塗った市町村等を押すと、出ている警報・注意報の吹き出し。上の層 (避難場所の印・観測点の丸・海しるの点) を
-        // 押したときはそちらだけ
+        // 塗った市町村等を押すと、出ている警報・注意報の吹き出し。上の層 (避難場所の印・観測点の丸・海しるの点・
+        // 通行止めと通れた道の線・震源の丸) を押したときはそちらだけ
         created.on("click", "warning-fill", (e) => {
           if (
             !created ||
@@ -350,19 +353,21 @@
               .length > 0 ||
             stationHit(e.point, e.originalEvent) ||
             marineHit(e.point, e.originalEvent) ||
-            roadHit(e.point, e.originalEvent)
+            roadHit(e.point, e.originalEvent) ||
+            epicenterHit(e.point, e.originalEvent)
           )
             return;
           const code = e.features?.[0]?.properties?.code;
           if (typeof code === "string") openWarning(code, e.lngLat);
         });
-        // 面は塗っていない所にもあるので、塗った所の上でだけ指の形にする
+        // 面は塗っていない所にもあるので、塗った所の上でだけ指の形にする。上の押せるもの (震源の丸など) の上でも指の形
         created.on("mousemove", "warning-fill", (e) => {
           if (!created) return;
           const code = e.features?.[0]?.properties?.code;
           const over =
-            created.queryRenderedFeatures(e.point, { layers: ["shelters"] })
-              .length > 0;
+            created.queryRenderedFeatures(e.point, {
+              layers: POINTER_LAYERS.filter((id) => created?.getLayer(id)),
+            }).length > 0;
           created.getCanvas().style.cursor =
             over || (typeof code === "string" && paintedCities.has(code))
               ? "pointer"
@@ -1300,6 +1305,65 @@
       .setLngLat(at)
       .setDOMContent(box)
       .addTo(map);
+  }
+
+  /** マウスを乗せると指の形にする層 (押すと吹き出しを出すか、地震を選ぶ。警報・注意報の面は塗った所だけなので別) */
+  const POINTER_LAYERS = [
+    "shelters",
+    "intensity-stations",
+    "marine",
+    "road-closed",
+    "road-speed",
+    "hypocenters",
+    "foreign",
+  ];
+
+  /**
+   * 押した所の震源の丸 (国内の地震と海外の地震)。押せる範囲は観測点の丸と同じく指 22px・マウス 10px で、丸がそれより
+   * 大きいときは丸の中ならどこでも。範囲に幾つもあるときは押した所にいちばん近いもの (`nearestEpicenter`)
+   */
+  function epicenterHit(
+    pt: { x: number; y: number },
+    ev: MouseEvent | TouchEvent | undefined,
+  ): EpicenterHit | undefined {
+    const m = map;
+    if (!m?.getLayer("hypocenters") || !m.getLayer("foreign")) return undefined;
+    const kind = (ev as PointerEvent | undefined)?.pointerType;
+    const reach = epicenterReach(
+      kind === "touch" ||
+        (typeof TouchEvent !== "undefined" && ev instanceof TouchEvent) ||
+        (!kind &&
+          typeof matchMedia === "function" &&
+          matchMedia("(pointer: coarse)").matches),
+    );
+    const hits = m
+      .queryRenderedFeatures(
+        [
+          [pt.x - reach, pt.y - reach],
+          [pt.x + reach, pt.y + reach],
+        ],
+        { layers: ["hypocenters", "foreign"] },
+      )
+      .flatMap((f): EpicenterHit[] => {
+        if (f.geometry.type !== "Point") return [];
+        const id = f.properties?.id;
+        if (typeof id !== "string") return [];
+        const p = m.project(f.geometry.coordinates as [number, number]);
+        const foreignOne = f.layer.id === "foreign";
+        return [
+          {
+            kind: foreignOne ? "foreign" : "quake",
+            id,
+            d2: (p.x - pt.x) ** 2 + (p.y - pt.y) ** 2,
+            radius: radiusAt(
+              foreignOne ? FOREIGN_RADIUS : HYPO_RADIUS,
+              Number(f.properties?.m ?? 0),
+            ),
+            order: Number(f.properties?.order ?? 0),
+          },
+        ];
+      });
+    return nearestEpicenter(hits, reach);
   }
 
   /** 地図の上の吹き出しを全部閉じる (1 つだけ出す) */
