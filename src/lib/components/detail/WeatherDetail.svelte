@@ -11,6 +11,7 @@
   } from "#lib/format.ts";
   import {
     isExpired,
+    NOTE_KINDS,
     WEATHER_INFO_LABEL,
     type WeatherInfo,
   } from "#lib/model.ts";
@@ -18,7 +19,8 @@
   import WarningLevel from "../WarningLevel.svelte";
 
   /**
-   * 気象の報 (記録的短時間大雨情報・気象防災速報・竜巻注意情報・指定河川洪水予報・熱中症警戒アラート・台風情報)
+   * 気象の報 (記録的短時間大雨情報・気象防災速報・竜巻注意情報・指定河川洪水予報・熱中症警戒アラート・台風情報・
+   * 気象解説情報・潮位・天候情報・早期天候情報)
    * の詳しい内容。見出しと本文は電文の文のまま出す (言い換えない。docs/design.md の 5 章)
    */
   let { w, now }: { w: WeatherInfo; now: number } = $props();
@@ -62,7 +64,7 @@
 
   {#if w.level !== undefined && w.kindName}
     <p><WarningLevel level={w.level} label={kindText(w.kindName)} /></p>
-  {:else if w.kindName && w.kind === "bosai"}
+  {:else if w.kindName && (w.kind === "bosai" || NOTE_KINDS.has(w.kind))}
     <p class="small bold">{w.kindName}</p>
   {/if}
 
@@ -107,6 +109,12 @@
     </section>
   {/if}
 
+  {#each w.sections ?? [] as s, i (i)}
+    <section>
+      <h2>{s.title}</h2>
+      <p class="small pre-line">{s.lines.join("\n")}</p>
+    </section>
+  {/each}
   {#if w.text}
     <section>
       <h2>本文</h2>
