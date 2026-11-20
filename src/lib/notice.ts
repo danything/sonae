@@ -2,6 +2,7 @@
  * 画面に出す注意文と出典 (docs/design.md の 5 章「法と表示」)。文言を変えるときは設計書も直す
  */
 import { MSIL_DISCLAIMER, MSIL_SITE } from "#lib/map/marine.ts";
+import { NOWC_PAGE, RASRF_PAGE } from "#lib/map/nowc.ts";
 import { RAIN_PAGE } from "#lib/map/rain.ts";
 import { RISK_PAGE } from "#lib/map/risk.ts";
 import { MLIT_ROAD_DISASTER, ROAD_LINKS } from "#lib/map/roads.ts";
@@ -97,6 +98,22 @@ export const CREDITS: Credit[] = [
       "出典：気象庁ホームページ（",
       { text: RAIN_PAGE, href: RAIN_PAGE },
       "）。気象庁「高解像度降水ナウキャスト」を加工して作成 (透かして地図に重ねて表示)。地図の右下で「雨雲」を選んだときに、観測から作ったいまの降水強度を重ねます。1 時間先までの予測は出さず、sonae が先の雨を予想することもしません。タイルは、ブラウザから気象庁ホームページへ直接読みに行きます",
+    ],
+  },
+  {
+    label: "今後の雨",
+    parts: [
+      "出典：気象庁ホームページ（",
+      { text: RASRF_PAGE, href: RASRF_PAGE },
+      "）。気象庁「降水短時間予報」(今後の雨) の 1 時間降水量を加工して作成 (透かして地図に重ねて表示)。地図の右下で「今後の雨 (予測)」を選んだときに、気象庁の予測を色も値も変えずに重ねます。sonae が先の雨を予想することはしません。タイルは、ブラウザから気象庁ホームページへ直接読みに行きます",
+    ],
+  },
+  {
+    label: "雷・竜巻・線状降水帯",
+    parts: [
+      "出典：気象庁ホームページ（",
+      { text: NOWC_PAGE, href: NOWC_PAGE },
+      "）。気象庁「雷ナウキャスト」「竜巻発生確度ナウキャスト」と線状降水帯の雨域を加工して作成 (透かして地図に重ねて表示)。雷と竜巻は地図の右下で選んだときに、線状降水帯の雨域は気象庁が解析している間だけ、いまの解析を重ねます。タイルと雨域は、ブラウザから気象庁ホームページへ直接読みに行きます",
     ],
   },
   {
