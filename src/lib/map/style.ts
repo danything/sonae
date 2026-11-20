@@ -139,8 +139,8 @@ export const TEXT_FONT_CSS = '"Noto Sans JP", sans-serif';
 /**
  * 重ねる図 (重ねるラスタータイル)。選ぶのは 1 つだけ (色がぶつかるため)。
  * 雨雲 (気象庁の高解像度降水ナウキャスト。`#lib/map/rain.ts`)、キキクル (気象庁の土砂・大雨の危険度。`#lib/map/risk.ts`) と、
- * ハザードマップ (ハザードマップポータルサイトの 3 つと、地理院タイルの都市圏活断層図。活断層図は地形の分類で塗った
- * 全面の図なので、いつも重ねると写真が見づらい。選んだときだけ出す)
+ * ハザードマップ (ハザードマップポータルサイトの水害と土砂災害) と、地震の備えの図 (地理院タイルの都市圏活断層図と、
+ * 防災科研の J-SHIS の 2 つ)。どれも面を塗る図なので、いつも重ねると写真と警報・注意報の塗りが見づらい。選んだときだけ出す
  */
 export type HazardId =
   | "none"
@@ -148,19 +148,68 @@ export type HazardId =
   | "risk-land"
   | "risk-heavyrain"
   | "flood"
-  | "landslide"
+  | "flood-duration"
+  | "flood-collapse"
+  | "naisui"
+  | "hightide"
   | "tsunami"
-  | "faults";
+  | "landslide"
+  | "faults"
+  | "quake-prob"
+  | "ground-amp";
 const DISAPORTAL = "https://disaportaldata.gsi.go.jp/raster";
 const LEGEND = "https://disaportal.gsi.go.jp/hazardmap/copyright/img";
-const HAZARD_ATTRIBUTION = `<a href="https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html" target="_blank" rel="noopener">ハザードマップポータルサイト</a>`;
+const DISAPORTAL_OPENDATA =
+  "https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html";
+const HAZARD_ATTRIBUTION = `<a href="${DISAPORTAL_OPENDATA}" target="_blank" rel="noopener">ハザードマップポータルサイト</a>`;
 /** 国土地理院の「活断層図（都市圏活断層図）について」(各図の調査者がある) */
 const GSI_AFM_ABOUT = "https://www.gsi.go.jp/bousaichiri/active_fault.html";
 
+/**
+ * 防災科研の J-SHIS (地震ハザードステーション) の WMS。地図の画像をブラウザから直接読む (docs/map.md の「J-SHIS」)。
+ * 確率論的地震動予測地図は 2024 年版 (`Y2024`。2026-11-21 に GetCapabilities で確かめた、いちばん新しいもの)、
+ * 表層地盤は V4
+ */
+export const JSHIS = "https://www.j-shis.bosai.go.jp";
+export const JSHIS_PSHM_VERSION = "Y2024";
+/** 今後 30 年に震度 6 弱以上の揺れに見舞われる確率 (平均ケース・全ての地震・5 段の色) */
+export const JSHIS_PSHM_LAYER = `P-${JSHIS_PSHM_VERSION}-MAP-AVR-TTL_MTTL-T30_I55_PD`;
+/** 表層地盤の増幅率 (工学的基盤 Vs=400m/s から地表まで) */
+export const JSHIS_AMP_LAYER = "Z-V4-JAPAN-AMP-VS400_M250-IDARV2";
+const JSHIS_PSHM_WMS = `${JSHIS}/map/wms/pshm/${JSHIS_PSHM_VERSION}`;
+const JSHIS_SSTRCT_WMS = `${JSHIS}/map/wms/sstrct/V4`;
+/**
+ * WMS の GetMap を、MapLibre が埋める見ている範囲 (`{bbox-epsg-3857}`) で読む URL。WMS 1.3.0 の EPSG:3857 は
+ * x・y の順 (経度の側から)。256px 四方の透かした PNG
+ */
+export const wmsTiles = (base: string, layer: string) =>
+  `${base}?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&BBOX={bbox-epsg-3857}&CRS=EPSG:3857&WIDTH=256&HEIGHT=256&LAYERS=${layer}&STYLES=&FORMAT=image/png&TRANSPARENT=TRUE`;
+const wmsLegend = (base: string, layer: string) =>
+  `${base}?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetLegendGraphic&SLD_VERSION=1.1.0&LAYER=${layer}&FORMAT=image/png&STYLE=default`;
+const JSHIS_ATTRIBUTION = `<a href="${JSHIS}/" target="_blank" rel="noopener">J-SHIS (防災科研)</a>`;
+
+/** 選択肢の見出し。並びは `HAZARD_GROUPS` の順 */
+export type HazardGroup = "water" | "quake";
+export const HAZARD_GROUPS: { id: HazardGroup; label: string }[] = [
+  { id: "water", label: "ハザードマップ (水害・土砂災害)" },
+  { id: "quake", label: "地震の備え" },
+];
+
 export interface Hazard {
   id: Exclude<HazardId, "none" | "rain" | "risk-land" | "risk-heavyrain">;
+  /** 選択肢の見出し */
+  group: HazardGroup;
   /** 選択肢の名前 */
   label: string;
+  /** 選んでいる間のボタンの文字 (いま起きているように読めないよう、何の図かを残す) */
+  pill: string;
+  /**
+   * 同じ選択肢の中で切り替える図 (洪水の浸水の深さ・浸水が続く時間・家屋倒壊等氾濫想定区域)。
+   * 選択肢には `parent` の無いものだけを並べ、凡例の上で切り替える
+   */
+  parent?: Hazard["id"];
+  /** 凡例の上で切り替えるときの名前 */
+  variant?: string;
   /** 凡例の上に出す、何の想定か */
   title: string;
   /** タイルの層 (土砂災害は 3 つを重ねる)。地図の層の名前は `hazard-<id>` */
@@ -178,6 +227,9 @@ export interface Hazard {
   legends: { src: string; alt: string; name?: string }[];
   /** 凡例の代わり・下に出す説明 (リンクは href) */
   about?: (string | { text: string; href: string })[];
+  /** 凡例の下の出典 (無ければ出さない) と、色の無い所についての注意 */
+  source?: { text: string; href: string };
+  caveat?: string;
 }
 
 const portal = (layer: string) => ({
@@ -185,30 +237,131 @@ const portal = (layer: string) => ({
   tiles: `${DISAPORTAL}/${layer}/{z}/{x}/{y}.png`,
 });
 const PORTAL = {
+  group: "water" as const,
   minzoom: 2,
   maxzoom: 17,
   opacity: 0.75,
   attribution: HAZARD_ATTRIBUTION,
   credit: "ハザードマップポータルサイト",
+  source: { text: "ハザードマップポータルサイト", href: DISAPORTAL_OPENDATA },
+  caveat:
+    "想定の無い川や地域は塗られていません。色が無くても安全とは限りません。",
+};
+const DEPTH_LEGEND = {
+  src: `${LEGEND}/shinsui_legend3.png`,
+  alt: "浸水深の凡例: 0.5m 未満から 20m 以上まで、深いほど濃い色",
+};
+const JSHIS_COMMON = {
+  group: "quake" as const,
+  // 日本全体を 1 枚で見るズームから。250m の格子なので、それより寄せたら引き伸ばす
+  minzoom: 4,
+  maxzoom: 14,
+  // 陸の全面を塗る図なので、写真が透けて見えるよう少し透かす
+  opacity: 0.7,
+  attribution: JSHIS_ATTRIBUTION,
+  credit: "J-SHIS (防災科研)",
+  source: {
+    text: "防災科研 J-SHIS 地震ハザードステーション",
+    href: `${JSHIS}/`,
+  },
 };
 
 export const HAZARDS: Hazard[] = [
   {
     id: "flood",
     label: "洪水",
+    pill: "ハザードマップ: 洪水",
+    variant: "浸水の深さ",
     title: "洪水浸水想定区域 (想定最大規模)",
     ...PORTAL,
     layers: [portal("01_flood_l2_shinsuishin_data")],
+    legends: [DEPTH_LEGEND],
+  },
+  {
+    id: "flood-duration",
+    parent: "flood",
+    label: "浸水継続時間",
+    pill: "ハザードマップ: 浸水が続く時間",
+    variant: "浸水が続く時間",
+    title: "浸水継続時間 (想定最大規模)",
+    ...PORTAL,
+    layers: [portal("01_flood_l2_keizoku_data")],
     legends: [
       {
-        src: `${LEGEND}/shinsui_legend3.png`,
-        alt: "浸水深の凡例: 0.5m 未満から 20m 以上まで、深いほど濃い色",
+        src: `${LEGEND}/shinsui_legend_l2_keizoku.png`,
+        alt: "浸水が続く時間の凡例: 12 時間未満から 4 週間以上まで、長いほど濃い色",
       },
     ],
   },
   {
+    id: "flood-collapse",
+    parent: "flood",
+    label: "家屋倒壊等氾濫想定区域",
+    pill: "ハザードマップ: 家屋倒壊等",
+    variant: "家屋倒壊等",
+    title: "家屋倒壊等氾濫想定区域 (氾濫流・河岸侵食)",
+    ...PORTAL,
+    // タイルはズーム 4 から (オープンデータの一覧)
+    minzoom: 4,
+    layers: [
+      portal("01_flood_l2_kaokutoukai_hanran_data"),
+      portal("01_flood_l2_kaokutoukai_kagan_data"),
+    ],
+    legends: [
+      {
+        src: `${LEGEND}/kaokutoukai_hanran.png`,
+        alt: "氾濫流の凡例: 赤い丸の模様",
+        name: "氾濫流",
+      },
+      {
+        src: `${LEGEND}/kaokutoukai_kagan.png`,
+        alt: "河岸侵食の凡例: 赤い面",
+        name: "河岸侵食",
+      },
+    ],
+    about: [
+      "川があふれた水の勢いや、川岸が削られることで、家が壊れたり流されたりするおそれのある区域です。",
+    ],
+  },
+  {
+    id: "naisui",
+    label: "内水",
+    pill: "ハザードマップ: 内水",
+    title: "内水 (雨水出水) 浸水想定区域",
+    ...PORTAL,
+    layers: [portal("02_naisui_data")],
+    legends: [
+      {
+        src: `${LEGEND}/naisui_legend.png`,
+        alt: "内水の浸水深の凡例: 0.1m 未満から 20m 以上まで、深いほど濃い色",
+      },
+    ],
+    about: [
+      "下水道や水路があふれる浸水の想定です。オープンデータにするのを認めた市町村の分だけが載っています。",
+    ],
+  },
+  {
+    id: "hightide",
+    label: "高潮",
+    pill: "ハザードマップ: 高潮",
+    title: "高潮浸水想定区域 (想定最大規模)",
+    ...PORTAL,
+    layers: [portal("03_hightide_l2_shinsuishin_data")],
+    legends: [DEPTH_LEGEND],
+  },
+  {
+    id: "tsunami",
+    label: "津波",
+    pill: "ハザードマップ: 津波",
+    title: "津波浸水想定",
+    ...PORTAL,
+    layers: [portal("04_tsunami_newlegend_data")],
+    legends: [DEPTH_LEGEND],
+  },
+  {
     id: "landslide",
     label: "土砂災害",
+    pill: "ハザードマップ: 土砂災害",
     title: "土砂災害警戒区域 (土石流・急傾斜地の崩壊・地すべり)",
     ...PORTAL,
     layers: [
@@ -235,21 +388,10 @@ export const HAZARDS: Hazard[] = [
     ],
   },
   {
-    id: "tsunami",
-    label: "津波",
-    title: "津波浸水想定",
-    ...PORTAL,
-    layers: [portal("04_tsunami_newlegend_data")],
-    legends: [
-      {
-        src: `${LEGEND}/shinsui_legend3.png`,
-        alt: "浸水深の凡例: 0.5m 未満から 20m 以上まで、深いほど濃い色",
-      },
-    ],
-  },
-  {
     id: "faults",
+    group: "quake",
     label: "活断層",
+    pill: "活断層",
     title: "活断層図 (都市圏活断層図)",
     layers: [{ id: "afm", tiles: `${GSI}/afm/{z}/{x}/{y}.png` }],
     // タイルはズーム 11 からしか無い。引いているときは読みに行かない
@@ -266,7 +408,65 @@ export const HAZARDS: Hazard[] = [
       "」にあります。",
     ],
   },
+  {
+    id: "quake-prob",
+    label: "揺れの確率 (30 年)",
+    pill: "揺れの確率 (30 年)",
+    title: "今後 30 年に震度 6 弱以上の揺れに見舞われる確率",
+    ...JSHIS_COMMON,
+    layers: [
+      { id: "jshis-pshm", tiles: wmsTiles(JSHIS_PSHM_WMS, JSHIS_PSHM_LAYER) },
+    ],
+    legends: [
+      {
+        src: wmsLegend(JSHIS_PSHM_WMS, JSHIS_PSHM_LAYER),
+        alt: "確率の凡例: 0.1% 未満から 26% 以上まで 5 段、高いほど赤から紫",
+      },
+    ],
+    about: [
+      "防災科研の確率論的地震動予測地図 (2024 年版・平均ケース・全ての地震)。地震調査研究推進本部の評価をもとにした計算で、誤差を含みます。",
+    ],
+    caveat:
+      "確率が低い所でも、強い揺れに見舞われないとは限りません (確率の低い所で起きた大きな地震もあります)。",
+  },
+  {
+    id: "ground-amp",
+    label: "地盤の揺れやすさ",
+    pill: "地盤の揺れやすさ",
+    title: "表層地盤の揺れやすさ (地盤増幅率)",
+    ...JSHIS_COMMON,
+    layers: [
+      { id: "jshis-amp", tiles: wmsTiles(JSHIS_SSTRCT_WMS, JSHIS_AMP_LAYER) },
+    ],
+    legends: [
+      {
+        src: wmsLegend(JSHIS_SSTRCT_WMS, JSHIS_AMP_LAYER),
+        alt: "増幅率の凡例: 0.8 未満から 2.3 以上まで、大きいほど赤から紫",
+      },
+    ],
+    about: [
+      "防災科研の表層地盤 (V4) の、固い地盤 (Vs=400m/s) から地表までに揺れが何倍になるかの目安。約 250m 四方ごとの代表値です。",
+    ],
+    caveat:
+      "数が大きいほど揺れやすい地盤です。同じ四角の中でも、場所によって揺れ方は違います。",
+  },
 ];
+
+/** 選択肢に並べる図 (凡例の上で切り替える図を除く) */
+export const HAZARD_CHOICES = HAZARDS.filter((h) => !h.parent);
+
+/** 選んだ図と、凡例の上で切り替えられる仲間 (洪水なら 3 つ。仲間が無ければ空) */
+export function hazardFamily(id: HazardId): Hazard[] {
+  const h = HAZARDS.find((x) => x.id === id);
+  if (!h) return [];
+  const root = h.parent ?? h.id;
+  const family = HAZARDS.filter((x) => x.id === root || x.parent === root);
+  return family.length > 1 ? family : [];
+}
+
+/** 選択肢のどれを選んでいる印にするか (凡例の上で切り替える図は、親の選択肢) */
+export const hazardChoice = (id: HazardId): HazardId =>
+  HAZARDS.find((x) => x.id === id)?.parent ?? id;
 
 /** ハザードマップの層ごとに出すかどうか (選んだものだけ。なしなら全部隠す) */
 export function hazardVisibility(id: HazardId): Record<string, boolean> {
@@ -402,7 +602,7 @@ export const readHazard = (raw: string | null): HazardId =>
     : "none";
 
 /**
- * 指定緊急避難場所 (災害ごとに skhb01〜08) と指定避難所 (sih)。地理院タイルの GeoJSON で、ズーム 10 のタイルしか無い。
+ * 指定緊急避難場所 (災害ごとに skhb01〜08) と指定避難所 (一般の sih と福祉避難所の sfh)。地理院タイルの GeoJSON で、ズーム 10 のタイルしか無い。
  * 寄せたとき (ズーム 14 から) だけ、見ている範囲のタイルを読む
  */
 export const SHELTER_LAYERS = [
@@ -415,6 +615,7 @@ export const SHELTER_LAYERS = [
   "skhb07",
   "skhb08",
   "sih",
+  "sfh",
 ] as const;
 export const SHELTER_TILE_ZOOM = 10;
 export const SHELTER_MIN_ZOOM = 14;
@@ -461,6 +662,8 @@ export function tilesIn(
 interface ShelterProps {
   name?: string;
   address?: string;
+  /** 福祉避難所の受け入れる人 (sfh だけ) */
+  accept?: string | null;
   remarks?: string | null;
   [k: string]: unknown;
 }
@@ -474,6 +677,10 @@ export interface ShelterFeature {
     disasters: number[];
     /** 指定避難所でもある */
     shelter: boolean;
+    /** 福祉避難所でもある (要配慮者のための指定避難所) */
+    welfare: boolean;
+    /** 福祉避難所の受け入れる人 (市町村が書いたまま。無ければ空) */
+    accept: string;
   };
 }
 
@@ -507,10 +714,16 @@ export function mergeShelters(
             address: p.address ?? "",
             disasters: [],
             shelter: false,
+            welfare: false,
+            accept: "",
           },
         } satisfies ShelterFeature);
       if (layer === "sih") cur.properties.shelter = true;
-      else
+      else if (layer === "sfh") {
+        cur.properties.welfare = true;
+        const accept = typeof p.accept === "string" ? p.accept.trim() : "";
+        if (accept && !cur.properties.accept) cur.properties.accept = accept;
+      } else
         for (let i = 1; i <= 8; i++)
           if (p[`disaster${i}`] === 1 && !cur.properties.disasters.includes(i))
             cur.properties.disasters.push(i);
@@ -596,12 +809,12 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   },
   {
     label: "指定緊急避難場所・指定避難所",
-    note: "大きく寄せたとき (ズーム 14 以上) だけ、緑の「避」の印で出します。押すと、どの災害に対応する指定緊急避難場所か、指定避難所かが出ます。国土地理院のデータで最新でないことや載っていない施設があるので、避難先は市町村の情報で確かめてください。指定緊急避難場所は災害のときに逃げる場所 (災害の種類ごと)、指定避難所は家に戻れないときに過ごす場所です",
+    note: "大きく寄せたとき (ズーム 14 以上) だけ、緑の「避」の印で出します。福祉避難所 (高齢の人や障がいのある人など、配慮の要る人のための指定避難所) は、白地に緑の「福」の印です。押すと、どの災害に対応する指定緊急避難場所か、指定避難所か、福祉避難所なら受け入れる人が出ます。国土地理院のデータで最新でないことや載っていない施設があるので、避難先は市町村の情報で確かめてください。指定緊急避難場所は災害のときに逃げる場所 (災害の種類ごと)、指定避難所は家に戻れないときに過ごす場所です。福祉避難所は受け入れる人が決まっているので、行く前に市町村の情報で確かめてください",
   },
   {
     label: "ハザードマップ",
     note:
-      "地図の右下で、なし・雨雲・キキクル (土砂・大雨)・洪水 (想定最大規模の浸水)・土砂災害 (警戒区域)・津波 (浸水想定)・活断層から 1 つを選べます (雨雲とキキクルは下の「雨雲」「キキクル」)。色の意味は選んだときに出る公式の凡例のとおりです。想定の無い川や地域は塗られていないので、色が無くても安全とは限りません。" +
+      "地図の右下の「重ねる」で、雨雲・キキクルなどと一緒に 1 つを選べます。見出し「ハザードマップ (水害・土砂災害)」は、ハザードマップポータルサイトの洪水 (浸水の深さ。凡例の上で、浸水が続く時間と家屋倒壊等氾濫想定区域に切り替えられます)・内水・高潮・津波 (どれも想定最大規模などの浸水想定)・土砂災害 (警戒区域) です。色の意味は選んだときに出る公式の凡例のとおりです。想定の無い川や地域は塗られていないので、色が無くても安全とは限りません。" +
       "選んでいる間は、色がぶつからないよう、気象警報・注意報の塗りと縁取り・震度の塗り (数字のラベルは残ります)・緊急地震速報の地域の塗りを隠します。いま出ている特別警報の市町村等は白い縁の黒い線で縁取り、緊急地震速報の地域は赤い縁取りで、津波の警報・注意報の線もそのまま残します。「なし」に戻すと元に戻ります",
   },
   {
@@ -627,7 +840,11 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   },
   {
     label: "活断層",
-    note: "都市圏活断層図。地形の分類で塗った全面の図なので、いつもは重ねず、地図の右下のハザードマップで「活断層」を選んだときだけ出します。大きく寄せたとき (ズーム 11 以上) だけ出ます",
+    note: "都市圏活断層図。地形の分類で塗った全面の図なので、いつもは重ねず、地図の右下の「重ねる」の見出し「地震の備え」で「活断層」を選んだときだけ出します。大きく寄せたとき (ズーム 11 以上) だけ出ます",
+  },
+  {
+    label: "地震の揺れの確率・地盤の揺れやすさ",
+    note: "防災科研の J-SHIS の図。地図の右下の「重ねる」の見出し「地震の備え」で選んだときだけ出します。「揺れの確率 (30 年)」は今後 30 年に震度 6 弱以上の揺れに見舞われる確率 (2024 年版)、「地盤の揺れやすさ」は表層地盤で揺れが何倍になるかの目安 (地盤増幅率) です。どちらも評価にもとづく計算で、誤差を含みます。確率が低い所でも、強い揺れに見舞われないとは限りません。選んでいる間は、ハザードマップと同じく面で塗る色を隠します",
   },
 ];
 
@@ -1466,7 +1683,13 @@ export function baseStyle(
         source: "shelters",
         minzoom: SHELTER_MIN_ZOOM,
         layout: {
-          "icon-image": "shelter",
+          // 福祉避難所は「福」の印で、ほかの避難所 (「避」) と見分ける (docs/map.md)
+          "icon-image": [
+            "case",
+            ["get", "welfare"],
+            "shelter-welfare",
+            "shelter",
+          ],
           "icon-allow-overlap": true,
           "icon-size": ["interpolate", ["linear"], ["zoom"], 14, 0.8, 17, 1.1],
         },
