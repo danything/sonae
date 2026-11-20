@@ -133,14 +133,15 @@ jobs:
           test "$(code -H 'Host: evil.example.com' "http://$lan:3030/")" = 403
           grep -q '^TRUSTED_NETWORKS=192.168.0.0/16,10.0.0.0/8,' ~/sonae/sonae.env
           grep -q 'TRUSTED_PROXIES:' ~/sonae/compose.override.yml
-          # VAPID の鍵ができ、sonae が Web Push を有効にした
+          # VAPID の鍵ができ、sonae が Web Push を有効にした。ログは grep -q で読まない (見つけた所で読むのをやめると、
+          # docker compose logs が書けずに 255 で終わり、pipefail で落ちる)
           key=$(grep '^VAPID_PRIVATE_JWK=' ~/sonae/sonae.env)
           test "$(stat -c %a ~/sonae/sonae.env)" = 600
           for _ in $(seq 30); do
-            if (cd ~/sonae && docker compose logs sonae) | grep -q 'Web Push を送ります'; then break; fi
+            if (cd ~/sonae && docker compose logs sonae) | grep 'Web Push を送ります' > /dev/null; then break; fi
             sleep 2
           done
-          (cd ~/sonae && docker compose logs sonae) | grep -q 'Web Push を送ります'
+          (cd ~/sonae && docker compose logs sonae) | grep 'Web Push を送ります' > /dev/null
           # 上げ直し。手を入れた compose.override.yml にも、鍵にも触らない
           echo '# 手で足した行' >> ~/sonae/compose.override.yml
           cp ~/sonae/compose.override.yml "$RUNNER_TEMP/override"
