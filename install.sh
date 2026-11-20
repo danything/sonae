@@ -130,7 +130,7 @@ env_template() {
       '# CWA_API_KEY=' \
       '# 海しる (海上保安庁) の API のキー。無ければ海しるの点を出さない (docs/design.md の 2.11)' \
       '# MSIL_API_KEY=' \
-      '# 災害時の通行止め。国土交通省の「通れるマップ」の GeoJSON の URL (https の *.go.jp。カンマで区切る。docs/design.md の 2.12)' \
+      '# 災害時の通行止め。国土交通省の「通れるマップ」の GeoJSON の URL (https の *.go.jp。カンマか空白で区切る。docs/design.md の 2.12)' \
       '# SONAE_ROAD_GEOJSON=' > "$1"
   )
 }
