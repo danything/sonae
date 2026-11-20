@@ -226,6 +226,19 @@
       ),
     ),
   );
+  /**
+   * 「すべて」を出しているときに隠す、ほかの府県の解説 (府県気象解説情報と府県の潮位の解説)。全国で 1 日に数十通出て
+   * 一覧を埋めるので、住んでいる地域を選んでいれば、その府県予報区・一次細分区域のものだけを出す。
+   * 住んでいる地域を選んでいなければ全部を隠す。気象のチップでは全部を出す (docs/ui.md)
+   */
+  function farNote(x: WeatherInfo): boolean {
+    const home = alerter.prefs.home;
+    if (x.code !== "VPFJ51" && x.code !== "VMCJ55") return false;
+    if (!home) return true;
+    return !x.areas.some(
+      (a) => a.code === home.ichiji || a.code === home.office,
+    );
+  }
   const counts = $derived<Record<Kind, number>>({
     quake: quakes.length,
     tsunami: tsunamis.length,
@@ -256,7 +269,10 @@
     // 詳しい内容を見ているときは、絞った一覧へ戻る
     if (v.selected) void goto(backHref, { reset: false });
   }
-  const allCount = $derived(KINDS.reduce((n, k) => n + counts[k], 0));
+  const allCount = $derived(
+    KINDS.reduce((n, k) => n + counts[k], 0) -
+      weathers.filter((x) => farNote(x)).length,
+  );
 
   /**
    * 一覧の 1 本の並び。種類をまたいで時刻の新しい順に並べ、日付の見出しで束ねる。
@@ -287,7 +303,12 @@
     add("eew", eews, (e) => e.issuedAt, eewRow);
     add("volcano", volcanoes, (x) => x.eventTime ?? x.reportedAt, volcanoRow);
     add("weather", offices, (o) => o.reportedAt, officeRow);
-    add("weather", weathers, (x) => x.reportedAt, weatherRow);
+    add(
+      "weather",
+      only === "weather" ? weathers : weathers.filter((x) => !farNote(x)),
+      (x) => x.reportedAt,
+      weatherRow,
+    );
     add("foreign", foreigns, (x) => x.originTime, foreignRow);
     add("info", infos, (a) => a.reportedAt, infoRow);
     return groupByDay(
