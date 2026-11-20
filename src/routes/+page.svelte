@@ -70,9 +70,11 @@
   import { live } from "#lib/live.svelte.ts";
   import {
     type Advisory,
+    collapseNotes,
     type Eew,
     type ForeignQuake,
     isExpired,
+    isFarNote,
     isPinnedAdvisory,
     isTsunamiActive,
     isTsunamiWarning,
@@ -211,24 +213,24 @@
       ),
     ),
   );
-  /** 気象の報。台風は報が数時間ごとに出るので、台風ごとにいちばん新しい報だけを並べる */
-  const weathers = $derived.by(() => {
-    const seen = new Set<string>();
-    return snap.weatherInfos.filter((x) => {
-      if (x.kind === "typhoon") {
-        if (seen.has(x.series)) return false;
-        seen.add(x.series);
-      }
-      return matches(
+  /**
+   * 気象の報。台風と解説の情報 (気象解説情報・潮位・天候情報・早期天候情報) は報が続けて出るので、
+   * 一連の情報ごとにいちばん新しい報だけを並べる
+   */
+  const weathers = $derived(
+    collapseNotes(snap.weatherInfos).filter((x) =>
+      matches(
         query,
         x.title,
         x.headline,
         x.kindName,
         ...x.areas.map((a) => a.name),
         ...(x.stations ?? []).map((s) => s.name),
-      );
-    });
-  });
+      ),
+    ),
+  );
+  /** 「すべて」で隠す、ほかの府県の解説 (気象のチップでは全部を出す。`isFarNote`) */
+  const farNote = (x: WeatherInfo) => isFarNote(x, alerter.prefs.home);
   const counts = $derived<Record<Kind, number>>({
     quake: quakes.length,
     tsunami: tsunamis.length,
@@ -259,7 +261,10 @@
     // 詳しい内容を見ているときは、絞った一覧へ戻る
     if (v.selected) void goto(backHref, { reset: false });
   }
-  const allCount = $derived(KINDS.reduce((n, k) => n + counts[k], 0));
+  const allCount = $derived(
+    KINDS.reduce((n, k) => n + counts[k], 0) -
+      weathers.filter((x) => farNote(x)).length,
+  );
 
   /**
    * 一覧の 1 本の並び。種類をまたいで時刻の新しい順に並べ、日付の見出しで束ねる。
@@ -290,7 +295,12 @@
     add("eew", eews, (e) => e.issuedAt, eewRow);
     add("volcano", volcanoes, (x) => x.eventTime ?? x.reportedAt, volcanoRow);
     add("weather", offices, (o) => o.reportedAt, officeRow);
-    add("weather", weathers, (x) => x.reportedAt, weatherRow);
+    add(
+      "weather",
+      only === "weather" ? weathers : weathers.filter((x) => !farNote(x)),
+      (x) => x.reportedAt,
+      weatherRow,
+    );
     add("foreign", foreigns, (x) => x.originTime, foreignRow);
     add("info", infos, (a) => a.reportedAt, infoRow);
     return groupByDay(

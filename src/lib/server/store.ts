@@ -23,9 +23,11 @@ import type {
   WeatherWarning,
 } from "#lib/model.ts";
 import {
+  collapseNotes,
   collapseRoutineVolcanoes,
   foreignFromReports,
   latestPerVolcano,
+  NOTE_KINDS,
   sameForeignQuake,
 } from "#lib/model.ts";
 
@@ -298,15 +300,38 @@ export class Store {
     return row ? (JSON.parse(row.data) as WeatherInfo) : undefined;
   }
 
-  /** 新しい順の気象の報 */
-  weatherInfos(limit = 100): WeatherInfo[] {
-    return this.db
-      .query<{ data: string }, [number]>(
-        `SELECT data FROM weather_infos WHERE status = 'normal'
-         ORDER BY datetime(reported_at) DESC LIMIT ?`,
-      )
-      .all(limit)
-      .map((r) => JSON.parse(r.data) as WeatherInfo);
+  /**
+   * 新しい順の気象の報。解説の情報 (気象解説情報・潮位・天候情報・早期天候情報) は 1 日に数十通出るので
+   * 数に入れず、この 3 日の分から一連の情報ごとにいちばん新しい報を `notes` 件まで足す
+   * (画面は一連の情報ごとに 1 行にする。`collapseNotes`)
+   */
+  weatherInfos(limit = 100, notes = 60): WeatherInfo[] {
+    const kinds = [...NOTE_KINDS].map((k) => `'${k}'`).join(", ");
+    const parse = (rows: { data: string }[]) =>
+      rows.map((r) => JSON.parse(r.data) as WeatherInfo);
+    const main = parse(
+      this.db
+        .query<{ data: string }, [number]>(
+          `SELECT data FROM weather_infos WHERE status = 'normal' AND kind NOT IN (${kinds})
+           ORDER BY datetime(reported_at) DESC LIMIT ?`,
+        )
+        .all(limit),
+    );
+    const since = new Date(ms(this.now()) - 3 * DAY).toISOString();
+    const note = collapseNotes(
+      parse(
+        this.db
+          .query<{ data: string }, [string]>(
+            `SELECT data FROM weather_infos WHERE status = 'normal' AND kind IN (${kinds})
+               AND datetime(reported_at) > datetime(?)
+             ORDER BY datetime(reported_at) DESC LIMIT 2000`,
+          )
+          .all(since),
+      ),
+    ).slice(0, notes);
+    return [...main, ...note].sort(
+      (a, b) => ms(b.reportedAt) - ms(a.reportedAt),
+    );
   }
 
   warning(id: string): WeatherWarning | undefined {

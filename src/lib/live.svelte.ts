@@ -20,7 +20,11 @@ import type {
   WeatherInfo,
   WeatherWarning,
 } from "./model.ts";
-import { collapseRoutineVolcanoes, latestPerVolcano } from "./model.ts";
+import {
+  collapseNotes,
+  collapseRoutineVolcanoes,
+  latestPerVolcano,
+} from "./model.ts";
 import {
   RTS_STALE_MS,
   type RtsFrame,
@@ -206,11 +210,9 @@ export class Live {
       }
       case "weather":
         if (e.data.status !== "normal") return true;
-        this.weatherInfos = upsert(
-          this.weatherInfos,
-          e.data,
-          (v) => v.reportedAt,
-          100,
+        // 解説の情報と台風情報は一連の情報ごとに新しい 1 つだけ残す (数が多く、ほかの報を押し出さないように)
+        this.weatherInfos = collapseNotes(
+          upsert(this.weatherInfos, e.data, (v) => v.reportedAt, 160),
         );
         return true;
       case "volcano":
