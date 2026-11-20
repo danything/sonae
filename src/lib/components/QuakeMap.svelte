@@ -97,7 +97,11 @@
     baseStyle,
     eewFill,
     foreignFeatures,
+    HAZARD_CHOICES,
+    HAZARD_GROUPS,
+    hazardChoice,
     hazardCovers,
+    hazardFamily,
     type HazardId,
     HAZARDS,
     hazardVisibility,
@@ -303,7 +307,10 @@
       created.touchZoomRotate.disableRotation();
       created.on("load", () => {
         if (disposed || !created) return;
-        created.addImage("shelter", shelterIcon(), { pixelRatio: 2 });
+        created.addImage("shelter", shelterIcon(false), { pixelRatio: 2 });
+        created.addImage("shelter-welfare", shelterIcon(true), {
+          pixelRatio: 2,
+        });
         for (const [id, img] of Object.entries(marineIcons()))
           created.addImage(id, img, { pixelRatio: 2 });
         void loadMarine(created);
@@ -855,7 +862,7 @@
     }
   });
 
-  // ---- ハザードマップ (なし・洪水・土砂災害・津波・活断層から 1 つ。色がぶつかるので重ねない。端末に覚える) ----
+  // ---- 重ねる図 (なし・雨雲・キキクル・ハザードマップ・地震の備えの図から 1 つ。色がぶつかるので重ねない。端末に覚える) ----
   // 選んでいる間は、面で塗る警報・注意報や震度の色を隠す (`overlayVisibility`。特別警報は縁取りで残す)
   let hazard = $state<HazardId>("none");
   let hazardMenu = $state(false);
@@ -863,6 +870,8 @@
     hazard = readHazard(readPref("map.hazard"));
   });
   const chosenHazard = $derived(HAZARDS.find((h) => h.id === hazard));
+  /** 凡例の上で切り替えられる図 (洪水の 3 つ。無ければ空) */
+  const family = $derived(hazardFamily(hazard));
   /** いまのズーム (動き終わったときに写す)。活断層はズーム 11 からしかタイルが無い */
   let zoom = $state(0);
   /** 選んだハザードマップが、いまのズームで地図に重なっているか */
@@ -1267,8 +1276,11 @@
       });
   }
 
-  /** 避難場所の印 (緑の角丸の四角に白い「避」)。端末の字体で 1 度だけ描く */
-  function shelterIcon(): ImageData {
+  /**
+   * 避難場所の印。ふつうは緑の角丸の四角に白い「避」、福祉避難所は白い角丸の四角に緑の太い縁と緑の「福」
+   * (地と字の色を入れ替えて、遠目にも見分けられるようにする)。端末の字体で 1 度だけ描く
+   */
+  function shelterIcon(welfare: boolean): ImageData {
     const s = 40;
     const c = document.createElement("canvas");
     c.width = s;
@@ -1283,11 +1295,17 @@
     g.beginPath();
     g.roundRect(3, 3, s - 6, s - 6, 7);
     g.fill();
-    g.fillStyle = "#ffffff";
-    g.font = `bold 24px ${TEXT_FONT_CSS}`;
+    if (welfare) {
+      g.fillStyle = "#ffffff";
+      g.beginPath();
+      g.roundRect(7, 7, s - 14, s - 14, 4);
+      g.fill();
+    }
+    g.fillStyle = welfare ? "#00873c" : "#ffffff";
+    g.font = `bold ${welfare ? 20 : 24}px ${TEXT_FONT_CSS}`;
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.fillText("避", s / 2, s / 2 + 1);
+    g.fillText(welfare ? "福" : "避", s / 2, s / 2 + 1);
     return g.getImageData(0, 0, s, s);
   }
 
@@ -1338,6 +1356,18 @@
     if (disasters.length > 0)
       line(`指定緊急避難場所: ${disasters.join("、")}`, "small");
     if (p.shelter === true || p.shelter === "true") line("指定避難所", "small");
+    if (p.welfare === true || p.welfare === "true") {
+      line(
+        p.accept
+          ? `福祉避難所 (受け入れる人: ${String(p.accept)})`
+          : "福祉避難所",
+        "small",
+      );
+      line(
+        "配慮の要る人のための避難所で、受け入れる人が決まっています。",
+        "tiny muted",
+      );
+    }
     line(
       "国土地理院のデータで、最新でないことがあります。避難先は市町村の情報で確かめてください。",
       "tiny muted",
@@ -1910,7 +1940,7 @@
                 onclick={hazardClick}
               >
                 {chosenHazard
-                  ? `ハザードマップ: ${chosenHazard.label}`
+                  ? chosenHazard.pill
                   : chosenRisk
                     ? `キキクル: ${chosenRisk.label.replace(/ \(.*\)$/, "")}`
                     : hazard === "rain"
@@ -1940,16 +1970,19 @@
                 data-testid="hazard-{r.id}">{r.label}</button
               >
             {/each}
-            <p class="menu-head">ハザードマップ</p>
-            {#each HAZARDS as h (h.id)}
-              <button
-                type="button"
-                role="menuitemradio"
-                class="menu-item"
-                aria-checked={hazard === h.id}
-                onclick={() => pickHazard(h.id)}
-                data-testid="hazard-{h.id}">{h.label}</button
-              >
+            <!-- 洪水の浸水が続く時間と家屋倒壊等は、選択肢に並べずに洪水の凡例の上で切り替える (docs/map.md) -->
+            {#each HAZARD_GROUPS as g (g.id)}
+              <p class="menu-head">{g.label}</p>
+              {#each HAZARD_CHOICES.filter((h) => h.group === g.id) as h (h.id)}
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  class="menu-item"
+                  aria-checked={hazardChoice(hazard) === h.id}
+                  onclick={() => pickHazard(h.id)}
+                  data-testid="hazard-{h.id}">{h.label}</button
+                >
+              {/each}
             {/each}
           </Menu>
         </div>
@@ -1978,9 +2011,23 @@
         </button>
       </div>
       {#if chosenHazard}
-        <!-- 公式の凡例 (ハザードマップポータルサイトの画像)。活断層は凡例の代わりに国土地理院の説明へのリンク -->
+        <!-- 公式の凡例 (ハザードマップポータルサイトと J-SHIS の画像)。活断層は凡例の代わりに国土地理院の説明へのリンク -->
         <figure class="legend" data-testid="hazard-legend">
           <figcaption class="small bold">{chosenHazard.title}</figcaption>
+          {#if family.length > 0}
+            <!-- 洪水の図の切り替え (浸水の深さ・浸水が続く時間・家屋倒壊等)。1 つだけ選ぶ並び -->
+            <div class="chips variants" role="group" aria-label="洪水の図">
+              {#each family as v (v.id)}
+                <button
+                  type="button"
+                  class="chip"
+                  aria-pressed={hazard === v.id}
+                  onclick={() => pickHazard(v.id)}
+                  data-testid="hazard-variant-{v.id}">{v.variant}</button
+                >
+              {/each}
+            </div>
+          {/if}
           {#each chosenHazard.legends as l (l.src)}
             {#if l.name}<p class="tiny">{l.name}</p>{/if}
             <img src={l.src} alt={l.alt} loading="lazy" />
@@ -1994,13 +2041,13 @@
                   >{/if}{/each}
             </p>
           {/if}
-          {#if chosenHazard.legends.length > 0}
+          {#if chosenHazard.source}
             <p class="tiny muted">
               出典: <a
-                href="https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html"
+                href={chosenHazard.source.href}
                 target="_blank"
-                rel="noopener">ハザードマップポータルサイト</a
-              >。想定の無い川や地域は塗られていません。色が無くても安全とは限りません。
+                rel="noopener">{chosenHazard.source.text}</a
+              >。{chosenHazard.caveat ?? ""}
             </p>
           {/if}
           <!-- 隠している層があることと、戻し方。図が重ならないズーム (活断層の 11 未満) では隠さない -->
@@ -2336,10 +2383,21 @@
   .legend p {
     margin: 0;
   }
+  /* 洪水の図の切り替え。凡例の幅に収まるよう詰め、入りきらなければ折り返す */
+  .legend .variants {
+    gap: 0;
+    margin-inline: calc(-1 * var(--so-space-2));
+  }
+  .legend .variants .chip {
+    padding: 0 var(--so-space-2);
+  }
   /* 公式の凡例は白い地の画像なので、暗いテーマでも白い台に載せる */
   .legend img {
     display: block;
     max-width: 100%;
+    /* 小さな凡例 (家屋倒壊等の 100px の模様) を引き伸ばさない */
+    width: auto;
+    align-self: flex-start;
     height: auto;
     padding: var(--so-space-1);
     border-radius: var(--so-radius-sm);
