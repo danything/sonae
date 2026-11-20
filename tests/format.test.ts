@@ -4,12 +4,14 @@ import {
   depthText,
   EEW_DRILL_NOTE,
   eewSourceLine,
+  floodStationsText,
   jstTime,
   magnitudeText,
   quakeName,
   sourceInTrouble,
   sourceStateText,
   STATUS_LABEL,
+  waterLevelText,
 } from "#lib/format.ts";
 import { type Tsunami, tsunamiTop } from "#lib/model.ts";
 
@@ -100,4 +102,31 @@ test("訓練・試験の緊急地震速報は、先頭に出す印と文で本�
   expect(EEW_DRILL_NOTE.test).toBe(
     "試験の緊急地震速報です。実際の地震ではありません。",
   );
+});
+
+test("水位は小数 2 桁、一覧の行には基準観測所の実況だけ", () => {
+  expect(waterLevelText(5.3)).toBe("5.30 m");
+  expect(waterLevelText(undefined)).toBe("—");
+  const level = (m?: number) => ({
+    time: "2025-11-02T14:50:00+09:00",
+    label: "現況",
+    ...(m === undefined ? {} : { m }),
+  });
+  const station = (name: string, base: boolean, m?: number) => ({
+    name,
+    code: name,
+    base,
+    levels: [level(m)],
+    criteria: [],
+  });
+  expect(
+    floodStationsText({
+      stations: [
+        station("上川沿", true, 6.19),
+        station("北見", false, 54.7),
+        station("妙見橋", true),
+      ],
+    }),
+  ).toBe("上川沿 6.19 m (14:50)");
+  expect(floodStationsText({})).toBe("");
 });
