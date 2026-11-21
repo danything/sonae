@@ -13,7 +13,7 @@
 # もう一度流せば最新に上げ直す (VOICEVOX は 2 GB ほどあるので、バージョンが変わったときだけ取り直す)。
 # **Web Push の VAPID の鍵は、無ければ作る** (docs/push.md と同じ作り方)。一度作ったら替えない。
 # **誰を通すか:** この PC のブラウザ (ループバック) と家の LAN からはログインなしで開けるように、sonae.env に TRUSTED_NETWORKS を
-# 書く (無いときだけ)。**その中の誰でも設定を変えられる。** 外からも開くなら OIDC を sonae.env に書く (docs/install.md の「ログイン」)。
+# 書く (sonae.env が無いときだけ)。**その中の誰でも設定を変えられる。** 外からも開くなら OIDC を sonae.env に書く (docs/install.md の「ログイン」)。
 #
 # 置き場:
 #   %ProgramFiles%\sonae\    server\ (bun とアプリ)・voicevox\ (VOICEVOX のエンジン)。管理者しか書けない
@@ -250,7 +250,7 @@ function Initialize-Env([string]$Bun, [string]$Work) {
     if (-not (Test-Path -LiteralPath $envFile)) {
         Write-Text $envFile ((@(
                     '# sonae の環境変数 (docs/install.md の「環境変数を足す」)。install.ps1 は無いときだけ作り、あとは触らない',
-                    '# (VAPID の鍵の行が無ければ足すだけ)。直したら install.ps1 を流し直す。秘密が入るので人に見せない',
+                    '# (VAPID の鍵と連絡先の行が無ければ足すだけ)。直したら install.ps1 を流し直す。秘密が入るので人に見せない',
                     '# 値は引用符で囲まずに書く (書いた文字がそのまま渡る)',
                     '#',
                     '# 誰を通すか (docs/install.md の「ログイン」)。このネットワークの中からは、ログインなしで開ける。',
@@ -268,6 +268,8 @@ function Initialize-Env([string]$Bun, [string]$Work) {
                     '# OIDC_ROLE=admin',
                     '# 外から https で開くなら、その URL (ログインの戻り先と Webhook の本文のリンクに使う)',
                     '# PUBLIC_URL=https://sonae.example.com',
+                    '# https の前段 (リバースプロキシ) の後ろに置くなら、PUBLIC_URL と同じ値も書く (CSRF の判定。無いとログアウトが 403 になることがある)',
+                    '# ORIGIN=https://sonae.example.com',
                     '# 台湾の中央氣象署の授権碼 (docs/cwa.md)',
                     '# CWA_API_KEY=',
                     '# 海しる (海上保安庁) の API のキー。無ければ海しるの点を出さない (docs/design.md の 2.11)',
