@@ -61,7 +61,7 @@ sonae:
 # 作り方の例:
 #   kubectl -n sonae create secret generic sonae-secrets --from-literal=oidc-client-secret=…
 secrets:
-  # Secret の名前。空なら、どの秘密も渡さない (OIDC が揃わないので画面は開かない)
+  # Secret の名前。空なら、どの秘密も渡さない (OIDC が揃わないので、`sonae.extraEnv` で TRUSTED_NETWORKS を渡さなければ画面は開かない)
   name: ""
   # Secret の中のキーの名前
   keys:

@@ -4,7 +4,7 @@ Mac と Windows でインストーラがすることと置き場は [install-mac
 
 ## 1 行で入れる
 
-**clone は要りません。** 立ち上がるとブラウザが開きます (`--no-open`・`-NoOpen` を付けると開かない)。
+**clone は要りません。** 立ち上がるとブラウザが開きます (Linux は画面のあるときだけ。`--no-open`・`-NoOpen` を付けると開かない)。
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/danything/sonae/main/install.sh | bash        # Linux
@@ -15,14 +15,14 @@ curl -fsSL https://raw.githubusercontent.com/danything/sonae/main/install.sh | s
 irm https://raw.githubusercontent.com/danything/sonae/main/install.ps1 | iex   # Windows (管理者の PowerShell)
 ```
 
-| OS                              | 動かし方                                                                                                              | 開く URL                                                |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| **Linux** (x86_64)              | Docker Compose で sonae と VOICEVOX のエンジン (公式のイメージ) を動かす。`~/sonae` に compose.prod.yml を置く        | <http://sonae.localhost> (genkan) か `http://<IP>:3030` |
-| **Mac** (Apple Silicon・Intel)  | コンテナを使わず、そのまま。sonae 本体 (配布物の bun とアプリ) と VOICEVOX のエンジンを root の LaunchDaemon に載せる | <http://localhost:3030>                                 |
-| **Windows** (x64。10 1809 以降) | コンテナを使わず、そのまま。同じ 2 つを、タスク スケジューラの「起動したら起こす」タスク (SYSTEM) に載せる            | <http://localhost:3030>                                 |
+| OS                              | 動かし方                                                                                                                       | 開く URL                                                |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| **Linux** (x86_64)              | Docker Compose で sonae と VOICEVOX のエンジン (公式のイメージ) を動かす。compose.prod.yml を `~/sonae/compose.yml` として置く | <http://sonae.localhost> (genkan) か `http://<IP>:3030` |
+| **Mac** (Apple Silicon・Intel)  | コンテナを使わず、そのまま。sonae 本体 (配布物の bun とアプリ) と VOICEVOX のエンジンを root の LaunchDaemon に載せる          | <http://localhost:3030>                                 |
+| **Windows** (x64。10 1809 以降) | コンテナを使わず、そのまま。同じ 2 つを、タスク スケジューラの「起動したら起こす」タスク (SYSTEM) に載せる                     | <http://localhost:3030>                                 |
 
 - **もう一度流せば、最新のリリースに上げ直します。** DB・設定・VAPID の鍵はそのまま。VOICEVOX のエンジン (2 GB ほど) は、バージョンが変わったときだけ取り直します
-- **外すときは `--uninstall`** (Windows は `-Uninstall`)。止めて、入れたプログラムを外します。**DB と設定 (sonae.env) は残します**
+- **外すときは `--uninstall`** (Windows は `-Uninstall`)。止めて、入れたプログラムを外します (Linux はコンテナを止めて消すだけで、compose のファイルとイメージ・genkan は残します)。**DB と設定 (sonae.env) は残します**
 
   ```sh
   curl -fsSL https://raw.githubusercontent.com/danything/sonae/main/install.sh | bash -s -- --uninstall        # Linux

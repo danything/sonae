@@ -48,7 +48,7 @@ const valid = (iso: string | undefined): iso is string =>
 /** 「11/13 08:43」 */
 export const jst = (iso: string | undefined) =>
   valid(iso) ? dateTime.format(new Date(iso)) : "—";
-/** 「11/13 08:43:12」(受信の状態の時刻。一覧や詳しい内容の時刻は秒を出さない `jst`) */
+/** 「11/13 08:43:12」(受信の状態の時刻。一覧と地図の時刻は秒を出さない `jst`) */
 export const jstSeconds = (iso: string | undefined) =>
   valid(iso) ? dateTimeSeconds.format(new Date(iso)) : "—";
 /** 「2026/11/13 08:43:12」 */
