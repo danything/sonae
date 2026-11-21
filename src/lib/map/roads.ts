@@ -41,7 +41,7 @@ export interface RoadCollection {
   features: RoadFeature[];
 }
 
-/** `/api/roads` の答え。URL を登録していなければ `enabled` が false で線は空 */
+/** `/api/roads` の答え。自動で見つけた災害も、登録した URL も無ければ `enabled` が false で線は空 */
 export interface RoadResponse {
   enabled: boolean;
   data: RoadCollection;

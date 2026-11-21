@@ -36,7 +36,7 @@ https://github.com/user-attachments/assets/10623080-5ec4-4150-8a29-319a88e5f30b
 - [Zero Quake](https://github.com/0Quake/Zero-Quake) の機能を参考にした。コードは読んでも写してもいない (一から書いている)。
 - 地震・津波・火山 (噴火速報・噴火警報)・気象 (警報・注意報など) の情報を気象庁 (防災情報 XML) から、地震・津波を P2P地震情報・Wolfx Project からも、海外の地震を USGS・EMSC・GeoNet・中央氣象署 (台湾、授権碼があるとき) から、太平洋の津波の参考情報を PTWC (米国) と気象庁ホームページ (国際津波関連情報) から受け、画面には必ず出典と「公式の情報を優先してください」という注意文を出す。気象庁の情報は加工して出しているので、その旨も書く。
 - 地図には、台湾の観測点のいまの揺れ (ExpTech の [TREM](https://exptech.dev) の RTS。非公式) と、有志の観測点のいまの揺れ (Wolfx Project の [SeisJS](https://wolfx.jp/docs/seisjs-api/)。非公式) を点の色で出す。地図に出すだけで、一覧・音・読み上げ・通知では知らせない。
-- 地図の右下の「重ねる」で、気象庁の雨雲 (いま)・今後の雨 (降水短時間予報)・雷・竜巻・キキクル (土砂・大雨の危険度) か、国土地理院のハザードマップポータルサイトのハザードマップ (洪水・内水・高潮・津波・土砂災害)・活断層・防災科研の J-SHIS (揺れの確率・地盤の揺れやすさ) を 1 つ重ねられる。線状降水帯の雨域と台風の予報円・暴風警戒域は、出ている間いつも描く。海上保安庁の海しるの海底地殻変動観測点と海域火山 (API のキーがあるとき) と、国土交通省の「通れるマップ」の災害時の通行止めと通れた道 (道路局のページから自動で見つけたとき) も地図に出す。
+- 地図の右下の「重ねる」で、気象庁の雨雲 (いま)・今後の雨 (降水短時間予報)・雷・竜巻・キキクル (土砂・大雨の危険度) か、国土地理院のハザードマップポータルサイトのハザードマップ (洪水・内水・高潮・津波・土砂災害)・活断層・防災科研の J-SHIS (揺れの確率・地盤の揺れやすさ) を 1 つ重ねられる。線状降水帯の雨域と台風の予報円・暴風警戒域は、出ている間いつも描く。海上保安庁の海しるの海底地殻変動観測点と海域火山 (API のキーがあるとき) と、国土交通省の「通れるマップ」の災害時の通行止めと通れた道 (目安。寄せると薄くし、大きく寄せると隠す) も地図に出す。通行止めと通れた道は、道路局のページから自動で見つけたときか、URL を登録したときに出す。
 
 知らせる条件は、緊急地震速報・地震・津波・火山・気象のそれぞれで「全国のものを知らせる」「住んでいる地域と現在地のものだけ」「知らせない」から選ぶ。地震は、知らせる震度も選ぶ。
 ほかの段 (注意報も知らせるかなど) は決めてあり、選んだもので何を知らせるかを画面に 1 文で出す ([docs/design.md の 2.4](docs/design.md#24-web-push) の表)。
@@ -65,7 +65,7 @@ irm https://raw.githubusercontent.com/danything/sonae/main/install.ps1 | iex
 ```
 
 - Linux は Docker Compose で動かす。Mac と Windows はコンテナを使わず、配布物の bun とアプリ、公式の VOICEVOX のエンジン (CPU 版) をそのまま動かす (Mac は root の LaunchDaemon、Windows は SYSTEM のタスク)
-- 開くのは、Mac・Windows は <http://localhost:3030>、Linux は genkan があれば <http://sonae.localhost>、無ければ `http://<IP>:3030`。もう一度流せば最新に上げ直し、`--uninstall` (Windows は `-Uninstall`) で止めて外す (DB と設定は残す)
+- 開くのは、Mac・Windows は <http://localhost:3030>、Linux は genkan があれば <http://sonae.localhost>、無ければ `http://<IP>:3030`。もう一度流せば最新に上げ直し、`--uninstall` (Windows は `-Uninstall`) で止めて外す (DB と設定は残す。Linux はコンテナを止めて消すだけ)
 - **家の LAN (とそのマシンのブラウザ) からは、ログインなしで開ける** (`sonae.env` の `TRUSTED_NETWORKS`)。その中の誰でも設定を変えられるので、家の外からも開くならログイン (OIDC) を足す。http の LAN の IP で開いた端末では Web Push は使えない
 - 置き場・環境変数・ログイン・VOICEVOX のバージョンと規約は [docs/install.md](docs/install.md) ([Mac](docs/install-mac.md)・[Windows](docs/install-windows.md))
 
