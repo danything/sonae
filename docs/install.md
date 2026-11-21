@@ -120,6 +120,7 @@ Windows は cmd が読むので、値に `"`・`&`・`^`・`%` を入れると�
 | `TRUSTED_NETWORKS`・`ALLOWED_HOSTS`・`TRUSTED_PROXIES`     | ログインなしで開ける範囲 (上の「ログイン」)                                                                                                                                                                                                                                                           |
 | `OIDC_ISSUER`・`OIDC_CLIENT_ID`・`OIDC_CLIENT_SECRET` など | ログイン ([entra.md](entra.md))                                                                                                                                                                                                                                                                       |
 | `PUBLIC_URL`                                               | 外から https で開くときの URL。ログインの戻り先と Webhook の本文のリンクに使う                                                                                                                                                                                                                        |
+| `ORIGIN`                                                   | https の前段の後ろに置くなら、`PUBLIC_URL` と同じ値 (Helm chart と同じ形)。SvelteKit が CSRF の判定に使う (下の「https の前段を置く」)                                                                                                                                                                |
 | `VAPID_PRIVATE_JWK`・`VAPID_SUBJECT`                       | Web Push の鍵と連絡先 (下の「Web Push の鍵」と [push.md](push.md))                                                                                                                                                                                                                                    |
 | `CWA_API_KEY`                                              | 台湾の中央氣象署の授権碼 ([cwa.md](cwa.md))。無ければ中央氣象署の受信だけを切る                                                                                                                                                                                                                       |
 | `MSIL_API_KEY`                                             | 海しる (海上保安庁) の API のキー ([design.md の 2.11](design.md#211-海しるの点の層-海底地殻変動観測点海域火山))。無ければ海しるの点の層 (海底地殻変動観測点・海域火山) だけを出さない                                                                                                                |
@@ -144,6 +145,23 @@ Linux は sonae のイメージの bun で、Mac と Windows は配布物の bun
 自分の `mailto:…` に替えてかまいません。
 
 家の外やスマホで受けるなら、https の前段を置いて `PUBLIC_URL` を書きます (`http://<IP>:3030` では通知を登録できない。上の「ログイン」)。
+
+## https の前段を置く
+
+https の前段 (リバースプロキシ) の後ろに置くなら、`sonae.env` に `PUBLIC_URL` と `ORIGIN` を同じ値で書きます (Helm chart も `sonae.publicUrl` を両方に書く)。
+
+```sh
+PUBLIC_URL=https://sonae.example.com
+ORIGIN=https://sonae.example.com
+```
+
+**`ORIGIN` が無いと、ログアウトが 403 になることがあります** (「Cross-site POST form submissions are forbidden」)。
+SvelteKit は、フォームの POST の `Origin` を自分の URL と比べて、違えば断ります。自分の URL は、`ORIGIN` が無ければ要求の `Host` に `https://` を付けたものです。
+前段が `Host` を書き換える (nginx の `proxy_pass http://localhost:3030` の既定など) と、ブラウザの `https://sonae.example.com` と食い違います。
+2026-11-21 に v0.4.6 のイメージで確かめました (`Host: localhost:3000`・`Origin: https://sonae.example.com` のログアウトは、`ORIGIN` が無ければ 403、あれば 200。`Host` をそのまま渡す前段なら、無くても 200)。
+
+`ORIGIN` を書くと、ほかの URL (`http://<IP>:3030` など) で開いたときのログアウトは 403 になります。
+ログアウトはログイン (OIDC) した人にだけ出るので、家の LAN の中 (ログインなし) では困りません。
 
 ## VOICEVOX
 

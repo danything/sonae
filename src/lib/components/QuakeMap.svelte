@@ -153,6 +153,7 @@
     readHazard,
     riskShown,
     riskVisibility,
+    ROAD_SPEED_MAXZOOM,
     SHELTER_DISASTERS,
     SHELTER_LAYERS,
     SHELTER_MIN_ZOOM,
@@ -1997,6 +1998,11 @@
   /** 通れた道 (目安) の線を出しているか (ハザードマップの凡例の下で、隠していることを書くため) */
   let roadSpeedShown = $state(false);
   /**
+   * 通れた道の線が、いまのズームで地図に描かれているか。ズーム ROAD_SPEED_MAXZOOM から上では描かないので、
+   * 隠していることも書かない (動き終わったときのズームで決める)
+   */
+  const roadSpeedDrawn = $derived(roadSpeedShown && zoom < ROAD_SPEED_MAXZOOM);
+  /**
    * サーバーが 30 分ごとに取って置いたものを読み、開いている間は 10 分ごとに読み直す。
    * URL を登録していないサーバーでは空 (層を出さない)
    */
@@ -2433,7 +2439,7 @@
           <!-- 隠している層があることと、戻し方。図が重ならないズーム (活断層の 11 未満) では隠さない -->
           {#if covered}
             <p class="tiny muted" data-testid="hazard-hidden">
-              色がぶつからないよう、警報・注意報と震度の塗り{roadSpeedShown
+              色がぶつからないよう、警報・注意報と震度の塗り{roadSpeedDrawn
                 ? "・通れた道 (目安) の線"
                 : ""}を隠しています (特別警報・緊急地震速報は縁取りで出します)。{quakeShown
                 ? "「なし」に戻すと、震度の塗りは元に戻ります。警報・注意報の塗りは、一覧へ戻ると元に戻ります。"
@@ -2441,7 +2447,7 @@
             </p>
           {:else}
             <p class="tiny muted" data-testid="hazard-hidden">
-              寄せて図が重なると、色がぶつからないよう、警報・注意報と震度の塗り{roadSpeedShown
+              寄せて図が重なると、色がぶつからないよう、警報・注意報と震度の塗り{roadSpeedDrawn
                 ? "・通れた道 (目安) の線"
                 : ""}を隠します。
             </p>
@@ -2489,7 +2495,7 @@
               >。先の雨は「今後の雨 (予測)」で見られます。
             </p>
             <p class="tiny muted" data-testid="hazard-hidden">
-              色がぶつからないよう、警報・注意報の塗り{roadSpeedShown
+              色がぶつからないよう、警報・注意報の塗り{roadSpeedDrawn
                 ? "・通れた道 (目安) の線"
                 : ""}を隠しています
               (特別警報・緊急地震速報は縁取りで出します)。「なし」に戻すと元に戻ります。
@@ -2551,7 +2557,7 @@
               >
             </p>
             <p class="tiny muted" data-testid="hazard-hidden">
-              色がぶつからないよう、警報・注意報の塗り{roadSpeedShown
+              色がぶつからないよう、警報・注意報の塗り{roadSpeedDrawn
                 ? "・通れた道 (目安) の線"
                 : ""}を隠しています
               (特別警報・緊急地震速報は縁取りで出します)。「なし」に戻すと元に戻ります。
@@ -2611,7 +2617,7 @@
               >
             </p>
             <p class="tiny muted" data-testid="hazard-hidden">
-              色がぶつからないよう、警報・注意報の塗り{roadSpeedShown
+              色がぶつからないよう、警報・注意報の塗り{roadSpeedDrawn
                 ? "・通れた道 (目安) の線"
                 : ""}を隠しています
               (特別警報・緊急地震速報は縁取りで出します)。「なし」に戻すと元に戻ります。
@@ -2696,7 +2702,7 @@
               >
             </p>
             <p class="tiny muted" data-testid="hazard-hidden">
-              色がぶつからないよう、警報・注意報の塗り{roadSpeedShown
+              色がぶつからないよう、警報・注意報の塗り{roadSpeedDrawn
                 ? "・通れた道 (目安) の線"
                 : ""}を隠しています
               (特別警報・緊急地震速報は縁取りで出します)。「なし」に戻すと元に戻ります。
