@@ -472,3 +472,18 @@ describe("Wolfx", () => {
     await run;
   });
 });
+
+describe("つなぎ方 (受信の状態に出す)", () => {
+  test("WebSocket の情報源と、決まった間隔で取得する情報源", () => {
+    const { ctx } = context();
+    expect(p2pSource(ctx).status().transport).toEqual({ kind: "websocket" });
+    expect(wolfxSource(ctx).status().transport).toEqual({
+      kind: "websocket",
+    });
+    // 気象庁のフィードは 60 秒より短くしない
+    expect(jmaSource(ctx, { intervalMs: 1_000 }).status().transport).toEqual({
+      kind: "poll",
+      everyMs: 60_000,
+    });
+  });
+});

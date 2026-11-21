@@ -345,7 +345,10 @@ export function roadSource(
   const discover = o.discover ?? false;
   if (manual.length === 0 && !discover) return undefined;
   const cache = new LayerCache(db);
-  const status = new StatusTracker("roads", o.onStatus);
+  const status = new StatusTracker("roads", o.onStatus, {
+    kind: "poll",
+    everyMs: ROAD_INTERVAL_MS,
+  });
   const doFetch = o.fetch ?? fetch;
   const wait = o.sleep ?? sleep;
   const now = o.now ?? Date.now;

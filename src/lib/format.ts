@@ -6,6 +6,7 @@ import type {
   Quake,
   SourceId,
   SourceStatus,
+  SourceTransport,
   Status,
   WeatherInfo,
 } from "./model.ts";
@@ -16,6 +17,14 @@ const dateTime = new Intl.DateTimeFormat("ja-JP", {
   day: "numeric",
   hour: "2-digit",
   minute: "2-digit",
+});
+const dateTimeSeconds = new Intl.DateTimeFormat("ja-JP", {
+  timeZone: "Asia/Tokyo",
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
 });
 const fullDateTime = new Intl.DateTimeFormat("ja-JP", {
   timeZone: "Asia/Tokyo",
@@ -39,6 +48,9 @@ const valid = (iso: string | undefined): iso is string =>
 /** 「11/13 08:43」 */
 export const jst = (iso: string | undefined) =>
   valid(iso) ? dateTime.format(new Date(iso)) : "—";
+/** 「11/13 08:43:12」(受信の状態の時刻。一覧や詳しい内容の時刻は秒を出さない `jst`) */
+export const jstSeconds = (iso: string | undefined) =>
+  valid(iso) ? dateTimeSeconds.format(new Date(iso)) : "—";
 /** 「2026/11/13 08:43:12」 */
 export const jstFull = (iso: string | undefined) =>
   valid(iso) ? fullDateTime.format(new Date(iso)) : "—";
@@ -114,19 +126,39 @@ const SOURCE_STATE: Record<SourceStatus["state"], string> = {
   off: "オフ",
 };
 
-/** 情報源の受信の状態の 1 行 (「受信中・11/13 08:43」「オフ (授権碼がありません)」) */
+/** 情報源の受信の状態の 1 行 (「受信中・11/13 08:43:12」「オフ (授権碼がありません)」) */
 export function sourceStateText(s: SourceStatus): string {
   const state = SOURCE_STATE[s.state] ?? s.state;
   if (s.state === "off") return s.reason ? `${state} (${s.reason})` : state;
   const road = roadDiscoverText(s, state);
   if (road) return road;
-  return s.lastSeenAt ? `${state}・${jst(s.lastSeenAt)}` : state;
+  return s.lastSeenAt ? `${state}・${jstSeconds(s.lastSeenAt)}` : state;
+}
+
+/** 「1 分ごと」「30 分ごと」「1 日ごと」(割り切れるいちばん大きい単位で) */
+function everyText(ms: number): string {
+  const units: [number, string][] = [
+    [24 * 60 * 60_000, "日"],
+    [60 * 60_000, "時間"],
+    [60_000, "分"],
+  ];
+  for (const [unit, name] of units)
+    if (ms >= unit && ms % unit === 0) return `${ms / unit} ${name}ごと`;
+  return `${Math.round(ms / 1000)} 秒ごと`;
+}
+
+/** 情報源へのつなぎ方の一言 (受信の状態の名前の下)。「WebSocket」「SSE」「1 分ごとに取得」 */
+export function transportText(t: SourceTransport | undefined): string {
+  if (!t) return "";
+  if (t.kind === "websocket") return "WebSocket";
+  if (t.kind === "sse") return "SSE";
+  return `${everyText(t.everyMs)}に取得`;
 }
 
 /**
  * 災害時の通行止めを自動で見つけているときの 1 行 (docs/design.md の 2.12)。
- * 「受信中・令和8年熊本地震 (1 件)・11/21 10:00 に一覧を確かめた」「災害の通行止めはありません (11/21 10:00 に確かめた)」
- * 「一覧が読めません (最後に読めたのは 11/21 07:00)」。自動の発見を使っていなければ undefined
+ * 「受信中・令和8年熊本地震 (1 件)・11/21 10:00:23 に一覧を確かめた」「災害の通行止めはありません (11/21 10:00:23 に確かめた)」
+ * 「一覧が読めません (最後に読めたのは 11/21 07:00:23)」。自動の発見を使っていなければ undefined
  */
 function roadDiscoverText(s: SourceStatus, state: string): string | undefined {
   const r = s.roads;
@@ -134,10 +166,10 @@ function roadDiscoverText(s: SourceStatus, state: string): string | undefined {
     return undefined;
   if (r.problem)
     return r.checkedAt
-      ? `${r.problem} (最後に読めたのは ${jst(r.checkedAt)})`
+      ? `${r.problem} (最後に読めたのは ${jstSeconds(r.checkedAt)})`
       : r.problem;
   if (!r.checkedAt) return "一覧を確かめています";
-  const at = jst(r.checkedAt);
+  const at = jstSeconds(r.checkedAt);
   const manual = r.manual > 0 ? `登録した URL ${r.manual} 件` : undefined;
   const n = r.disasters.length;
   if (n === 0)

@@ -22,7 +22,7 @@ export interface P2pOptions {
 }
 
 export function p2pSource(ctx: SourceContext, opts: P2pOptions = {}): Source {
-  const status = new StatusTracker("p2p", ctx.onStatus);
+  const status = new StatusTracker("p2p", ctx.onStatus, { kind: "websocket" });
   const doFetch = opts.fetch ?? fetch;
   const log = opts.log ?? ((m: string) => console.log(m));
 

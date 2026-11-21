@@ -5,12 +5,15 @@ import {
   EEW_DRILL_NOTE,
   eewSourceLine,
   floodStationsText,
+  jst,
+  jstSeconds,
   jstTime,
   magnitudeText,
   quakeName,
   sourceInTrouble,
   sourceStateText,
   STATUS_LABEL,
+  transportText,
   waterLevelText,
 } from "#lib/format.ts";
 import { type Tsunami, tsunamiTop } from "#lib/model.ts";
@@ -51,10 +54,10 @@ test("受信の状態の 1 行 (受信中は最後に受けた時刻、オフは
     sourceStateText({
       id: "jma",
       state: "connected",
-      lastSeenAt: "2026-11-13T14:41:00Z",
+      lastSeenAt: "2026-11-13T14:41:07Z",
       since,
     }),
-  ).toBe("受信中・11/13 23:41");
+  ).toBe("受信中・11/13 23:41:07");
   expect(sourceStateText({ id: "p2p", state: "retrying", since })).toBe(
     "再接続中",
   );
@@ -66,6 +69,31 @@ test("受信の状態の 1 行 (受信中は最後に受けた時刻、オフは
       since,
     }),
   ).toBe("オフ (授権碼がありません)");
+});
+
+test("受信の状態の時刻だけ秒まで出す (一覧の時刻は秒を出さない)", () => {
+  const at = "2026-11-21T01:00:23Z";
+  expect(jstSeconds(at)).toBe("11/21 10:00:23");
+  expect(jst(at)).toBe("11/21 10:00");
+  expect(jstSeconds(undefined)).toBe("—");
+});
+
+test("つなぎ方の一言", () => {
+  expect(transportText({ kind: "websocket" })).toBe("WebSocket");
+  expect(transportText({ kind: "sse" })).toBe("SSE");
+  expect(transportText({ kind: "poll", everyMs: 60_000 })).toBe(
+    "1 分ごとに取得",
+  );
+  expect(transportText({ kind: "poll", everyMs: 30 * 60_000 })).toBe(
+    "30 分ごとに取得",
+  );
+  expect(transportText({ kind: "poll", everyMs: 24 * 60 * 60_000 })).toBe(
+    "1 日ごとに取得",
+  );
+  expect(transportText({ kind: "poll", everyMs: 90_000 })).toBe(
+    "90 秒ごとに取得",
+  );
+  expect(transportText(undefined)).toBe("");
 });
 
 test("設定で切ってある情報源は問題にしない (注意の印を出さない)", () => {

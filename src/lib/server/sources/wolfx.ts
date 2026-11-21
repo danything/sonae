@@ -44,7 +44,9 @@ export function wolfxSource(
   ctx: SourceContext,
   opts: WolfxOptions = {},
 ): Source {
-  const status = new StatusTracker("wolfx", ctx.onStatus);
+  const status = new StatusTracker("wolfx", ctx.onStatus, {
+    kind: "websocket",
+  });
   const now = opts.now ?? nowIso;
   const pollMs = opts.eqlistPollMs ?? EQLIST_POLL_MS;
   const log = opts.log ?? ((m: string) => console.log(m));

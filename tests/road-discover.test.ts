@@ -235,7 +235,7 @@ describe("見つけた URL を取る", () => {
     expect(s.state).toBe("connected");
     expect(sourceInTrouble(s)).toBe(true);
     expect(sourceStateText(s)).toBe(
-      "一覧が読めません (最後に読めたのは 1/1 09:00)",
+      "一覧が読めません (最後に読めたのは 1/1 09:00:00)",
     );
     expect(waits).toEqual([5 * 60_000]);
   });
@@ -338,7 +338,7 @@ describe("受信の状態の文", () => {
   test("災害が無いときと、あるとき", () => {
     expect(
       text({ discover: true, disasters: [], manual: 0, checkedAt: at }),
-    ).toBe("災害の通行止めはありません (11/21 10:00 に確かめた)");
+    ).toBe("災害の通行止めはありません (11/21 10:00:00 に確かめた)");
     expect(
       text({
         discover: true,
@@ -346,7 +346,7 @@ describe("受信の状態の文", () => {
         manual: 0,
         checkedAt: at,
       }),
-    ).toBe("受信中・令和8年熊本地震 (1 件)・11/21 10:00 に一覧を確かめた");
+    ).toBe("受信中・令和8年熊本地震 (1 件)・11/21 10:00:00 に一覧を確かめた");
     expect(
       text({
         discover: true,
@@ -355,12 +355,12 @@ describe("受信の状態の文", () => {
         checkedAt: at,
       }),
     ).toBe(
-      "受信中・令和8年熊本地震、令和8年8月千葉豪雨 (2 件)、登録した URL 2 件・11/21 10:00 に一覧を確かめた",
+      "受信中・令和8年熊本地震、令和8年8月千葉豪雨 (2 件)、登録した URL 2 件・11/21 10:00:00 に一覧を確かめた",
     );
     expect(
       text({ discover: true, disasters: [], manual: 1, checkedAt: at }),
     ).toBe(
-      "受信中・登録した URL 1 件・一覧に災害はありません (11/21 10:00 に確かめた)",
+      "受信中・登録した URL 1 件・一覧に災害はありません (11/21 10:00:00 に確かめた)",
     );
   });
 
@@ -373,7 +373,7 @@ describe("受信の状態の文", () => {
         checkedAt: at,
         problem: "一覧が読めません",
       }),
-    ).toBe("一覧が読めません (最後に読めたのは 11/21 10:00)");
+    ).toBe("一覧が読めません (最後に読めたのは 11/21 10:00:00)");
     expect(
       text({ discover: true, disasters: [], manual: 0 }, "connecting"),
     ).toBe("一覧を確かめています");
