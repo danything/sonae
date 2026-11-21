@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import { RtsBoard } from "#lib/server/rts-board.ts";
+import { emscSource } from "#lib/server/sources/emsc.ts";
 import { jmaSource } from "#lib/server/sources/jma.ts";
 import { p2pSource } from "#lib/server/sources/p2p.ts";
 import {
@@ -7,6 +9,8 @@ import {
   runSocket,
   StatusTracker,
 } from "#lib/server/sources/retry.ts";
+import { seisSource } from "#lib/server/sources/seisjs.ts";
+import { tremSource } from "#lib/server/sources/trem.ts";
 import { wolfxSource } from "#lib/server/sources/wolfx.ts";
 
 // 情報源のサーバーは立てない。WebSocket と fetch を差し替える
@@ -474,11 +478,18 @@ describe("Wolfx", () => {
 });
 
 describe("つなぎ方 (受信の状態に出す)", () => {
-  test("WebSocket の情報源と、決まった間隔で取得する情報源", () => {
+  test("WebSocket・SSE の情報源と、決まった間隔で取得する情報源", () => {
     const { ctx } = context();
     expect(p2pSource(ctx).status().transport).toEqual({ kind: "websocket" });
     expect(wolfxSource(ctx).status().transport).toEqual({
       kind: "websocket",
+    });
+    expect(emscSource(ctx).status().transport).toEqual({ kind: "websocket" });
+    expect(seisSource(new RtsBoard()).status().transport).toEqual({
+      kind: "websocket",
+    });
+    expect(tremSource(new RtsBoard()).status().transport).toEqual({
+      kind: "sse",
     });
     // 気象庁のフィードは 60 秒より短くしない
     expect(jmaSource(ctx, { intervalMs: 1_000 }).status().transport).toEqual({
