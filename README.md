@@ -67,6 +67,7 @@ irm https://raw.githubusercontent.com/danything/sonae/main/install.ps1 | iex
 - Linux は Docker Compose で動かす。Mac と Windows はコンテナを使わず、配布物の bun とアプリ、公式の VOICEVOX のエンジン (CPU 版) をそのまま動かす (Mac は root の LaunchDaemon、Windows は SYSTEM のタスク)
 - 開くのは、Mac・Windows は <http://localhost:3030>、Linux は genkan があれば <http://sonae.localhost>、無ければ `http://<IP>:3030`。もう一度流せば最新に上げ直し、`--uninstall` (Windows は `-Uninstall`) で止めて外す (DB と設定は残す。Linux はコンテナを止めて消すだけ)
 - **家の LAN (とそのマシンのブラウザ) からは、ログインなしで開ける** (`sonae.env` の `TRUSTED_NETWORKS`)。その中の誰でも設定を変えられるので、家の外からも開くならログイン (OIDC) を足す。http の LAN の IP で開いた端末では Web Push は使えない
+- https の前段 (リバースプロキシ) の後ろに置くなら、`sonae.env` に `PUBLIC_URL` と `ORIGIN` を同じ値で書く (Helm chart と同じ形)。`ORIGIN` が無いと、前段が `Host` を書き換えるときにログアウトが CSRF の判定で 403 になる ([docs/install.md の「https の前段を置く」](docs/install.md#https-の前段を置く))
 - 置き場・環境変数・ログイン・VOICEVOX のバージョンと規約は [docs/install.md](docs/install.md) ([Mac](docs/install-mac.md)・[Windows](docs/install-windows.md))
 
 ## Kubernetes に立てる (Helm chart)

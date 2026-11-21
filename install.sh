@@ -126,6 +126,8 @@ env_template() {
       '# OIDC_ROLE=admin' \
       '# 外から https で開くなら、その URL (ログインの戻り先と Webhook の本文のリンクに使う)' \
       '# PUBLIC_URL=https://sonae.example.com' \
+      '# https の前段 (リバースプロキシ) の後ろに置くなら、PUBLIC_URL と同じ値も書く (CSRF の判定。無いとログアウトが 403 になることがある)' \
+      '# ORIGIN=https://sonae.example.com' \
       '# 台湾の中央氣象署の授権碼 (docs/cwa.md)' \
       '# CWA_API_KEY=' \
       '# 海しる (海上保安庁) の API のキー。無ければ海しるの点を出さない (docs/design.md の 2.11)' \
