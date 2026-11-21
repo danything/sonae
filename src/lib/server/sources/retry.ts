@@ -7,7 +7,7 @@
  */
 
 import { Backoff } from "#lib/backoff.ts";
-import type { SourceId, SourceStatus } from "#lib/model.ts";
+import type { SourceId, SourceStatus, SourceTransport } from "#lib/model.ts";
 import { nowIso } from "#lib/server/time.ts";
 
 // 間隔の決め方は画面の SSE の張り直しと同じ (`#lib/backoff.ts`)
@@ -33,8 +33,10 @@ export class StatusTracker {
   constructor(
     id: SourceId,
     private readonly onChange?: (s: SourceStatus) => void,
+    transport?: SourceTransport,
   ) {
     this.value = { id, state: "connecting", since: nowIso() };
+    if (transport) this.value.transport = transport;
   }
   get(): SourceStatus {
     return { ...this.value };

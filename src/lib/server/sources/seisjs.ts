@@ -109,7 +109,7 @@ export interface SeisOptions {
 
 /** SeisJS の情報源。受けたものは `board` に入れるだけ */
 export function seisSource(board: RtsBoard, o: SeisOptions = {}): Source {
-  const status = new StatusTracker("seisjs", o.onStatus);
+  const status = new StatusTracker("seisjs", o.onStatus, { kind: "websocket" });
   const doFetch = o.fetch ?? fetch;
   const wait = o.sleep ?? sleep;
   const now = o.now ?? Date.now;

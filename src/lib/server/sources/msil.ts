@@ -198,7 +198,10 @@ export function msilSource(
   const k = key?.trim();
   if (!k) return undefined;
   const cache = new LayerCache(db);
-  const status = new StatusTracker("msil", o.onStatus);
+  const status = new StatusTracker("msil", o.onStatus, {
+    kind: "poll",
+    everyMs: MSIL_INTERVAL_MS,
+  });
   const doFetch = o.fetch ?? fetch;
   const wait = o.sleep ?? sleep;
   const now = o.now ?? Date.now;

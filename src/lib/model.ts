@@ -1259,7 +1259,13 @@ export interface SourceStatus {
   since: string;
   /** 災害時の通行止め (`roads`) の、自動で見つけた災害 (docs/design.md の 2.12) */
   roads?: RoadDiscoverStatus;
+  /** つなぎ方 (受信の状態に出す)。設定で切ってある情報源 (`off`) には無い */
+  transport?: SourceTransport;
 }
+
+/** 情報源へのつなぎ方。WebSocket と SSE はつなぎ続け、`poll` は `everyMs` ごとに取得する */
+export type SourceTransport =
+  { kind: "websocket" } | { kind: "sse" } | { kind: "poll"; everyMs: number };
 
 /** 災害時の通行止めの、国土交通省 道路局のページから自動で見つけたもの */
 export interface RoadDiscoverStatus {

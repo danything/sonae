@@ -62,7 +62,7 @@
       </p>
       <h2>受信の状態</h2>
       <p class="small muted">
-        情報源ごとの受信と、最後に受けた時刻です。開いている間も替わります
+        情報源ごとの受信と、最後に受けた時刻です。名前の下はつなぎ方です。開いている間も替わります
       </p>
       <div class="receive">
         <StatusList {connected} {statuses} />

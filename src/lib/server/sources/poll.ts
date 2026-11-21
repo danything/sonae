@@ -52,11 +52,14 @@ export const redact = (s: string) =>
   );
 
 export function pollSource(ctx: SourceContext, o: PollOptions): Source {
-  const status = new StatusTracker(o.id, ctx.onStatus);
+  const interval = Math.max(o.minIntervalMs, o.intervalMs);
+  const status = new StatusTracker(o.id, ctx.onStatus, {
+    kind: "poll",
+    everyMs: interval,
+  });
   const doFetch = o.fetch ?? fetch;
   const wait = o.sleep ?? sleep;
   const log = o.log ?? ((m: string) => console.log(m));
-  const interval = Math.max(o.minIntervalMs, o.intervalMs);
   const maxBackoff = Math.max(interval, o.maxBackoffMs ?? 15 * 60_000);
   const gap = o.gapMs ?? 10 * 60_000;
   const cache = new Map<string, { etag?: string; modified?: string }>();

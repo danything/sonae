@@ -95,10 +95,13 @@ function feedSource(
   kind: FeedKind,
   opts: JmaOptions,
 ): Source {
-  const status = new StatusTracker(kind.id, ctx.onStatus);
+  const interval = Math.max(60_000, opts.intervalMs ?? 60_000);
+  const status = new StatusTracker(kind.id, ctx.onStatus, {
+    kind: "poll",
+    everyMs: interval,
+  });
   const doFetch = opts.fetch ?? fetch;
   const log = opts.log ?? ((m: string) => console.log(m));
-  const interval = Math.max(60_000, opts.intervalMs ?? 60_000);
   const wait = opts.sleep ?? sleep;
   const cache = new Map<string, { etag?: string; modified?: string }>();
   /**

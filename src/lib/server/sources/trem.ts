@@ -142,7 +142,7 @@ export interface TremOptions {
 
 /** TREM-RTS の情報源。受けたものは `board` に入れるだけ */
 export function tremSource(board: RtsBoard, o: TremOptions = {}): Source {
-  const status = new StatusTracker("trem", o.onStatus);
+  const status = new StatusTracker("trem", o.onStatus, { kind: "sse" });
   const doFetch = o.fetch ?? fetch;
   const wait = o.sleep ?? sleep;
   const log = o.log ?? ((m: string) => console.log(m));

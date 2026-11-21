@@ -1016,6 +1016,11 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
 - **お知らせは、問題があるときだけヘッダー (スマホの形は dock) の印に畳む** (denpa の 6 章「通知」)。受信の状態はふだん出さず、つながっていない情報源があるときだけ注意の印 (⚠ と一言) を出し、押すとメニューと同じ箱で情報源ごとの受信を出す
   - いつもの受信の状態は「出典と注意」の窓の「受信の状態」に置く (注意文のすぐ下。`StatusList.svelte` を印のメニューと共に使う)。どの情報源を受けているかを、問題が無いときにも確かめられるようにするため。ボタン・タブ・画面は足さない (2026-11-15。持ち主の声「同期中のデータがどれかわからん」「できるだけ要素とか画面は増やさない方向で」)。
     設定で切ってある情報源 (状態 `off`。授権碼の無い中央氣象署・API のキーの無い海しる・自動の発見を切って URL も登録していない通行止め・`SONAE_TREM=off`・`SONAE_SEISJS=off`) も訳を添えて並べ、控えた字のままにして注意の印は出さない (`#lib/format.ts` の `sourceInTrouble`)
+  - 受信の状態の時刻 (最後に受けた時刻・通行止めの一覧を確かめた時刻) は秒まで出す (「受信中・11/21 10:00:23」。`#lib/format.ts` の `jstSeconds`)。一覧・詳しい内容・地図の時刻は分までのまま (`jst`)。つなぎ続ける情報源が生きているかを、秒の進みで確かめられるようにするため (2026-11-21。持ち主の声「受信中のとこ、秒数も出して」)
+  - 情報源の名前の下に、つなぎ方を控えた小さな字で添える (「WebSocket」「SSE」「1 分ごとに取得」。`transportText`)。つなぎ方は各アダプターが `StatusTracker` に渡し、`SourceStatus.transport` で送る。決まった間隔の情報源は、アダプターの間隔 (`pollSource` の `intervalMs` など) をそのまま出す。設定で切ってある情報源 (`off`) には出さない。画面への配信の行は「SSE」
+    - WebSocket: P2P地震情報 (`wss://api.p2pquake.net/v2/ws`)・Wolfx Project (`wss://ws-api.wolfx.jp/all_eew`)・EMSC (`wss://www.seismicportal.eu/standing_order/websocket`)・Wolfx SeisJS (`wss://seisjs.wolfx.jp/all_seis`)
+    - SSE: ExpTech TREM (`https://api.lb.exptech.dev/api/v1/trem/sse/rts`)
+    - 決まった間隔で取得: 気象庁 防災情報 XML (地震火山・気象。1 分)・USGS・PTWC・気象庁ホームページ (国際津波) (1 分)・GeoNet・中央氣象署 (2 分)・国土交通省 (災害時の通行止め。30 分)・海しる (1 日)
 
 ### 6.2 sonae だけの決まり
 

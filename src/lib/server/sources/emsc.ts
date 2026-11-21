@@ -90,7 +90,9 @@ export interface EmscOptions {
 }
 
 export function emscSource(ctx: SourceContext, opts: EmscOptions = {}): Source {
-  const status = new StatusTracker("emsc", ctx.onStatus);
+  const status = new StatusTracker("emsc", ctx.onStatus, {
+    kind: "websocket",
+  });
   const log = opts.log ?? ((m: string) => console.log(m));
   return {
     id: "emsc",
