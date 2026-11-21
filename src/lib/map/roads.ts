@@ -96,7 +96,7 @@ export function jstShort(iso: string): string {
 
 /**
  * 押した線の吹き出しの中身 (上から)。通行止めは路線名・区間・規制の内容と理由・始めた時刻・延長・更新の時刻・出典、
- * 通れた道は平均速度の区分と更新の時刻・出典。文は DOM で組み、HTML として読まない
+ * 通れた道は平均速度の区分・道路の形ではないこと・更新の時刻・出典。文は DOM で組み、HTML として読まない
  */
 export function roadPopup(p: RoadLine): PopupLine[] {
   const updated = {
@@ -115,6 +115,10 @@ export function roadPopup(p: RoadLine): PopupLine[] {
           ? "ETC2.0 の平均速度が時速 20 km 以下"
           : "ETC2.0 の平均速度が時速 21 km 以上",
         cls: "small",
+      },
+      {
+        text: "車の記録の点を直線でつないだ目安の線で、道路の形ではありません。道路から数百 m ずれる所があります",
+        cls: "tiny muted",
       },
       {
         text: "車が通った記録で、いま通れるとは限りません。工事の車のこともあります",

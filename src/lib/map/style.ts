@@ -135,6 +135,12 @@ export const PLATE_COLOR = "rgba(255, 196, 150, 0.55)";
 export const ROAD_CLOSED_COLOR = "#e60012";
 export const ROAD_SLOW_COLOR = "#ff9900";
 export const ROAD_FAST_COLOR = "#3cc8ff";
+/**
+ * 通れた道 (目安) の線を隠すズーム。この値から上では描かず、押しても吹き出しを出さない。
+ * 元の線は ETC2.0 の記録の点を直線でつないだもので、道路から数百 m ずれる所がある。寄せるとずれが道路と取り違えるほど
+ * 大きく見えるので隠す (docs/map.md の「災害時の通行止め」)
+ */
+export const ROAD_SPEED_MAXZOOM = 13;
 
 /**
  * 地理院地図Vector (国土地理院最適化ベクトルタイル) の PMTiles。試験公開で URL が変わりうる (docs/map.md)。
@@ -865,7 +871,7 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   },
   {
     label: "通れた道 (目安)",
-    note: "細い線。通れるマップの ETC2.0 の平均速度で、車が通った道です。橙は時速 20 km 以下、水色は 21 km 以上。いま通れるとは限らず、工事の車のこともあります。重ねる図のどれかを選んでいる間は隠します",
+    note: `細い線。通れるマップの ETC2.0 の平均速度で、車が通った道の目安です。橙は時速 20 km 以下、水色は 21 km 以上。線は車の記録の点を直線でつないだもので、道路の形ではありません。道路から数百 m ずれて、野原や山の上を通る所があります (国土交通省の地図でも同じ線です)。ずれが目立つので、寄せるほど薄くし、大きく寄せたとき (ズーム ${ROAD_SPEED_MAXZOOM} 以上) は隠します。いま通れるとは限らず、工事の車のこともあります。重ねる図のどれかを選んでいる間も隠します`,
   },
   {
     label: "道路・地名・施設の記号",
@@ -1698,11 +1704,13 @@ export function baseStyle(
         },
         layout: { "circle-sort-key": ["get", "order"] },
       },
-      // 通れた道 (目安)。ETC2.0 の平均速度の細い線。時速 20 km 以下は橙、21 km 以上は水色 (通れるマップの凡例の色の向き)
+      // 通れた道 (目安)。ETC2.0 の平均速度の細い線。時速 20 km 以下は橙、21 km 以上は水色 (通れるマップの凡例の色の向き)。
+      // 線は道路から数百 m ずれる所があるので、寄せるほど薄くし、ROAD_SPEED_MAXZOOM から上では描かない
       {
         id: "road-speed",
         type: "line",
         source: "roads",
+        maxzoom: ROAD_SPEED_MAXZOOM,
         filter: ["==", ["get", "kind"], "speed"],
         layout: {
           "line-cap": "round",
@@ -1716,8 +1724,16 @@ export function baseStyle(
             ROAD_SLOW_COLOR,
             ROAD_FAST_COLOR,
           ],
-          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1, 14, 2.5],
-          "line-opacity": 0.85,
+          "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1, 12, 1.5],
+          "line-opacity": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            10,
+            0.85,
+            ROAD_SPEED_MAXZOOM,
+            0.45,
+          ],
         },
       },
       // 通行止め (災害)。白い縁の上に赤の太い線。面の赤 (震度・警報) と見分けられるよう、縁を付けて線で引く
