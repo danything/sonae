@@ -2004,7 +2004,7 @@
   const roadSpeedDrawn = $derived(roadSpeedShown && zoom < ROAD_SPEED_MAXZOOM);
   /**
    * サーバーが 30 分ごとに取って置いたものを読み、開いている間は 10 分ごとに読み直す。
-   * URL を登録していないサーバーでは空 (層を出さない)
+   * 自動で見つけた災害も、登録した URL も無いサーバーでは空 (層を出さない)
    */
   async function loadRoads(m: MapLibreMap): Promise<void> {
     try {

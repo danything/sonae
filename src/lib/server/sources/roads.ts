@@ -431,7 +431,7 @@ export function roadSource(
             if (signal.aborted) break;
             problem = "一覧が読めません";
             errors.push(`一覧が読めません: ${err}`);
-            // 読めなければ、次の取得 (30 分か、失敗が続けばそれより早い) で読み直す
+            // 読めなければ 30 分後に読み直す
             nextDiscover = now() + ROAD_INTERVAL_MS;
           }
           showDetail();
