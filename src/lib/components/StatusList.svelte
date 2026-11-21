@@ -54,8 +54,15 @@
     font-weight: var(--so-weight);
   }
   .status dt {
+    flex: 1 1 50%;
     min-width: 0;
     padding-block: var(--so-space-1);
+  }
+  /* 長い状態 (通行止めの災害の名前) は折り返す。名前の列を押しつぶさない */
+  .status dd {
+    flex: 0 1 auto;
+    min-width: 0;
+    text-align: end;
   }
   /* つなぎ方。名前の下に控えた小さな字で */
   .status .via {
