@@ -1128,7 +1128,7 @@
 {/snippet}
 
 {#snippet accountItems()}
-  {#if user && user.subject !== "dev"}
+  {#if user && user.subject !== "dev" && user.subject !== "trusted-network"}
     <div class="menu-gap"></div>
     <form method="POST" action="/auth/logout" class="menu-form">
       <button type="submit" class="menu-item" data-testid="logout"

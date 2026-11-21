@@ -24,7 +24,7 @@
 # 作るのは一度だけで、上げ直しても替えない (替えると、どのブラウザの購読にも送れなくなる)。
 #
 # **誰を通すか:** 家の LAN (と、このマシンのブラウザ) からはログインなしで開けるように、sonae.env に TRUSTED_NETWORKS を書く
-# (無いときだけ。Linux は 192.168.0.0/16・10.0.0.0/8 と genkan のゲートウェイ、Mac はそれにループバック)。
+# (sonae.env が無いときだけ。Linux は 192.168.0.0/16・10.0.0.0/8 と genkan のゲートウェイ、Mac はそれにループバック)。
 # **その中の誰でも設定を変えられる。** 外からも開くなら OIDC を sonae.env に書く (docs/install.md の「ログイン」)。
 #
 # **入口は genkan** (Linux。https://github.com/danything/genkan。ホスト名でコンテナに振り分けるリバースプロキシ)。
@@ -41,7 +41,7 @@
 #                /Library/LaunchDaemons/io.github.danything.{sonae,sonae-voicevox}.plist  起動したら起こし、落ちたら起こし直す
 #                /Library/Logs/sonae/{sonae,voicevox}.log                                  ログ
 #
-# 環境変数: SONAE_VERSION (v1.2.3 のように。既定は最新のリリース。main などの git の ref も渡せる (イメージは latest))、
+# 環境変数: SONAE_VERSION (v1.2.3 のように。既定は最新のリリース。Linux は main などの git の ref も渡せる (イメージは latest))、
 # SONAE_HOME (Linux)、SONAE_COMPOSE_FILE (Linux: compose.prod.yml の代わりに置く手元のファイル。CI と開発用)、
 # SONAE_IMAGE (Linux: sonae のイメージの代わりに使う手元で組んだイメージ。CI と開発用)、
 # SONAE_SERVER_TARBALL (Mac: 手元で組んだ本体の tar.gz を絶対パスで。CI と開発用)、
@@ -109,7 +109,7 @@ env_template() {
     umask 077
     printf '%s\n' \
       '# sonae の環境変数 (docs/install.md の「環境変数を足す」)。install.sh は無いときだけ作り、あとは触らない' \
-      '# (VAPID の鍵の行が無ければ足すだけ)。直したら install.sh を流し直す。秘密が入るので人に見せない' \
+      '# (VAPID の鍵と連絡先の行が無ければ足すだけ)。直したら install.sh を流し直す。秘密が入るので人に見せない' \
       '#' \
       '# 誰を通すか (docs/install.md の「ログイン」)。このネットワークの中からは、ログインなしで開ける。' \
       '# **その中の誰でも、設定 (読み上げの声・通知の条件・Web Push の購読) を変えられる。** 家の LAN だけにし、0.0.0.0/0 にはしない。' \

@@ -35,7 +35,7 @@ sonae:
   # Web Push の連絡先 (VAPID の subject。mailto: か https:)。空なら publicUrl。
   # 秘密鍵は下の `secrets` の Secret から読む (docs/push.md)
   vapidSubject: ""
-  # 緊急地震速報の訓練・試験も一覧と地図に出す。true で SONAE_TRAINING=on。出しても音・読み上げ・Web Push・
+  # 緊急地震速報の訓練・試験も一覧と地図に出す。true で SONAE_TRAINING=on。出しても通知・音・読み上げ・Web Push・
   # Webhook では知らせない (docs/design.md の 2.2)
   training: false
   # 災害時の通行止めの予備。サーバーは国土交通省 道路局のトップページから災害の「通れるマップ」を自動で見つけて取る。

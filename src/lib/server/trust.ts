@@ -165,7 +165,7 @@ const reported = new Set<string>();
 export function crossSiteWrite(request: Request, origin: string): boolean {
   if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return false;
   // Sec-Fetch-Site はブラウザが付け、ページのスクリプトからは変えられないので、あればそれだけで決める
-  // (前段が TLS を終えて `url.origin` が http になっていても、同じオリジンの書き込みを断らないように)。
+  // (adapter-bun は `ORIGIN` が無ければ `url.origin` を https とみなすので、http の LAN の IP で開いた同じオリジンの書き込みも断らないように)。
   // Origin と比べるのは、Sec-Fetch-Site を付けない古いブラウザのときだけ
   const site = request.headers.get("sec-fetch-site");
   if (site !== null) return site !== "same-origin" && site !== "none";

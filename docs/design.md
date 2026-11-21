@@ -538,7 +538,7 @@ devDependencies に入れ、Vite がサーバーに束ねる。テスト (`tests
     鳴らすと決めた事象 (`planAlerts` の `renotify`) で出す。中身は Web Push と同じ関数で作る (`payloadOf` → `toNotification`。見出し・本文・tag・`renotify`・閉じるまで残すか (`requireInteraction`)・押したときの URL)。押したときは Service Worker の `notificationclick` がその事象の画面へ移す。
     鳴らさない続報 (取消・解除・震源が決まった) は、その tag の通知が出ていれば鳴らさずに置き換える (取消を残った通知に映す)。
   - **出すのは通知の許可 (`Notification.permission === "granted"`) があるときだけ。** 許可を求めるのは人が操作したときだけ (「通知」の「開いているとき」の「OS の通知を出す」のスイッチと、Web Push の「このブラウザで受ける」)。スイッチは `sonae.alert` の `notify` に持ち、既定は無し (許可があればオン)。許可はサイトの設定で変わるので、画面に戻ったとき (`visibilitychange`) と窓を開いたときに読み直す。
-  - **Web Push と二重に鳴らさない。** Web Push に登録してあるブラウザには、同じ事象が SSE と Web Push の両方で届く。Service Worker は画面が開いているかで Web Push の通知を止めない (下の項。iOS が購読を止めるため) ので、どちらも通知を出す。
+  - **Web Push と二重に鳴らさない。** Web Push に登録してあるブラウザには、同じ事象が SSE と Web Push の両方で届く。Service Worker は画面が開いているかで Web Push の通知を止めない (iOS は、Web Push を受けて通知を出さないと購読を止めるため) ので、どちらも通知を出す。
     同じ事象は同じ tag なので、後から出した通知は前の通知を置き換えるが、`renotify` が付いていると置き換えでも鳴り直す。そこで **後から出すほうが、同じ tag で見出しと本文も同じ通知がもう出ていないかを `getNotifications({ tag })` で見る** (`#lib/push.ts` の `isShown`)。
     - Service Worker (Web Push が後): 出ていれば、`renotify: false`・`silent: true` で置き換える (`quiet`)。出すことはやめない。
     - 画面 (SSE が後): 出ていれば出さない。ほかのタブが出したときも同じ (タブが幾つあっても 1 度)。

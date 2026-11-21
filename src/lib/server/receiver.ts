@@ -290,7 +290,7 @@ export function startReceiving(): void {
   // adapter-bun は SIGTERM で HTTP を止めたあと、この合図を出して、イベントループが空くのを待つ。
   // 受信の輪を止めないと、いつまでも終わらない (k8s の入れ替えが遅れる)
   (process as EventEmitter).once("sveltekit:shutdown", () => a.stop?.());
-  // 並べるのは実際に起こした情報源 (切ってあるもの (TREM・SeisJS・授権碼の無い CWA) は上で別に出している)。
+  // 並べるのは実際に起こした情報源 (切ってあるもの (`a.off`) は上で別に出している)。
   // 手で書いた一覧だと、足した情報源が漏れる
   console.log(
     `[receiver] ${a.sources.map((s) => SOURCE_LABEL[s.id]).join("・")} の受信を始めました`,
