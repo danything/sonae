@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
 import { jstShort, roadPopup } from "#lib/map/roads.ts";
-import { overlayVisibility } from "#lib/map/style.ts";
+import {
+  baseStyle,
+  overlayVisibility,
+  ROAD_SPEED_MAXZOOM,
+} from "#lib/map/style.ts";
 import { CREDITS, creditText } from "#lib/notice.ts";
 import { openDb } from "#lib/server/db.ts";
 import {
@@ -98,6 +102,33 @@ describe("通れるマップの道路規制情報を読む", () => {
       true,
     ]);
     expect(lines.every((l) => l.properties.kind === "speed")).toBe(true);
+  });
+
+  test("ETC2.0 の速度の線は、点を間引かず元の順のまま描く (行ったり来たりする点もそのまま)", () => {
+    // 熊本の 11/21 の写しの 1 本 (宇土市)。点の順が少し戻る所がある
+    const coordinates: [number, number][] = [
+      [130.69752, 32.70332],
+      [130.69724, 32.70329],
+      [130.69711, 32.70326],
+      [130.6973, 32.70328],
+      [130.69705, 32.7032],
+      [130.69687, 32.70314],
+      [130.69697, 32.70315],
+    ];
+    const text = JSON.stringify({
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          geometry: { type: "LineString", coordinates },
+          properties: { _color: "#0000ff", _weight: 1 },
+        },
+      ],
+    });
+    expect(parseRoads(text, UPDATED)[0]?.geometry).toEqual({
+      type: "LineString",
+      coordinates,
+    });
   });
 });
 
@@ -296,6 +327,41 @@ describe("画面", () => {
       roadPopup({ kind: "speed", slow: false, updated: UPDATED }).at(-1)?.text,
     ).toBe("出典：国土交通省「通れるマップ」を加工して作成");
     expect(jstShort("2026-11-20T15:05:00Z")).toBe("2026/11/21 00:05");
+  });
+
+  test("通れた道の吹き出しは、線が道路の形ではないことを書く", () => {
+    expect(
+      roadPopup({ kind: "speed", slow: false, updated: UPDATED }).map(
+        (l) => l.text,
+      ),
+    ).toEqual([
+      "通れた道 (目安)",
+      "ETC2.0 の平均速度が時速 21 km 以上",
+      "車の記録の点を直線でつないだ目安の線で、道路の形ではありません。道路から数百 m ずれる所があります",
+      "車が通った記録で、いま通れるとは限りません。工事の車のこともあります",
+      "2026/7/31 16:00 更新 (国土交通省)",
+      "出典：国土交通省「通れるマップ」を加工して作成",
+    ]);
+  });
+
+  test("通れた道の線は寄せるほど薄くし、大きく寄せたら描かない", () => {
+    const layer = (
+      baseStyle("http://localhost") as {
+        layers: {
+          id: string;
+          maxzoom?: number;
+          paint?: Record<string, unknown>;
+        }[];
+      }
+    ).layers.find((l) => l.id === "road-speed");
+    expect(ROAD_SPEED_MAXZOOM).toBe(13);
+    expect(layer?.maxzoom).toBe(ROAD_SPEED_MAXZOOM);
+    // ["interpolate", ["linear"], ["zoom"], 10, 0.85, 13, 0.45]
+    const op = layer?.paint?.["line-opacity"] as unknown[];
+    expect(op.slice(3)).toEqual([10, 0.85, ROAD_SPEED_MAXZOOM, 0.45]);
+    // 幅は通行止めより細いまま (ズーム 12 で 1.5)
+    const w = layer?.paint?.["line-width"] as unknown[];
+    expect(w.at(-1)).toBe(1.5);
   });
 
   test("ハザードマップを重ねている間は通れた道の線を隠し、地震を選んでいる間は出す", () => {
