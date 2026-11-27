@@ -51,6 +51,7 @@
   import WarningLevel from "#lib/components/WarningLevel.svelte";
   import { troubleLabel } from "#lib/connection.ts";
   import { activeEews } from "#lib/eew.ts";
+  import { evacPortalFor } from "#lib/evac.ts";
   import {
     depthText,
     floodStationsText,
@@ -639,6 +640,8 @@
    * 住んでいる地域の、今日から先の警報級の可能性 (「高」「中」の日)。一覧の先頭に控えた字で 1 行だけ出す。
    * 知らせには使わない (docs/design.md の 2.8)
    */
+  /** 住んでいる地域の都道府県の防災ポータル (避難情報・避難所。リンクだけ。表に無い都道府県なら null) */
+  const evacPortal = $derived(evacPortalFor(alerter.prefs.home?.code));
   const homeOutlook = $derived.by(() => {
     const home = alerter.prefs.home;
     if (!home?.office) return null;
@@ -1114,6 +1117,22 @@
   </a>
 {/snippet}
 
+{#snippet evacItem()}
+  <!-- 避難情報と避難所は県のポータルで見てもらう (リンクだけ。ページは読まない。#lib/evac.ts) -->
+  {#if evacPortal}
+    <a
+      class="menu-item evac"
+      href={evacPortal.href}
+      target="_blank"
+      rel="noopener noreferrer"
+      data-testid="evac-portal"
+    >
+      避難情報 ({evacPortal.name})
+      <Icon icon={ExternalLink} size={0.875} />
+    </a>
+  {/if}
+{/snippet}
+
 {#snippet themeItems()}
   <p class="menu-head">テーマ</p>
   {#each THEMES as t (t.mode)}
@@ -1356,6 +1375,7 @@
           >
         {/snippet}
         {@render kmoniItem()}
+        {@render evacItem()}
         <div class="menu-gap"></div>
         {@render themeItems()}
         {@render accountItems()}
@@ -1738,6 +1758,7 @@
           </button>
         {/snippet}
         {#if user}<p class="menu-head">{user.name}</p>{/if}
+        {@render evacItem()}
         <a class="menu-item" href={aboutHref}>出典と注意</a>
         <div class="menu-gap"></div>
         {@render themeItems()}
@@ -1825,7 +1846,8 @@
   .actions :global(:is(a.button, button)) {
     font-size: var(--so-text-sm);
   }
-  .kmoni {
+  .kmoni,
+  .evac {
     display: flex;
     align-items: center;
     gap: var(--so-space-1);

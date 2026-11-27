@@ -199,11 +199,21 @@ export const JSHIS_AMP_LAYER = "Z-V4-JAPAN-AMP-VS400_M250-IDARV2";
 const JSHIS_PSHM_WMS = `${JSHIS}/map/wms/pshm/${JSHIS_PSHM_VERSION}`;
 const JSHIS_SSTRCT_WMS = `${JSHIS}/map/wms/sstrct/V4`;
 /**
- * WMS の GetMap を、MapLibre が埋める見ている範囲 (`{bbox-epsg-3857}`) で読む URL。WMS 1.3.0 の EPSG:3857 は
- * x・y の順 (経度の側から)。256px 四方の透かした PNG
+ * J-SHIS の WMS の 1 枚の大きさ (px)。256px の 4 枚分を 1 枚で読み、リクエストを減らす。
+ * J-SHIS から「連続した大量のリクエストは避けてほしい」と返事をもらった (2026-11-25。docs/map.md の「J-SHIS」)
  */
-export const wmsTiles = (base: string, layer: string) =>
-  `${base}?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&BBOX={bbox-epsg-3857}&CRS=EPSG:3857&WIDTH=256&HEIGHT=256&LAYERS=${layer}&STYLES=&FORMAT=image/png&TRANSPARENT=TRUE`;
+export const JSHIS_TILE_SIZE = 512;
+/**
+ * J-SHIS の画像を読むいちばん大きいズーム。250m の格子なので、512px の 1 枚が約 38m/px になる 11 で足りる。
+ * それより寄せたら、読み足さずに 11 の画像を引き伸ばす
+ */
+export const JSHIS_FETCH_MAXZOOM = 11;
+/**
+ * WMS の GetMap を、MapLibre が埋める見ている範囲 (`{bbox-epsg-3857}`) で読む URL。WMS 1.3.0 の EPSG:3857 は
+ * x・y の順 (経度の側から)。`size` px 四方の透かした PNG
+ */
+export const wmsTiles = (base: string, layer: string, size = JSHIS_TILE_SIZE) =>
+  `${base}?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&BBOX={bbox-epsg-3857}&CRS=EPSG:3857&WIDTH=${size}&HEIGHT=${size}&LAYERS=${layer}&STYLES=&FORMAT=image/png&TRANSPARENT=TRUE`;
 const wmsLegend = (base: string, layer: string) =>
   `${base}?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetLegendGraphic&SLD_VERSION=1.1.0&LAYER=${layer}&FORMAT=image/png&STYLE=default`;
 const JSHIS_ATTRIBUTION = `<a href="${JSHIS}/" target="_blank" rel="noopener">J-SHIS (防災科研)</a>`;
@@ -246,6 +256,10 @@ export interface Hazard {
   /** タイルのあるズーム */
   minzoom: number;
   maxzoom: number;
+  /** タイル 1 枚の大きさ (px。無ければ 256) */
+  tileSize?: number;
+  /** 画像を読むいちばん大きいズーム (無ければ `maxzoom`)。それより寄せたら引き伸ばす */
+  fetchMaxzoom?: number;
   /** 写真の上に重ねるときの不透明度 */
   opacity: number;
   /** MapLibre の出典 (タイルの 1 つ目に付ける) */
@@ -282,9 +296,11 @@ const DEPTH_LEGEND = {
 };
 const JSHIS_COMMON = {
   group: "quake" as const,
-  // 日本全体を 1 枚で見るズームから。250m の格子なので、それより寄せたら引き伸ばす
+  // 日本全体を 1 枚で見るズームから。250m の格子なので、11 より寄せたら読み足さずに引き伸ばす
   minzoom: 4,
   maxzoom: 14,
+  tileSize: JSHIS_TILE_SIZE,
+  fetchMaxzoom: JSHIS_FETCH_MAXZOOM,
   // 陸の全面を塗る図なので、写真が透けて見えるよう少し透かす
   opacity: 0.7,
   attribution: JSHIS_ATTRIBUTION,
@@ -1284,9 +1300,9 @@ export function baseStyle(
             {
               type: "raster",
               tiles: [l.tiles],
-              tileSize: 256,
+              tileSize: h.tileSize ?? 256,
               minzoom: h.minzoom,
-              maxzoom: h.maxzoom,
+              maxzoom: h.fetchMaxzoom ?? h.maxzoom,
               ...(i === 0 ? { attribution: h.attribution } : {}),
             },
           ]),
