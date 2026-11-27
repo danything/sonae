@@ -17,7 +17,11 @@ const SOFTWARE = [
   "microsoft basic render driver",
 ];
 
-/** WebGL のレンダラの名前がソフトウェアのものか。null は WebGL を作れなかった (ソフトウェアとみなす) */
+/**
+ * WebGL のレンダラの名前がソフトウェアのものか。null は WebGL を作れなかった (ソフトウェアとみなす)。
+ * 名前を読めて形が分からない「見分けられない」とは別で、WebGL が無い端末は GPU で描けないので止める側に倒す
+ * (denpa と同じ。止まっても ▶ で替えられる)
+ */
 export function isSoftwareRenderer(name: string | null): boolean {
   if (name === null) return true;
   const lower = name.toLowerCase();

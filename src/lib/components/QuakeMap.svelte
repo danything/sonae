@@ -1349,6 +1349,10 @@
     );
     if (s !== untrack(() => loopStep)) loopStep = s;
   });
+  // 次の枚と、いまの枚を見せる間。どちらも数なので、新しい観測・予測が来ても (loopSlots の配列が作り直されても)
+  // 値が同じなら下の再生の effect は走り直さない (数え始めた間を 0 に戻さない)
+  const loopNext = $derived(nextSlot(loopStep, loopSlots));
+  const loopDelay = $derived(slotDelay(loopStep, loopSlots));
   /** 枚の source のタイルを読み終えたか (いまのズームで読まない段は、読むものが無いので読み終えたとみなす) */
   const slotLoaded = (m: MapLibreMap, slot: number) =>
     RAIN_TILE_ZOOMS.every((n) => {
@@ -1359,8 +1363,7 @@
     if (!map || !loopOn || !loopPlaying || !pageVisible) return;
     const m = map;
     const step = loopStep;
-    const ready = loopSlots;
-    const next = nextSlot(step, ready);
+    const next = loopNext;
     if (next === step) return;
     let timer: ReturnType<typeof setTimeout>;
     // 次の枚のタイルがまだなら少し待つ (いまの雨の無い所のように見せない)。待つのは 5 秒まで
@@ -1368,10 +1371,11 @@
       if (slotLoaded(m, next) || waited >= LOOP_WAIT_MAX_MS) loopStep = next;
       else timer = setTimeout(() => go(waited + LOOP_WAIT_MS), LOOP_WAIT_MS);
     };
-    timer = setTimeout(() => go(0), slotDelay(step, ready));
+    timer = setTimeout(() => go(0), loopDelay);
     return () => clearTimeout(timer);
   });
-  // 予測の枚の URL を差し替える (新しい予測が来たとき)。同じ URL は差し替えない (読み直して白く抜けるため)
+  // 予測の枚の URL を差し替える (新しい予測が来たとき)。同じ URL は差し替えない (読み直して白く抜けるため)。
+  // 地図の style を作り直す (setStyle) 所を足すときは、そこで loopUrls を空にする (空にしないと仮の URL のまま残る)
   const loopUrls = new Map<number, string>();
   $effect(() => {
     if (!map) return;
