@@ -1,5 +1,5 @@
 <script lang="ts">
-  import "@anyblades/blades/content/table";
+  import "@sveti/blades/content/table";
   import ChevronLeft from "~icons/lucide/chevron-left";
   import ChevronRight from "~icons/lucide/chevron-right";
 
