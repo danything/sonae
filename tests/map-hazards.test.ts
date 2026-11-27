@@ -152,6 +152,23 @@ test("J-SHIS: 確率論的地震動予測地図と表層地盤を WMS の bbox �
     layers: { id: string; layout?: { visibility?: string } }[];
   };
   expect(style.sources["hazard-jshis-pshm"]?.tiles).toEqual([tiles]);
+  // J-SHIS への負荷を抑える: 512px の 1 枚で読み、ズーム 11 より寄せたら読み足さずに引き伸ばす
+  expect(q.get("WIDTH")).toBe("512");
+  expect(q.get("HEIGHT")).toBe("512");
+  const src = (style.sources as Record<string, Record<string, unknown>>)[
+    "hazard-jshis-pshm"
+  ];
+  expect(src?.tileSize).toBe(512);
+  expect(src?.maxzoom).toBe(11);
+  // 重ねる層はズーム 11 より寄せても出す (層に maxzoom を付けない)
+  expect(hazard("quake-prob").maxzoom).toBe(14);
+  expect(hazardCovers("quake-prob", 13)).toBe(true);
+  // ほかのハザードマップは 256px のまま
+  const flood = (style.sources as Record<string, Record<string, unknown>>)[
+    "hazard-01_flood_l2_shinsuishin_data"
+  ];
+  expect(flood?.tileSize).toBe(256);
+  expect(flood?.maxzoom).toBe(17);
   expect(
     style.layers.find((l) => l.id === "hazard-jshis-pshm")?.layout?.visibility,
   ).toBe("visible");
