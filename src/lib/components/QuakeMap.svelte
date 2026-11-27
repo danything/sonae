@@ -464,7 +464,7 @@
           pressMoved = true;
           placeMenu = false;
           // 人が動かした (引く・つまむ・ホイール・ダブルクリック・キー) ときだけ `originalEvent` が付く。jumpTo と大きさの
-          // 測り直しには付かない。詳しい内容を開いている間に人が動かしたら、閉じても元の位置へ戻さない
+          // 測り直しには付かない。控えている間 (詳しい内容・緊急地震速報) に人が動かしたら、元の位置へ戻さない
           if ((e as { originalEvent?: unknown }).originalEvent) keeper.moved();
         });
         map = created;
@@ -2162,12 +2162,17 @@
       pitch: m.getPitch(),
     };
   }
-  /** 選んだものへ寄せる直前に、詳しい内容を開いていれば、いまの位置を控える (開いたまま移ったときは最初のまま) */
-  function remember(): void {
+  /**
+   * 選んだものへ寄せる直前に、詳しい内容を開いているか、出た緊急地震速報へ寄せるなら、いまの位置を控える
+   * (開いたまま移ったときと、続報や別の速報が来たときは最初のまま)。緊急地震速報は、届いた所ではまだ自動で
+   * 開いていない (`selected` が偽) ので、`eew` で控える
+   */
+  function remember(eew = false): void {
     if (map)
       keeper.focus(
         viewOf(map),
         untrack(() => selected),
+        eew,
       );
   }
   $effect(() => {
@@ -2257,15 +2262,17 @@
     const center: [number, number] = at;
     if (key === focused) return;
     focused = key;
-    remember();
+    remember(eew !== undefined);
     map.jumpTo({ center, zoom: fq ? 4 : Math.max(map.getZoom(), 5.5) });
   });
-  // 詳しい内容を閉じたら、開く前の位置へ戻す (寄せるときと同じく飛ばさずに jumpTo)。開いている間に人が
-  // 動かしたら戻さない。出ている緊急地震速報があるときも戻さない (震央を見せたままにする)
+  // 詳しい内容を閉じていて、出ている緊急地震速報 (取消を除く) も無くなったら、寄せる前の位置へ戻す (寄せるときと
+  // 同じく飛ばさずに jumpTo)。速報が出ている間に閉じたときは震央を見せたままにし、速報が終わったら戻す
+  // (出ている間が過ぎて自動で一覧へ戻ったときも、ここで戻る)。控えている間に人が動かしたら戻さない
   $effect(() => {
-    if (!map || selected || !keeper.open) return;
+    if (!map) return;
+    const eewShown = eews.some((e) => !e.cancelled);
+    if (!keeper.due(selected, eewShown)) return;
     const back = keeper.close();
-    if (untrack(() => eews.some((e) => !e.cancelled))) return;
     // 閉じたので、同じものをもう一度開いたら寄せ直す
     focused = "";
     if (back) map.jumpTo(back);
