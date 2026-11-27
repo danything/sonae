@@ -26,6 +26,7 @@ import {
   SLMCS_COLOR,
   stepLayerZoom,
 } from "#lib/map/nowc.ts";
+import { LOOP_SLOTS, loopLayerId } from "#lib/map/rain-loop.ts";
 import {
   RAIN_ATTRIBUTION,
   RAIN_TILE_ZOOMS,
@@ -162,6 +163,7 @@ export const TEXT_FONT_CSS = '"Noto Sans JP", sans-serif';
 export type HazardId =
   | "none"
   | "rain"
+  | "rain-loop"
   | "rain-forecast"
   | "thunder"
   | "tornado"
@@ -230,6 +232,7 @@ export interface Hazard {
     HazardId,
     | "none"
     | "rain"
+    | "rain-loop"
     | "rain-forecast"
     | "thunder"
     | "tornado"
@@ -579,6 +582,31 @@ export function rainVisibility(
   return Object.fromEntries(RAIN_TILE_ZOOMS.map((n) => [`rain-${n}`, on]));
 }
 
+/** 雨雲 (いま→予測) を出すか。雨雲と同じく、地震を選んでいる間は隠す (docs/map.md の「雨雲 (いま→予測)」) */
+export const loopShown = (id: HazardId, quake: boolean) =>
+  id === "rain-loop" && !quake;
+
+/**
+ * 雨雲 (いま→予測) の層ごとに出すかどうか (`rainloop-<枚>-<ズーム>`)。`ready` は枚ごとに時刻の表を読めているか
+ * (`#lib/map/rain-loop.ts` の `loopReady`)。読めている枚は全部出し (タイルを読んでおく)、見せる枚は透明度で選ぶ
+ */
+export function loopVisibility(
+  id: HazardId,
+  quake: boolean,
+  ready: readonly boolean[],
+): Record<string, boolean> {
+  const on = loopShown(id, quake);
+  return Object.fromEntries(
+    LOOP_SLOTS.flatMap((s) =>
+      RAIN_TILE_ZOOMS.map((n) => [loopLayerId(s, n), on && ready[s] === true]),
+    ),
+  );
+}
+
+/** 雨雲 (いま→予測) の枚ごとの透明度。見せる枚だけを雨雲と同じ濃さにし、ほかは 0 (描かないが、タイルは持つ) */
+export const loopOpacity = (slot: number, shown: number) =>
+  slot === shown ? RAIN_OPACITY : 0;
+
 /** キキクルを写真の上に重ねるときの不透明度 (雨雲と同じ。黄の「注意」も写真の上で見える) */
 export const RISK_OPACITY = 0.8;
 
@@ -638,8 +666,8 @@ export function rasrfVisibility(
 /**
  * 重ねる図が重なっているか・地震を選んでいるかで、重ねる層の出し入れを決める (隠す層・代わりに出す層)。
  * 重ねる図が重なっている間は `HIDDEN_UNDER_HAZARD` を、地震を選んでいる間は `HIDDEN_UNDER_QUAKE` を
- * 隠し、どちらのときも特別警報の縁取りを出す。雨雲・キキクル・雷・竜巻・今後の雨は地震を選んでいる間は出さない
- * (`rainShown`・`riskShown`・`nowcShown`) ので、そのときは地震を選んでいる間の決まりだけになる
+ * 隠し、どちらのときも特別警報の縁取りを出す。雨雲・雨雲 (いま→予測)・キキクル・雷・竜巻・今後の雨は地震を選んでいる間は出さない
+ * (`rainShown`・`loopShown`・`riskShown`・`nowcShown`) ので、そのときは地震を選んでいる間の決まりだけになる
  */
 export function overlayVisibility(
   id: HazardId,
@@ -651,6 +679,7 @@ export function overlayVisibility(
   const on =
     hazardCovers(id, zoom) ||
     rainShown(id, quake) ||
+    loopShown(id, quake) ||
     riskShown(id, quake) ||
     nowcShown(id, quake);
   const hidden = new Set<string>([
@@ -680,6 +709,7 @@ export function specialWarningFilter(levels: Map<string, WarningLevel>): Expr {
 /** 端末に覚えた選択を読む。知らない値は「なし」 */
 export const readHazard = (raw: string | null): HazardId =>
   raw === "rain" ||
+  raw === "rain-loop" ||
   raw === "rain-forecast" ||
   NOWC_KINDS.some((k) => k.id === raw) ||
   RISKS.some((r) => r.id === raw) ||
@@ -1364,6 +1394,22 @@ export function baseStyle(
           },
         ]),
       ),
+      // 雨雲 (いま→予測。選んだときだけ)。枚ごとに source を分け (0 がいまの観測、1〜3 が予測)、段は雨雲と同じ 4〜10。
+      // URL は時刻の表を読んでから差し替える
+      ...Object.fromEntries(
+        LOOP_SLOTS.flatMap((s) =>
+          RAIN_TILE_ZOOMS.map((n) => [
+            loopLayerId(s, n),
+            {
+              type: "raster",
+              tiles: [PLACEHOLDER_TILE],
+              tileSize: 256,
+              minzoom: n,
+              maxzoom: n,
+            },
+          ]),
+        ),
+      ),
       // 線状降水帯の雨域 (出ている間だけ線が入る)。画面が時刻の表と GeoJSON を読んで差し込む (`#lib/map/nowc.ts`)
       slmcs: {
         type: "geojson",
@@ -1546,6 +1592,23 @@ export function baseStyle(
         },
         layout: { visibility: "none" },
       })),
+      // 雨雲 (いま→予測。選んだときだけ)。読めた枚は全部出してタイルを持ち、見せる枚だけ透明度を上げる (画面が替える)。
+      // 枚を替えるときに透かしの移り変わりを付けない (MapLibre が描き続けないよう、移り変わりの時間を 0 にする)
+      ...LOOP_SLOTS.flatMap((s) =>
+        RAIN_TILE_ZOOMS.map((n) => ({
+          id: loopLayerId(s, n),
+          type: "raster",
+          source: loopLayerId(s, n),
+          ...rainLayerZoom(n),
+          paint: {
+            "raster-opacity": loopOpacity(s, 0),
+            "raster-opacity-transition": { duration: 0, delay: 0 },
+            "raster-resampling": "nearest",
+            "raster-fade-duration": 0,
+          },
+          layout: { visibility: "none" },
+        })),
+      ),
       // プレート境界 (PB2002)。付加情報のいちばん下に、細い破線で引く (震源の丸や区域の色を邪魔しない)。
       // 研究の模型の線なので、寄せても太くしすぎない
       {

@@ -7,6 +7,8 @@
   import { untrack } from "svelte";
   import Locate from "~icons/lucide/locate";
   import LocateFixed from "~icons/lucide/locate-fixed";
+  import Pause from "~icons/lucide/pause";
+  import Play from "~icons/lucide/play";
   import TriangleAlert from "~icons/lucide/triangle-alert";
 
   import { alerter } from "#lib/alerter.svelte.ts";
@@ -22,6 +24,7 @@
     volcanoKindText,
     WARNING_COLORS,
   } from "#lib/format.ts";
+  import { isLite } from "#lib/lite.ts";
   import { type Box, edgePadding } from "#lib/map/edges.ts";
   import {
     type EpicenterHit,
@@ -73,6 +76,18 @@
     stampIso,
   } from "#lib/map/nowc.ts";
   import { coordLabel, coordText, longPressOk } from "#lib/map/press.ts";
+  import {
+    LOOP_SLOTS,
+    LOOP_WAIT_MAX_MS,
+    LOOP_WAIT_MS,
+    loopForecast,
+    loopLayerId,
+    loopReady,
+    nextSlot,
+    settleSlot,
+    slotDelay,
+    slotName,
+  } from "#lib/map/rain-loop.ts";
   import {
     latestRain,
     nextRainPoll,
@@ -138,6 +153,9 @@
     intensityLabels,
     JAPAN_BOUNDS,
     longPeriodLine,
+    loopOpacity,
+    loopShown,
+    loopVisibility,
     meFeatures,
     mergeShelters,
     nowcShown,
@@ -1019,8 +1037,10 @@
     document.addEventListener("visibilitychange", seen);
     return () => document.removeEventListener("visibilitychange", seen);
   });
+  /** 雨雲 (いま→予測) を出しているか。いまの 1 枚は雨雲と同じ時刻の表から取る (docs/map.md の「雨雲 (いま→予測)」) */
+  const loopOn = $derived(loopShown(hazard, quakeShown));
   $effect(() => {
-    if (!map || !rainOn || !pageVisible) return;
+    if (!map || !(rainOn || loopOn) || !pageVisible) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     // 選び直したときと画面に戻ったときは、取れるまでの間も前の雨雲が古いかを今の時刻で決める
@@ -1058,15 +1078,16 @@
       clearTimeout(timer);
     };
   });
-  // いまの 1 枚に差し替える (5 分ごと)。段ごとの source の URL を替える
+  // いまの 1 枚に差し替える (5 分ごと)。段ごとの source の URL を替える。雨雲 (いま→予測) のいまの枚も同じ
   $effect(() => {
     if (!map || !rainFrame) return;
     const url = rainTiles(rainFrame);
-    for (const n of RAIN_TILE_ZOOMS) {
-      const src = map.getSource(`rain-${n}`);
-      if (src && "setTiles" in src)
-        (src as { setTiles(t: string[]): void }).setTiles([url]);
-    }
+    for (const n of RAIN_TILE_ZOOMS)
+      for (const id of [`rain-${n}`, loopLayerId(0, n)]) {
+        const src = map.getSource(id);
+        if (src && "setTiles" in src)
+          (src as { setTiles(t: string[]): void }).setTiles([url]);
+      }
   });
   /** 雨雲が古いか (15 分より前の観測しか取れていない) */
   const rainOld = $derived(
@@ -1249,7 +1270,7 @@
   let forecastChecked = $state(0);
   let forecastFailed = $state(false);
   $effect(() => {
-    if (!map || !forecastChosen || !nowcOn || !pageVisible) return;
+    if (!map || !((forecastChosen && nowcOn) || loopOn) || !pageVisible) return;
     forecastChecked = Date.now();
     return pollTimes(
       RASRF_TIMES_URL,
@@ -1290,6 +1311,108 @@
       forecastChecked > 0 &&
       rasrfStale(forecastFrame, forecastChecked),
   );
+
+  // ---- 雨雲 (いま→予測)。docs/map.md の「雨雲 (いま→予測)」 ----
+  // いまの観測 (雨雲) と、今後の雨の 3 時間先までの枚を、決めた間で順に見せ続ける。枚ごとの層は全部出してタイルを持ち、
+  // 見せる枚だけ透明度を上げる (MapLibre の層の出し入れで替える)。画面が見えていない間・ソフトウェアで描いている端末
+  // (`data-lite`)・動きを減らす設定では、自動では替えない (人が並びのボタンで選ぶ)
+  const loopChosen = $derived(hazard === "rain-loop");
+  /** 見せる予測 (いまの観測より先のものを 3 時間先まで) */
+  const loopFrames = $derived(
+    loopForecast(forecast, rainFrame?.validtime ?? null),
+  );
+  const loopSlots = $derived(loopReady(rainFrame !== null, loopFrames.length));
+  /** いま見せている枚 (0 がいま、1〜3 が予測) */
+  let loopStep = $state(0);
+  /** 自動で替えているか。人が止めるか、並びのボタンで枚を選ぶと止まる */
+  let loopPlaying = $state(true);
+  /** 自動で替えない端末か (ソフトウェアで描いている・動きを減らす設定) */
+  let loopStill = $state(false);
+  $effect(() => {
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+    const seen = () => (loopStill = reduce.matches || isLite());
+    seen();
+    reduce.addEventListener("change", seen);
+    return () => reduce.removeEventListener("change", seen);
+  });
+  // 選び直したら、いまから始める。自動で替えない端末では止めたまま始める
+  $effect(() => {
+    if (!loopChosen) return;
+    loopStep = 0;
+    loopPlaying = !untrack(() => loopStill);
+  });
+  // 見せている枚が出せなくなったら、出せる最初の枚へ移す
+  $effect(() => {
+    const s = settleSlot(
+      untrack(() => loopStep),
+      loopSlots,
+    );
+    if (s !== untrack(() => loopStep)) loopStep = s;
+  });
+  // 次の枚と、いまの枚を見せる間。どちらも数なので、新しい観測・予測が来ても (loopSlots の配列が作り直されても)
+  // 値が同じなら下の再生の effect は走り直さない (数え始めた間を 0 に戻さない)
+  const loopNext = $derived(nextSlot(loopStep, loopSlots));
+  const loopDelay = $derived(slotDelay(loopStep, loopSlots));
+  /** 枚の source のタイルを読み終えたか (いまのズームで読まない段は、読むものが無いので読み終えたとみなす) */
+  const slotLoaded = (m: MapLibreMap, slot: number) =>
+    RAIN_TILE_ZOOMS.every((n) => {
+      const id = loopLayerId(slot, n);
+      return !m.getSource(id) || m.isSourceLoaded(id);
+    });
+  $effect(() => {
+    if (!map || !loopOn || !loopPlaying || !pageVisible) return;
+    const m = map;
+    const step = loopStep;
+    const next = loopNext;
+    if (next === step) return;
+    let timer: ReturnType<typeof setTimeout>;
+    // 次の枚のタイルがまだなら少し待つ (いまの雨の無い所のように見せない)。待つのは 5 秒まで
+    const go = (waited: number) => {
+      if (slotLoaded(m, next) || waited >= LOOP_WAIT_MAX_MS) loopStep = next;
+      else timer = setTimeout(() => go(waited + LOOP_WAIT_MS), LOOP_WAIT_MS);
+    };
+    timer = setTimeout(() => go(0), loopDelay);
+    return () => clearTimeout(timer);
+  });
+  // 予測の枚の URL を差し替える (新しい予測が来たとき)。同じ URL は差し替えない (読み直して白く抜けるため)。
+  // 地図の style を作り直す (setStyle) 所を足すときは、そこで loopUrls を空にする (空にしないと仮の URL のまま残る)
+  const loopUrls = new Map<number, string>();
+  $effect(() => {
+    if (!map) return;
+    const frames = loopFrames;
+    for (const s of LOOP_SLOTS) {
+      const f = s === 0 ? undefined : frames[s - 1];
+      if (!f) continue;
+      const url = rasrfTiles(f);
+      if (loopUrls.get(s) === url) continue;
+      loopUrls.set(s, url);
+      for (const n of RAIN_TILE_ZOOMS) {
+        const src = map.getSource(loopLayerId(s, n));
+        if (src && "setTiles" in src)
+          (src as { setTiles(t: string[]): void }).setTiles([url]);
+      }
+    }
+  });
+  // 見せる枚だけ透明度を上げる (移り変わりの時間は 0。style.ts の層)
+  $effect(() => {
+    if (!map) return;
+    for (const s of LOOP_SLOTS)
+      for (const n of RAIN_TILE_ZOOMS)
+        map.setPaintProperty(
+          loopLayerId(s, n),
+          "raster-opacity",
+          loopOpacity(s, loopStep),
+        );
+  });
+  /** 見せている枚の予測 (いまの枚なら null) */
+  const loopFrame = $derived(
+    loopStep === 0 ? null : (loopFrames[loopStep - 1] ?? null),
+  );
+  /** 並びのボタンで枚を選ぶ (自動で替えるのは止める) */
+  const pickSlot = (slot: number) => {
+    loopPlaying = false;
+    loopStep = slot;
+  };
 
   // ---- 線状降水帯の雨域 (出ている間だけ、いつも描く。docs/map.md の「線状降水帯」) ----
   // 画面が見えている間は 10 分ごとに時刻の表を取り、いちばん新しい解析の雨域の GeoJSON を読む (無いときは空が返る)
@@ -1353,7 +1476,7 @@
 
   /** 気象警報・注意報の塗りを隠しているか (重ねる図が重なっているか、地震を選んでいるため) */
   const warningsHidden = $derived(
-    covered || rainOn || riskOn || nowcOn || quakeShown,
+    covered || rainOn || loopOn || riskOn || nowcOn || quakeShown,
   );
   $effect(() => {
     if (!map) return;
@@ -1363,6 +1486,7 @@
       ...riskVisibility(hazard, quakeShown, riskReady),
       ...nowcVisibility(hazard, quakeShown, nowcReady),
       ...rasrfVisibility(hazard, quakeShown, forecastFrame !== null),
+      ...loopVisibility(hazard, quakeShown, loopSlots),
       ...overlayVisibility(hazard, zoom, quakeShown),
     }))
       map.setLayoutProperty(layer, "visibility", on ? "visible" : "none");
@@ -2329,7 +2453,9 @@
                         ? "今後の雨 (予測)"
                         : hazard === "rain"
                           ? "雨雲"
-                          : "重ねる: なし"}
+                          : hazard === "rain-loop"
+                            ? "雨雲 (いま→予測)"
+                            : "重ねる: なし"}
               </button>
             {/snippet}
             <!-- 重ねる図は 1 つだけ (色がぶつかるため)。雨雲・今後の雨・雷・竜巻・キキクル・ハザードマップ・地震の備えの図を同じ選択に並べる -->
@@ -2342,7 +2468,7 @@
               data-testid="hazard-none">なし</button
             >
             <p class="menu-head">雨・雷・竜巻</p>
-            {#each [{ id: "rain" as const, label: "雨雲 (いま)" }, { id: "rain-forecast" as const, label: "今後の雨 (予測)" }, ...NOWC_KINDS] as h (h.id)}
+            {#each [{ id: "rain" as const, label: "雨雲 (いま)" }, { id: "rain-loop" as const, label: "雨雲 (いま→予測)" }, { id: "rain-forecast" as const, label: "今後の雨 (予測)" }, ...NOWC_KINDS] as h (h.id)}
               <button
                 type="button"
                 role="menuitemradio"
@@ -2499,7 +2625,7 @@
             <p class="tiny muted">
               出典: <a href={RAIN_PAGE} target="_blank" rel="noopener"
                 >{RAIN_CREDIT}</a
-              >。先の雨は「今後の雨 (予測)」で見られます。
+              >。先の雨は「雨雲 (いま→予測)」か「今後の雨 (予測)」で見られます。
             </p>
             <p class="tiny muted" data-testid="hazard-hidden">
               色がぶつからないよう、警報・注意報の塗り{roadSpeedDrawn
@@ -2642,6 +2768,141 @@
           </p>
         {/if}
       {/if}
+      {#if loopChosen}
+        <!--
+          雨雲 (いま→予測) の凡例。いまの観測と、1〜3 時間先の予測を順に見せる。いまと予測を取り違えないよう、
+          見せている枚 (「いま」「+1 時間」) と時刻を大きく出す。並びのボタンで枚を選ぶと、自動で替えるのは止まる
+          (docs/map.md の「雨雲 (いま→予測)」)。枚が替わるたびに読み上げると止まらないので、aria-live は付けない
+        -->
+        {#if loopOn}
+          <figure
+            class="legend rain-legend loop-legend"
+            data-testid="loop-legend"
+          >
+            <figcaption class="small bold">雨雲 (いま→予測)</figcaption>
+            {#if loopSlots.some(Boolean)}
+              <div class="loop-head">
+                <p
+                  class="loop-time"
+                  data-testid="loop-time"
+                  data-forecast={loopStep > 0 ? "" : undefined}
+                >
+                  <span class="loop-kind tiny bold"
+                    >{loopStep === 0 ? "観測" : "予測"}</span
+                  >
+                  <span class="loop-when bold"
+                    >{slotName(loopStep, loopFrame)}</span
+                  >
+                </p>
+                <button
+                  type="button"
+                  class="ghost small loop-play"
+                  aria-label={loopPlaying
+                    ? "自動で替えるのを止める"
+                    : "自動で替える"}
+                  onclick={() => (loopPlaying = !loopPlaying)}
+                  data-testid="loop-play"
+                  ><Icon icon={loopPlaying ? Pause : Play} /></button
+                >
+              </div>
+              <p class="small" data-testid="loop-clock">
+                {#if loopStep === 0 && rainFrame}
+                  {jst(rainIso(rainFrame))} の観測
+                {:else if loopFrame}
+                  {jst(stampIso(loopFrame.validtime))} までの 1 時間
+                {/if}
+              </p>
+              <!-- 狭い凡例 (スマホの形は 12rem) にも 4 つ並ぶよう、チップは「+1」のように短く書き、読み上げは「+1 時間」 -->
+              <div
+                class="chips loop-steps"
+                role="group"
+                aria-label="見せる時刻"
+              >
+                {#each LOOP_SLOTS as s (s)}
+                  <button
+                    type="button"
+                    class="chip"
+                    aria-pressed={loopStep === s}
+                    aria-label={slotName(
+                      s,
+                      s === 0 ? null : (loopFrames[s - 1] ?? null),
+                    )}
+                    disabled={!loopSlots[s]}
+                    onclick={() => pickSlot(s)}
+                    data-testid="loop-slot-{s}"
+                    >{slotName(
+                      s,
+                      s === 0 ? null : (loopFrames[s - 1] ?? null),
+                    ).replace(" 時間", "")}</button
+                  >
+                {/each}
+              </div>
+              {#if loopStill && !loopPlaying}
+                <p class="tiny muted" data-testid="loop-still">
+                  この端末では自動で替えません。▶
+                  を押すか、時刻を選んでください。
+                </p>
+              {/if}
+              {#if rainOld || forecastOld || !rainFrame || loopFrames.length === 0}
+                <p class="tiny rain-time" data-testid="loop-warn">
+                  <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
+                  {!rainFrame
+                    ? "いまの雨雲を読めていません。"
+                    : rainOld
+                      ? `${jst(rainIso(rainFrame))} の観測です。新しい雨雲を読めていないため、いまの雨ではありません。`
+                      : ""}{loopFrames.length === 0
+                    ? "予測を読めていません。"
+                    : forecastOld
+                      ? "新しい予測を読めていません。"
+                      : ""}
+                </p>
+              {/if}
+            {:else if rainFailed || forecastFailed}
+              <p class="small rain-time" data-testid="loop-time">
+                <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
+                雨雲を読み込めませんでした。1 分後に再試行します
+              </p>
+            {:else}
+              <p class="small muted" data-testid="loop-time">
+                読み込んでいます…
+              </p>
+            {/if}
+            <p class="tiny">観測は降水強度 (mm/h)、予測は 1 時間の雨量 (mm)</p>
+            <ul class="rain-scale">
+              {#each RAIN_LEGEND as l (l.label)}
+                <li>
+                  <span class="rain-swatch" style:background={l.color}
+                  ></span><span class="tiny">{l.label}</span>
+                </li>
+              {/each}
+            </ul>
+            <p class="tiny muted">
+              いまは気象庁の観測 (5 分ごとに更新)、+1 時間からは気象庁の予測{loopFrames[0]
+                ? ` (${jst(stampIso(loopFrames[0].basetime))} の解析)`
+                : ""}です。出典:
+              <a href={RAIN_PAGE} target="_blank" rel="noopener"
+                >{RAIN_CREDIT}</a
+              >・<a href={RASRF_PAGE} target="_blank" rel="noopener"
+                >気象庁 (今後の雨)</a
+              >
+            </p>
+            <p class="tiny muted" data-testid="hazard-hidden">
+              色がぶつからないよう、警報・注意報の塗り{roadSpeedDrawn
+                ? "・通れた道 (目安) の線"
+                : ""}を隠しています
+              (特別警報・緊急地震速報は縁取りで出します)。「なし」に戻すと元に戻ります。
+            </p>
+          </figure>
+        {:else if boxHeight >= NOTE_MIN_HEIGHT}
+          <p class="map-note tiny muted" data-testid="quake-hides-loop">
+            地震を選んでいる間は、雨雲{warningsPainted
+              ? "と気象警報・注意報の塗り"
+              : ""}を隠しています (震度の色と重なるため){specialPainted
+              ? "。特別警報は縁取りで出します"
+              : ""}。一覧へ戻ると元に戻ります。
+          </p>
+        {/if}
+      {/if}
       {#if forecastChosen}
         <!--
           今後の雨の凡例。いまの雨と取り違えないよう、何時までの予測かを大きく出し、‹ › で先の時刻へ動かす
@@ -2734,7 +2995,7 @@
         </p>
       {/if}
       <!-- 地震を選んでいる間に、気象警報・注意報の塗りを隠していることと戻し方 (重ねる図の凡例が書くときは出さない) -->
-      {#if quakeShown && warningsPainted && !covered && hazard !== "rain" && !chosenRisk && !nowcOn && !chosenNowc && !forecastChosen && boxHeight >= NOTE_MIN_HEIGHT}
+      {#if quakeShown && warningsPainted && !covered && hazard !== "rain" && !loopChosen && !chosenRisk && !nowcOn && !chosenNowc && !forecastChosen && boxHeight >= NOTE_MIN_HEIGHT}
         <p class="map-note tiny muted" data-testid="quake-hides-warnings">
           地震を選んでいる間は、気象警報・注意報の塗りを隠しています{specialPainted
             ? " (特別警報は縁取りで出します)"
@@ -2947,6 +3208,64 @@
   .forecast-time {
     font-size: var(--so-text-lg);
     text-align: center;
+  }
+  /*
+    雨雲 (いま→予測) の見せている枚。「いま」「+1 時間」を車の中からも読めるよう大きく出し、予測の枚は主の色の地の
+    「予測」の印で分ける。凡例が高さの上限で巻くときも、上の行を縮めて重ねない
+  */
+  .loop-legend > * {
+    flex-shrink: 0;
+  }
+  .loop-head {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--so-space-1);
+    margin-inline-end: calc(-1 * var(--so-space-2));
+  }
+  .loop-time {
+    display: flex;
+    align-items: center;
+    gap: var(--so-space-2);
+    white-space: nowrap;
+  }
+  .loop-when {
+    font-size: var(--so-text-xl);
+    line-height: 1.2;
+  }
+  .loop-kind {
+    align-self: center;
+    padding: 0.0625rem 0.375rem;
+    border: 1px solid currentColor;
+    border-radius: var(--so-radius-sm);
+  }
+  .loop-time[data-forecast] .loop-kind {
+    border-color: var(--pico-primary);
+    background: var(--pico-primary);
+    color: var(--so-pop);
+  }
+  /* 枚を選ぶチップ。4 つを同じ幅で 1 行に並べ、押せる高さは 44px */
+  .loop-steps {
+    display: grid;
+    flex-shrink: 0;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    margin-inline: calc(-1 * var(--so-space-2));
+  }
+  .loop-steps .chip {
+    justify-content: center;
+    min-height: 2.75rem;
+    padding: 0 var(--so-space-2);
+  }
+  .loop-steps .chip[aria-pressed="true"]::after {
+    inset-inline: var(--so-space-2);
+  }
+  .loop-play {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    margin: 0;
+    padding: 0;
   }
   /* 線状降水帯の雨域の線の見本 (地図の線と同じ白い縁の赤) */
   .slmcs-mark {
