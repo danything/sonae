@@ -1,5 +1,5 @@
 <script lang="ts">
-  import "@anyblades/blades/content/table";
+  import "@sveti/blades/content/table";
 
   import { alerter } from "#lib/alerter.svelte.ts";
   import { jst } from "#lib/format.ts";

@@ -7,8 +7,8 @@
    * 条件はブラウザごとに 1 つで、音・読み上げのために端末 (localStorage) に、Web Push のためにサーバー (購読) に持つ。
    * サーバーに VAPID の鍵が無いときは、Web Push の節にそう出すだけ (条件と、開いているときの通知・音・読み上げは使える)。
    */
-  import "@anyblades/blades/components/accordion";
-  import "@anyblades/blades/components/modal";
+  import "@sveti/blades/components/accordion";
+  import "@sveti/blades/components/modal";
 
   import { untrack } from "svelte";
 

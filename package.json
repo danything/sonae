@@ -15,13 +15,13 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --tsgo --fail-on-warnings && svelte-check --workspace ./src/service-worker --tsconfig ./tsconfig.json --tsgo --fail-on-warnings"
   },
   "devDependencies": {
-    "@anyblades/blades": "^3.1.4",
     "@block65/webcrypto-web-push": "^2.0.0",
     "@iconify-json/lucide": "^1.2.160",
     "@maplibre/maplibre-gl-style-spec": "^26.11.0",
     "@sveltejs/adapter-bun": "^1.0.3",
     "@sveltejs/kit": "^3.4.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.2",
+    "@sveti/blades": "^3.1.4",
     "@types/bun": "^1.4.5",
     "@typescript/native": "npm:typescript@7",
     "maplibre-gl": "^6.19.0",

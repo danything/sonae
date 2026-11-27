@@ -10,16 +10,16 @@
  *
  * 限られた所にしか出ない部品 (表・<details>・ダイアログ) は、それを描くコンポーネントが <script> で読む。
  */
-@import "@anyblades/blades/variables";
-@import "@anyblades/blades/layout/document";
-@import "@anyblades/blades/content/typography";
-@import "@anyblades/blades/content/link";
-@import "@anyblades/blades/content/button";
-@import "@anyblades/blades/content/misc";
-@import "@anyblades/blades/forms/basics";
-@import "@anyblades/blades/forms/checkbox-radio-switch";
-@import "@anyblades/blades/components/card";
-@import "@anyblades/blades/utilities";
+@import "@sveti/blades/variables";
+@import "@sveti/blades/layout/document";
+@import "@sveti/blades/content/typography";
+@import "@sveti/blades/content/link";
+@import "@sveti/blades/content/button";
+@import "@sveti/blades/content/misc";
+@import "@sveti/blades/forms/basics";
+@import "@sveti/blades/forms/checkbox-radio-switch";
+@import "@sveti/blades/components/card";
+@import "@sveti/blades/utilities";
 
 :root {
   --pico-font-family-sans-serif:

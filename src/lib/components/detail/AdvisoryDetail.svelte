@@ -1,5 +1,5 @@
 <script lang="ts">
-  import "@anyblades/blades/content/table";
+  import "@sveti/blades/content/table";
 
   import { jst, jstFull, STATUS_LABEL } from "#lib/format.ts";
   import type { Advisory } from "#lib/model.ts";

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import "@anyblades/blades/components/modal";
+  import "@sveti/blades/components/modal";
 
   import { alerter } from "#lib/alerter.svelte.ts";
   import { MAP_LEGEND } from "#lib/map/style.ts";

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import "@anyblades/blades/content/table";
+  import "@sveti/blades/content/table";
 
   import { jst } from "#lib/format.ts";
   import { isTsunamiActive, type Tsunami, TSUNAMI_ORDER } from "#lib/model.ts";
