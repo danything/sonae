@@ -636,12 +636,12 @@
     const code = id.slice(OFFICE_PREFIX.length);
     return snap.outlooks.filter((o) => o.office.code === code);
   });
+  /** 住んでいる地域の都道府県の防災ポータル (避難情報・避難所。リンクだけ。表に無い都道府県なら null) */
+  const evacPortal = $derived(evacPortalFor(alerter.prefs.home?.code));
   /**
    * 住んでいる地域の、今日から先の警報級の可能性 (「高」「中」の日)。一覧の先頭に控えた字で 1 行だけ出す。
    * 知らせには使わない (docs/design.md の 2.8)
    */
-  /** 住んでいる地域の都道府県の防災ポータル (避難情報・避難所。リンクだけ。表に無い都道府県なら null) */
-  const evacPortal = $derived(evacPortalFor(alerter.prefs.home?.code));
   const homeOutlook = $derived.by(() => {
     const home = alerter.prefs.home;
     if (!home?.office) return null;
