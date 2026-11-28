@@ -10,6 +10,7 @@ import {
 import { jstDate } from "#lib/format.ts";
 import {
   areaLevel,
+  isNotifiedBosai,
   type SonaeEvent,
   type WarningCode,
   type WeatherWarning,
@@ -741,4 +742,13 @@ describe("府県予報区ごとの通知 (どこかの特別警報・「全国�
     );
     expect(tags(again)).toEqual([["warning:3220100:VPWW55", true, false]]);
   });
+});
+
+test("気象防災速報で知らせるのは、線状降水帯 (発生と直前の予測) と短時間大雪だけ", () => {
+  const ok = (kindName: string) => isNotifiedBosai({ kind: "bosai", kindName });
+  expect(ok("線状降水帯発生")).toBe(true);
+  expect(ok("線状降水帯直前")).toBe(true);
+  expect(ok("短時間大雪")).toBe(true);
+  expect(ok("記録雨")).toBe(false);
+  expect(ok("顕著な大雪")).toBe(false);
 });
