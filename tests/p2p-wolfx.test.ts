@@ -108,6 +108,20 @@ describe("P2P地震情報 (仕様書の例)", () => {
     expect(JSON.stringify(item.report)).not.toContain("scale");
   });
 
+  test("556 の仮定震源要素は M と深さを持たない", () => {
+    const v = json("p2p/spec-556.json");
+    const earthquake = {
+      ...(v.earthquake as Record<string, unknown>),
+      condition: "仮定震源要素",
+    };
+    const [item] = parseP2p({ ...v, earthquake });
+    if (item?.type !== "eew") throw new Error("eew ではない");
+    expect(item.report.assumed).toBe(true);
+    expect(item.report.magnitude).toBeUndefined();
+    expect(item.report.hypocenter?.depthKm).toBeUndefined();
+    expect(item.report.hypocenter?.name).toBe("宗谷地方北部");
+  });
+
   test("556 の test は試験として扱う", () => {
     const [item] = parseP2p({ ...json("p2p/spec-556.json"), test: true });
     expect(item?.type === "eew" && item.report.status).toBe("test");
@@ -153,7 +167,21 @@ describe("Wolfx (作った JSON)", () => {
     expect(JSON.stringify(m.report)).not.toContain("Shindo");
   });
 
-  test("予報の地域: WarnArea の Forecast の地域も取る", () => {
+  test("英語の文書の古い書き方 (Warning・Forecast) も読む", () => {
+    const warning = json("wolfx/made-warning.json");
+    const m = parseWolfx({
+      ...warning,
+      WarnArea: (warning.WarnArea as Record<string, unknown>[]).map((a) => ({
+        ...a,
+        Type: a.Type === "警報" ? "Warning" : "Forecast",
+      })),
+    });
+    if (m.type !== "eew") throw new Error("eew ではない");
+    expect(m.report.warnAreas).toEqual(["上川地方北部"]);
+    expect(m.report.areas).toEqual(["上川地方北部", "宗谷地方北部"]);
+  });
+
+  test("予報の地域: WarnArea の予報の地域も取る", () => {
     const m = parseWolfx({
       ...json("wolfx/made-forecast.json"),
       WarnArea: [
@@ -161,13 +189,47 @@ describe("Wolfx (作った JSON)", () => {
           Chiiki: "宗谷地方北部",
           Shindo1: "4",
           Shindo2: "3",
-          Type: "Forecast",
+          Type: "予報",
         },
       ],
     });
     if (m.type !== "eew") throw new Error("eew ではない");
     expect(m.report.warnAreas).toEqual([]);
     expect(m.report.areas).toEqual(["宗谷地方北部"]);
+  });
+
+  test("レベル法は仮定震源とし、M (0) と深さ (10 km) を持たない", () => {
+    const m = parseWolfx({
+      ...json("wolfx/made-forecast.json"),
+      CodeType: "最大予測震度のみの緊急地震速報",
+      Hypocenter: "九州地方",
+      Magnitude: 0,
+      Magunitude: 0,
+      Depth: 10,
+      isAssumption: false,
+    });
+    if (m.type !== "eew") throw new Error("eew ではない");
+    expect(m.report.assumed).toBe(true);
+    expect(m.report.magnitude).toBeUndefined();
+    expect(m.report.hypocenter).toMatchObject({ name: "九州地方" });
+    expect(m.report.hypocenter?.depthKm).toBeUndefined();
+  });
+
+  test("仮定震源要素の M (1.0) と深さ (10 km) は持たない。M が 0 (値が無い) のときも", () => {
+    const base = json("wolfx/made-forecast.json");
+    for (const over of [
+      { isAssumption: true, Magnitude: 1.0, Magunitude: 1.0 },
+      { Magnitude: 0, Magunitude: 0 },
+    ]) {
+      const m = parseWolfx({ ...base, ...over });
+      if (m.type !== "eew") throw new Error("eew ではない");
+      expect(m.report.magnitude).toBeUndefined();
+      expect(m.report.hypocenter?.depthKm).toBeUndefined();
+    }
+    // ふつうの速報は M と深さを持つ
+    const m = parseWolfx(base);
+    expect(m.type === "eew" && m.report.magnitude).toBe(5.3);
+    expect(m.type === "eew" && m.report.hypocenter?.depthKm).toBe(10);
   });
 
   test("訓練と取消", () => {

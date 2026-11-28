@@ -92,6 +92,29 @@ describe("緊急地震速報の新旧の判定", () => {
     expect(dataOf<Eew>(both).warnAreas).toEqual(["上川地方北部"]);
   });
 
+  test("Wolfx の警報が先に地域を持ち、同じ地域の P2P が後から来ても通知を送り直さない", () => {
+    const { store } = memoryStore();
+    const [w] = store.ingest(wolfx(warning));
+    expect(dataOf<Eew>(w).warnAreas).toEqual(["上川地方北部"]);
+    const issue = { ...(p2pWarning.issue as object), serial: "2" };
+    const [both] = store.ingest(p2p({ ...p2pWarning, issue }, "p2p-2"));
+    expect(dataOf<Eew>(both).sources).toEqual(["wolfx", "p2p"]);
+    // 中身の値 (contentOf) が同じなので、decide は送らない (docs/design.md の 2.4)
+    const at = Date.parse("2022-08-10T15:53:30Z");
+    const a = w && noticeOf(w, at);
+    const b = both && noticeOf(both, at);
+    if (!a || !b) throw new Error("通知が無い");
+    expect(contentOf(b)).toBe(contentOf(a));
+    expect(
+      decide(
+        b,
+        prefs(),
+        { level: a.level, digest: contentOf(a) },
+        contentOf(b),
+      ),
+    ).toEqual({ send: false });
+  });
+
   test("同じ電文を二度受けても一度だけ", () => {
     const { store } = memoryStore();
     store.ingest(wolfx(warning));
