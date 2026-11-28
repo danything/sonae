@@ -424,7 +424,8 @@ export function bosaiWeatherSource(
       });
       status.seen(true);
     }
-    if (r.etag) etags.set(BOSAI_WARNING_MAP, r.etag);
+    // 採れなかった報があれば、次の回も 304 にせず読み直す (取り直した地域の表で読めるように)
+    if (r.etag && unknown === 0) etags.set(BOSAI_WARNING_MAP, r.etag);
   }
 
   async function information(

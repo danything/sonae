@@ -399,6 +399,42 @@ describe("主の源が取れない間だけ取る", () => {
     expect(got.map((m) => m.key)).toEqual([DENBUN_NAME]);
     expect(source.status().lastError).toContain("map.json");
   });
+
+  test("採れなかった報があれば、一覧に ETag を付けずに読み直す", async () => {
+    const { ctx } = sourceContext();
+    const conditional: boolean[] = [];
+    let rounds = 0;
+    const controller = new AbortController();
+    const text = patchedMap((es) => {
+      const e = es[2] as { warning: { class20Items: { kinds: unknown[] }[] } };
+      const item = e.warning.class20Items[0];
+      if (item) item.kinds = [{ code: "99", status: "発表" }];
+    });
+    const source = bosaiWeatherSource(ctx, {
+      primary: () => ({
+        ...base,
+        state: "retrying",
+        lastSeenAt: "2026-11-26T19:00:00.000Z",
+      }),
+      now: () => at("2026-11-28T09:20:00Z"),
+      fetch: (async (url: string, init: RequestInit) => {
+        if (url === BOSAI_AREA) return new Response(AREA);
+        if (url === BOSAI_WARNING_MAP) {
+          conditional.push(
+            !!(init.headers as Record<string, string>)["if-none-match"],
+          );
+          return new Response(text, { headers: { etag: 'W/"m1"' } });
+        }
+        return new Response("[]");
+      }) as unknown as typeof fetch,
+      sleep: async () => {
+        if (++rounds >= 2) controller.abort();
+      },
+      log: () => {},
+    });
+    await source.run(controller.signal);
+    expect(conditional).toEqual([false, false]);
+  });
 });
 
 describe("気象庁 XML との重なり (store)", () => {
