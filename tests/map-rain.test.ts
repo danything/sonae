@@ -75,7 +75,7 @@ test("時刻の表から、いちばん新しい観測を選ぶ。予測と読�
 test("タイルの URL と観測の時刻 (UTC の表を ISO に)", () => {
   const f = { basetime: "20261120141500", validtime: "20261120141500" };
   expect(rainTiles(f)).toBe(
-    "https://www.jma.go.jp/bosai/jmatile/data/nowc/20261120141500/none/20261120141500/surf/hrpns/{z}/{x}/{y}.png",
+    "/relay/jmatile/nowc/20261120141500/none/20261120141500/surf/hrpns/{z}/{x}/{y}.png",
   );
   expect(rainIso(f)).toBe("2026-11-20T14:15:00Z");
 });

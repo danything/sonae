@@ -1,11 +1,14 @@
 /**
  * 雷・竜巻のナウキャストと今後の雨 (降水短時間予報)、線状降水帯の雨域。docs/map.md の「雷・竜巻」「今後の雨」「線状降水帯」。
- * 気象庁ホームページの画面が読むタイルと GeoJSON を、ブラウザから直接読む。公式の API ではなく、予告なく変わる。
+ * 気象庁ホームページの画面が読むタイルと GeoJSON を、sonae のサーバーの中継 (`#lib/relay.ts`) を通して読む。公式の API ではなく、予告なく変わる。
  * どれも気象庁が解析・予測した 1 枚を色も値も変えずに重ねるだけで、sonae が先を予想することはしない (docs/design.md の 5 章)。
  * DOM にも MapLibre にも触らない (試験できるように)
  */
 
-export const JMATILE = "https://www.jma.go.jp/bosai/jmatile/data";
+import { relayBase } from "#lib/relay.ts";
+
+/** 気象庁の `https://www.jma.go.jp/bosai/jmatile/data` を、サーバーの中継を通して読む頭 */
+export const JMATILE = relayBase("jmatile");
 const NOWC = `${JMATILE}/nowc`;
 const RASRF = `${JMATILE}/rasrf`;
 /** 雷・竜巻・線状降水帯の時刻の表 (10 分ごと。新しい順。いまと 1 時間先までの予測) */
