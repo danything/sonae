@@ -17,12 +17,12 @@ import {
 } from "#lib/map/rain-loop.ts";
 import {
   baseStyle,
+  depthOpacity,
   hazardVisibility,
   loopOpacity,
   loopShown,
   loopVisibility,
   overlayVisibility,
-  RAIN_OPACITY,
   readHazard,
 } from "#lib/map/style.ts";
 
@@ -108,7 +108,9 @@ test("雨雲 (いま→予測): 1 つだけ選ぶ重ねる図。地震を選ん�
   expect(Object.values(hazardVisibility("rain-loop")).some(Boolean)).toBe(
     false,
   );
-  expect(loopOpacity(2, 2)).toBe(RAIN_OPACITY);
+  expect(loopOpacity(2, 2)).toBe(depthOpacity("normal"));
+  expect(loopOpacity(2, 2, "deep")).toBe(1);
+  expect(loopOpacity(1, 2, "deep")).toBe(0);
   expect(loopOpacity(1, 2)).toBe(0);
 });
 

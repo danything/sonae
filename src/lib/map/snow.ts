@@ -30,13 +30,21 @@ export const SNOW_TILE_ZOOMS = [4, 6, 8, 10] as const;
 export const snowLayerZoom = (n: (typeof SNOW_TILE_ZOOMS)[number]) =>
   stepLayerZoom(n, SNOW_TILE_ZOOMS);
 
+/** 選べる降雪量の時間 (気象庁の画面と同じ 3・6・12・24・48・72 時間) */
+export const SNOW_FALL_HOURS = [3, 6, 12, 24, 48, 72] as const;
+export type SnowFallHours = (typeof SNOW_FALL_HOURS)[number];
+/** 既定の降雪量の時間。大雪警報の基準の多くが 12 時間の降雪の深さなので */
+export const SNOW_FALL_DEFAULT: SnowFallHours = 12;
+
 /** 選べる今後の雪 */
 export interface SnowKind {
   id: "snow-depth" | "snow-fall";
-  /** タイルの要素の名前 (気象庁の画面の element) */
-  element: "snowd" | "snowf12h";
-  /** 選択肢とボタンの名前 */
+  /** タイルの要素の名前 (気象庁の画面の element。`snowd` か `snowf03h` など) */
+  element: string;
+  /** 選択肢の名前 */
   label: string;
+  /** 選んでいる間のボタンの文字 */
+  pill: string;
   /** 凡例の見出し */
   title: string;
   /** 凡例 (多いものから)。色はタイルのパレットのまま */
@@ -44,52 +52,94 @@ export interface SnowKind {
   about: string;
 }
 
-/**
- * 選べる今後の雪。気象庁の画面の既定の「積雪の深さ」と、大雪警報の基準の多くが 12 時間の降雪の深さなので
- * 「降雪量 (12 時間)」の 2 つ。凡例の区切りは気象庁の画面の凡例 (`legend_normal_snowd.svg`・
- * `legend_normal_snowf12h.svg`)、色はタイルのパレット (凡例の SVG と少し違う 250,245,0 と 242,242,255 はタイルに合わせる)。
- * 2026-11-28 に読んだ
- */
-export const SNOW_KINDS: SnowKind[] = [
-  {
-    id: "snow-depth",
-    element: "snowd",
-    label: "積雪の深さ",
-    title: "積雪の深さ (cm)",
-    legend: [
-      { color: "rgb(180 0 104)", label: "200 以上" },
-      { color: "rgb(255 40 0)", label: "150〜200" },
-      { color: "rgb(255 153 0)", label: "100〜150" },
-      { color: "rgb(250 245 0)", label: "50〜100" },
-      { color: "rgb(0 65 255)", label: "20〜50" },
-      { color: "rgb(33 140 255)", label: "5〜20" },
-      { color: "rgb(160 210 255)", label: "5 未満" },
-    ],
-    about:
-      "気象庁がアメダスや気象レーダーなどから解析した積雪の深さ (約 5km 四方ごと) と、その予測です。",
-  },
-  {
-    id: "snow-fall",
-    element: "snowf12h",
-    label: "降雪量 (12 時間)",
-    title: "降雪量 (12 時間に降った雪の深さ cm)",
-    legend: [
-      { color: "rgb(180 0 104)", label: "50 以上" },
-      { color: "rgb(255 40 0)", label: "40〜50" },
-      { color: "rgb(255 153 0)", label: "30〜40" },
-      { color: "rgb(250 245 0)", label: "25〜30" },
-      { color: "rgb(0 65 255)", label: "20〜25" },
-      { color: "rgb(33 140 255)", label: "15〜20" },
-      { color: "rgb(160 210 255)", label: "7〜15" },
-      { color: "rgb(242 242 255)", label: "7 未満" },
-    ],
-    about:
-      "その時刻までの 12 時間に降った雪の深さを、気象庁が解析・予測したものです (約 5km 四方ごと)。",
-  },
+/** 凡例の色 (多いものから)。気象庁の凡例の SVG と少し違う 250,245,0 と 242,242,255 は、タイルのパレットに合わせる */
+const SNOW_COLORS = [
+  "rgb(180 0 104)",
+  "rgb(255 40 0)",
+  "rgb(255 153 0)",
+  "rgb(250 245 0)",
+  "rgb(0 65 255)",
+  "rgb(33 140 255)",
+  "rgb(160 210 255)",
+  "rgb(242 242 255)",
 ];
 
-export const snowOf = (id: string): SnowKind | undefined =>
-  SNOW_KINDS.find((k) => k.id === id);
+/** 区切り (cm、多いものから) から凡例を作る。いちばん上は「以上」、いちばん下は「未満」 */
+function scale(steps: number[]): SnowKind["legend"] {
+  const out = steps.map((s, i) => ({
+    color: SNOW_COLORS[i] ?? "",
+    label: i === 0 ? `${s} 以上` : `${s}〜${steps[i - 1]}`,
+  }));
+  const last = steps.at(-1);
+  if (last !== undefined)
+    out.push({
+      color: SNOW_COLORS[steps.length] ?? "",
+      label: `${last} 未満`,
+    });
+  return out;
+}
+
+/**
+ * 降雪量の区切り (cm、多いものから)。気象庁の画面の凡例 (`legend_normal_snowf03h.svg` など。2026-11-28 に読んだ)
+ * のまま。どの時間も 8 色
+ */
+const SNOW_FALL_STEPS: Record<SnowFallHours, number[]> = {
+  3: [30, 25, 20, 15, 10, 5, 3],
+  6: [40, 30, 25, 20, 15, 10, 5],
+  12: [50, 40, 30, 25, 20, 15, 7],
+  24: [70, 60, 50, 40, 30, 20, 10],
+  48: [100, 80, 60, 40, 30, 20, 10],
+  72: [120, 100, 80, 60, 40, 20, 10],
+};
+
+/** 積雪の深さ。気象庁の画面の既定。凡例は `legend_normal_snowd.svg` の 7 色 (いちばん下は 5 未満) */
+const SNOW_DEPTH: SnowKind = {
+  id: "snow-depth",
+  element: "snowd",
+  label: "積雪の深さ",
+  pill: "今後の雪: 積雪の深さ",
+  title: "積雪の深さ (cm)",
+  legend: scale([200, 150, 100, 50, 20, 5]),
+  about:
+    "気象庁がアメダスや気象レーダーなどから解析した積雪の深さ (約 5km 四方ごと) と、その予測です。",
+};
+
+/** 降雪量 (その時刻までの `hours` 時間に降った雪の深さ) */
+export function snowFallKind(hours: SnowFallHours): SnowKind {
+  return {
+    id: "snow-fall",
+    element: `snowf${String(hours).padStart(2, "0")}h`,
+    label: "降雪量",
+    pill: `今後の雪: 降雪量 (${hours} 時間)`,
+    title: `降雪量 (${hours} 時間に降った雪の深さ cm)`,
+    legend: scale(SNOW_FALL_STEPS[hours]),
+    about: `その時刻までの ${hours} 時間に降った雪の深さを、気象庁が解析・予測したものです (約 5km 四方ごと)。`,
+  };
+}
+
+/** 重ねる図の選択肢に並べる今後の雪 (降雪量の時間は凡例の上で選ぶ) */
+export const SNOW_KINDS: SnowKind[] = [
+  SNOW_DEPTH,
+  snowFallKind(SNOW_FALL_DEFAULT),
+];
+
+/** 端末に覚えた降雪量の時間を読む。知らない値は既定 (12 時間) */
+export function readSnowHours(raw: string | null): SnowFallHours {
+  const h = Number(raw);
+  return (SNOW_FALL_HOURS as readonly number[]).includes(h)
+    ? (h as SnowFallHours)
+    : SNOW_FALL_DEFAULT;
+}
+
+/** 選んでいる今後の雪 (降雪量は時間で要素と凡例が替わる)。今後の雪でなければ undefined */
+export function snowOf(
+  id: string,
+  hours: SnowFallHours = SNOW_FALL_DEFAULT,
+): SnowKind | undefined {
+  if (id === "snow-depth") return SNOW_DEPTH;
+  if (id === "snow-fall") return snowFallKind(hours);
+  return undefined;
+}
 
 /** 今後の雪の 1 枚。予測なら何時間先か (解析は 0) */
 export interface SnowFrame extends NowcFrame {
@@ -134,3 +184,9 @@ export const SNOW_POLL_MS = 10 * 60_000;
 const SNOW_STALE_MS = 150 * 60_000;
 export const snowStale = (f: NowcFrame, now: number) =>
   stampAge(f.basetime, now) > SNOW_STALE_MS;
+
+/**
+ * 配信のある時期か (選択肢に「今後の雪」を出すか) を確かめ直す間。気象庁は冬の間だけ配信するので、開いている間に
+ * 季節が替わることはまれ。6 時間ごとに時刻の表を 1 度読む
+ */
+export const SNOW_SEASON_MS = 6 * 3_600_000;
