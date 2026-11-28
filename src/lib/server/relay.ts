@@ -349,7 +349,12 @@ export class Relay {
 
   /** 配信元に断られた (429・503) */
   private markBlocked(id: string, until: number): void {
-    this.blockedUntil.set(this.hostOf(id), until);
+    // 同じホストのほかの源が受けた長い控えを、短い Retry-After で縮めない
+    const host = this.hostOf(id);
+    this.blockedUntil.set(
+      host,
+      Math.max(until, this.blockedUntil.get(host) ?? 0),
+    );
     const h = this.healthOf(id);
     h.since ??= this.now();
     h.probing = false;
@@ -512,12 +517,16 @@ export class Relay {
     return s ? new URL(s.upstream).host : id;
   }
 
-  /** 同時に取りに行く数の枠。同じホストの源は 1 つの枠を分け合う (枠の大きさは最初に使った源のもの) */
+  /** 同時に取りに行く数の枠。同じホストの源は 1 つの枠を分け合う (枠の大きさは、そのホストの源のうちいちばん小さいもの) */
   private gate(id: string, source: RelaySource): Gate {
     const host = this.hostOf(id);
     let g = this.gates.get(host);
     if (!g) {
-      g = new Gate(source.concurrency ?? 6);
+      let limit = source.concurrency ?? 6;
+      for (const [other, s] of Object.entries(this.sources))
+        if (this.hostOf(other) === host)
+          limit = Math.min(limit, s.concurrency ?? 6);
+      g = new Gate(limit);
       this.gates.set(host, g);
     }
     return g;
