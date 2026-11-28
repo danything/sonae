@@ -239,9 +239,7 @@ test("ハザードマップ: 活断層を選べ、地理院タイルの afm を�
     >;
   };
   const afm = style.sources["hazard-afm"];
-  expect(afm?.tiles).toEqual([
-    "https://cyberjapandata.gsi.go.jp/xyz/afm/{z}/{x}/{y}.png",
-  ]);
+  expect(afm?.tiles).toEqual(["/relay/gsi/afm/{z}/{x}/{y}.png"]);
   expect([afm?.minzoom, afm?.maxzoom]).toEqual([11, 16]);
   // 凡例の画像は無く、国土地理院の説明へのリンクを出す
   const faults = HAZARDS.find((h) => h.id === "faults");
