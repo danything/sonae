@@ -610,8 +610,13 @@ export function parseWeatherXml(
             ? undefined
             : textAt(firstKind, "Name");
     // 府県気象防災速報の「記録雨」は記録的短時間大雨情報 (VPOA50) と同じ中身 (経過措置の間は両方が出る)。
-    // 二重に並べないよう、記録雨だけの速報は取らない
-    if (kind === "bosai" && (kindName === undefined || kindName === "記録雨"))
+    // 二重に並べないよう、記録雨だけの速報は取らない。取消は情報タグが無くても取る (取り消す報は store が
+    // 一連の情報の鍵で引き、種類と地域はその報のものを使う。線状降水帯・短時間大雪の通知を取消で置き換えるため)
+    if (
+      kind === "bosai" &&
+      textAt(head, "InfoType") !== "取消" &&
+      (kindName === undefined || kindName === "記録雨")
+    )
       return [{ type: "other", code }];
     const info: Omit<WeatherInfo, "updatedAt" | "cancelled"> = {
       id: `${code}-${series}-${reportedAt.replace(/[^0-9]/g, "").slice(0, 14)}${suffix}`,
