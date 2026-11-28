@@ -761,11 +761,12 @@
   // (一覧の報には持たせない)。時刻の区切りは凡例の ‹ › で人が動かす (自動では動かさない)
   let ashMap = $state<VolcanoAshMap | null>(null);
   let ashIndex = $state(0);
-  let ashFailed = $state(false);
+  /** 範囲を描けないときに右下に書く一言 (読めなかった・残していない) */
+  let ashNote = $state("");
   $effect(() => {
     const v = ashDrawn(volcano) ? volcano : null;
     ashMap = null;
-    ashFailed = false;
+    ashNote = "";
     if (!v) return;
     const aborter = new AbortController();
     fetch(`${VOLCANO_ASH_URL}?id=${encodeURIComponent(v.id)}`, {
@@ -776,14 +777,22 @@
         return r.json() as Promise<{ ash: VolcanoAshMap | null }>;
       })
       .then(({ ash }) => {
-        if (!ash || ash.windows.length === 0) return;
+        if (!ash || ash.windows.length === 0) {
+          // 定時は火山ごとにいちばん新しい報の範囲だけを残す。前に受けた報には範囲が無いこともある
+          ashNote =
+            v.code === "VFVO53"
+              ? "この報の範囲は残していません。定時の降灰予報は、火山ごとにいちばん新しい報の範囲だけを描きます。"
+              : "この報には、地図に描く範囲がありません。";
+          return;
+        }
         ashIndex = ashDefaultWindow(ash.windows, Date.now());
         ashMap = ash;
       })
       .catch((err: unknown) => {
         if (!aborter.signal.aborted) {
           console.warn(`降灰予報の範囲を読めませんでした: ${err}`);
-          ashFailed = true;
+          ashNote =
+            "降灰予報の範囲を読み込めませんでした。選び直すと読み直します。";
         }
       });
     return () => aborter.abort();
@@ -3361,9 +3370,9 @@
             </p>
           {/if}
         </figure>
-      {:else if ashFailed && boxHeight >= NOTE_MIN_HEIGHT}
-        <p class="map-note tiny muted" data-testid="ash-failed">
-          降灰予報の範囲を読み込めませんでした。選び直すと読み直します。
+      {:else if ashNote && boxHeight >= NOTE_MIN_HEIGHT}
+        <p class="map-note tiny muted" data-testid="ash-note">
+          {ashNote}
         </p>
       {/if}
       {#if slmcsAt && boxHeight >= NOTE_MIN_HEIGHT}
