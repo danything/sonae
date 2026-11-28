@@ -1,5 +1,6 @@
 import type {
   Advisory,
+  AshWindow,
   Eew,
   ForeignReport,
   LongPeriod,
@@ -46,7 +47,12 @@ export type Normalized =
   | QuakeIncoming
   | { type: "tsunami"; report: TsunamiReport }
   | { type: "advisory"; advisory: Omit<Advisory, "updatedAt" | "cancelled"> }
-  | { type: "volcano"; volcano: Omit<Volcano, "updatedAt" | "cancelled"> }
+  | {
+      type: "volcano";
+      volcano: Omit<Volcano, "updatedAt" | "cancelled">;
+      /** 降灰予報の範囲 (地図に描く)。一覧の報とは別の表に置く (`Store.volcanoAsh`) */
+      ash?: AshWindow[];
+    }
   | { type: "foreign"; report: ForeignReport }
   | { type: "longperiod"; report: LongPeriodReport }
   | { type: "warning"; warning: Omit<WeatherWarning, "updatedAt"> }

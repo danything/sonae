@@ -437,6 +437,45 @@ export interface VolcanoAsh {
   cityCodes: string[];
 }
 
+/**
+ * 降灰予報の範囲の 1 つ (電文の `AshInfo/Item`)。降灰の量などの種類ごとに、範囲の多角形を持つ
+ * (`jmx_eb:Polygon`。[経度, 緯度] の並びで、電文の点のまま)
+ */
+export interface AshArea {
+  /** 種類の名前 (「やや多量の降灰」「３ｃｍ以上の火山灰」「小さな噴石の落下」など。電文のまま) */
+  name: string;
+  /** 種類のコード (70 降灰・71 少量・72 やや多量・73 多量・75 小さな噴石の落下、火山灰予報の 31〜37・40) */
+  code?: string;
+  /** 厚さ・深さ・噴石の大きさ (電文の値と単位のまま。「0.1 mm」「1 cm」) */
+  size?: string;
+  /** 範囲の多角形。1 つの種類に幾つかあることもある */
+  polygons: [number, number][][];
+  /** 向きの説明 (「北西（鹿児島市吉野方向）」) と到達距離 (「10 km」)。電文のまま */
+  direction?: string;
+  distance?: string;
+}
+
+/** 降灰予報の、時刻の区切りごとの範囲 (電文の `AshInfo`。「予報 ３時間後」。間は全角の空白) */
+export interface AshWindow {
+  /** 電文の type から「予報」と空白を外したもの (「３時間後」) */
+  label: string;
+  start?: string;
+  end?: string;
+  areas: AshArea[];
+}
+
+/**
+ * 降灰予報 (定時・速報・詳細) の範囲 (地図に描く。docs/map.md の「降灰予報の範囲」)。一覧の報 (`Volcano`) には
+ * 持たせず、選んだときに `/api/volcano-ash` から読む (定時は 1 通 20 KB ほどになり、一覧が重くなるため)
+ */
+export interface VolcanoAshMap {
+  /** 火山の報の id (`Volcano.id`) */
+  id: string;
+  code: VolcanoCode;
+  reportedAt: string;
+  windows: AshWindow[];
+}
+
 /** 降灰予報の「多量の降灰」の種類か (コード 73。名前でも見る) */
 export const isHeavyAsh = (a: Pick<VolcanoAsh, "name" | "code">) =>
   a.code === "73" || a.name === "多量の降灰";

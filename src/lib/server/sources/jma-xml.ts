@@ -11,6 +11,8 @@ import { XML } from "bun";
 import {
   type AreaIntensity,
   type AreaLongPeriod,
+  type AshArea,
+  type AshWindow,
   type EarthquakeCount,
   type Hypocenter,
   isIntensity,
@@ -425,6 +427,73 @@ function readPlume(body: V): Volcano["plume"] {
 }
 
 /**
+ * 降灰予報の範囲の多角形 (`jmx_eb:Polygon`。`+31.5946+130.6400/+31.5902+130.6600/…/`) を [経度, 緯度] の並びに。
+ * 点は電文のまま (度)。閉じていなければ閉じる。点が 3 つに満たないものは捨てる
+ */
+export function readAshPolygon(value: string | undefined): [number, number][] {
+  const pts = (value ?? "").split("/").flatMap((s): [number, number][] => {
+    const m = /^([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)/.exec(s.trim());
+    if (!m) return [];
+    const lat = Number(m[1]);
+    const lon = Number(m[2]);
+    return Number.isFinite(lat) && Number.isFinite(lon) ? [[lon, lat]] : [];
+  });
+  if (pts.length < 3) return [];
+  const [a, z] = [pts[0], pts.at(-1)];
+  if (a && z && (a[0] !== z[0] || a[1] !== z[1])) pts.push([a[0], a[1]]);
+  return pts;
+}
+
+/** 降灰予報の範囲 (`Body/AshInfos/AshInfo`。docs/design.md の 2 章の「火山」)。範囲が無ければ空 */
+export function readAshWindows(body: V): AshWindow[] {
+  return children(child(body, "AshInfos"), "AshInfo").flatMap(
+    (info): AshWindow[] => {
+      const areas = children(info, "Item").flatMap((item): AshArea[] => {
+        const kind = child(item, "Kind");
+        const name = textAt(kind, "Name");
+        const prop = child(kind, "Property");
+        const polygons = children(prop, "jmx_eb:Polygon")
+          .map((p) => readAshPolygon(text(p)))
+          .filter((p) => p.length > 0);
+        if (!name || polygons.length === 0) return [];
+        const size = child(prop, "Size");
+        const dist = child(prop, "Distance");
+        const sizeText = text(size)?.trim();
+        const distText = text(dist)?.trim();
+        const unit = (el: V) => attr(el, "unit");
+        const dir = child(prop, "jmx_eb:PlumeDirection");
+        return [
+          {
+            name,
+            code: textAt(kind, "Code"),
+            size: sizeText
+              ? `${sizeText} ${unit(size) ?? ""}`.trim()
+              : undefined,
+            polygons,
+            direction: attr(dir, "description") ?? textAt(dir, "#text"),
+            distance: distText
+              ? `${distText} ${unit(dist) ?? ""}`.trim()
+              : undefined,
+          },
+        ];
+      });
+      if (areas.length === 0) return [];
+      return [
+        {
+          label: (attr(info, "type") ?? "")
+            .replace(/^予報/, "")
+            .replace(/\s+/g, "")
+            .trim(),
+          start: textAt(info, "StartTime"),
+          end: textAt(info, "EndTime"),
+          areas,
+        },
+      ];
+    },
+  );
+}
+
+/**
  * 火山の位置 (`+3624.38+13831.38+2568/`)。緯度・経度は「度分」(36 度 24.38 分) で、最後は標高 (m)。
  * 度で書かれていても (小数点の前が 2〜3 桁) 読む
  */
@@ -681,6 +750,7 @@ export function parseJmaXml(xml: string, code: string): Normalized[] {
     const v = readVolcano(body, code);
     const eventId =
       eventIds[0] || v.volcanoes.map((a) => a.code).join("-") || reportedAt;
+    const ashCode = code === "VFVO53" || code === "VFVO54" || code === "VFVO55";
     return [
       {
         type: "volcano",
@@ -711,6 +781,7 @@ export function parseJmaXml(xml: string, code: string): Normalized[] {
           plume: v.plume,
           observation: v.observation,
         },
+        ...(ashCode ? { ash: readAshWindows(body) } : {}),
       },
     ];
   }
