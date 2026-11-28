@@ -49,6 +49,8 @@ const OVERLAP_MS = 10 * 60_000;
 const COLD_START_MS = 24 * 60 * 60_000;
 /** 本文が 404・410 だったとき、諦めるまでに取りに行く回数 (1 分ごと。一覧が先に出て本文が遅れることがある) */
 const BODY_MISS_LIMIT = 5;
+/** 捨てた一覧の項目の訳を置く鍵 (報の鍵とぶつからない) */
+const DROPPED = "#dropped";
 /** 一回に取る本文の数の上限 (一覧ごと) */
 const MAX_BODIES = 10;
 const STANDBY_REASON = "気象庁 XML (地震火山) が取れない間だけ取ります";
@@ -285,7 +287,7 @@ export function bosaiEqvolSource(
   /** 本文が 404・410 のまま諦めた報 (一覧に載っている間は取り直さない) */
   const gone = new Map<string, Set<string>>();
   /** 本文が 404・410 だった回数 (一覧が先に出て本文がまだ置かれていないことがあるので、すぐには諦めない) */
-  const missTries = new Map<string, number>();
+  const missTries = new Map<string, Map<string, number>>();
   /** 読めなかった報と、諦めた報の訳 (一覧に載っている間は、受信の状態に出し続ける) */
   const trouble = new Map<string, Map<string, string>>();
 
@@ -323,6 +325,18 @@ export function bosaiEqvolSource(
     );
     gone.set(listUrl, missing);
     for (const k of problems.keys()) if (!listed.has(k)) problems.delete(k);
+    // 捨てた項目の数も、一覧が変わるまで出し続ける (次の回が 304 でも消さない)
+    if (dropped > 0)
+      problems.set(DROPPED, `${listUrl} の ${dropped} 項目を読めませんでした`);
+    const tries = missTries.get(listUrl) ?? new Map<string, number>();
+    for (const k of tries.keys()) if (!listed.has(k)) tries.delete(k);
+    missTries.set(listUrl, tries);
+    /** 取り直した回数を数え、上限に届いたら true */
+    const tried = (key: string) => {
+      const n = (tries.get(key) ?? 0) + 1;
+      tries.set(key, n);
+      return n >= BODY_MISS_LIMIT;
+    };
     const todo = items.filter((i) => {
       const k = keyOf(i);
       return (
@@ -344,20 +358,14 @@ export function bosaiEqvolSource(
         log(`${tag} ${err}`);
         if (retryable(err)) left = true;
         else if (err instanceof BosaiHttpError) {
-          const n = (missTries.get(key) ?? 0) + 1;
-          if (n >= BODY_MISS_LIMIT) {
-            missTries.delete(key);
+          if (tried(key)) {
+            tries.delete(key);
             missing.add(key);
             problems.set(key, `${key} の本文を取れません (${err.message})`);
-          } else {
-            if (missTries.size > 1000) missTries.clear();
-            missTries.set(key, n);
-            left = true;
-          }
+          } else left = true;
         }
         continue;
       }
-      missTries.delete(key);
       let stale = false;
       try {
         stale = behind?.(body, i) ?? false;
@@ -365,10 +373,15 @@ export function bosaiEqvolSource(
         // 時刻を読めない本文は、下の読み方で読めないとする
       }
       if (stale) {
+        // 取り直し続ける (古い本文を新しい報の鍵で受けない)。続くなら、形が違うかもしれないので状態に出す
         log(`${tag} ${key} の本文がまだ前の報なので、次の回に取り直します`);
+        if (tried(key))
+          problems.set(key, `${key} の本文が一覧の時刻より古いままです`);
         left = true;
         continue;
       }
+      tries.delete(key);
+      problems.delete(key);
       let incoming: Incoming;
       try {
         const items = parse(body, i);
@@ -393,10 +406,7 @@ export function bosaiEqvolSource(
       status.seen(true);
     }
     if (!left) http.remember(listUrl, r.validators);
-    const out = [...problems.values()];
-    if (dropped > 0)
-      out.push(`${listUrl} の ${dropped} 項目を読めませんでした`);
-    return out;
+    return [...problems.values()];
   }
 
   const tsunami = (signal: AbortSignal, since: number) =>

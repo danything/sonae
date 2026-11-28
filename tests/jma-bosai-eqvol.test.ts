@@ -540,3 +540,64 @@ describe("読めない・取れないときは、黙って落とさず受信の�
     expect(r.got[0]?.error).toBeUndefined();
   });
 });
+
+test("捨てた一覧の項目の訳は、次の回が 304 でも消さない", async () => {
+  const { ctx } = sourceContext();
+  const states: SourceStatus[] = [];
+  let n = 0;
+  const controller = new AbortController();
+  const source = bosaiEqvolSource(ctx, {
+    primary: () => ({ ...base, state: "retrying", lastSeenAt: undefined }),
+    now: () => Date.parse("2026-11-28T09:20:00Z"),
+    fetch: (async (url: string, init: RequestInit) => {
+      if (url !== BOSAI_VOLCANO_ERUPTION) return new Response("[]");
+      const h = init.headers as Record<string, string>;
+      return h["if-none-match"]
+        ? new Response(null, { status: 304 })
+        : new Response(JSON.stringify([{ id: "x" }]), {
+            headers: { etag: '"e1"' },
+          });
+    }) as unknown as typeof fetch,
+    sleep: async () => {
+      states.push(source.status());
+      if (++n >= 3) controller.abort();
+    },
+    log: () => {},
+  });
+  await source.run(controller.signal);
+  for (const s of states) {
+    expect(s.state).toBe("retrying");
+    expect(s.lastError).toContain("1 項目を読めませんでした");
+  }
+});
+
+test("火山の本文が一覧より古いまま続けば、取り直しながら状態に出す", async () => {
+  const { ctx, got } = sourceContext();
+  const states: SourceStatus[] = [];
+  let n = 0;
+  const controller = new AbortController();
+  const source = bosaiEqvolSource(ctx, {
+    primary: () => ({ ...base, state: "retrying", lastSeenAt: undefined }),
+    now: () => Date.parse("2026-11-28T09:20:00Z"),
+    fetch: (async (url: string) => {
+      if (url === BOSAI_VOLCANO_WARNING)
+        return new Response(
+          JSON.stringify([
+            { eventId: "508", reportDatetime: "2026-11-28T17:00:00+09:00" },
+          ]),
+        );
+      if (url === bosaiVolcanoWarning("508")) return new Response(VOLCANO_508);
+      return new Response("[]");
+    }) as unknown as typeof fetch,
+    sleep: async () => {
+      states.push(source.status());
+      if (++n >= 6) controller.abort();
+    },
+    log: () => {},
+  });
+  await source.run(controller.signal);
+  expect(got).toHaveLength(0);
+  expect(states[3]?.state).toBe("connected");
+  expect(states[4]?.state).toBe("retrying");
+  expect(states[5]?.lastError).toContain("古いままです");
+});
