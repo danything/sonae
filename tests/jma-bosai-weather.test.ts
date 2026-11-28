@@ -12,6 +12,7 @@ import {
   BOSAI_WARNING_MAP,
   bosaiDenbun,
   bosaiWeatherSource,
+  MAP_MIN_INTERVAL_MS,
   parseBosaiAreas,
   parseBosaiDenbun,
   parseBosaiInformation,
@@ -263,7 +264,8 @@ describe("主の源が取れない間だけ取る", () => {
     const urls: string[] = [];
     const headers: Record<string, Record<string, string>> = {};
     let primary: SourceStatus = { ...base };
-    const now = at("2026-11-28T09:20:00Z");
+    // 回ごとに時計を進める (全国の一覧を取りに行く最短の間隔があるため)
+    let now = at("2026-11-28T09:20:00Z");
     let step = 0;
     let release: (() => void) | undefined;
     const controller = new AbortController();
@@ -335,6 +337,7 @@ describe("主の源が取れない間だけ取る", () => {
     expect(source.status().state).toBe("connected");
 
     // 3 回目: 変わっていなければ一覧は 304。受けた速報の本文は取り直さない
+    now += MAP_MIN_INTERVAL_MS;
     await next();
     expect(urls.slice(4)).toEqual([BOSAI_WARNING_MAP, BOSAI_INFORMATION]);
     expect(headers[BOSAI_WARNING_MAP]?.["if-none-match"]).toBe('W/"m1"');
@@ -400,10 +403,12 @@ describe("主の源が取れない間だけ取る", () => {
     expect(source.status().lastError).toContain("map.json");
   });
 
-  test("採れなかった報があれば、一覧に ETag を付けずに読み直す", async () => {
+  test("採れなかった報があっても控えは覚え、変わっていない一覧は取り直さずに手元の本文で読み直す", async () => {
     const { ctx } = sourceContext();
     const conditional: boolean[] = [];
     let rounds = 0;
+    let now = at("2026-11-28T09:20:00Z");
+    let parsedAgain = 0;
     const controller = new AbortController();
     const text = patchedMap((es) => {
       const e = es[2] as { warning: { class20Items: { kinds: unknown[] }[] } };
@@ -416,24 +421,79 @@ describe("主の源が取れない間だけ取る", () => {
         state: "retrying",
         lastSeenAt: "2026-11-26T19:00:00.000Z",
       }),
-      now: () => at("2026-11-28T09:20:00Z"),
+      now: () => now,
       fetch: (async (url: string, init: RequestInit) => {
         if (url === BOSAI_AREA) return new Response(AREA);
         if (url === BOSAI_WARNING_MAP) {
-          conditional.push(
-            !!(init.headers as Record<string, string>)["if-none-match"],
-          );
-          return new Response(text, { headers: { etag: 'W/"m1"' } });
+          const h = init.headers as Record<string, string>;
+          conditional.push(!!h["if-none-match"]);
+          if (h["if-none-match"] === 'W/"m1"') {
+            parsedAgain++;
+            return new Response(null, { status: 304 });
+          }
+          return new Response(text, {
+            headers: {
+              etag: 'W/"m1"',
+              "last-modified": "Sat, 28 Nov 2026 09:19:00 GMT",
+            },
+          });
         }
         return new Response("[]");
       }) as unknown as typeof fetch,
       sleep: async () => {
+        now += MAP_MIN_INTERVAL_MS;
         if (++rounds >= 2) controller.abort();
       },
       log: () => {},
     });
     await source.run(controller.signal);
-    expect(conditional).toEqual([false, false]);
+    // 2 回目も条件を付け、304 なら手元の本文を読み直す (本体は運ばない)
+    expect(conditional).toEqual([false, true]);
+    expect(parsedAgain).toBe(1);
+  });
+
+  test("全国の一覧は 1 分より短い間隔では取りに行かず、ETag と Last-Modified の両方を付ける", async () => {
+    const { ctx } = sourceContext();
+    const maps: Record<string, string>[] = [];
+    let rounds = 0;
+    let now = at("2026-11-28T09:20:00Z");
+    const controller = new AbortController();
+    const source = bosaiWeatherSource(ctx, {
+      primary: () => ({
+        ...base,
+        state: "retrying",
+        lastSeenAt: "2026-11-26T19:00:00.000Z",
+      }),
+      now: () => now,
+      fetch: (async (url: string, init: RequestInit) => {
+        if (url === BOSAI_AREA) return new Response(AREA);
+        if (url === BOSAI_WARNING_MAP) {
+          maps.push(init.headers as Record<string, string>);
+          return maps.length > 1
+            ? new Response(null, { status: 304 })
+            : new Response(MAP, {
+                headers: {
+                  etag: 'W/"m1"',
+                  "last-modified": "Sat, 28 Nov 2026 09:19:00 GMT",
+                },
+              });
+        }
+        return new Response("[]");
+      }) as unknown as typeof fetch,
+      sleep: async () => {
+        // 1 回目の後は 30 秒 (間隔の中)、2 回目の後は 1 分進める
+        now += rounds === 0 ? 30_000 : MAP_MIN_INTERVAL_MS;
+        if (++rounds >= 3) controller.abort();
+      },
+      log: () => {},
+    });
+    await source.run(controller.signal);
+    // 3 回のうち、全国の一覧を取りに行ったのは 1 回目と 3 回目だけ
+    expect(maps).toHaveLength(2);
+    expect(maps[1]?.["if-none-match"]).toBe('W/"m1"');
+    expect(maps[1]?.["if-modified-since"]).toBe(
+      "Sat, 28 Nov 2026 09:19:00 GMT",
+    );
   });
 });
 

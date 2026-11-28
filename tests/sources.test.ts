@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import { RtsBoard } from "#lib/server/rts-board.ts";
 import { emscSource } from "#lib/server/sources/emsc.ts";
-import { jmaSource } from "#lib/server/sources/jma.ts";
+import { jmaSource, TELEGRAM_MISS_LIMIT } from "#lib/server/sources/jma.ts";
 import { p2pSource } from "#lib/server/sources/p2p.ts";
 import {
   Backoff,
@@ -198,6 +198,53 @@ describe("気象庁のフィード", () => {
     // 1 回目に取って 404・410。2 回目は載っているので取らない。3 回目は載っていないので忘れ、4 回目にまた取る
     expect(await alwaysFail(404)).toBe(2);
     expect(await alwaysFail(410)).toBe(2);
+  });
+
+  test("フィードは取れても電文の本体が続けて 5xx なら、3 回目から再接続中にし、最後に受けた時刻を進めない。取れたら戻す", async () => {
+    const { ctx } = context();
+    const feed = fixture("jma/made-feed.xml");
+    let round = 0;
+    /** この回から電文が取れる */
+    const okFrom = 5;
+    const fakeFetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.endsWith("eqvol_l.xml"))
+        return new Response(null, { status: 304 });
+      if (url.endsWith("eqvol.xml")) {
+        round++;
+        return new Response(feed, { headers: { etag: `"${round}"` } });
+      }
+      if (round < okFrom) return new Response("busy", { status: 503 });
+      return new Response(EMPTY_REPORT);
+    }) as typeof fetch;
+    const ac = new AbortController();
+    const seen: { state: string; lastSeenAt?: string }[] = [];
+    const src = jmaSource(ctx, {
+      feedUrl: "https://example.invalid/eqvol.xml",
+      longFeedUrl: "https://example.invalid/eqvol_l.xml",
+      fetch: fakeFetch,
+      log: () => {},
+      sleep: async () => {
+        const s = src.status();
+        seen.push({ state: s.state, lastSeenAt: s.lastSeenAt });
+        if (seen.length >= okFrom) ac.abort();
+      },
+    });
+    await src.run(ac.signal);
+    expect(TELEGRAM_MISS_LIMIT).toBe(3);
+    // 1・2 回目は様子見 (起こしたばかりの「接続中」のまま)、3・4 回目は再接続中、5 回目に取れて受信中
+    expect(seen.map((s) => s.state)).toEqual([
+      "connecting",
+      "connecting",
+      "retrying",
+      "retrying",
+      "connected",
+    ]);
+    expect(seen.slice(0, 4).every((s) => s.lastSeenAt === undefined)).toBe(
+      true,
+    );
+    expect(seen[4]?.lastSeenAt).toBeDefined();
+    expect(src.status().lastError).toContain("電文を");
   });
 
   test("一時的な失敗 (5xx・ネットの失敗) の電文は、載っている間は毎回取り直す", async () => {
