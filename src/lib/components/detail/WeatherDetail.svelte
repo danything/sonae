@@ -15,7 +15,7 @@
     WEATHER_INFO_LABEL,
     type WeatherInfo,
   } from "#lib/model.ts";
-  import { BOSAI_WEATHER_NOTE } from "#lib/notice.ts";
+  import { BOSAI_NOTE } from "#lib/notice.ts";
 
   import WarningLevel from "../WarningLevel.svelte";
   import TyphoonSection from "./TyphoonSection.svelte";
@@ -71,7 +71,7 @@
   {/if}
 
   {#if w.source === "jma-bosai"}
-    <p class="small">{BOSAI_WEATHER_NOTE}</p>
+    <p class="small">{BOSAI_NOTE}</p>
   {/if}
 
   {#if w.headline}

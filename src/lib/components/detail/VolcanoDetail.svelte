@@ -1,6 +1,7 @@
 <script lang="ts">
   import { jst, jstFull, STATUS_LABEL, volcanoKindText } from "#lib/format.ts";
   import { type Volcano, VOLCANO_LABEL } from "#lib/model.ts";
+  import { BOSAI_NOTE } from "#lib/notice.ts";
 
   import VolcanoLevel from "../VolcanoLevel.svelte";
 
@@ -47,6 +48,11 @@
       <p class="tags"><span class="tag error">取消</span></p>
     {/if}
   </header>
+
+  {#if v.source === "jma-bosai"}
+    <!-- 地震火山 XML が取れない間に、気象庁ホームページの JSON (予備) から受けた報 (docs/design.md の 2.1) -->
+    <p class="small">{BOSAI_NOTE}</p>
+  {/if}
 
   {#if v.headline}
     <p class="small pre-line">{v.headline}</p>

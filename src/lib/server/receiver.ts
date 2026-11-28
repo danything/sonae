@@ -16,6 +16,7 @@ import { publicOrigin } from "./site.ts";
 import { cwaSource } from "./sources/cwa.ts";
 import { emscSource } from "./sources/emsc.ts";
 import { geonetSource } from "./sources/geonet.ts";
+import { bosaiEqvolSource } from "./sources/jma-bosai-eqvol.ts";
 import { bosaiWeatherSource } from "./sources/jma-bosai-weather.ts";
 import { bosaiTsunamiSource } from "./sources/jma-bosai.ts";
 import { jmaSource, jmaWeatherSource } from "./sources/jma.ts";
@@ -123,9 +124,12 @@ export function startReceiving(): void {
       console.log(`[${s.id}] ${s.state}${why}`);
     },
   };
+  const eqvol = jmaSource(ctx);
   const weather = jmaWeatherSource(ctx);
   a.sources = [
-    jmaSource(ctx),
+    eqvol,
+    // 地震火山の XML が取れない間だけ、気象庁ホームページの津波と火山の JSON を取る予備 (docs/design.md の 2.1)
+    bosaiEqvolSource(ctx, { primary: () => eqvol.status() }),
     weather,
     // 気象 XML が取れない間だけ、気象庁ホームページの JSON を取る予備 (docs/design.md の 2.8)
     bosaiWeatherSource(ctx, { primary: () => weather.status() }),

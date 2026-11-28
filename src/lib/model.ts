@@ -19,6 +19,8 @@ export type SourceId =
   | "jma-bosai"
   /** 気象庁ホームページの警報・注意報と気象防災速報の JSON。気象 XML (`jma-weather`) が取れない間だけ取る予備 (docs/design.md の 2.8) */
   | "jma-bosai-weather"
+  /** 気象庁ホームページの津波と火山の JSON。地震火山の XML (`jma`) が取れない間だけ取る予備 (docs/design.md の 2.1) */
+  | "jma-bosai-eqvol"
   | "trem"
   | "seisjs"
   | "msil"
@@ -249,7 +251,8 @@ export interface Tsunami {
   /** どの予報区も警報・注意報・予報ではなくなった */
   ended: boolean;
   provisional: boolean;
-  sources: ("jma" | "p2p" | "wolfx")[];
+  /** 受けた源。`jma-bosai` は気象庁ホームページの JSON (地震火山 XML の予備) */
+  sources: ("jma" | "jma-bosai" | "p2p" | "wolfx")[];
   updatedAt: string;
 }
 
@@ -525,6 +528,11 @@ export interface Volcano {
   plume?: { height?: string; seaLevel?: string; direction?: string };
   /** そのほかの観測 (降灰予報の OtherObservation。複数行の文) */
   observation?: string;
+  /**
+   * 気象庁ホームページの JSON (地震火山 XML の予備) から受けた報 (docs/design.md の 2.1)。気象庁 XML の同じ報 (同じ id) が
+   * 届いたら、そちらに置き換わり、この印は消える
+   */
+  source?: "jma-bosai";
   cancelled: boolean;
   updatedAt: string;
 }
