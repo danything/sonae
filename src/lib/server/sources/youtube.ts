@@ -153,7 +153,12 @@ export function youtubeSource(
     return out;
   }
 
-  async function check(signal: AbortSignal): Promise<void> {
+  /**
+   * 1 回の確かめ。`videos.list` が通れば、そこで確かめた時刻を進める (配信中のカメラは出し続ける)。
+   * 探し直し (`search.list`) の失敗は、チャンネルごとにログに残して次のチャンネルへ進み、失敗の訳を返す
+   * (割り当て切れなどで探し直しだけが失敗しても、ほかのカメラを止めない)
+   */
+  async function check(signal: AbortSignal): Promise<string[]> {
     const ids = [
       ...new Set([...known.values()].map((v) => v.videoId).filter(isVideoId)),
     ];
@@ -166,37 +171,51 @@ export function youtubeSource(
       known.set(c.id, { videoId: cur?.videoId ?? c.seed, live });
       if (!live) lost.add(c.channel);
     }
+    checkedAt = new Date(now()).toISOString();
+    const errors: string[] = [];
     // ライブでなくなったカメラのチャンネルを探し直す (チャンネルごとに 3 時間に 1 回まで)
     for (const ch of lost) {
       const last = searchedAt.get(ch);
       if (last !== undefined && now() - last < YOUTUBE_SEARCH_MIN_MS) continue;
       searchedAt.set(ch, now());
-      const r = await get(
-        "search",
-        {
-          part: "id",
-          channelId: ch,
-          eventType: "live",
-          type: "video",
-          maxResults: "50",
-          fields: "items(id(videoId))",
-        },
-        signal,
-      );
-      const found = ((r.items ?? []) as { id?: { videoId?: unknown } }[])
-        .map((i) => i.id?.videoId)
-        .filter(isVideoId);
-      const vs = await videos(found, signal);
-      for (const c of cams) {
-        if (c.channel !== ch || known.get(c.id)?.live) continue;
-        const v = vs.find((x) => usable(x, c));
-        if (v) {
-          known.set(c.id, { videoId: v.id, live: true });
-          log(`[youtube] ${c.name} の配信が替わりました (${v.id})`);
-        }
+      try {
+        await research(ch, signal);
+      } catch (err) {
+        if (signal.aborted) throw err;
+        const why = `${ch} を探し直せませんでした: ${String(err)}`;
+        log(`[youtube] ${why}`);
+        errors.push(why);
       }
     }
-    checkedAt = new Date(now()).toISOString();
+    return errors;
+  }
+
+  /** チャンネルのいまのライブを探し、題名の合う配信をカメラに当てる */
+  async function research(ch: string, signal: AbortSignal): Promise<void> {
+    const r = await get(
+      "search",
+      {
+        part: "id",
+        channelId: ch,
+        eventType: "live",
+        type: "video",
+        maxResults: "50",
+        fields: "items(id(videoId))",
+      },
+      signal,
+    );
+    const found = ((r.items ?? []) as { id?: { videoId?: unknown } }[])
+      .map((i) => i.id?.videoId)
+      .filter(isVideoId);
+    const vs = await videos(found, signal);
+    for (const c of cams) {
+      if (c.channel !== ch || known.get(c.id)?.live) continue;
+      const v = vs.find((x) => usable(x, c));
+      if (v) {
+        known.set(c.id, { videoId: v.id, live: true });
+        log(`[youtube] ${c.name} の配信が替わりました (${v.id})`);
+      }
+    }
   }
 
   const response = (): LivecamResponse => {
@@ -227,11 +246,14 @@ export function youtubeSource(
       while (!signal.aborted) {
         let delay = YOUTUBE_CHECK_MS;
         try {
-          await check(signal);
+          const errors = await check(signal);
           failures = 0;
           status.seen(true);
-          status.recovered();
-          status.set("connected");
+          if (errors.length > 0) status.set("connected", errors.join(" / "));
+          else {
+            status.recovered();
+            status.set("connected");
+          }
         } catch (err) {
           if (signal.aborted) break;
           failures++;

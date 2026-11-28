@@ -253,6 +253,43 @@ test("見つからなければ、3 時間たつまで探し直さない", async 
   expect(src.response().cams[cam.id]?.videoId).toBeUndefined();
 });
 
+test("探し直しが失敗しても、配信中のカメラは出し続け、確かめた時刻は進め、訳を状態に出す", async () => {
+  let t = Date.parse("2026-11-28T03:00:00Z");
+  const other = LIVECAMS.find((c) => c.id === "kumagawa") as Livecam;
+  const base = fakeApi({ videos: { wOvC84yodk4: live("wOvC84yodk4") } });
+  // 球磨川の目安の ID は答えに無い (終わった) ので探し直すが、search.list は 403 (割り当て切れ)
+  const f = (async (input: string | URL | Request, init?: RequestInit) =>
+    new URL(String(input)).pathname.endsWith("/search")
+      ? new Response("", { status: 403 })
+      : base.f(input, init)) as typeof fetch;
+  const ac = new AbortController();
+  const logs: string[] = [];
+  const errs: string[] = [];
+  let rounds = 0;
+  const src = youtubeSource("k", {
+    cams: [cam, other],
+    fetch: f,
+    now: () => t,
+    log: (m) => logs.push(m),
+    onStatus: (st) => errs.push(st.lastError ?? ""),
+    sleep: async () => {
+      rounds++;
+      t += 15 * 60_000;
+      if (rounds >= 2) ac.abort();
+    },
+  });
+  if (!src) throw new Error("作られない");
+  await src.run(ac.signal);
+  // 2 回目は 15 分後。確かめた時刻が進んでいるので、20 分を過ぎても配信中のまま
+  const r = src.response();
+  expect(r.cams[cam.id]?.videoId).toBe("wOvC84yodk4");
+  expect(r.cams[other.id]?.videoId).toBeUndefined();
+  expect(r.cams[cam.id]?.checkedAt).toBe("2026-11-28T03:15:00.000Z");
+  // 状態の欄に訳を出す (次の回は 3 時間の間を空けるので探し直さず、直近のエラーは消える)
+  expect(errs.some((e) => e.includes("探し直せませんでした"))).toBe(true);
+  expect(logs.join("\n")).toContain("403");
+});
+
 test("地図: 層と出典・凡例・出典の窓", () => {
   const style = baseStyle("https://example.test", undefined) as {
     sources: Record<string, { attribution?: string }>;
