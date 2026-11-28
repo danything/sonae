@@ -171,7 +171,7 @@ export function startReceiving(): void {
       "[cwa] 授権碼 (CWA_API_KEY) が無いので、中央氣象署の受信は切ってあります",
     );
   }
-  // 海しるの点の層 (海底地殻変動観測点・海域火山)。API のキーが要り、無ければ層を出さないだけ (docs/design.md の 2.11)。
+  // 海しるの点の層 (海底地殻変動観測点・海域火山・海上保安部署等・潮汐推算の地点)。API のキーが要り、無ければ層を出さないだけ (docs/design.md の 2.11)。
   // 取ったものは表 layer_cache に置くだけで、知らせには届かない
   const msil = msilSource(a.store.db, msilKey(), { onStatus: ctx.onStatus });
   if (msil) a.sources.push(msil);
