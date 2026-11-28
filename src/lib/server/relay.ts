@@ -238,7 +238,7 @@ export class Relay {
   private readonly store: RelayStore;
   /** 取りに行っている最中のもの (同じ鍵の要求をまとめる) */
   private readonly inflight = new Map<string, Promise<RelayEntry>>();
-  /** 源ごとの、断られた・続けて失敗したので待つ終わり (ミリ秒) */
+  /** 配信元のホストごとの、断られたので待つ終わり (ミリ秒)。同じホストの源 (地理院タイルと地理院地図Vector) は一緒に控える */
   private readonly blockedUntil = new Map<string, number>();
   private readonly health = new Map<string, Health>();
   /** 源の様子が変わったときに呼ぶもの (SSE の `event: relay`) */
@@ -308,7 +308,7 @@ export class Relay {
   /** 取りに行くのを控える終わり (断られた `Retry-After` か、回路を開いている間。ミリ秒) */
   private holdUntil(id: string): number {
     return Math.max(
-      this.blockedUntil.get(id) ?? 0,
+      this.blockedUntil.get(this.hostOf(id)) ?? 0,
       this.health.get(id)?.breakUntil ?? 0,
     );
   }
@@ -349,7 +349,7 @@ export class Relay {
 
   /** 配信元に断られた (429・503) */
   private markBlocked(id: string, until: number): void {
-    this.blockedUntil.set(id, until);
+    this.blockedUntil.set(this.hostOf(id), until);
     const h = this.healthOf(id);
     h.since ??= this.now();
     h.probing = false;
@@ -506,11 +506,19 @@ export class Relay {
     this.failedUntil.set(key, now + FAILED_WAIT_MS);
   }
 
+  /** 配信元のホスト (同時に取りに行く数の枠と、断られたときの控えはホストごと) */
+  private hostOf(id: string): string {
+    const s = Object.hasOwn(this.sources, id) ? this.sources[id] : undefined;
+    return s ? new URL(s.upstream).host : id;
+  }
+
+  /** 同時に取りに行く数の枠。同じホストの源は 1 つの枠を分け合う (枠の大きさは最初に使った源のもの) */
   private gate(id: string, source: RelaySource): Gate {
-    let g = this.gates.get(id);
+    const host = this.hostOf(id);
+    let g = this.gates.get(host);
     if (!g) {
       g = new Gate(source.concurrency ?? 6);
-      this.gates.set(id, g);
+      this.gates.set(host, g);
     }
     return g;
   }

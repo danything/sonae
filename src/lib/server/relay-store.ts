@@ -66,6 +66,20 @@ export interface RelayStore {
 interface Slot {
   entry: RelayEntry;
   usedAt: number;
+  /** 数える大きさ (本体と、鍵・見出し・入れ物の分) */
+  size: number;
+}
+
+/** 1 つを覚える入れ物 (Map の枠・RelayEntry・数の欄) のおおよその大きさ。小さな 404 を大量に覚えても、数えた量が実際から離れすぎないように */
+const SLOT_OVERHEAD_BYTES = 256;
+
+/** 数える大きさ。本体だけでなく、鍵と見出しの字 (JS の文字列は 1 字 2 バイト) と入れ物の分も足す */
+export function slotSize(key: string, entry: RelayEntry): number {
+  let chars = key.length;
+  for (const [k, v] of Object.entries(entry.headers))
+    chars += k.length + v.length;
+  chars += (entry.etag?.length ?? 0) + (entry.lastModified?.length ?? 0);
+  return entry.body.byteLength + chars * 2 + SLOT_OVERHEAD_BYTES;
 }
 
 /** プロセスのメモリの置き場。段ごとに、使った順の Map を持つ (Map は足した順に並ぶ。使ったら後ろへ回す) */
@@ -101,8 +115,11 @@ export class MemoryRelayStore implements RelayStore {
   set(key: string, entry: RelayEntry, priority: RelayPriority): void {
     this.delete(key);
     if (entry.body.byteLength > this.maxEntryBytes) return;
-    this.tiers[priority].set(key, { entry, usedAt: this.now() });
-    this.bytes += entry.body.byteLength;
+    const size = slotSize(key, entry);
+    this.tiers[priority].set(key, { entry, usedAt: this.now(), size });
+    this.bytes += size;
+    // 上限の内でも、もう返さないものは 1 分に 1 回掃く (使われないまま期限の過ぎたものを、上限まで残さない)
+    this.sweep();
     if (this.bytes > this.maxBytes) this.evict();
   }
 
@@ -111,7 +128,7 @@ export class MemoryRelayStore implements RelayStore {
       const s = tier.get(key);
       if (!s) continue;
       tier.delete(key);
-      this.bytes -= s.entry.body.byteLength;
+      this.bytes -= s.size;
       return;
     }
   }
@@ -121,7 +138,7 @@ export class MemoryRelayStore implements RelayStore {
       for (const [k, s] of tier)
         if (k.startsWith(prefix)) {
           tier.delete(k);
-          this.bytes -= s.entry.body.byteLength;
+          this.bytes -= s.size;
         }
   }
 
@@ -132,19 +149,22 @@ export class MemoryRelayStore implements RelayStore {
     };
   }
 
-  private evict(): void {
-    // 1. もう返さないもの (配信元が落ちていても返してよい期限を過ぎたもの) から。全部を見るので、1 分に 1 回まで
-    // (いっぱいのまま要求が続くとき、置くたびに全部を舐めない)
+  /** もう返さないもの (配信元が落ちていても返してよい期限を過ぎたもの) を捨てる。全部を見るので、1 分に 1 回まで */
+  private sweep(): void {
     const now = this.now();
-    if (now - this.sweptAt >= SWEEP_EVERY_MS) {
-      this.sweptAt = now;
-      for (const tier of this.tiers)
-        for (const [k, s] of tier)
-          if (s.entry.staleUntil <= now) {
-            tier.delete(k);
-            this.bytes -= s.entry.body.byteLength;
-          }
-    }
+    if (now - this.sweptAt < SWEEP_EVERY_MS) return;
+    this.sweptAt = now;
+    for (const tier of this.tiers)
+      for (const [k, s] of tier)
+        if (s.entry.staleUntil <= now) {
+          tier.delete(k);
+          this.bytes -= s.size;
+        }
+  }
+
+  private evict(): void {
+    // 1. もう返さないものから (sweep。1 分に 1 回まで)
+    this.sweep();
     // 2. 段ごとのいちばん長く使っていないものを、猶予を足した時刻で比べて捨てる
     while (this.bytes > this.maxBytes) {
       let pick:
@@ -162,7 +182,7 @@ export class MemoryRelayStore implements RelayStore {
       });
       if (!pick) break;
       pick.tier.delete(pick.key);
-      this.bytes -= pick.slot.entry.body.byteLength;
+      this.bytes -= pick.slot.size;
     }
   }
 }
