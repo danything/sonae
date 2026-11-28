@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 
+import { planAlerts } from "#lib/alert.ts";
 import { sourceInTrouble, sourceStateText } from "#lib/format.ts";
 import {
   isNotifiedBosai,
   type SourceStatus,
   warningsByOffice,
 } from "#lib/model.ts";
+import { contentOf } from "#lib/notify.ts";
 import {
   BOSAI_AREA,
   BOSAI_INFORMATION,
@@ -23,8 +25,10 @@ import {
 } from "#lib/server/sources/jma-bosai-weather.ts";
 import { jmaWeatherSource } from "#lib/server/sources/jma.ts";
 
+import { prefs } from "./events.ts";
 import {
   fixture,
+  homeAt,
   memoryStore,
   sourceContext,
   weatherInfo,
@@ -355,12 +359,12 @@ describe("主の源が取れない間だけ取る", () => {
     expect(step).toBeGreaterThanOrEqual(5);
   });
 
-  test("予備の取得に失敗したら状態にエラーを出し、間隔を空ける (待つ間も 1 分ごとに主を見る)", async () => {
+  test("予備の取得に失敗したら状態にエラーを出し、続けて取れない一覧の間を倍々に空ける", async () => {
     const { ctx } = sourceContext();
-    /** 回ごとに、次の回までに待った長さ */
-    const gaps: number[] = [0];
-    /** 前に取りに行ってから眠ったか (次に取りに行ったら、新しい回) */
-    let slept = false;
+    let t = at("2026-11-28T09:20:00Z");
+    /** 一覧 (警報) を取りに行った時刻 (分) */
+    const asked: number[] = [];
+    let rounds = 0;
     const controller = new AbortController();
     const source = bosaiWeatherSource(ctx, {
       primary: () => ({
@@ -368,22 +372,22 @@ describe("主の源が取れない間だけ取る", () => {
         state: "retrying",
         lastSeenAt: "2026-11-28T08:00:00.000Z",
       }),
-      now: () => at("2026-11-28T09:20:00Z"),
-      fetch: (async () => {
-        if (slept) gaps.push(0);
-        slept = false;
+      now: () => t,
+      fetch: (async (url: string) => {
+        if (url === BOSAI_AREA)
+          asked.push((t - at("2026-11-28T09:20:00Z")) / 60_000);
         return new Response("busy", { status: 503 });
       }) as unknown as typeof fetch,
       sleep: async (ms) => {
         expect(ms).toBe(60_000);
-        gaps[gaps.length - 1] = (gaps.at(-1) ?? 0) + ms;
-        slept = true;
-        if (gaps.length >= 4) controller.abort();
+        t += ms;
+        if (++rounds >= 8) controller.abort();
       },
       log: () => {},
     });
     await source.run(controller.signal);
-    expect(gaps.slice(0, 3)).toEqual([60_000, 120_000, 240_000]);
+    // 0・1・3・7 分目 (間は 1・2・4 分)
+    expect(asked).toEqual([0, 1, 3, 7]);
     expect(source.status().lastError).toContain("503");
   });
 
@@ -657,3 +661,185 @@ describe("予備で受けた訂正 (store)", () => {
     expect(store.ingest(incoming("jma-bosai-weather", "c", fix))).toEqual([]);
   });
 });
+
+describe("予備の訂正と気象庁 XML の重なり (store、監査の残り)", () => {
+  const wind = () => {
+    const w = parseBosaiWarnings(MAP, areas).warnings.find(
+      (x) => x.warning.code === "VPWW58",
+    )?.warning;
+    if (!w) throw new Error("無い");
+    return w;
+  };
+
+  test("予備の訂正の後に、同じ時刻の気象庁 XML の訂正でない報が来ても、訂正前に戻さない", () => {
+    const { store } = memoryStore();
+    const w = wind();
+    store.ingest(warningIncoming("jma-weather", { ...w, source: undefined }));
+    const fix = { ...w, infoType: "訂正" as const, headline: "訂正した見出し" };
+    expect(
+      store.ingest(warningIncoming("jma-bosai-weather", fix, "2")),
+    ).toHaveLength(1);
+    expect(
+      store.ingest(
+        warningIncoming("jma-weather", { ...w, source: undefined }, "3"),
+      ),
+    ).toEqual([]);
+    expect(warningOf(store, w.id)?.headline).toBe("訂正した見出し");
+  });
+
+  test("予備の訂正の訂正: 中身が違えば採り、同じなら採らない (警報・注意報)", () => {
+    const { store } = memoryStore();
+    const w = wind();
+    const fix1 = { ...w, infoType: "訂正" as const, headline: "一度目" };
+    const fix2 = { ...w, infoType: "訂正" as const, headline: "二度目" };
+    store.ingest(warningIncoming("jma-bosai-weather", w));
+    expect(
+      store.ingest(warningIncoming("jma-bosai-weather", fix1, "2")),
+    ).toHaveLength(1);
+    expect(
+      store.ingest(warningIncoming("jma-bosai-weather", fix1, "3")),
+    ).toEqual([]);
+    expect(
+      store.ingest(warningIncoming("jma-bosai-weather", fix2, "4")),
+    ).toHaveLength(1);
+    expect(warningOf(store, w.id)?.headline).toBe("二度目");
+  });
+
+  test("予備の訂正の後に同じ中身の気象庁 XML の訂正を受けても、通知の中身は変わらない (鳴らし直さない)", () => {
+    const { store } = memoryStore();
+    const w = wind();
+    const fix = { ...w, infoType: "訂正" as const };
+    const [a] = store.ingest(warningIncoming("jma-bosai-weather", fix));
+    const [b] = store.ingest(
+      warningIncoming("jma-weather", { ...fix, source: undefined }, "2"),
+    );
+    if (a?.type !== "warning" || b?.type !== "warning") throw new Error("無い");
+    const home = homeAt(w.areas[0]?.code ?? "");
+    const at = Date.parse(w.reportedAt) + 60_000;
+    const content = (e: typeof a) =>
+      planAlerts(e, at, prefs({ home }), new Map(), null).map((p) =>
+        contentOf(p.notice),
+      );
+    expect(content(a).length).toBeGreaterThan(0);
+    expect(content(b)).toEqual(content(a));
+  });
+
+  test("気象の報: 予備の訂正の訂正は中身が違えば採り、訂正は同じ時刻の報を置き換える (後の報の行を上書きしない)", () => {
+    const { store } = memoryStore();
+    const info = parseBosaiDenbun(DENBUN);
+    if (!info) throw new Error("無い");
+    const incoming = (
+      source: "jma-bosai-weather" | "jma-weather",
+      key: string,
+      i: typeof info,
+    ) => ({
+      source,
+      key,
+      code: "VPBS50",
+      items: [{ type: "weather" as const, info: i }],
+    });
+    const xml = { ...info, source: undefined };
+    const later = {
+      ...xml,
+      id: `${info.id}-later`,
+      reportedAt: new Date(
+        Date.parse(info.reportedAt) + 30 * 60_000,
+      ).toISOString(),
+      headline: "後の報",
+    };
+    store.ingest(incoming("jma-weather", "a", xml));
+    store.ingest(incoming("jma-weather", "b", later));
+    // 前の報 (後の報ではない) の訂正
+    const fix1 = { ...info, infoType: "訂正" as const, headline: "一度目" };
+    const [got] = store.ingest(incoming("jma-bosai-weather", "c", fix1));
+    expect(got?.type === "weather" && got.data.id).toBe(info.id);
+    expect(store.weatherInfo(later.id)?.headline).toBe("後の報");
+    expect(store.ingest(incoming("jma-bosai-weather", "d", fix1))).toEqual([]);
+    const fix2 = { ...fix1, headline: "二度目" };
+    expect(store.ingest(incoming("jma-bosai-weather", "e", fix2))).toHaveLength(
+      1,
+    );
+    expect(store.weatherInfo(info.id)?.headline).toBe("二度目");
+  });
+});
+
+const at2 = (iso: string) => Date.parse(iso);
+const base2: SourceStatus = {
+  id: "jma-weather",
+  state: "connected",
+  since: "2026-11-28T09:00:00.000Z",
+};
+test("気象防災速報の本文が取り直しても取れない失敗 (403 など) なら、一覧に載っている間は取り直さない", async () => {
+  const { ctx } = sourceContext();
+  let denbun = 0;
+  let rounds = 0;
+  const controller = new AbortController();
+  const source = bosaiWeatherSource(ctx, {
+    primary: () => ({
+      ...base2,
+      state: "retrying",
+      lastSeenAt: "2026-11-26T19:00:00.000Z",
+    }),
+    now: () => at2("2026-11-28T09:20:00Z"),
+    fetch: (async (url: string) => {
+      if (url === BOSAI_AREA) return new Response(AREA);
+      if (url === BOSAI_INFORMATION) return new Response(INFORMATION);
+      if (url === bosaiDenbun(DENBUN_NAME)) {
+        denbun++;
+        return new Response("forbidden", { status: 403 });
+      }
+      return new Response("[]");
+    }) as unknown as typeof fetch,
+    sleep: async () => {
+      if (++rounds >= 3) controller.abort();
+    },
+    log: () => {},
+  });
+  await source.run(controller.signal);
+  expect(denbun).toBe(1);
+});
+
+test("警報の一覧が続けて取れなくても、気象防災速報の一覧は 1 分ごとに取る (一覧ごとに間を空ける)", async () => {
+  const { ctx } = sourceContext();
+  let t = at2("2026-11-28T09:20:00Z");
+  const asked = new Map<string, number>();
+  let rounds = 0;
+  const controller = new AbortController();
+  const source = bosaiWeatherSource(ctx, {
+    primary: () => ({
+      ...base2,
+      state: "retrying",
+      lastSeenAt: "2026-11-28T08:00:00.000Z",
+    }),
+    now: () => t,
+    fetch: (async (url: string) => {
+      asked.set(url, (asked.get(url) ?? 0) + 1);
+      if (url === BOSAI_AREA) return new Response(AREA);
+      if (url === BOSAI_WARNING_MAP)
+        return new Response("busy", { status: 503 });
+      return new Response("[]");
+    }) as unknown as typeof fetch,
+    sleep: async (ms) => {
+      expect(ms).toBe(60_000);
+      t += ms;
+      if (++rounds >= 8) controller.abort();
+    },
+    log: () => {},
+  });
+  await source.run(controller.signal);
+  expect(asked.get(BOSAI_INFORMATION)).toBe(8);
+  // 0・1・3・7 分目 (間は 1・2・4 分)
+  expect(asked.get(BOSAI_WARNING_MAP)).toBe(4);
+});
+
+/** store の手元の警報・注意報 (試験用。store の外からは読まない) */
+function warningOf(
+  store: ReturnType<typeof memoryStore>["store"],
+  id: string,
+): { headline: string } | undefined {
+  return (
+    store as unknown as {
+      warning(id: string): { headline: string } | undefined;
+    }
+  ).warning(id);
+}

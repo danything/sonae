@@ -20,6 +20,7 @@ import {
 } from "#lib/server/sources/jma-bosai-eqvol.ts";
 import { parseJmaXml } from "#lib/server/sources/jma-xml.ts";
 import type { TsunamiReport } from "#lib/server/sources/types.ts";
+import { readTsunami } from "#lib/server/store.ts";
 
 import { fixture, memoryStore, sourceContext } from "./helpers.ts";
 
@@ -69,7 +70,7 @@ describe("読み方", () => {
     const [n] = parseBosaiTsunami(TSUNAMI, "VTSE41");
     if (n?.type !== "tsunami") throw new Error("津波ではありません");
     const r = n.report;
-    expect(r.source).toBe("jma-bosai");
+    expect(r.source).toBe("jma-bosai-eqvol");
     expect(r.code).toBe("VTSE41");
     expect(r.status).toBe("normal");
     expect(r.eventIds).toEqual(["20261106193937"]);
@@ -265,8 +266,8 @@ describe("合わせ方", () => {
     expect(first.provisional).toBe(true);
     const next = mergeTsunami(first, n.report, "t1", now);
     expect(next?.provisional).toBe(false);
-    expect(next?.sources).toEqual(["p2p", "jma-bosai"]);
-    expect(next?.areasSource).toBe("jma-bosai");
+    expect(next?.sources).toEqual(["p2p", "jma-bosai-eqvol"]);
+    expect(next?.areasSource).toBe("jma-bosai-eqvol");
     // bosai の後の P2P は捨てる
     expect(mergeTsunami(next ?? undefined, p2p, "t1", now)).toBeNull();
   });
@@ -647,8 +648,8 @@ test("前の報を気象庁 XML で受けていても、いまの予報区を予
   const first = mergeTsunami(undefined, xml, "t1", now);
   expect(first?.areasSource).toBe("jma");
   const next = mergeTsunami(first ?? undefined, n.report, "t1", now);
-  expect(next?.sources).toEqual(["jma", "jma-bosai"]);
-  expect(next?.areasSource).toBe("jma-bosai");
+  expect(next?.sources).toEqual(["jma", "jma-bosai-eqvol"]);
+  expect(next?.areasSource).toBe("jma-bosai-eqvol");
   // 同じ報を気象庁 XML で受け直したら、XML に戻る
   const back = mergeTsunami(
     next ?? undefined,
@@ -657,4 +658,45 @@ test("前の報を気象庁 XML で受けていても、いまの予報区を予
     now,
   );
   expect(back?.areasSource).toBe("jma");
+});
+
+test("気象庁 XML で受けた同じ報を予備で受け直しても採らない (予備の注記を出さない)", () => {
+  const [n] = parseBosaiTsunami(TSUNAMI, "VTSE41");
+  if (n?.type !== "tsunami") throw new Error("津波ではありません");
+  const now = "2026-11-06T10:55:00.000Z";
+  const xml = mergeTsunami(
+    undefined,
+    { ...n.report, source: "jma" },
+    "t1",
+    now,
+  );
+  expect(xml?.areasSource).toBe("jma");
+  expect(mergeTsunami(xml ?? undefined, n.report, "t1", now)).toBeNull();
+});
+
+test("津波の高さが数でも言葉 (巨大・高い) でもなければ、説明を作らず条件に落とす", () => {
+  expect(tsunamiHeightText("<0.2")).toBe("０．２ｍ未満");
+  expect(tsunamiHeightText("巨大")).toBe("巨大");
+  expect(tsunamiHeightText("NaN")).toBe("");
+  expect(tsunamiHeightText("")).toBe("");
+  const d = JSON.parse(TSUNAMI) as {
+    Body: {
+      Tsunami: { Forecast: { Item: { MaxHeight: Record<string, unknown> }[] } };
+    };
+  };
+  const item = d.Body.Tsunami.Forecast.Item[0];
+  if (!item) throw new Error("無い");
+  item.MaxHeight = { TsunamiHeight: "NaN", Condition: "高い" };
+  const [m] = parseBosaiTsunami(JSON.stringify(d), "VTSE41");
+  if (m?.type !== "tsunami") throw new Error("津波ではありません");
+  const first = m.report.areas?.[0];
+  expect(first?.maxHeightText).toBe("高い");
+});
+
+test("前のデータの津波の源 jma-bosai は、読むときに jma-bosai-eqvol に読み替える", () => {
+  const t = readTsunami(
+    JSON.stringify({ sources: ["jma", "jma-bosai"], areasSource: "jma-bosai" }),
+  );
+  expect(t.sources).toEqual(["jma", "jma-bosai-eqvol"]);
+  expect(t.areasSource).toBe("jma-bosai-eqvol");
 });

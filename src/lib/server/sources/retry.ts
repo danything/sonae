@@ -246,3 +246,40 @@ function once(
     ws.addEventListener("close", finish);
   });
 }
+
+/** 待てば取れそうな HTTP の失敗か (5xx・408・429)。404・410 などは取り直しても取れない */
+export const retryableStatus = (status: number): boolean =>
+  status >= 500 || status === 408 || status === 429;
+
+/** 情報源の本体を読む上限 (開いた後の大きさ)。いちばん大きい気象庁ホームページの警報の全国の一覧が 1.3MB */
+export const MAX_BODY_BYTES = 8 * 1024 * 1024;
+
+/** 本体が上限より大きかった (取り直しても同じなので、取り直さない失敗) */
+export class BodyTooLarge extends Error {
+  constructor(url: string, max = MAX_BODY_BYTES) {
+    super(`${url} の本体が ${max / 1024 / 1024}MB を超えました`);
+  }
+}
+
+/** 本体を上限まで読んで文字にする。超えたら読むのをやめて `BodyTooLarge` */
+export async function readTextCapped(
+  res: Response,
+  url: string,
+  max = MAX_BODY_BYTES,
+): Promise<string> {
+  const reader = res.body?.getReader();
+  if (!reader) return "";
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      reader.cancel().catch(() => {});
+      throw new BodyTooLarge(url, max);
+    }
+    parts.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(parts));
+}

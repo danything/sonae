@@ -28,7 +28,14 @@ import {
   parseJmaXml,
   WANTED_CODES,
 } from "./jma-xml.ts";
-import { sleep, StatusTracker, USER_AGENT } from "./retry.ts";
+import {
+  BodyTooLarge,
+  readTextCapped,
+  retryableStatus,
+  sleep,
+  StatusTracker,
+  USER_AGENT,
+} from "./retry.ts";
 import type { Normalized, Source, SourceContext } from "./types.ts";
 
 const FEED_BASE = "https://www.data.jma.go.jp/developer/xml/feed";
@@ -131,9 +138,16 @@ function feedSource(
       headers,
       signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
     });
-    if (res.status === 304) return true;
-    if (!res.ok) throw new Error(`フィードが ${res.status} を返しました`);
-    if (!(await take(url, parseFeed(await res.text()), signal))) return false;
+    if (res.status === 304) {
+      void res.body?.cancel();
+      return true;
+    }
+    if (!res.ok) {
+      void res.body?.cancel();
+      throw new Error(`フィードが ${res.status} を返しました`);
+    }
+    const text = await readTextCapped(res, url);
+    if (!(await take(url, parseFeed(text), signal))) return false;
     cache.set(url, {
       etag: res.headers.get("etag") ?? undefined,
       modified: res.headers.get("last-modified") ?? undefined,
@@ -166,16 +180,25 @@ function feedSource(
         signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
       });
       if (!res.ok) {
+        void res.body?.cancel();
         log(`${tag} ${e.url} が ${res.status} を返しました`);
         // 取り直すのは、待てば取れそうなもの (5xx・408・429) だけ。404・410 などは取り直しても
         // 取れないので、取り残しに数えない (毎回フィードを読み直さない)。404・410 は覚えて、
         // フィードが変わって読み直しても、載っている間は取得しない
-        if (res.status >= 500 || res.status === 408 || res.status === 429)
-          all = false;
+        if (retryableStatus(res.status)) all = false;
         else if (res.status === 404 || res.status === 410) missing.add(e.id);
         continue;
       }
-      const body = await res.text();
+      let body: string;
+      try {
+        body = await readTextCapped(res, e.url);
+      } catch (err) {
+        // 大きすぎる電文は取り直しても同じなので、404 と同じく載っている間は取得しない
+        if (!(err instanceof BodyTooLarge)) throw err;
+        log(`${tag} ${err.message}`);
+        missing.add(e.id);
+        continue;
+      }
       try {
         ctx.emit({
           source: kind.id,
@@ -216,6 +239,10 @@ function feedSource(
       /** 一緒に取るほかのフィードの、次に取る時刻と、最後に取れた時刻 */
       const moreNext = new Map<string, number>();
       const moreOk = new Map<string, number>();
+      /** 一緒に取るほかのフィードの、長期フィードを最後に取りに行った時刻 */
+      const moreLong = new Map<string, number>();
+      /** 長期フィードの回で電文を取り残したほかのフィード (取り切れるまで、10 分に 1 回長期フィードを読む) */
+      const morePending = new Set<string>();
       /** フィードは取れたが、電文の本体を取り残した回が続いた数 */
       let missed = 0;
       while (!signal.aborted) {
@@ -243,10 +270,21 @@ function feedSource(
             if (now < (moreNext.get(m.feedUrl) ?? 0)) continue;
             moreNext.set(m.feedUrl, now + m.everyMs - 1000);
             try {
-              if (now - (moreOk.get(m.feedUrl) ?? 0) > GAP_MS + m.everyMs)
-                await feed(m.longFeedUrl, signal);
-              await feed(m.feedUrl, signal);
-              moreOk.set(m.feedUrl, Date.now());
+              // 電文を取り残した回は「取れた」に数えない (次の回に長期フィードで埋める。長期フィードは 10 分に 1 回まで)
+              let done = true;
+              if (
+                (now - (moreOk.get(m.feedUrl) ?? 0) > GAP_MS + m.everyMs ||
+                  morePending.has(m.feedUrl)) &&
+                now - (moreLong.get(m.feedUrl) ?? Number.NEGATIVE_INFINITY) >
+                  GAP_MS
+              ) {
+                done = await feed(m.longFeedUrl, signal);
+                moreLong.set(m.feedUrl, now);
+                if (done) morePending.delete(m.feedUrl);
+                else morePending.add(m.feedUrl);
+              }
+              done = (await feed(m.feedUrl, signal)) && done;
+              if (done) moreOk.set(m.feedUrl, Date.now());
             } catch (err) {
               if (signal.aborted) throw err;
               log(`${tag} ${m.feedUrl} を取れませんでした: ${err}`);

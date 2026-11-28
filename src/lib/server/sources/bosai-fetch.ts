@@ -10,7 +10,13 @@
  * - 本体は開いた後で `MAX_BODY_BYTES` (8MB) までしか読まない (形が変わって大きくなっても、メモリを食い尽くさない)
  */
 
-import { USER_AGENT } from "./retry.ts";
+import {
+  BodyTooLarge,
+  MAX_BODY_BYTES,
+  readTextCapped,
+  retryableStatus,
+  USER_AGENT,
+} from "./retry.ts";
 
 export interface BosaiValidators {
   etag?: string;
@@ -84,34 +90,22 @@ export class BosaiFetcher {
   }
 }
 
-/** 取り直してよい失敗か (5xx・408・429・つながらない・時間切れ)。404・410 などは取り直しても取れない */
+/** 取り直してよい失敗か (5xx・408・429・つながらない・時間切れ)。404・410・大きすぎる本文などは取り直しても取れない */
 export function retryable(err: unknown): boolean {
-  if (err instanceof BosaiHttpError)
-    return err.status >= 500 || err.status === 408 || err.status === 429;
+  if (err instanceof BosaiHttpError) return retryableStatus(err.status);
   return true;
 }
 
-/** 本体を読む上限 (開いた後の大きさ)。いちばん大きい警報の全国の一覧が 1.3MB */
-export const MAX_BODY_BYTES = 8 * 1024 * 1024;
+export { MAX_BODY_BYTES };
 
-/** 本体を上限まで読む。超えたら読むのをやめて例外 (取り直さない失敗) */
+/** 本体を上限まで読む。超えたら 413 の `BosaiHttpError` (取り直さない失敗) */
 async function readText(res: Response, url: string): Promise<string> {
-  const reader = res.body?.getReader();
-  if (!reader) return "";
-  const parts: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > MAX_BODY_BYTES) {
-      reader.cancel().catch(() => {});
-      // 取り直しても同じなので、404 と同じく諦める側 (取り直さない失敗) にする
-      const err = new BosaiHttpError(url, 413);
-      err.message = `${url} の本体が ${MAX_BODY_BYTES / 1024 / 1024}MB を超えました`;
-      throw err;
-    }
-    parts.push(value);
+  try {
+    return await readTextCapped(res, url);
+  } catch (e) {
+    if (!(e instanceof BodyTooLarge)) throw e;
+    const err = new BosaiHttpError(url, 413);
+    err.message = e.message;
+    throw err;
   }
-  return new TextDecoder().decode(Buffer.concat(parts));
 }
