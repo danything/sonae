@@ -18,8 +18,8 @@ export interface Livecam {
   id: string;
   /** 地図と吹き出しに出す名前 (「元町港 (伊豆大島)」) */
   name: string;
-  /** 何を映すか (「海岸」「河川」「港」) */
-  kind: "海岸" | "河川" | "港";
+  /** 何を映すか (「河川」「港」) */
+  kind: "河川" | "港";
   /** 配信している機関 (出典に出す) */
   operator: string;
   /** YouTube のチャンネルの ID (`UC` で始まる 24 文字) */
