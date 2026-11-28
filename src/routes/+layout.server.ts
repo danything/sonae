@@ -1,4 +1,5 @@
 import { app, statuses } from "#lib/server/receiver.ts";
+import { relay } from "#lib/server/relay.ts";
 
 import type { LayoutServerLoad } from "./$types";
 
@@ -25,6 +26,7 @@ export const load: LayoutServerLoad = ({ locals }) => {
       weatherInfos: store.weatherInfos(100),
       outlooks: store.outlooks(),
       statuses: statuses(),
+      relay: relay().statuses(),
     },
   };
 };

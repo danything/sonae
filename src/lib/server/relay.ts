@@ -12,14 +12,29 @@
  * - 源ごとに同時に取りに行く数を絞る
  * - User-Agent に sonae と分かる名前を付ける。Cookie・Referer・使う人の IP は送らない
  *
- * 失敗したとき: 古くても覚えたものがあれば返す (`x-relay: stale`)。無ければ 502 (配信元が落ちた・返らない。同じものは 15 秒
- * 取りに行かない) か 503 (`Retry-After` つき。配信元に断られて待っている間)。どちらも覚えず、ブラウザにも覚えさせない。
+ * 失敗したとき: 古くても覚えたものがあれば、源ごとに決めた長さ (`staleFor`) まで返す (`x-relay: stale` と、取った時刻の
+ * `x-relay-fetched-at`)。無ければ 502 (配信元が落ちた・返らない。同じものは 15 秒取りに行かない) か 503 (`Retry-After` つき。
+ * 配信元に断られたか、続けて失敗したので待っている間)。どちらも覚えず、ブラウザにも覚えさせない。
+ * 源ごとの配信元との様子 (`statuses()`) は、受信の状態と地図の凡例に出す (`#lib/relay.ts` の `RelayStatus`)。
  *
  * 中身は変えない (色も値も。docs/design.md の 5 章)。配信元が gzip で返したものは gzip のまま覚えて返す。
- * 覚えるのはプロセスのメモリだけで、上限 (`SONAE_RELAY_CACHE_MB`) を超えたら長く使っていないものから捨てる。
- * 起動し直すと空になる。地名検索のように覚えない源 (`store: false`) は、覚えず、ログにも中身を出さない。
+ * 覚える置き場は差し替えられる (`#lib/server/relay-store.ts`)。いまはプロセスのメモリだけで、上限 (`SONAE_RELAY_CACHE_MB`)
+ * を超えたら、災害時に要る層を後に回して、長く使っていないものから捨てる。起動し直すと空になる。
+ * 地名検索のように覚えない源 (`store: false`) は、覚えず、ログにも中身を出さない。
  */
 
+import {
+  RELAY_FETCHED_HEADER,
+  RELAY_HEADER,
+  type RelaySourceId,
+  type RelayStatus,
+} from "#lib/relay.ts";
+import {
+  MemoryRelayStore,
+  type RelayEntry,
+  type RelayPriority,
+  type RelayStore,
+} from "#lib/server/relay-store.ts";
 import { USER_AGENT } from "#lib/server/sources/retry.ts";
 
 /** 源ごとの決まり */
@@ -34,25 +49,19 @@ export interface RelaySource {
   ttl: number;
   /** 期限の下限 (秒)。配信元の max-age がこれより短くても、これより早くは取り直さない */
   minTtl?: number;
+  /**
+   * 期限が切れた後も、配信元が落ちている・混んでいる間は覚えたものを返してよい長さ (秒。stale-if-error)。
+   * 古いと危ないもの (雨雲) は短く、地図の下地は長く (docs/design.md の 2.14 の源の表)
+   */
+  staleFor: number;
+  /** 上限を超えたときに残す順 (`#lib/server/relay-store.ts` の `RelayPriority`)。道で分けるなら関数 */
+  priority: RelayPriority | ((path: string) => RelayPriority);
   /** 覚えるか (既定は覚える)。覚えない源はブラウザにも覚えさせない */
   store?: boolean;
   /** `Range: bytes=a-b` を通すか (PMTiles)。`"required"` は Range の無い要求を断る (ファイルが大きく、まるごと取らせない) */
   range?: boolean | "required";
   /** 同時に配信元へ取りに行く数 (既定 6) */
   concurrency?: number;
-}
-
-/** 覚えた 1 つ */
-interface Entry {
-  status: number;
-  body: Uint8Array;
-  headers: Record<string, string>;
-  /** これより前は取り直さない (ミリ秒) */
-  freshUntil: number;
-  /** 配信元が落ちたときに返してよい最後 (ミリ秒) */
-  staleUntil: number;
-  etag?: string;
-  lastModified?: string;
 }
 
 /** 返す見出しに写すもの */
@@ -64,8 +73,6 @@ const PASS_HEADERS = [
   "last-modified",
 ] as const;
 
-/** 1 つの大きさの上限。これより大きいものは覚えずに返す */
-const MAX_ENTRY_BYTES = 4 * 1024 * 1024;
 /** Range で 1 回に取ってよい大きさ */
 const MAX_RANGE_BYTES = 4 * 1024 * 1024;
 /** 1 つの応答の大きさの上限。Content-Length がこれより大きければ読まずに断る */
@@ -81,8 +88,11 @@ const RELAY_CSP = "default-src 'none'; sandbox";
 const MISSING_TTL_S = 300;
 /** 落ちた・返らない・5xx のあと、同じものを取り直すまで待つ長さ */
 const FAILED_WAIT_MS = 15_000;
-/** 期限が切れた後も、配信元が落ちていれば返してよい長さ */
-const STALE_FOR_MS = 24 * 3600_000;
+/** 続けてこの回数だけ落ちた・返らない・5xx なら、その源へ取りに行くのをしばらく控える (回路を開く) */
+const BREAK_AFTER = 3;
+/** 回路を開く長さ。最初は 15 秒で、続けて失敗するたびに倍、上限 2 分 */
+const BREAK_FIRST_MS = 15_000;
+const BREAK_MAX_MS = 120_000;
 
 export interface RelayOptions {
   sources: Record<string, RelaySource>;
@@ -92,6 +102,19 @@ export interface RelayOptions {
   maxBytes?: number;
   /** 期限の上限 (秒)。配信元がもっと長い max-age を書いても、これより長くは覚えない */
   maxTtl?: number;
+  /** 置き場 (既定はプロセスのメモリ。`maxBytes` はそのときだけ使う) */
+  store?: RelayStore;
+}
+
+/** 源ごとの、配信元との様子 */
+interface Health {
+  /** 続けて落ちた・返らない・5xx の数 */
+  streak: number;
+  /** 失敗が続き始めた時刻・断られた時刻 */
+  since?: number;
+  lastOkAt?: number;
+  /** いまの失敗の間に、最後に古いものを返した時刻 */
+  staleAt?: number;
 }
 
 /** 環境変数の数 (正の数でなければ既定) */
@@ -197,15 +220,17 @@ export class Relay {
   private readonly sources: Record<string, RelaySource>;
   private readonly fetcher: typeof fetch;
   private readonly now: () => number;
-  private readonly maxBytes: number;
   private readonly maxTtl: number;
-  /** 覚えたもの (挿した順が古い順。使ったら後ろへ回す) */
-  private readonly cache = new Map<string, Entry>();
-  private bytes = 0;
+  private readonly store: RelayStore;
   /** 取りに行っている最中のもの (同じ鍵の要求をまとめる) */
-  private readonly inflight = new Map<string, Promise<Entry>>();
-  /** 源ごとの、断られて待つ終わり (ミリ秒) */
+  private readonly inflight = new Map<string, Promise<RelayEntry>>();
+  /** 源ごとの、断られた・続けて失敗したので待つ終わり (ミリ秒) */
   private readonly blockedUntil = new Map<string, number>();
+  private readonly health = new Map<string, Health>();
+  /** 源の様子が変わったときに呼ぶもの (SSE の `event: relay`) */
+  private readonly listeners = new Set<() => void>();
+  /** 最後に知らせた様子の形 (変わったときだけ知らせる) */
+  private lastShape = "";
   private readonly gates = new Map<string, Gate>();
   /** Range の源で、ファイルごとに最後に見た ETag (変わったら、そのファイルの覚えた分を捨てる)。Range の源のファイルの数だけで、小さい */
   private readonly fileEtags = new Map<string, string>();
@@ -216,13 +241,122 @@ export class Relay {
     this.sources = o.sources;
     this.fetcher = o.fetch ?? fetch;
     this.now = o.now ?? Date.now;
-    this.maxBytes = o.maxBytes ?? 64 * 1024 * 1024;
     this.maxTtl = o.maxTtl ?? 86_400;
+    this.store =
+      o.store ?? new MemoryRelayStore(o.maxBytes ?? 64 * 1024 * 1024, this.now);
   }
 
   /** いま覚えている量 (バイト・数)。試験と見積もり用 */
-  stats(): { bytes: number; entries: number } {
-    return { bytes: this.bytes, entries: this.cache.size };
+  async stats(): Promise<{ bytes: number; entries: number }> {
+    return this.store.stats();
+  }
+
+  /** 源ごとの、配信元との様子 (受信の状態と地図の凡例に出す) */
+  statuses(): RelayStatus[] {
+    const now = this.now();
+    const iso = (t: number) => new Date(t).toISOString();
+    return Object.keys(this.sources).map((id) => {
+      const h = this.health.get(id);
+      const blocked = this.blockedUntil.get(id) ?? 0;
+      const state: RelayStatus["state"] =
+        blocked > now
+          ? "blocked"
+          : h && h.streak > 0
+            ? "failing"
+            : h?.lastOkAt !== undefined
+              ? "ok"
+              : "idle";
+      const trouble = state === "blocked" || state === "failing";
+      const s: RelayStatus = { id: id as RelaySourceId, state };
+      if (trouble && h?.since !== undefined) s.since = iso(h.since);
+      if (h?.lastOkAt !== undefined) s.lastOkAt = iso(h.lastOkAt);
+      if (state === "blocked") s.retryAt = iso(blocked);
+      if (trouble && h?.staleAt !== undefined) s.staleAt = iso(h.staleAt);
+      return s;
+    });
+  }
+
+  /** 源の様子 (状態・始まった時刻・古いものを返したか) が変わったら `fn` を呼ぶ。止める関数を返す */
+  onChange(fn: () => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  private healthOf(id: string): Health {
+    let h = this.health.get(id);
+    if (!h) {
+      h = { streak: 0 };
+      this.health.set(id, h);
+    }
+    return h;
+  }
+
+  /** 配信元が答えた (304・404 も、配信元が答えたので取れたうち) */
+  private markOk(id: string): void {
+    const h = this.healthOf(id);
+    h.streak = 0;
+    h.since = undefined;
+    h.staleAt = undefined;
+    h.lastOkAt = this.now();
+    this.changed();
+  }
+
+  /** 落ちた・返らない・5xx。続けば、その源へ取りに行くのを控える (回路を開く) */
+  private markDown(id: string): void {
+    const now = this.now();
+    const h = this.healthOf(id);
+    h.streak++;
+    h.since ??= now;
+    if (h.streak >= BREAK_AFTER) {
+      const ms = Math.min(
+        BREAK_FIRST_MS * 2 ** (h.streak - BREAK_AFTER),
+        BREAK_MAX_MS,
+      );
+      this.blockedUntil.set(
+        id,
+        Math.max(this.blockedUntil.get(id) ?? 0, now + ms),
+      );
+      console.warn(
+        `[relay] ${id}: 配信元から ${h.streak} 回続けて取れないので、${Math.round(ms / 1000)} 秒は取りに行きません`,
+      );
+    }
+    this.changed();
+  }
+
+  /** 配信元に断られた (429・503) */
+  private markBlocked(id: string, until: number): void {
+    this.blockedUntil.set(id, until);
+    this.healthOf(id).since ??= this.now();
+    this.changed();
+  }
+
+  /** 覚えた古いものを返した */
+  private markStale(id: string): void {
+    const h = this.healthOf(id);
+    const first = h.staleAt === undefined;
+    h.staleAt = this.now();
+    if (first) this.changed();
+  }
+
+  /** 様子の形が前に知らせたものと違えば知らせる */
+  private changed(): void {
+    const shape = JSON.stringify(
+      this.statuses().map((s) => [
+        s.id,
+        s.state,
+        s.since,
+        s.staleAt !== undefined,
+      ]),
+    );
+    if (shape === this.lastShape) return;
+    this.lastShape = shape;
+    for (const fn of this.listeners) {
+      try {
+        fn();
+      } catch (e) {
+        console.warn(`[relay] 様子を知らせられませんでした: ${e}`);
+      }
+    }
   }
 
   /** `/relay/<source>/<path>?<search>` への GET に答える */
@@ -263,29 +397,33 @@ export class Relay {
     const key = `${url}|${range ?? ""}`;
     const now = this.now();
 
-    const cached = store ? this.cache.get(key) : undefined;
-    if (cached && cached.freshUntil > now) {
-      this.touch(key, cached);
+    const cached = store ? await this.store.get(key) : undefined;
+    if (cached && cached.freshUntil > now)
       return this.respond(cached, reqHeaders, "hit", store);
-    }
+    /** 配信元から取れないときに、まだ返してよい古いものがあれば返す */
+    const stale = (t: number) => {
+      if (!cached || cached.staleUntil <= t) return undefined;
+      this.markStale(sourceId);
+      return this.respond(cached, reqHeaders, "stale", store);
+    };
 
     const failed = this.failedUntil.get(key) ?? 0;
-    if (failed > now) {
-      if (cached && cached.staleUntil > now)
-        return this.respond(cached, reqHeaders, "stale", store);
-      return noStore(502, "配信元から取れませんでした", {
-        "retry-after": String(Math.ceil((failed - now) / 1000)),
-      });
-    }
+    if (failed > now)
+      return (
+        stale(now) ??
+        noStore(502, "配信元から取れませんでした", {
+          "retry-after": String(Math.ceil((failed - now) / 1000)),
+        })
+      );
 
     const blocked = this.blockedUntil.get(sourceId) ?? 0;
-    if (blocked > now) {
-      if (cached && cached.staleUntil > now)
-        return this.respond(cached, reqHeaders, "stale", store);
-      return noStore(503, "配信元に断られたので、待っています", {
-        "retry-after": String(Math.ceil((blocked - now) / 1000)),
-      });
-    }
+    if (blocked > now)
+      return (
+        stale(now) ??
+        noStore(503, "配信元が混んでいるので、待っています", {
+          "retry-after": String(Math.ceil((blocked - now) / 1000)),
+        })
+      );
 
     let p = store ? this.inflight.get(key) : undefined;
     if (!p) {
@@ -297,22 +435,23 @@ export class Relay {
         void p.finally(() => this.inflight.delete(key)).catch(() => {});
       }
     }
+    let entry: RelayEntry;
     try {
-      const entry = await p;
-      this.failedUntil.delete(key);
-      if (store) this.put(key, entry, url, source);
-      return this.respond(entry, reqHeaders, "miss", store);
+      entry = await p;
     } catch (e) {
       const t = this.now();
       if (!(e instanceof Blocked)) this.markFailed(key, t);
-      if (cached && cached.staleUntil > t)
-        return this.respond(cached, reqHeaders, "stale", store);
+      const old = stale(t);
+      if (old) return old;
       if (e instanceof Blocked)
-        return noStore(503, "配信元に断られたので、待っています", {
+        return noStore(503, "配信元が混んでいるので、待っています", {
           "retry-after": String(e.seconds),
         });
       return noStore(502, "配信元から取れませんでした");
     }
+    this.failedUntil.delete(key);
+    if (store) await this.put(key, entry, url, source, path);
+    return this.respond(entry, reqHeaders, "miss", store);
   }
 
   /** 落ちた・返らない・5xx のあと、その鍵は FAILED_WAIT_MS の間は取りに行かない */
@@ -335,8 +474,8 @@ export class Relay {
     source: RelaySource,
     url: string,
     range: string | undefined,
-    cached: Entry | undefined,
-  ): Promise<Entry> {
+    cached: RelayEntry | undefined,
+  ): Promise<RelayEntry> {
     const headers: Record<string, string> = {
       "user-agent": USER_AGENT,
       "accept-encoding": "gzip",
@@ -358,31 +497,36 @@ export class Relay {
       console.warn(
         `[relay] ${sourceId}: 配信元につながりません (${e instanceof Error ? e.name : "error"})`,
       );
+      this.markDown(sourceId);
       throw e;
     }
     const now = this.now();
     if (res.status === 429 || res.status === 503) {
       const s = retryAfterSeconds(res.headers.get("retry-after"), now);
-      this.blockedUntil.set(sourceId, now + s * 1000);
+      this.markBlocked(sourceId, now + s * 1000);
       console.warn(
         `[relay] ${sourceId}: 配信元が ${res.status} を返したので、${s} 秒は取りに行きません`,
       );
       void res.body?.cancel();
       throw new Blocked(s);
     }
+    if (res.status >= 500) {
+      void res.body?.cancel();
+      console.warn(`[relay] ${sourceId}: 配信元が ${res.status} を返しました`);
+      this.markDown(sourceId);
+      throw new Error(`upstream ${res.status}`);
+    }
+    this.markOk(sourceId);
     const ttl = this.ttlOf(source, res);
+    const staleMs = source.staleFor * 1000;
     if (res.status === 304 && cached) {
       void res.body?.cancel();
       return {
         ...cached,
         freshUntil: now + ttl * 1000,
-        staleUntil: now + ttl * 1000 + STALE_FOR_MS,
+        staleUntil: now + ttl * 1000 + staleMs,
+        fetchedAt: now,
       };
-    }
-    if (res.status >= 500) {
-      void res.body?.cancel();
-      console.warn(`[relay] ${sourceId}: 配信元が ${res.status} を返しました`);
-      throw new Error(`upstream ${res.status}`);
     }
     // 大きすぎるものは断る (中継するのはタイルや表で、ふつうは数百 KB まで)。Content-Length が無くても、読みながら数えて切る
     const body = await readCapped(res, MAX_BODY_BYTES);
@@ -404,7 +548,8 @@ export class Relay {
       body,
       headers: out,
       freshUntil: now + keep * 1000,
-      staleUntil: ok ? now + keep * 1000 + STALE_FOR_MS : now + keep * 1000,
+      staleUntil: ok ? now + keep * 1000 + staleMs : now + keep * 1000,
+      fetchedAt: now,
       etag: ok ? (out.etag ?? undefined) : undefined,
       lastModified: ok ? (out["last-modified"] ?? undefined) : undefined,
     };
@@ -422,50 +567,39 @@ export class Relay {
     return Math.min(t, this.maxTtl);
   }
 
-  private put(key: string, e: Entry, url: string, source: RelaySource): void {
+  private async put(
+    key: string,
+    e: RelayEntry,
+    url: string,
+    source: RelaySource,
+    path: string,
+  ): Promise<void> {
     if (e.freshUntil <= this.now() && e.status !== 200 && e.status !== 206)
-      return this.drop(key);
-    if (e.body.byteLength > MAX_ENTRY_BYTES) return this.drop(key);
+      return this.store.delete(key);
     if (source.range && e.etag) {
       // ファイルが差し替わったら、前の版の範囲を混ぜて返さない (PMTiles は ETag が揃わないと読み直す)
       const before = this.fileEtags.get(url);
-      if (before !== undefined && before !== e.etag) {
-        for (const k of this.cache.keys())
-          if (k.startsWith(`${url}|`)) this.drop(k);
-      }
+      if (before !== undefined && before !== e.etag)
+        await this.store.deletePrefix(`${url}|`);
       this.fileEtags.set(url, e.etag);
     }
-    this.drop(key);
-    this.cache.set(key, e);
-    this.bytes += e.body.byteLength;
-    for (const [k, v] of this.cache) {
-      if (this.bytes <= this.maxBytes) break;
-      this.cache.delete(k);
-      this.bytes -= v.body.byteLength;
-    }
-  }
-
-  private drop(key: string): void {
-    const old = this.cache.get(key);
-    if (!old) return;
-    this.cache.delete(key);
-    this.bytes -= old.body.byteLength;
-  }
-
-  private touch(key: string, e: Entry): void {
-    this.cache.delete(key);
-    this.cache.set(key, e);
+    const priority =
+      typeof source.priority === "function"
+        ? source.priority(path)
+        : source.priority;
+    await this.store.set(key, e, priority);
   }
 
   private respond(
-    e: Entry,
+    e: RelayEntry,
     reqHeaders: Headers,
     how: "hit" | "miss" | "stale",
     store: boolean,
   ): Response {
     const now = this.now();
     const headers = new Headers(e.headers);
-    headers.set("x-relay", how);
+    headers.set(RELAY_HEADER, how);
+    headers.set(RELAY_FETCHED_HEADER, new Date(e.fetchedAt).toISOString());
     // 配信元の中身を sonae と同じオリジンで返すので、HTML (火山カメラのページ) が開かれても script を動かさず、
     // 型を推し量らせない (どの源でも、画面は fetch か <img> で読むだけなので困らない)
     headers.set("x-content-type-options", "nosniff");
@@ -536,6 +670,10 @@ export const RELAY_SOURCES = {
     ),
     ttl: 60,
     minTtl: 30,
+    // 古い雨雲・危険度はいまのものと取り違えると危ない。画面はいつの観測かを出し、古ければそう書くが、キキクルの予測の
+    // いちばん先 (洪水の 3 時間) を過ぎたものは、もう何も言えないので返さない
+    staleFor: 3 * 3600,
+    priority: 2,
   },
   // 地理院タイル: 写真・活断層図・指定緊急避難場所と指定避難所 (docs/map.md)。max-age は無い。
   // 一覧は「リアルタイムに読み込んで利用する場合」は出典だけで申請が要らないとする。見る人の要求のたびに取り、
@@ -544,12 +682,19 @@ export const RELAY_SOURCES = {
     upstream: "https://cyberjapandata.gsi.go.jp/xyz/",
     path: /^(?:seamlessphoto\/\d{1,2}\/\d{1,6}\/\d{1,6}\.jpg|afm\/\d{1,2}\/\d{1,6}\/\d{1,6}\.png|(?:skhb0[1-8]|sih|sfh)\/10\/\d{1,4}\/\d{1,4}\.geojson)$/,
     ttl: 86_400,
+    // 配信元が落ちている間も、返すのは期限の後 1 日まで (前からの読みのまま。「リアルタイムに読み込んで」の範囲に収める)
+    staleFor: 86_400,
+    // 避難場所は災害時に要るので残し、写真と活断層図は先に捨てる
+    priority: (path) => (/^(?:skhb|sih|sfh)/.test(path) ? 1 : 0),
   },
   // 地理院地図Vector の PMTiles (約 16.9GB の 1 ファイル)。範囲で読むだけにし、まるごとは取らせない
   "gsi-vector": {
     upstream: "https://cyberjapandata.gsi.go.jp/xyz/",
     path: /^optimal_bvmap-v1\/optimal_bvmap-v1\.pmtiles$/,
     ttl: 86_400,
+    // 下地。地理院タイルと同じく、落ちている間も 1 日まで
+    staleFor: 86_400,
+    priority: 1,
     range: "required",
   },
   // 重ねるハザードマップのタイル (max-age 3 日) と、公式の凡例の画像。オープンデータは「URL からリアルタイムに
@@ -558,11 +703,15 @@ export const RELAY_SOURCES = {
     upstream: "https://disaportaldata.gsi.go.jp/raster/",
     path: /^[0-9a-z_]{1,64}\/\d{1,2}\/\d{1,6}\/\d{1,6}\.png$/,
     ttl: 86_400,
+    staleFor: 86_400,
+    priority: 1,
   },
   "disaportal-legend": {
     upstream: "https://disaportal.gsi.go.jp/hazardmap/copyright/img/",
     path: /^[0-9a-z_]{1,64}\.png$/,
     ttl: 86_400,
+    staleFor: 86_400,
+    priority: 1,
   },
   // 気象庁ホームページの火山の監視カメラ。カメラのページ (`volcam.php?VC=<5 桁>`。いちばん新しい画像の名前を読む) と、
   // 撮った時刻の名前の画像。どちらも max-age 600 (docs/map.md の「火山の監視カメラ」)
@@ -576,6 +725,9 @@ export const RELAY_SOURCES = {
       return keys.length === 1 && /^\d{5}$/.test(vc) ? `VC=${vc}` : null;
     },
     ttl: 600,
+    // 画像の名前が撮った時刻なので、画面は何時の画像かを出せる。噴火の様子は時間で変わるので、6 時間まで
+    staleFor: 6 * 3600,
+    priority: 2,
   },
   // 国土地理院の地名検索 API (住所検索)。打った文字を運ぶので、覚えず (`store: false`)、ブラウザにも覚えさせない。
   // 通すのは `q` (100 文字まで) だけ。中継はどの要求もログに道や問い合わせを出さない (docs/map.md の「場所の検索」)
@@ -590,6 +742,8 @@ export const RELAY_SOURCES = {
     },
     ttl: 0,
     store: false,
+    staleFor: 0,
+    priority: 0,
     concurrency: 2,
   },
   // NASA GIBS の Blue Marble (陰影つき。max-age 3 日)。引いたときの下地
@@ -598,6 +752,9 @@ export const RELAY_SOURCES = {
       "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief/default/GoogleMapsCompatible_Level8/",
     path: /^\d\/\d{1,3}\/\d{1,3}\.jpeg$/,
     ttl: 86_400,
+    // 絵が変わらない下地で、使い方の制限も無い (CC0) ので長く。あると助かる層なので、上限を超えたら先に捨てる
+    staleFor: 7 * 86_400,
+    priority: 0,
   },
 } satisfies Record<string, RelaySource>;
 

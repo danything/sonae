@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 
+import { staleFetchedAt } from "#lib/relay.ts";
+import type { RelayEntry, RelayStore } from "#lib/server/relay-store.ts";
 import {
   maxAgeOf,
   readCapped,
@@ -33,6 +35,8 @@ const SRC = {
     upstream: "https://example.test/data/",
     path: /^[a-z]+\/\d+\.png$/,
     ttl: 60,
+    staleFor: 86_400,
+    priority: 0,
   },
   q: {
     upstream: "https://example.test/search/",
@@ -45,12 +49,16 @@ const SRC = {
     },
     ttl: 0,
     store: false,
+    staleFor: 0,
+    priority: 0,
   },
   r: {
     upstream: "https://example.test/file/",
     path: /^a\.pmtiles$/,
     ttl: 3600,
     range: true,
+    staleFor: 86_400,
+    priority: 0,
   },
 } satisfies Record<string, RelaySource>;
 
@@ -148,7 +156,12 @@ test("CDN が覚えていた分 (Age) は期限から引き、下限より短く
 
 test("期限は上限 (maxTtl) より長くしない", async () => {
   const up = upstream(() => png("a", { "cache-control": "max-age=259200" }));
-  const r = new Relay({ sources: SRC, fetch: up.fetch, maxTtl: 86_400 });
+  const r = new Relay({
+    sources: SRC,
+    fetch: up.fetch,
+    now: clock().now,
+    maxTtl: 86_400,
+  });
   const a = await r.handle("t", "a/5.png", none, h());
   expect(a.headers.get("cache-control")).toBe("private, max-age=86400");
 });
@@ -188,7 +201,7 @@ test("配信元が落ちていて覚えたものも無ければ 502 (覚えな�
   const a = await r.handle("t", "a/7.png", none, h());
   expect(a.status).toBe(502);
   expect(a.headers.get("cache-control")).toBe("no-store");
-  expect(r.stats().entries).toBe(0);
+  expect((await r.stats()).entries).toBe(0);
 });
 
 test("404 は短く覚え、500 は覚えないが、15 秒は取り直しに行かない", async () => {
@@ -211,7 +224,7 @@ test("404 は短く覚え、500 は覚えないが、15 秒は取り直しに行
   c.add(16_000);
   await r.handle("t", "c/2.png", none, h());
   expect(up.calls).toHaveLength(3);
-  expect(r.stats().entries).toBe(1);
+  expect((await r.stats()).entries).toBe(1);
 });
 
 test("壊れた gzip は、gzip を受けない要求に 502 で返す", async () => {
@@ -301,7 +314,7 @@ test("覚えない源は、覚えずブラウザにも覚えさせない", async
   expect(up.calls.at(0)?.url).toBe(
     `https://example.test/search/find?q=${encodeURIComponent("厚木")}`,
   );
-  expect(r.stats().entries).toBe(0);
+  expect((await r.stats()).entries).toBe(0);
 });
 
 test("Range は範囲ごとに覚え、ファイルの ETag が変わったら前の版の範囲を捨てる", async () => {
@@ -368,7 +381,7 @@ test("上限を超えたら、長く使っていないものから捨てる", as
   await r.handle("t", "a/2.png", none, h());
   await r.handle("t", "a/1.png", none, h()); // 1 を使ったので、2 が古い
   await r.handle("t", "a/3.png", none, h());
-  expect(r.stats()).toEqual({ bytes: 20, entries: 2 });
+  expect(await r.stats()).toEqual({ bytes: 20, entries: 2 });
   await r.handle("t", "a/1.png", none, h());
   expect(up.calls).toHaveLength(3);
   await r.handle("t", "a/2.png", none, h());
@@ -458,7 +471,7 @@ test("地名検索は q だけを通し、覚えない", async () => {
   expect(up.calls.at(0)?.url).toBe(
     `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent("厚木市")}`,
   );
-  expect(r.stats().entries).toBe(0);
+  expect((await r.stats()).entries).toBe(0);
   for (const s of ["", "q=", "q=a&x=1", `q=${"あ".repeat(101)}`])
     expect(
       (await r.handle("gsi-search", "AddressSearch", q(s), h())).status,
@@ -492,4 +505,230 @@ test("気象庁のタイルの道", () => {
   ).toBe(true);
   expect(p.test("other/x.png")).toBe(false);
   expect(p.test("nowc/x.html")).toBe(false);
+});
+
+// ---- 配信元が落ちた・混んだとき (docs/design.md の 2.14 の「失敗したとき」) ----
+
+/** 源の様子 (試験の源の名前は RelaySourceId に無いので、文字で引く) */
+const stat = (r: Relay, id: string) =>
+  r.statuses().find((s) => (s.id as string) === id);
+
+/** 1 回目は取れ、`down()` の後は `fail` で失敗する配信元 */
+function flaky(fail: () => Response) {
+  let down = false;
+  const up = upstream(() =>
+    down ? fail() : png("old", { "cache-control": "max-age=60" }),
+  );
+  return { ...up, down: () => (down = true), up: () => (down = false) };
+}
+
+test("配信元が 5xx を返す間は、古いものに取った時刻を付けて返し、源の様子を「取れない」にする", async () => {
+  const up = flaky(() => new Response("err", { status: 500 }));
+  const c = clock();
+  const r = new Relay({ sources: SRC, fetch: up.fetch, now: c.now });
+  await r.handle("t", "a/1.png", none, h());
+  const fetchedAt = new Date(c.now()).toISOString();
+  expect(stat(r, "t")?.state).toBe("ok");
+  up.down();
+  c.add(61_000);
+  const a = await r.handle("t", "a/1.png", none, h());
+  expect(a.status).toBe(200);
+  expect(a.headers.get("x-relay")).toBe("stale");
+  expect(a.headers.get("x-relay-fetched-at")).toBe(fetchedAt);
+  expect(staleFetchedAt(a)).toBe(Date.parse(fetchedAt));
+  expect(a.headers.get("cache-control")).toBe("no-store");
+  expect(await a.text()).toBe("old");
+  const s = stat(r, "t");
+  expect(s?.state).toBe("failing");
+  expect(s?.since).toBe(new Date(c.now()).toISOString());
+  expect(s?.lastOkAt).toBe(fetchedAt);
+  expect(s?.staleAt).toBeDefined();
+  // 戻ったら「取れる」に戻し、古いものを返した印も消す
+  up.up();
+  c.add(16_000);
+  const b = await r.handle("t", "a/1.png", none, h());
+  expect(b.headers.get("x-relay")).toBe("miss");
+  expect(staleFetchedAt(b)).toBeUndefined();
+  const back = stat(r, "t");
+  expect(back?.state).toBe("ok");
+  expect(back?.staleAt).toBeUndefined();
+  expect(back?.since).toBeUndefined();
+});
+
+test("時間切れ (返らない) も落ちたのと同じに、古いものを返す", async () => {
+  const up = flaky(() => {
+    throw new DOMException("timed out", "TimeoutError");
+  });
+  const c = clock();
+  const r = new Relay({ sources: SRC, fetch: up.fetch, now: c.now });
+  await r.handle("t", "a/2.png", none, h());
+  up.down();
+  c.add(61_000);
+  const a = await r.handle("t", "a/2.png", none, h());
+  expect(a.headers.get("x-relay")).toBe("stale");
+  expect(stat(r, "t")?.state).toBe("failing");
+  // 覚えていないものは 502
+  expect((await r.handle("t", "b/2.png", none, h())).status).toBe(502);
+});
+
+test("古いものを返すのは、源ごとに決めた長さ (staleFor) まで", async () => {
+  const up = flaky(() => new Response("err", { status: 502 }));
+  const c = clock();
+  const r = new Relay({
+    sources: { t: { ...SRC.t, staleFor: 600 } },
+    fetch: up.fetch,
+    now: c.now,
+  });
+  await r.handle("t", "a/3.png", none, h());
+  up.down();
+  // 期限 60 秒 + 古くても返す 600 秒の中
+  c.add(60_000 + 599_000);
+  expect((await r.handle("t", "a/3.png", none, h())).status).toBe(200);
+  // 過ぎたら返さない
+  c.add(16_000);
+  expect((await r.handle("t", "a/3.png", none, h())).status).toBe(502);
+});
+
+test("続けて 3 回取れなければ、その源へはしばらく取りに行かない (ほかの道も)。待つ長さは倍々", async () => {
+  const up = upstream(() => new Response("err", { status: 504 }));
+  const c = clock();
+  const r = new Relay({ sources: SRC, fetch: up.fetch, now: c.now });
+  for (const p of ["c/1.png", "c/2.png", "c/3.png"])
+    expect((await r.handle("t", p, none, h())).status).toBe(502);
+  expect(up.calls).toHaveLength(3);
+  // 4 つ目の道は配信元へ行かずに 503 と Retry-After
+  const d = await r.handle("t", "c/4.png", none, h());
+  expect(d.status).toBe(503);
+  expect(d.headers.get("retry-after")).toBe("15");
+  expect(up.calls).toHaveLength(3);
+  const s = stat(r, "t");
+  expect(s?.state).toBe("blocked");
+  expect(s?.retryAt).toBe(new Date(c.now() + 15_000).toISOString());
+  // 15 秒たったら 1 回試し、また落ちていれば 30 秒待つ
+  c.add(15_001);
+  expect((await r.handle("t", "c/5.png", none, h())).status).toBe(502);
+  expect(up.calls).toHaveLength(4);
+  const e = await r.handle("t", "c/6.png", none, h());
+  expect(e.headers.get("retry-after")).toBe("30");
+  expect(up.calls).toHaveLength(4);
+  // ほかの源には響かない
+  expect(stat(r, "r")?.state).toBe("idle");
+});
+
+test("429 の間は源の様子を「控えている」にし、次に取りに行く時刻を出す", async () => {
+  const up = upstream(
+    () =>
+      new Response("busy", { status: 429, headers: { "retry-after": "90" } }),
+  );
+  const c = clock();
+  const r = new Relay({ sources: SRC, fetch: up.fetch, now: c.now });
+  expect((await r.handle("t", "a/9.png", none, h())).status).toBe(503);
+  const s = stat(r, "t");
+  expect(s?.state).toBe("blocked");
+  expect(s?.retryAt).toBe(new Date(c.now() + 90_000).toISOString());
+  expect(s?.since).toBe(new Date(c.now()).toISOString());
+});
+
+test("源の様子が変わったときだけ知らせる", async () => {
+  const up = flaky(() => new Response("err", { status: 500 }));
+  const c = clock();
+  const r = new Relay({ sources: SRC, fetch: up.fetch, now: c.now });
+  let n = 0;
+  r.onChange(() => n++);
+  await r.handle("t", "a/1.png", none, h()); // まだ → 取れる
+  c.add(61_000);
+  await r.handle("t", "a/1.png", none, h()); // 取れるのまま
+  expect(n).toBe(1);
+  up.down();
+  c.add(61_000);
+  // 取れない、と、古いものを返した、の 2 つ
+  await r.handle("t", "a/1.png", none, h());
+  expect(n).toBe(3);
+  await r.handle("t", "a/1.png", none, h()); // 15 秒の間。変わらない
+  expect(n).toBe(3);
+});
+
+test("上限を超えたら、使った時刻に段の猶予を足して古いものから捨てる (災害時に要る層を後に回す)", async () => {
+  const up = upstream(() => png("0123456789"));
+  const c = clock();
+  const sources = {
+    low: { ...SRC.t, upstream: "https://low.test/", priority: 0 as const },
+    high: { ...SRC.t, upstream: "https://high.test/", priority: 2 as const },
+  };
+  const r = new Relay({ sources, fetch: up.fetch, now: c.now, maxBytes: 25 });
+  await r.handle("high", "a/1.png", none, h());
+  c.add(1000);
+  await r.handle("low", "a/1.png", none, h());
+  c.add(1000);
+  // 高い層は先に使っていても残り、低い層が捨てられる
+  await r.handle("low", "a/2.png", none, h());
+  expect(await r.stats()).toEqual({ bytes: 20, entries: 2 });
+  await r.handle("high", "a/1.png", none, h());
+  expect(up.calls).toHaveLength(3);
+  // 猶予 (2 時間) を過ぎるほど使っていなければ、高い層でも先に捨てる
+  c.add(3 * 3600_000);
+  await r.handle("low", "a/3.png", none, h());
+  c.add(1000);
+  await r.handle("low", "a/4.png", none, h());
+  await r.handle("high", "a/1.png", none, h());
+  expect(
+    up.calls.filter((x) => x.url === "https://high.test/a/1.png"),
+  ).toHaveLength(2);
+});
+
+test("返せなくなったもの (古くても返してよい長さを過ぎたもの) から先に捨てる", async () => {
+  const up = upstream(() =>
+    png("0123456789", { "cache-control": "max-age=60" }),
+  );
+  const c = clock();
+  const sources = {
+    short: {
+      ...SRC.t,
+      upstream: "https://short.test/",
+      staleFor: 60,
+      priority: 2 as const,
+    },
+    long: {
+      ...SRC.t,
+      upstream: "https://long.test/",
+      staleFor: 86_400,
+      priority: 0 as const,
+    },
+  };
+  const r = new Relay({ sources, fetch: up.fetch, now: c.now, maxBytes: 25 });
+  await r.handle("long", "a/1.png", none, h());
+  await r.handle("short", "a/1.png", none, h());
+  c.add(121_000);
+  await r.handle("long", "a/2.png", none, h());
+  // short は返せる長さを過ぎたので捨て、long の 2 つが残る
+  expect(await r.stats()).toEqual({ bytes: 20, entries: 2 });
+});
+
+test("置き場は差し替えられる (外の置き場のように Promise を返すものでも)", async () => {
+  const m = new Map<string, RelayEntry>();
+  const store: RelayStore = {
+    get: async (k) => m.get(k),
+    set: async (k, e) => void m.set(k, e),
+    delete: async (k) => void m.delete(k),
+    deletePrefix: async (p) => {
+      for (const k of m.keys()) if (k.startsWith(p)) m.delete(k);
+    },
+    stats: async () => ({ bytes: 0, entries: m.size }),
+  };
+  const up = upstream(() => png("x", { "cache-control": "max-age=60" }));
+  const r = new Relay({ sources: SRC, fetch: up.fetch, store });
+  await r.handle("t", "a/1.png", none, h());
+  const b = await r.handle("t", "a/1.png", none, h());
+  expect(b.headers.get("x-relay")).toBe("hit");
+  expect(m.size).toBe(1);
+  expect(up.calls).toHaveLength(1);
+});
+
+test("源の表: 古いと危ない気象庁のタイルは短く、地図の下地は長く。避難場所は写真より後まで残す", () => {
+  const s = RELAY_SOURCES;
+  expect(s.jmatile.staleFor).toBeLessThan(s.gsi.staleFor);
+  expect(s.gibs.staleFor).toBeGreaterThan(s.gsi.staleFor);
+  expect(s.jmatile.priority).toBe(2);
+  expect(s.gsi.priority("skhb04/10/908/403.geojson")).toBe(1);
+  expect(s.gsi.priority("seamlessphoto/14/14540/6451.jpg")).toBe(0);
 });
