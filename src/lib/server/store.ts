@@ -6,8 +6,10 @@
 import type { Database } from "bun:sqlite";
 import { gzipSync } from "node:zlib";
 
+import { type TrackPoint, trackPoints } from "#lib/map/typhoon.ts";
 import type {
   Advisory,
+  AshWindow,
   Eew,
   EventType,
   ForeignQuake,
@@ -20,6 +22,7 @@ import type {
   Tsunami,
   TyphoonProbability,
   Volcano,
+  VolcanoAshMap,
   WarningOutlook,
   WeatherInfo,
   WeatherWarning,
@@ -188,7 +191,7 @@ export class Store {
       case "foreign":
         return this.applyForeign(item.report, now);
       case "volcano":
-        return this.applyVolcano(item.volcano, now);
+        return this.applyVolcano(item.volcano, now, item.ash);
       case "longperiod": {
         const r = item.report;
         const id = eewKey(r.eventId, r.status);
@@ -322,6 +325,22 @@ export class Store {
            reported_at = excluded.reported_at, data = excluded.data`,
       )
       .run(p.series, p.status, p.reportedAt, JSON.stringify(p));
+  }
+
+  /**
+   * 1 つの台風のこれまでの経路 (受けた台風解析・予報情報の実況の中心。時刻の順。docs/map.md の「台風」)。
+   * 台風は長くても数週間なので、新しい 500 通までを見る
+   */
+  typhoonTrack(series: string): TrackPoint[] {
+    return trackPoints(
+      this.db
+        .query<{ data: string }, [string]>(
+          `SELECT data FROM weather_infos WHERE series = ? AND kind = 'typhoon' AND status = 'normal'
+           ORDER BY datetime(reported_at) DESC LIMIT 500`,
+        )
+        .all(series)
+        .map((r) => JSON.parse(r.data) as WeatherInfo),
+    );
   }
 
   /** 台風 (series) のいちばん新しい暴風域に入る確率 */
@@ -539,6 +558,7 @@ export class Store {
   private applyVolcano(
     v: Omit<Volcano, "updatedAt" | "cancelled">,
     now: string,
+    ash?: AshWindow[],
   ): SonaeEvent[] {
     const series = `${v.code}-${v.eventId}`;
     let next: Volcano = {
@@ -569,7 +589,59 @@ export class Store {
            data = excluded.data`,
       )
       .run(next.id, series, next.status, next.reportedAt, JSON.stringify(next));
+    if (ash && ash.length > 0 && !next.cancelled)
+      this.putAsh(next, series, ash);
     return [this.event("volcano", next.id, next)];
+  }
+
+  /**
+   * 降灰予報の範囲を、報の id ごとに置く (一覧の報には持たせない。地図で選んだときに `volcanoAsh` で読む)。
+   * 定時 (VFVO53) は火山ごとに 3 時間おきに出て 1 通 20 KB ほどあるので、同じ series のいちばん新しい報だけを残す
+   */
+  private putAsh(v: Volcano, series: string, ash: AshWindow[]): void {
+    // 定時の古い報があとから届いたとき (取りこぼしの取り直しなど) は置かない
+    if (
+      v.code === "VFVO53" &&
+      this.db
+        .query(
+          `SELECT 1 FROM volcano_ash WHERE series = ? AND id <> ?
+             AND datetime(reported_at) > datetime(?)`,
+        )
+        .get(series, v.id, v.reportedAt) !== null
+    )
+      return;
+    this.db
+      .query(
+        `INSERT INTO volcano_ash (id, series, reported_at, data) VALUES (?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET reported_at = excluded.reported_at,
+           data = excluded.data`,
+      )
+      .run(v.id, series, v.reportedAt, JSON.stringify(ash));
+    if (v.code === "VFVO53")
+      this.db
+        .query(
+          `DELETE FROM volcano_ash WHERE series = ? AND id <> ?
+             AND datetime(reported_at) <= datetime(?)`,
+        )
+        .run(series, v.id, v.reportedAt);
+  }
+
+  /** 降灰予報の範囲 (地図に描く)。受けていない・範囲の無い・取り消された報は undefined */
+  volcanoAsh(id: string): VolcanoAshMap | undefined {
+    const v = this.volcano(id);
+    if (!v || v.cancelled) return undefined;
+    const row = this.db
+      .query<{ data: string }, [string]>(
+        "SELECT data FROM volcano_ash WHERE id = ?",
+      )
+      .get(id);
+    if (!row) return undefined;
+    return {
+      id,
+      code: v.code,
+      reportedAt: v.reportedAt,
+      windows: JSON.parse(row.data) as AshWindow[],
+    };
   }
 
   private event(type: EventType, key: string, data: unknown): SonaeEvent {
@@ -849,6 +921,12 @@ export class Store {
     this.db
       .query(
         "DELETE FROM typhoon_probs WHERE datetime(reported_at) < datetime(?)",
+      )
+      .run(before);
+    // 降灰予報の範囲も同じ期間で捨てる (有効期限は長くても 1 日ほど)
+    this.db
+      .query(
+        "DELETE FROM volcano_ash WHERE datetime(reported_at) < datetime(?)",
       )
       .run(before);
     return this.db

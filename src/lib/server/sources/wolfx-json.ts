@@ -1,9 +1,9 @@
 /**
  * Wolfx Open API の気象庁の緊急地震速報 (jma_eew) と地震情報の一覧 (jma_eqlist、下) を読む。
  *
- * 仕様: Wolfx Open API Usage Guidelines (https://wolfx.jp/en/docs/open-api/) の
- * 「JMA Earthquake Early Warning JSON API」の項目の一覧と、WebSocket の説明
- * (https://wolfx.jp/en/docs/websocket/)。
+ * 仕様: Wolfx Open API 利用ガイド (https://wolfx.jp/docs/open-api) の「気象庁 緊急地震速報 JSON API」の
+ * 項目の一覧と公式の応答の例 (https://wolfx.jp/examples/jma_eew/)、WebSocket の説明 (https://wolfx.jp/docs/websocket)。
+ * 日本語の文書が正で、英語の文書は 2026-11-25 まで `WarnArea[].Type` を違って書いていた。
  *
  * **原文 (`OriginalText`) は読まない・残さない** (中身は気象庁の電文で、Wolfx の規約の五条で気象庁の条件に従う。配り直してよいと確かめられない。docs/design.md の 5 章)。
  * 最大予測震度 (`MaxIntensity`・`WarnArea[].Shindo1/2`) も読まない (docs/design.md の 5 章)。
@@ -41,6 +41,12 @@ const names = (v: unknown, keep: (a: Json) => boolean): string[] =>
     .map((a) => str(a.Chiiki))
     .filter((n): n is string => n !== undefined);
 
+/**
+ * 警報の地域か (`WarnArea[].Type`)。実際の JSON と公式の例は `警報`・`予報` で来る
+ * (日本語の文書もそう書く)。英語の文書は 2026-11-25 まで `Warning`・`Forecast` と書いていたので、そちらも受ける
+ */
+const isWarningArea = (a: Json) => a.Type === "警報" || a.Type === "Warning";
+
 /** WebSocket の 1 通 (または HTTP の jma_eew.json) を読む */
 export function parseWolfx(value: unknown): WolfxMessage {
   const o = obj(value);
@@ -55,6 +61,14 @@ export function parseWolfx(value: unknown): WolfxMessage {
   const issueStatus = STATUS[str(obj(o.Issue).Status) ?? ""] ?? "normal";
   const name = str(o.Hypocenter);
   const depth = num(o.Depth);
+  // Magunitude は古い綴りで、同じ値 (いずれ無くなる)
+  const magnitude = num(o.Magnitude) ?? num(o.Magunitude);
+  // レベル法 (最大予測震度だけの速報) は震源が地方の名前だけで、M は 0、深さは 10 km の仮の値。
+  // 仮定震源要素は M が 1.0、深さが 10 km の決まった値。M が 0 なのは値が無いときの互換の値
+  // (Wolfx の文書、2026-11-15)。どれも実際の値ではないので、M と深さを持たない
+  const level = str(o.CodeType)?.includes("最大予測震度のみ") === true;
+  const assumed = o.isAssumption === true || level;
+  const placeholder = assumed || magnitude === 0;
   const report: EewReport = {
     source: "wolfx",
     eventId,
@@ -64,19 +78,21 @@ export function parseWolfx(value: unknown): WolfxMessage {
     final: o.isFinal === true,
     cancelled: o.isCancel === true,
     status: o.isTraining === true ? "training" : issueStatus,
-    assumed: o.isAssumption === true,
+    assumed,
     originTime: jstToIso(o.OriginTime),
     hypocenter: name
       ? {
           name,
           lat: num(o.Latitude),
           lon: num(o.Longitude),
-          depthKm: depth !== undefined && depth >= 0 ? depth : undefined,
+          depthKm:
+            !placeholder && depth !== undefined && depth >= 0
+              ? depth
+              : undefined,
         }
       : undefined,
-    // Magunitude は古い綴りで、同じ値 (いずれ無くなる)
-    magnitude: num(o.Magnitude) ?? num(o.Magunitude),
-    warnAreas: names(o.WarnArea, (a) => a.Type === "Warning"),
+    magnitude: placeholder ? undefined : magnitude,
+    warnAreas: names(o.WarnArea, isWarningArea),
     // 予報の地域も含めた全部 (名前だけ。Shindo1/2 は読まない)。通知の「住んでいる地域と現在地」の判定に使う
     areas: names(o.WarnArea, () => true),
   };

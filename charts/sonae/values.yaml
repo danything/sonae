@@ -72,7 +72,7 @@ secrets:
     vapidPrivateJwk: vapid-private-jwk
     # 台湾の中央氣象署 (CWA) が出すオープンデータの授権碼。任意。無ければ CWA の受信だけを切って動く (docs/cwa.md)
     cwaApiKey: cwa-api-key
-    # 海しる (海上保安庁) の API のキー。任意。無ければ海しるの点の層 (海底地殻変動観測点・海域火山) だけを出さずに動く
+    # 海しる (海上保安庁) の API のキー。任意。無ければ海しるの点の層 (海底地殻変動観測点・海域火山・海上保安部署・潮汐推算) だけを出さずに動く
     # (docs/design.md の 2.11)
     msilApiKey: msil-api-key
 

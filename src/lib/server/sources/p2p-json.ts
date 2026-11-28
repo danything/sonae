@@ -180,6 +180,9 @@ function eew(o: Json): Normalized[] {
   if (!eventId || !Number.isFinite(serial) || !issuedAt) return [];
   const eq = obj(o.earthquake);
   const h = obj(eq.hypocenter);
+  // 仮定震源要素の M (1.0) と深さ (10 km) は決まった値で、実際の値ではないので持たない (Wolfx と同じ)
+  const assumed = str(eq.condition) === "仮定震源要素";
+  const hypocenter = hypocenterOf(h);
   return [
     {
       type: "eew",
@@ -193,10 +196,13 @@ function eew(o: Json): Normalized[] {
         final: false,
         cancelled: o.cancelled === true,
         status: o.test === true ? "test" : "normal",
-        assumed: str(eq.condition) === "仮定震源要素",
+        assumed,
         originTime: jstToIso(eq.originTime),
-        hypocenter: hypocenterOf(h),
-        magnitude: magnitudeOf(h.magnitude),
+        hypocenter:
+          assumed && hypocenter
+            ? { ...hypocenter, depthKm: undefined }
+            : hypocenter,
+        magnitude: assumed ? undefined : magnitudeOf(h.magnitude),
         // 予測震度 (scaleFrom・scaleTo) と到達予測時刻は読まない (docs/design.md の 5 章)
         warnAreas: arr(o.areas)
           .map((a) => str(obj(a).name))

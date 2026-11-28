@@ -1,13 +1,17 @@
 /**
- * 海しる (海上保安庁の海洋状況表示システム) から取った点の層。海底地殻変動観測点 (GNSS-A) と海域火山データベース
- * (docs/map.md の「海しるの点」)。サーバーが 1 日 1 回取って DB に置き (`#lib/server/sources/msil.ts`)、画面は
- * `/api/marine` から読む。ブラウザには API のキーを渡さない。
+ * 海しる (海上保安庁の海洋状況表示システム) から取った点の層。海底地殻変動観測点 (GNSS-A)・海域火山データベース・
+ * 海上保安部署等・潮汐推算の地点 (docs/map.md の「海しるの点」)。サーバーが 1 日 1 回取って DB に置き
+ * (`#lib/server/sources/msil.ts`)、画面は `/api/marine` から読む。潮汐推算の値は、地点を押したときに `/api/tide` から読む。
+ * ブラウザには API のキーを渡さない。
  *
  * ここは画面とサーバーの両方から読む。点の properties の形と、吹き出しの中身を組む所
  */
 
-/** 海しるの層。`gnssa` は海底地殻変動観測点、`volcano` は海域火山データベース */
-export type MarineKind = "gnssa" | "volcano";
+/**
+ * 海しるの層。`gnssa` は海底地殻変動観測点、`volcano` は海域火山データベース、`office` は海上保安部署等、
+ * `tide` は潮汐推算の地点
+ */
+export type MarineKind = "gnssa" | "volcano" | "office" | "tide";
 
 /** 点の properties。サーバーが海しるの属性から作る (画面は海しるの属性の名前を知らない) */
 export interface MarinePoint {
@@ -28,6 +32,12 @@ export interface MarinePoint {
   basis?: string;
   /** 海上保安庁のページ (https だけ) */
   url?: string;
+  /** 海上保安部署等: 所在地 (郵便番号を前に付けたもの) */
+  address?: string;
+  /** 海上保安部署等: 電話番号 */
+  phone?: string;
+  /** 潮汐推算の地点: 地点のコード (`/api/tide?station=` に渡す) */
+  code?: string;
 }
 
 export interface MarineFeature {
@@ -61,7 +71,114 @@ export const MSIL_DISCLAIMER =
 export const MARINE_KIND_LABEL: Record<MarineKind, string> = {
   gnssa: "海底地殻変動観測点 (GNSS-A)",
   volcano: "海域火山",
+  office: "海上保安部署 (海上保安庁)",
+  tide: "潮汐推算の地点 (海上保安庁)",
 };
+
+/** 海上保安部署等の印を出すズーム (191 か所。引いた縮尺では港ごとに重なるため) */
+export const OFFICE_MINZOOM = 7;
+/** 潮汐推算の地点の印を出すズーム (海上保安部署より多く、湾の中に詰まって並ぶため) */
+export const TIDE_MINZOOM = 8;
+
+export const TIDE_URL = "/api/tide";
+
+/**
+ * 潮汐推算の吹き出しにいつも出す注意。推算の値で、いまの海面ではないことを先に言う (docs/design.md の 2.11)。
+ * 「航海には潮汐表を」は、海しるの潮汐推算 API の説明の文に沿う
+ */
+export const TIDE_NOTE =
+  "月と太陽の動きから計算した推算の潮位です。津波や高潮の観測ではなく、気圧や風による潮位の変化は入っていません。津波・高潮は気象庁の警報と潮位の観測で確かめてください。航海には海上保安庁の「潮汐表」を使ってください。";
+
+/** `/api/tide` の答え。1 日分の推算の潮位 (cm)。`stepSec` ごとに `tide` が並ぶ */
+export interface TideDay {
+  /** 地点のコード */
+  code: string;
+  /** 推算した日 (日本時間の YYYY-MM-DD) */
+  date: string;
+  /** 最初の値の時刻 (ISO 8601) */
+  start: string;
+  /** 値の間 (秒) */
+  stepSec: number;
+  /** 推算の潮位 (cm。海しるの値のまま) */
+  tide: number[];
+}
+
+/** `/api/tide` の答え (キーが無い・地点が無い・取れないとき) */
+export interface TideError {
+  error: string;
+}
+
+/** 満潮・干潮 (推算の値の山と谷)。`at` は時刻のミリ秒 */
+export interface TideTurn {
+  kind: "high" | "low";
+  at: number;
+  cm: number;
+}
+
+/**
+ * 1 日の推算の値から満潮と干潮を拾う。値を計算し直さず、並んだ値の山と谷 (前後 90 分でいちばん高い・低い所) を
+ * 読むだけ。同じ値が続く所は真ん中の時刻にする。日の端の値は、前後が分からないので拾わない
+ */
+export function tideTurns(d: TideDay, windowMin = 90): TideTurn[] {
+  const v = d.tide;
+  const t0 = Date.parse(d.start);
+  if (!Number.isFinite(t0) || v.length < 3 || !(d.stepSec > 0)) return [];
+  const w = Math.max(1, Math.round((windowMin * 60) / d.stepSec));
+  const out: TideTurn[] = [];
+  let i = 0;
+  while (i < v.length) {
+    let j = i;
+    while (j + 1 < v.length && v[j + 1] === v[i]) j++;
+    const before = v[i - 1];
+    const after = v[j + 1];
+    if (before !== undefined && after !== undefined) {
+      const x = v[i] as number;
+      const lo = Math.max(0, i - w);
+      const hi = Math.min(v.length - 1, j + w);
+      const around = v.slice(lo, hi + 1);
+      const kind =
+        x > before && x > after && x >= Math.max(...around)
+          ? "high"
+          : x < before && x < after && x <= Math.min(...around)
+            ? "low"
+            : undefined;
+      if (kind) {
+        const mid = Math.round((i + j) / 2);
+        out.push({ kind, at: t0 + mid * d.stepSec * 1000, cm: x });
+      }
+    }
+    i = j + 1;
+  }
+  return out;
+}
+
+/**
+ * 吹き出しの小さな図の線 (SVG の polyline の points)。`stepMin` 分ごとに間引く。値の高さは図の中で
+ * 上下を合わせるだけで、値は変えない
+ */
+export function tidePolyline(
+  d: TideDay,
+  width: number,
+  height: number,
+  stepMin = 10,
+): { points: string; min: number; max: number } {
+  const v = d.tide;
+  if (v.length === 0) return { points: "", min: 0, max: 0 };
+  const min = Math.min(...v);
+  const max = Math.max(...v);
+  const span = Math.max(1, max - min);
+  const every = Math.max(1, Math.round((stepMin * 60) / d.stepSec));
+  const pts: string[] = [];
+  const last = v.length - 1;
+  for (let i = 0; i <= last; i += every) pts.push(pt(i));
+  if (last % every !== 0) pts.push(pt(last));
+  return { points: pts.join(" "), min, max };
+  function pt(i: number) {
+    const x = last === 0 ? 0 : (i / last) * width;
+    const y = height - (((v[i] as number) - min) / span) * height;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }
+}
 
 const nf = new Intl.NumberFormat("ja-JP");
 
@@ -99,6 +216,22 @@ export function marinePopup(p: MarinePoint): PopupLine[] {
         cls: "small",
         href: p.url,
       });
+  } else if (p.kind === "office") {
+    if (p.address) lines.push({ text: p.address, cls: "small muted" });
+    if (p.phone) lines.push({ text: `電話 ${p.phone}`, cls: "small muted" });
+    lines.push({
+      text: "海の事件・事故は 118 番 (海上保安庁)",
+      cls: "small",
+    });
+    if (p.url)
+      lines.push({
+        text: "部署のページ (海上保安庁)",
+        cls: "small",
+        href: p.url,
+      });
+  } else if (p.kind === "tide") {
+    // 推算の値と満潮・干潮は、押した後に /api/tide から読んで画面が足す (QuakeMap の openMarine)
+    lines.push({ text: TIDE_NOTE, cls: "tiny muted" });
   } else {
     if (p.point) lines.push({ text: p.point, cls: "small muted" });
     if (p.heightM !== undefined)
@@ -182,7 +315,49 @@ export function marineIcons(): Record<string, ImageData> {
         g.stroke();
       },
     ),
+    // 海上保安部署等: 白い縁の紺の丸に白い「海」。避難場所の「避」と同じく字で見分ける
+    "marine-office": draw(
+      40,
+      (g) => {
+        g.beginPath();
+        g.arc(20, 20, 17, 0, Math.PI * 2);
+      },
+      (g) => {
+        g.fillStyle = "#1d3a78";
+        g.fill();
+        g.strokeStyle = "#ffffff";
+        g.lineWidth = 3;
+        g.stroke();
+        glyph(g, "海", "#ffffff");
+      },
+    ),
+    // 潮汐推算の地点: 黒い縁の白い丸に紺の「潮」。海上保安部署と地と字の色を入れ替える
+    "marine-tide": draw(
+      40,
+      (g) => {
+        g.beginPath();
+        g.arc(20, 20, 17, 0, Math.PI * 2);
+      },
+      (g) => {
+        g.fillStyle = "#ffffff";
+        g.fill();
+        g.strokeStyle = "rgba(0,0,0,0.75)";
+        g.lineWidth = 2.5;
+        g.stroke();
+        glyph(g, "潮", "#1d3a78");
+      },
+    ),
   };
+}
+
+/** 印の真ん中に 1 字を書く (太字) */
+function glyph(g: CanvasRenderingContext2D, ch: string, color: string): void {
+  g.fillStyle = color;
+  // 避難場所の印と同じ字体 (`#lib/map/style.ts` の `TEXT_FONT_CSS`)
+  g.font = 'bold 22px "Noto Sans JP", sans-serif';
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(ch, 20, 21);
 }
 
 /**
@@ -196,3 +371,26 @@ export function nearestMarine<T extends { d2: number }>(
   for (const h of hits) if (!best || h.d2 < best.d2) best = h;
   return best;
 }
+
+/** 海しるの点を描く層 (押したときに見る。海上保安部署等と潮汐推算の地点は寄せたときだけ描く) */
+export const MARINE_LAYERS = ["marine", "marine-office", "marine-tide"];
+
+const hm = new Intl.DateTimeFormat("ja-JP", {
+  timeZone: "Asia/Tokyo",
+  hour: "numeric",
+  minute: "2-digit",
+});
+const md = new Intl.DateTimeFormat("ja-JP", {
+  timeZone: "Asia/Tokyo",
+  month: "numeric",
+  day: "numeric",
+  weekday: "short",
+});
+
+/** 「満潮 4:12 152 cm」 */
+export const tideTurnText = (t: TideTurn) =>
+  `${t.kind === "high" ? "満潮" : "干潮"} ${hm.format(t.at)} ${t.cm} cm`;
+
+/** 推算した日 (`YYYY-MM-DD`、日本時間) を「11/28(土)」に */
+export const tideDayLabel = (date: string) =>
+  md.format(Date.parse(`${date}T12:00:00+09:00`));

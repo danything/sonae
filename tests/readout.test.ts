@@ -41,10 +41,15 @@ describe("読み上げの原稿", () => {
   });
 
   test("緊急地震速報 (予報) は震源と M。仮定震源はそう言う", () => {
-    expect(read(eew({ assumed: true }))).toEqual([
+    expect(read(eew())).toEqual([
       OPENINGS.eewForecast,
       "震源は茨城県南部、規模はマグニチュード4.8と推定されています。",
-      "震源と規模は仮のものです。",
+    ]);
+    // 仮定震源 (レベル法も) は M を持たない (受けるときに外す)
+    expect(read(eew({ assumed: true, magnitude: undefined }))).toEqual([
+      OPENINGS.eewForecast,
+      "震源は茨城県南部と推定されています。",
+      "震源は仮のものです。",
     ]);
   });
 
