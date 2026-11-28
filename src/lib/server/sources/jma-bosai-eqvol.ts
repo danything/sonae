@@ -93,7 +93,9 @@ export function bosaiJsonToXml(value: unknown, name: string): string {
   if (Array.isArray(value))
     return value.map((v) => bosaiJsonToXml(v, name)).join("");
   if (name === "TsunamiHeight") {
-    const t = str(value) ?? "";
+    const t = str(value);
+    // 形が違う (オブジェクトなど) なら、黙って高さを消さずに読めないとする (原文を残す)
+    if (t === undefined) throw new Error("津波の高さの形が違います");
     return `<jmx_eb:TsunamiHeight description="${esc(tsunamiHeightText(t))}">${esc(t.replace(/^[<>]/, ""))}</jmx_eb:TsunamiHeight>`;
   }
   if (isObject(value)) {
@@ -168,23 +170,28 @@ export interface BosaiVolcanoItem {
   reportedAt: string;
 }
 
-/** 火山の一覧を読む。配列でなければ例外 */
+/** 火山の一覧を古い順に読む。配列でなければ例外。識別番号が英数と下線でない項目は捨てる (本文の URL に使うため) */
 export function parseBosaiVolcanoList(text: string): BosaiVolcanoItem[] {
   const all = JSON.parse(text) as unknown;
   if (!Array.isArray(all)) throw new Error("火山の一覧が配列ではありません");
-  return all.flatMap((v): BosaiVolcanoItem[] => {
-    if (!isObject(v)) return [];
-    const eventId = str(v.eventId);
-    const reportedAt = str(v.reportDatetime);
-    if (
-      !eventId ||
-      !/^[0-9A-Za-z_]{1,40}$/.test(eventId) ||
-      !reportedAt ||
-      !Number.isFinite(Date.parse(reportedAt))
-    )
-      return [];
-    return [{ eventId, reportedAt }];
-  });
+  return (
+    all
+      .flatMap((v): BosaiVolcanoItem[] => {
+        if (!isObject(v)) return [];
+        const eventId = str(v.eventId);
+        const reportedAt = str(v.reportDatetime);
+        if (
+          !eventId ||
+          !/^[0-9A-Za-z_]{1,40}$/.test(eventId) ||
+          !reportedAt ||
+          !Number.isFinite(Date.parse(reportedAt))
+        )
+          return [];
+        return [{ eventId, reportedAt }];
+      })
+      // 古い順に取る (一度に取る数を超えたとき、残りは次の回に)
+      .sort((a, b) => Date.parse(a.reportedAt) - Date.parse(b.reportedAt))
+  );
 }
 
 /**
@@ -318,6 +325,7 @@ export function bosaiEqvolSource(
       let body: string;
       try {
         const res = await http.get(bodyUrl(i), signal, false);
+        // 本文は条件を付けずに取るので 304 は来ないが、型の上で undefined を除く
         if (!res) continue;
         body = res.text;
       } catch (err) {

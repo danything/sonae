@@ -430,3 +430,24 @@ describe("気象庁 XML との重なり (store)", () => {
     expect(store.volcanoes()).toHaveLength(1);
   });
 });
+
+test("津波の高さが文字でなければ (形が変わったら)、黙って消さずに読めないとする", () => {
+  const d = JSON.parse(TSUNAMI) as {
+    Body: { Tsunami: { Forecast: { Item: { MaxHeight: unknown }[] } } };
+  };
+  const item = d.Body.Tsunami.Forecast.Item[0];
+  if (item) item.MaxHeight = { TsunamiHeight: { value: "1" } };
+  expect(() => parseBosaiTsunami(JSON.stringify(d), "VTSE41")).toThrow(
+    "津波の高さ",
+  );
+});
+
+test("火山の一覧は古い順に並べる", () => {
+  const items = parseBosaiVolcanoList(
+    JSON.stringify([
+      { eventId: "2", reportDatetime: "2026-11-28T10:00:00+09:00" },
+      { eventId: "1", reportDatetime: "2026-11-28T09:00:00+09:00" },
+    ]),
+  );
+  expect(items.map((i) => i.eventId)).toEqual(["1", "2"]);
+});
