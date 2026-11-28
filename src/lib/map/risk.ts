@@ -178,7 +178,8 @@ export const RISK_LEGEND: { color: string; label: string; level: string }[] = [
 // element `flood`。2026-11-28 に読んだ) に合わせる。気象庁が判定した段をそのまま色にし、段を作り直さない
 
 /** 川の地図 (変わらないもの) */
-const RISK_MAP = "https://www.jma.go.jp/bosai/jmatile/data/map/none/none/none/surf";
+const RISK_MAP =
+  "https://www.jma.go.jp/bosai/jmatile/data/map/none/none/none/surf";
 /** 指定河川 (国と都道府県が洪水予報をする川、340 の区間) の線。gzip で 290KB ほど。いまの段は持たない */
 export const RIVER_MAP_URL = `${RISK_MAP}/designated_river/data.geojson`;
 /** 指定河川の地図・灰色の縁・区間の名前を出す地図のズーム (気象庁の画面の 8 は 256px のタイルのズームで、MapLibre の地図のズームでは 7) */

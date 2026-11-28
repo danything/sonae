@@ -141,6 +141,8 @@
   } from "#lib/map/rain.ts";
   import { type MapView, ViewKeeper } from "#lib/map/restore.ts";
   import {
+    designatedRiverUrl,
+    floodTiles,
     latestRisk,
     nextRiskPoll,
     RISK_CREDIT,
@@ -156,8 +158,6 @@
     RISKS,
     riskStale,
     riskTiles,
-    designatedRiverUrl,
-    floodTiles,
     RIVER_CALM_COLOR,
     RIVER_MAP_URL,
     riverFeatures,
@@ -1326,7 +1326,10 @@
         const r = await fetch(designatedRiverUrl(frame), {
           credentials: "omit",
           referrerPolicy: "no-referrer",
-          signal: AbortSignal.any([aborter.signal, AbortSignal.timeout(15_000)]),
+          signal: AbortSignal.any([
+            aborter.signal,
+            AbortSignal.timeout(15_000),
+          ]),
         });
         if (!r.ok) throw new Error(`designated_river: ${r.status}`);
         const segments = riverSegments(await r.json());
@@ -1342,7 +1345,8 @@
   // 指定河川の地図 (水色の線。変わらない) は、洪水を選んだときに 1 度だけ読む
   let riverMapLoaded = false;
   $effect(() => {
-    if (!map || riverMapLoaded || chosenRisk?.draw !== "river" || !riskOn) return;
+    if (!map || riverMapLoaded || chosenRisk?.draw !== "river" || !riskOn)
+      return;
     riverMapLoaded = true;
     setData(map, "river-map", RIVER_MAP_URL);
   });

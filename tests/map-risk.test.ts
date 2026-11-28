@@ -4,9 +4,6 @@ import {
   designatedRiverUrl,
   floodTiles,
   latestRisk,
-  RIVER_MAP_URL,
-  riverFeatures,
-  riverSegments,
   nextRiskPoll,
   RISK_LEGEND,
   RISK_RETRY_MS,
@@ -16,6 +13,9 @@ import {
   RISKS,
   riskStale,
   riskTiles,
+  RIVER_MAP_URL,
+  riverFeatures,
+  riverSegments,
 } from "#lib/map/risk.ts";
 import {
   baseStyle,

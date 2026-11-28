@@ -39,15 +39,15 @@ import {
 import {
   RISK_ATTRIBUTION,
   RISK_TILE_ZOOMS,
+  type RiskFrame,
+  riskOf,
+  RISKS,
+  riskTiles,
   RIVER_CALM_COLOR,
   RIVER_CASING,
   RIVER_CASING_SEVERE,
   RIVER_LEVEL_COLORS,
   RIVER_MAP_MINZOOM,
-  type RiskFrame,
-  riskOf,
-  RISKS,
-  riskTiles,
   SMALL_RIVER_CALM_COLOR,
   SMALL_RIVER_CASING,
 } from "#lib/map/risk.ts";
@@ -671,7 +671,9 @@ export function riskVisibility(
       RISK_TILE_ZOOMS.map((n) => [`risk-${n}`, on && !river]),
     ),
     ...Object.fromEntries(
-      RISK_TILE_ZOOMS.flatMap((n) => floodLayerIds(n).map((l) => [l, on && river])),
+      RISK_TILE_ZOOMS.flatMap((n) =>
+        floodLayerIds(n).map((l) => [l, on && river]),
+      ),
     ),
     ...Object.fromEntries(RIVER_LAYERS.map((l) => [l, on && river])),
   };
@@ -725,7 +727,10 @@ const smallRiverWidth = (extra: number): Expr => [
  * (256px のタイルの雨雲とは 1 段ずれる)。そのため、タイルのズーム n の段は地図のズーム n から n + 2 の手前まで。いちばん
  * 引いた段 (4) より引くと線は出ない (気象庁の画面も 256px のズーム 4、地図のズームで 3 からなので、ほぼ同じ)
  */
-export function floodLayerZoom(n: number): { minzoom?: number; maxzoom?: number } {
+export function floodLayerZoom(n: number): {
+  minzoom?: number;
+  maxzoom?: number;
+} {
   const last = n === RISK_TILE_ZOOMS.at(-1);
   return { minzoom: n, ...(last ? {} : { maxzoom: n + 2 }) };
 }
@@ -827,7 +832,19 @@ function riverLayers(on: Record<string, boolean>): Record<string, unknown>[] {
           "concat",
           ["get", "name"],
           " (",
-          ["match", ["get", "level"], 2, "注意", 3, "警戒", 4, "危険", 5, "災害切迫", ""],
+          [
+            "match",
+            ["get", "level"],
+            2,
+            "注意",
+            3,
+            "警戒",
+            4,
+            "危険",
+            5,
+            "災害切迫",
+            "",
+          ],
           ")",
         ],
         "text-font": ["Noto Sans JP", "sans-serif"],
