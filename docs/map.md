@@ -111,6 +111,16 @@ sonae の画面には気象庁の GIS データの出典を出す。
 - issue が立ったら、更新されたデータの zip を取り、`tools/areas/build.sh` と `build-weather.sh` で作り直す。作り直したら、pin-watch.json の `jma-gis-areas` の `text` を更新履歴のいちばん新しい日付に書き換える (消さない。書き換えずに issue を閉じると、次の週にまた立つ)
 - コード表 (`jmaxml_*_Code.zip`) の更新は見張らない。市町村等の名前や区域が変わるときは、GIS データも更新されるため
 
+### 火山の表を作り直す
+
+**活火山の位置 (`static/areas/volcano-points.json`) と火山の監視カメラ (`static/cameras/volcano-cameras.json`) は、GitHub Actions が 1 日 1 回作り直す** (`.github/workflows/map-data.yml`、持ち主の依頼、2026-11-28)。
+
+- 毎朝 6:23 (日本時間) に `tools/volcanoes/build.sh`・`tools/cameras/build.sh` を流す。気象庁へは一覧を 2 つ読むだけ (User-Agent は `sonae (+https://github.com/danything/sonae)`)
+- 表が変わったら、PR (`update-map-data`) を出す。本文には、足された・消えた・名前か位置が変わった項目を並べる (`tools/map-data/diff.ts`)
+- 変わった項目が 5 以下なら、同じ run で lint・check・試験・build を通してから自分でマージし、イメージを組み直す (`docker-publish.yml` を回す)。GITHUB_TOKEN で作った PR には check.yml が走らないので、`check`・`build` の結果は同じ run で通したものを貼る (イメージの更新の PR と同じ形)。5 を超えたら、マージせずに持ち主に割り当てる。一覧の形が変わって、中身を取り違えていないかを地図で見てからマージする
+- 一覧の形が変わって作れなくなったら、issue「火山の表を作り直せない (map-data)」を立てる (開いていればコメントを足す)。作れるようになったら、その issue を閉じる
+- **区域の GIS データは、この形にしない。** zip を取り、間隔を測って簡略化を決め、`cities.json` との合い方を確かめる手間が要るので、上の pin-watch で更新に気づき、人が作り直す
+
 プレート境界の線 `static/plates/pb2002-boundaries.geojson` (約 110KB・gzip 約 30KB。241 本) は `tools/plates/build.sh` で作る。
 元は fraxen/tectonicplates の決まったコミット (2014-10-06 から更新が無い) の `GeoJSON/PB2002_boundaries.json` で、mapshaper で 2 km 間隔に間引き、座標を 0.01 度に丸め、属性を外す。
 
@@ -449,7 +459,7 @@ sonae の画面には気象庁の GIS データの出典を出す。
 
 **気象庁の火山の監視カメラの位置に印を置き、押すと気象庁ホームページのいちばん新しい画像を吹き出しに出す** (2026-11-28。持ち主の依頼「ライブカメラを入れる。まず気象庁の火山カメラから」)。描くのは `#lib/map/style.ts` の層 `cameras`、吹き出しの中身とページの読み方は `#lib/map/cameras.ts`。確かめた日: 2026-11-28。
 
-- **カメラの表:** 気象庁ホームページの「監視カメラ画像」(<https://www.data.jma.go.jp/vois/data/obs/volcam/volcam.php>) の地図が読む GeoJSON (`param/geojson/camicon.geojson`) を、`tools/cameras/build.sh` で `static/cameras/volcano-cameras.json` にする (火山の名前とカメラの名前を分け、名前に混ざる HTML のルビを外す)。2026-11-28 は 49 火山の 95 台。位置は小数 3 桁 (約 100 m) で、カメラを置いた正確な場所とは限らない。どの向きを撮っているかは書いていない (気象庁は「火山の活動状況により変わることがあります」とする)。カメラが増えたり減ったりしたら作り直す
+- **カメラの表:** 気象庁ホームページの「監視カメラ画像」(<https://www.data.jma.go.jp/vois/data/obs/volcam/volcam.php>) の地図が読む GeoJSON (`param/geojson/camicon.geojson`) を、`tools/cameras/build.sh` で `static/cameras/volcano-cameras.json` にする (火山の名前とカメラの名前を分け、名前に混ざる HTML のルビを外す)。2026-11-28 は 49 火山の 95 台。位置は小数 3 桁 (約 100 m) で、カメラを置いた正確な場所とは限らない。どの向きを撮っているかは書いていない (気象庁は「火山の活動状況により変わることがあります」とする)。GitHub Actions が 1 日 1 回作り直す (上の「火山の表を作り直す」)
 - **画像の読み方:** 画像の名前は撮った時刻 (`camera/<火山>_<16 進 8 桁>/<YYYYMMDDHHmmss>.jpg`) で、いちばん新しい画像の決まった URL は無い。印を押したときに、ブラウザがカメラのページ (`volcam.php?VC=<番号>`、約 14KB) を読み、`file_array[0]` の名前を拾って画像を読む。ページも画像も CORS は `*`。拾う名前は決まった形 (3 桁・16 進 8 桁・14 桁の時刻) だけで、気象庁の画像の置き場の外は読まない (`latestFrame`)
 - **サーバーで取らない訳:** 気象庁の規約に自動の取得を控えるよう頼む文は無いが、見る人がいないときに 95 台のページを読み続ける理由が無い。押したときに、押した人のブラウザが 1 台だけ読む。sonae のサーバーは画像に触れず、保存も配布もしない
 - **読み直し:** 吹き出しを開いている間は 10 分ごとにページを読み直し、新しい画像があれば替える (`CAMERA_REFRESH_MS`)。画像は 2〜3 分ごとに撮られるが、ページは `Cache-Control: max-age=600` で気象庁の配信が最大 10 分古いので、それより短く読んでも新しい画像は来ない。画面が隠れている間は読み直さず、戻ったときに前に読んでから 10 分たっていれば読み直す。画像を読めなかった後は、同じ名前でも読み直す。閉じたらやめる
