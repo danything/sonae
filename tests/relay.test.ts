@@ -79,6 +79,10 @@ test("同じタイルは、何台が読んでも配信元へは 1 回だけ取�
   expect(a.headers.get("x-relay")).toBe("miss");
   expect(b.headers.get("x-relay")).toBe("hit");
   expect(b.headers.get("cache-control")).toBe("private, max-age=120");
+  expect(b.headers.get("x-content-type-options")).toBe("nosniff");
+  expect(b.headers.get("content-security-policy")).toBe(
+    "default-src 'none'; sandbox",
+  );
   expect(up.calls).toHaveLength(1);
   expect(up.calls.at(0)?.url).toBe("https://example.test/data/a/1.png");
   expect(up.calls.at(0)?.headers["user-agent"]).toContain("sonae");

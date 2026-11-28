@@ -74,6 +74,8 @@ const MAX_BODY_BYTES = 16 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 15_000;
 /** 断られたときに待つ秒数の既定と上限 */
 const COOLDOWN_DEFAULT_S = 60;
+/** 中継の応答に付ける CSP。何も読まず、何も動かさない */
+const RELAY_CSP = "default-src 'none'; sandbox";
 const COOLDOWN_MAX_S = 600;
 /** 404・410 を覚える期限の上限 (海の上の避難場所のタイルなど、無いものを何度も聞かない) */
 const MISSING_TTL_S = 300;
@@ -464,6 +466,10 @@ export class Relay {
     const now = this.now();
     const headers = new Headers(e.headers);
     headers.set("x-relay", how);
+    // 配信元の中身を sonae と同じオリジンで返すので、HTML (火山カメラのページ) が開かれても script を動かさず、
+    // 型を推し量らせない (どの源でも、画面は fetch か <img> で読むだけなので困らない)
+    headers.set("x-content-type-options", "nosniff");
+    headers.set("content-security-policy", RELAY_CSP);
     // ブラウザには、サーバーが覚えている残りの間だけ覚えさせる。古いものを返したときと、覚えない源では覚えさせない
     const left = Math.floor((e.freshUntil - now) / 1000);
     headers.set(
