@@ -25,7 +25,13 @@ import {
 import { parseWeatherXml } from "#lib/server/sources/jma-weather.ts";
 
 import { prefs, warningEvent as ev, weatherEvent } from "./events.ts";
-import { fixture, homeAt, weatherInfo, weatherWarning } from "./helpers.ts";
+import {
+  fixture,
+  homeAt,
+  memoryStore,
+  weatherInfo,
+  weatherWarning,
+} from "./helpers.ts";
 
 /** 稚内地方気象台の大雪の電文 (稚内市に大雪警報、浜頓別町などに大雪注意報) */
 const SNOW = "15_16_06_241226_VPWW60.xml";
@@ -104,12 +110,36 @@ describe("気象防災速報 (短時間大雪)", () => {
     expect(i.level).toBeUndefined();
   });
 
-  test("線状降水帯と同じく、知らせない (一覧と詳しい内容に出すだけ)", () => {
+  test("住んでいる地域の一次細分区域に出たら、記録的短時間大雨情報と同じ段・同じ形で知らせる (持ち主の決定、2026-11-28)", () => {
     const lines = weatherInfo("82_01_01_260324_VPBS50.xml", "VPBS50");
-    for (const x of [i, lines])
-      expect(
-        noticeOf(weatherEvent(x), Date.parse(x.reportedAt) + 60_000),
-      ).toBeNull();
+    const cases: [typeof i, string, string][] = [
+      [i, "2520300", "気象防災速報 (短時間大雪) 滋賀県長浜市"], // 滋賀県北部
+      [lines, "1220400", "気象防災速報 (線状降水帯発生) 千葉県船橋市"], // 千葉県北西部
+    ];
+    for (const [x, home, title] of cases) {
+      const base = noticeOf(weatherEvent(x), Date.parse(x.reportedAt) + 60_000);
+      if (!base) throw new Error("通知の元が無い");
+      const n = noticeFor(base, prefs({ home: homeAt(home) }));
+      expect(n?.title).toBe(title);
+      expect(n?.level).toBe(3);
+      expect(n?.urgency).toBe("high");
+      // 本文は気象庁の見出しのまま
+      expect(n?.body).toBe(x.headline.replace(/\s+/g, " ").trim());
+      // 読み上げは決まった文と、気象庁の見出しの文を変えずに
+      if (!n) continue;
+      const parts = readoutOf(n);
+      expect(parts[0]).toBe(OPENINGS.bosai);
+      expect(parts.slice(1).join("")).toBe(
+        sentences(clean(x.headline)).join(""),
+      );
+    }
+  });
+
+  test("住んでいる地域でなければ知らせない。記録雨は取らないので知らせない", () => {
+    const base = noticeOf(weatherEvent(i), Date.parse(i.reportedAt) + 60_000);
+    if (!base) throw new Error("通知の元が無い");
+    expect(noticeFor(base, prefs({ home: homeAt("1220400") }))).toBeNull();
+    expect(noticeFor(base, prefs({}))).toBeNull();
   });
 
   test("前の形式の府県気象情報 (VPFJ50。「顕著な大雪に関する〇〇県気象情報」) は取らない", () => {
@@ -229,5 +259,60 @@ describe("雪の警報・注意報 (R06)", () => {
       expect(m?.level).toBe(2);
       expect(m?.body).toContain(name);
     }
+  });
+});
+
+describe("気象防災速報の取消", () => {
+  const FILE = "82_01_03_241031_VPBS50.xml";
+  /** 取消の電文 (情報タグの無い見出し)。サンプル電文の InfoType を取消にし、見出しの情報を除いて作る */
+  const cancelXml = () =>
+    fixture(`jma/${FILE}`)
+      .replace("<InfoType>発表</InfoType>", "<InfoType>取消</InfoType>")
+      .replace(/<Information[\s\S]*?<\/Information>/g, "");
+
+  test("情報タグの無い取消も取り込み、前の報 (種類と地域) に取消の印を付けて、取消の通知を出す", () => {
+    const { store } = memoryStore();
+    const [first] = parseWeatherXml(fixture(`jma/${FILE}`), "VPBS50");
+    const [cancel] = parseWeatherXml(cancelXml(), "VPBS50");
+    expect(cancel?.type).toBe("weather");
+    if (first?.type !== "weather" || cancel?.type !== "weather")
+      throw new Error("気象の報ではありません");
+    store.ingest({
+      source: "jma-weather",
+      key: "a",
+      code: "VPBS50",
+      items: [first],
+    });
+    const out = store.ingest({
+      source: "jma-weather",
+      key: "b",
+      code: "VPBS50",
+      items: [cancel],
+    });
+    const e = out[0];
+    if (e?.type !== "weather")
+      throw new Error("気象の報のイベントがありません");
+    expect(e.data.cancelled).toBe(true);
+    expect(e.data.kindName).toBe("短時間大雪");
+    const base = noticeOf(e, Date.parse(first.info.reportedAt) + 120_000);
+    if (!base) throw new Error("通知の元が無い");
+    const n = noticeFor(base, prefs({ home: homeAt("2520300") }));
+    expect(n?.title).toBe("気象防災速報 (短時間大雪) (取消)");
+    expect(n?.closing).toBe(true);
+  });
+
+  test("取り消す報を持っていない取消 (取らなかった記録雨だけの速報など) は並べない", () => {
+    const { store } = memoryStore();
+    const [cancel] = parseWeatherXml(cancelXml(), "VPBS50");
+    if (cancel?.type !== "weather") throw new Error("気象の報ではありません");
+    expect(
+      store.ingest({
+        source: "jma-weather",
+        key: "b",
+        code: "VPBS50",
+        items: [cancel],
+      }),
+    ).toEqual([]);
+    expect(store.weatherInfos()).toEqual([]);
   });
 });

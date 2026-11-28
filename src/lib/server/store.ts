@@ -282,6 +282,9 @@ export class Store {
       if (prev && w.infoType === "取消") {
         if (prev.cancelled) return [];
         next = { ...prev, cancelled: true, updatedAt: now };
+      } else if (w.infoType === "取消" && w.kind === "bosai") {
+        // 取り消す報を持っていない気象防災速報 (取らなかった記録雨だけの速報など) の取消は、並べない
+        return [];
       } else if (prev) {
         next = { ...next, id: prev.id };
       }

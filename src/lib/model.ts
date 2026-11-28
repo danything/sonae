@@ -937,6 +937,17 @@ export function cityWarnings(
   return out;
 }
 
+/**
+ * 知らせる府県気象防災速報か。情報タグ (`kindName`。「・」でつなぐ) に線状降水帯 (「線状降水帯発生」など) か
+ * 「短時間大雪」があるもの (持ち主の決定、2026-11-28。docs/design.md の 2.4・2.8)。記録的短時間大雨情報と同じく
+ * 住んでいる地域か現在地の一次細分区域に出たときに知らせる
+ */
+export const isNotifiedBosai = (i: Pick<WeatherInfo, "kind" | "kindName">) =>
+  i.kind === "bosai" &&
+  (i.kindName ?? "")
+    .split("・")
+    .some((t) => t.startsWith("線状降水帯") || t === "短時間大雪");
+
 /** 竜巻注意情報の有効期限が過ぎたか (期限の無いものは過ぎない) */
 export const isExpired = (i: Pick<WeatherInfo, "validUntil">, now: number) =>
   i.validUntil !== undefined && Date.parse(i.validUntil) < now;

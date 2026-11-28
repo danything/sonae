@@ -22,6 +22,7 @@ import {
   intensityRank,
   isExpired,
   isHeavyAsh,
+  isNotifiedBosai,
   isUrgentAdvisory,
   type Quake,
   type SonaeEvent,
@@ -92,7 +93,7 @@ export interface Notice {
 
 /**
  * 送るのをやめる古さ。緊急地震速報は数分で意味が無くなる。地震は 1 時間、津波・お知らせ・火山・気象の警報は 6 時間。
- * 気象の報 (記録的短時間大雨情報・竜巻注意情報) は 1 時間 (竜巻注意情報の有効期限は約 1 時間)
+ * 気象の報 (記録的短時間大雨情報・竜巻注意情報・気象防災速報) は 1 時間 (竜巻注意情報の有効期限は約 1 時間)
  */
 const FRESH_MS = {
   eew: 3 * 60_000,
@@ -536,7 +537,10 @@ function warningFor(
   };
 }
 
-/** 記録的短時間大雨情報・竜巻注意情報。住んでいる地域 (市町村等・一次細分区域・府県予報区) が対象のときだけ */
+/**
+ * 記録的短時間大雨情報・竜巻注意情報・府県気象防災速報 (線状降水帯・短時間大雪)。住んでいる地域 (市町村等・
+ * 一次細分区域・府県予報区) が対象のときだけ。気象防災速報は見出しに種類 (情報タグ) を添える
+ */
 function weatherInfoFor(
   n: Notice,
   i: WeatherInfo,
@@ -546,13 +550,15 @@ function weatherInfoFor(
   if (!home) return null;
   const keys = [home.code, home.ichiji, home.office].filter(Boolean);
   if (!i.areas.some((a) => keys.includes(a.code))) return null;
+  const label =
+    i.kind === "bosai" && i.kindName
+      ? `${WEATHER_INFO_LABEL.bosai} (${i.kindName})`
+      : WEATHER_INFO_LABEL[i.kind];
   return {
     ...n,
     tag: `weather:${i.series}`,
     level: i.cancelled ? 0 : 3,
-    title: i.cancelled
-      ? `${WEATHER_INFO_LABEL[i.kind]} (取消)`
-      : `${WEATHER_INFO_LABEL[i.kind]} ${home.name}`,
+    title: i.cancelled ? `${label} (取消)` : `${label} ${home.name}`,
     body: clip(
       i.cancelled
         ? "先ほどの情報は取り消されました。"
@@ -684,8 +690,10 @@ export function noticeOf(event: SonaeEvent, now: number): Notice | null {
       break;
     case "weather": {
       const i = event.data;
-      // 知らせるのは記録的短時間大雨情報と竜巻注意情報だけ。有効期限の過ぎた竜巻注意情報は知らせない
-      if (i.kind !== "rain" && i.kind !== "tornado") return null;
+      // 知らせるのは記録的短時間大雨情報・竜巻注意情報と、府県気象防災速報の線状降水帯・短時間大雪だけ
+      // (`isNotifiedBosai`)。有効期限の過ぎた竜巻注意情報は知らせない
+      if (i.kind !== "rain" && i.kind !== "tornado" && !isNotifiedBosai(i))
+        return null;
       if (isExpired(i, now)) return null;
       n = weatherBase(event, Date.parse(i.reportedAt), TTL.weather);
       break;
@@ -770,7 +778,7 @@ export function matches(
       if (prefs.weather === "off") return false;
       return n.level >= 2;
     case "weather":
-      // 住んでいる地域の記録的短時間大雨情報・竜巻注意情報 (地域は noticeFor で絞ってある)
+      // 住んでいる地域の記録的短時間大雨情報・竜巻注意情報・気象防災速報 (線状降水帯・短時間大雪。地域は noticeFor で絞ってある)
       return prefs.weather !== "off";
     case "longperiod":
     case "foreign":
@@ -969,8 +977,8 @@ export function scopeText(
         "住んでいる地域か現在地が対象の噴火速報・火口周辺警報・多量の降灰の降灰予報と、どこに出た噴火警報 (レベル 4・5) も知らせます。",
     },
     weather: {
-      everywhere: `住んでいる地域か現在地の注意報以上と記録的短時間大雨情報・竜巻注意情報に加え、どこに出た危険警報 (レベル 4) と特別警報も知らせます。${advisory}`,
-      nearby: `住んでいる地域か現在地の注意報以上と記録的短時間大雨情報・竜巻注意情報、どこに出た特別警報を知らせます。${advisory}`,
+      everywhere: `住んでいる地域か現在地の注意報以上と記録的短時間大雨情報・竜巻注意情報・線状降水帯・短時間大雪 (気象防災速報) に加え、どこに出た危険警報 (レベル 4) と特別警報も知らせます。${advisory}`,
+      nearby: `住んでいる地域か現在地の注意報以上と記録的短時間大雨情報・竜巻注意情報・線状降水帯・短時間大雪 (気象防災速報)、どこに出た特別警報を知らせます。${advisory}`,
     },
   };
   return texts[kind][scope];
