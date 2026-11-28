@@ -85,6 +85,15 @@
           >。月ごとの地震活動の解説と図。sonae
           には取り込まず、気象庁のページを開きます
         </li>
+        <li>
+          <a
+            href="/privacy"
+            target="_blank"
+            rel="noopener"
+            data-testid="privacy">プライバシーポリシー</a
+          >。このサーバーが持つものと、YouTube のライブカメラ (YouTube API
+          Services) の扱い
+        </li>
       </ul>
       <h2>出典</h2>
       <ul class="small" data-testid="credits">

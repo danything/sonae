@@ -64,6 +64,16 @@
     radiusAt,
   } from "#lib/map/epicenters.ts";
   import {
+    embedUrl,
+    livecamById,
+    livecamFoot,
+    livecamHead,
+    livecamIcon,
+    type LivecamResponse,
+    LIVECAMS_URL,
+    livecamStatusText,
+  } from "#lib/map/livecams.ts";
+  import {
     autoLocate,
     type GeoPermission,
     LOCATE_PREF,
@@ -420,6 +430,7 @@
         created.addImage(ASH_STRIPE, ashStripeImage(), { pixelRatio: 2 });
         void loadMarine(created);
         void loadCameras(created);
+        created.addImage("livecam", livecamIcon(), { pixelRatio: 2 });
         void loadRoads(created);
         for (const l of anno as { id: string }[])
           if (!created.getLayer(l.id)) created.addLayer(l as never, "shelters");
@@ -454,6 +465,9 @@
           const s = stationHit(e.point, e.originalEvent);
           if (s) return openStation(s.properties, s.at);
           // 火山の監視カメラ (観測点の丸の下、海しるの点の上に描いている)
+          // YouTube のライブカメラ (火山の監視カメラの上に描いている)
+          const lc = iconHit("livecams", e.point, e.originalEvent);
+          if (lc) return openLivecam(lc.properties.id, lc.at);
           const cam = cameraHit(e.point, e.originalEvent);
           if (cam) return openCamera(cam.properties, cam.at);
           // 海しるの点 (観測点の丸の下に描いている)
@@ -490,6 +504,7 @@
             created.queryRenderedFeatures(e.point, { layers: ["shelters"] })
               .length > 0 ||
             stationHit(e.point, e.originalEvent) ||
+            iconHit("livecams", e.point, e.originalEvent) ||
             cameraHit(e.point, e.originalEvent) ||
             marineHit(e.point, e.originalEvent) ||
             typhoonHit(e.point, e.originalEvent) ||
@@ -1758,6 +1773,7 @@
         stationPopup,
         marinePopupEl,
         cameraPopupEl,
+        livecamPopupEl,
         roadPopupEl,
       ].some((p) => p?.isOpen());
       if (!open) return;
@@ -1985,6 +2001,7 @@
   const POINTER_LAYERS = [
     "shelters",
     "intensity-stations",
+    "livecams",
     "cameras",
     "marine",
     "marine-office",
@@ -2051,6 +2068,7 @@
     stationPopup?.remove();
     marinePopupEl?.remove();
     cameraPopupEl?.remove();
+    livecamPopupEl?.remove();
     typhoonPopupEl?.remove();
     roadPopupEl?.remove();
   }
@@ -2452,6 +2470,132 @@
     cameraTimer = setInterval(() => {
       if (!document.hidden) void load();
     }, CAMERA_REFRESH_MS);
+  }
+
+  // ---- YouTube のライブカメラ (docs/map.md の「YouTube のライブカメラ」) ----
+  /** 押した所の印 (properties の id と位置)。押せる範囲は印より広い (指 22px・マウス 12px) */
+  function iconHit(
+    layer: string,
+    pt: { x: number; y: number },
+    ev: MouseEvent | TouchEvent | undefined,
+  ): { properties: { id: string }; at: [number, number] } | undefined {
+    const m = map;
+    if (!m?.getLayer(layer)) return undefined;
+    const kind = (ev as PointerEvent | undefined)?.pointerType;
+    const r =
+      kind === "touch" ||
+      (!kind &&
+        typeof matchMedia === "function" &&
+        matchMedia("(pointer: coarse)").matches)
+        ? 22
+        : 12;
+    let best:
+      | { properties: { id: string }; at: [number, number]; d2: number }
+      | undefined;
+    for (const f of m.queryRenderedFeatures(
+      [
+        [pt.x - r, pt.y - r],
+        [pt.x + r, pt.y + r],
+      ],
+      { layers: [layer] },
+    )) {
+      const id = f.properties?.id;
+      if (f.geometry.type !== "Point" || typeof id !== "string") continue;
+      const at = f.geometry.coordinates as [number, number];
+      const p = m.project(at);
+      const d2 = (p.x - pt.x) ** 2 + (p.y - pt.y) ** 2;
+      if (d2 <= r * r && (!best || d2 < best.d2))
+        best = { properties: { id }, at, d2 };
+    }
+    return best;
+  }
+
+  /**
+   * ライブカメラの吹き出し。開くと `/api/livecams` で、サーバーが確かめたいまの配信を読み、配信中なら YouTube の
+   * 埋め込みのプレーヤー (プライバシー強化モード) を出す。押すまでプレーヤーを読まない。閉じるとプレーヤーごと消える
+   */
+  let livecamPopupEl: Popup | undefined;
+  function openLivecam(id: string, at: [number, number]): void {
+    const c = livecamById(id);
+    if (!map || !PopupClass || !c) return;
+    const line = (l: { text: string; cls?: string; href?: string }) => {
+      const el = document.createElement("p");
+      if (l.cls) el.className = l.cls;
+      if (l.href) {
+        const a = document.createElement("a");
+        a.href = l.href;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = l.text;
+        el.append(a);
+      } else el.textContent = l.text;
+      return el;
+    };
+    const box = document.createElement("div");
+    box.className = "station-pop livecam-pop";
+    box.dataset.testid = "livecam-pop";
+    for (const l of livecamHead(c)) box.append(line(l));
+    const body = document.createElement("div");
+    body.append(line({ text: "配信を確かめています", cls: "small muted" }));
+    box.append(body);
+    closePopups();
+    // プレーヤーの吹き出しは幅も高さも要る (200 px 以上)。狭い画面で印が端に近いと横に置けずにはみ出し、
+    // 印の下に開くと下のタブと dock に隠れる。そこで開く前に、印を横の真ん中・縦の下寄り (真ん中から高さの 30% 下) へ
+    // 移し (動きは付けない)、吹き出しを印の上に開く
+    const narrow = map.getContainer().clientWidth < 640;
+    if (narrow) {
+      // 印が画面の縦の真ん中から 30% 下に来るよう、印の 30% 上の点を真ん中にする
+      const p = map.project(at);
+      map.jumpTo({
+        center: map.unproject([
+          p.x,
+          p.y - map.getContainer().clientHeight * 0.3,
+        ]),
+      });
+    }
+    const popup = new PopupClass({
+      ...popupOptions(),
+      maxWidth: "none",
+      ...(narrow ? { anchor: "bottom" as const } : {}),
+    })
+      .setLngLat(at)
+      .setDOMContent(box)
+      .addTo(map);
+    livecamPopupEl = popup;
+    popup.on("close", () => {
+      if (livecamPopupEl === popup) livecamPopupEl = undefined;
+    });
+    void (async () => {
+      let r: LivecamResponse | undefined;
+      try {
+        const res = await fetch(LIVECAMS_URL);
+        if (res.ok) r = (await res.json()) as LivecamResponse;
+      } catch {
+        // 読めなければ、リンクだけを出す
+      }
+      if (livecamPopupEl !== popup) return;
+      const text = livecamStatusText(r, c);
+      const videoId = text ? undefined : r?.cams[c.id]?.videoId;
+      const still =
+        matchMedia("(prefers-reduced-motion: reduce)").matches ||
+        document.documentElement.hasAttribute("data-lite");
+      const src = videoId ? embedUrl(videoId, !still) : undefined;
+      body.replaceChildren();
+      if (src) {
+        // 埋め込みの決まり: 200×200 px 以上・何も重ねない・Referer を消さない (docs/design.md の 2.13)
+        const f = document.createElement("iframe");
+        f.className = "livecam-player";
+        f.src = src;
+        f.title = `${c.name} のライブカメラ (YouTube)`;
+        f.allow = "autoplay; encrypted-media; picture-in-picture; fullscreen";
+        f.allowFullscreen = true;
+        f.referrerPolicy = "strict-origin-when-cross-origin";
+        body.append(f);
+      } else if (text) body.append(line({ text, cls: "small muted" }));
+      for (const l of livecamFoot(c, videoId)) body.append(line(l));
+      // 中身で高さが変わったので、置き場を決め直す
+      popup.setLngLat(at);
+    })();
   }
 
   // ---- 台風の中心 (docs/map.md の「台風」) ----
@@ -3945,6 +4089,21 @@
     display: block;
     width: 100%;
     height: auto;
+  }
+  /* YouTube のライブカメラ。プレーヤーは 200×200 px 以上 (YouTube の埋め込みの決まり) で、16:9 を目安にする */
+  .map :global(.livecam-pop) {
+    width: min(22rem, 80vw);
+  }
+  .map :global(.livecam-player) {
+    display: block;
+    width: 100%;
+    min-width: 200px;
+    aspect-ratio: 16 / 9;
+    min-height: 200px;
+    margin: 0 0 var(--so-space-1);
+    border: 0;
+    border-radius: var(--so-radius);
+    background: #000;
   }
   /* 震度 1 の白い地も面の上で見えるよう、地図の震度のラベルと同じ細い縁を付ける */
   .map :global(.station-pop .level-label) {
