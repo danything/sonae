@@ -72,9 +72,13 @@ export function relayNote(s: RelayStatus): string | undefined {
   const { from, what } = NOTE[s.id];
   const since = s.since ? ` (${jst(s.since)} から)` : "";
   const busy = s.state === "blocked" ? "混んでいるため、" : "";
-  const shown = s.lastOkAt
-    ? `出しているのは ${jst(s.lastOkAt)} までに取ったものです`
-    : "出せるものがありません";
+  // 古いものを返したとき (staleAt) だけ「出しているのは」と言う。返していなければ、覚えていない所は出せていない
+  const shown =
+    s.staleAt && s.lastOkAt
+      ? `出しているのは ${jst(s.lastOkAt)} までに取ったものです`
+      : s.lastOkAt
+        ? `覚えていない所は出せません (最後に取れたのは ${jst(s.lastOkAt)})`
+        : "出せるものがありません";
   return `${busy}${from}から新しい${what}を取れていません${since}。${shown}`;
 }
 

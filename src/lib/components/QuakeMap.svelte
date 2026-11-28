@@ -1649,11 +1649,14 @@
    * 家族の何台が開いても気象庁へは 1 回)。まだ分からない・読めない (null) ときは出す
    */
   let snowSeason = $state<boolean | null>(null);
+  /** 配信の有無を最後に確かめた時刻 (画面に戻るたびに読み直さない) */
+  let snowSeasonAt = Number.NEGATIVE_INFINITY;
   $effect(() => {
     if (!map || !pageVisible) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const check = async () => {
+      snowSeasonAt = Date.now();
       try {
         const r = await fetch(SNOW_TIMES_URL, {
           referrerPolicy: "no-referrer",
@@ -1668,7 +1671,10 @@
       }
       if (!stopped) timer = setTimeout(() => void check(), SNOW_SEASON_MS);
     };
-    void check();
+    // 裏から戻ったときは、前に確かめてから SNOW_SEASON_MS たっていなければ、その残りだけ待つ
+    const left = snowSeasonAt + SNOW_SEASON_MS - Date.now();
+    if (left > 0) timer = setTimeout(() => void check(), left);
+    else void check();
     return () => {
       stopped = true;
       clearTimeout(timer);

@@ -1411,7 +1411,7 @@ Leaflet の 1.9 は 3 年近く出ておらず、2.0 はまだ beta。
   - Wolfx は公式の文書の項目の一覧から自分で作る (原文は入れない)。地震情報の一覧 (`made-eqlist.json`) は、受けた一覧の形に合わせ、値は気象庁のサンプル電文の地震にした作り物。
   - ほかの情報源 (USGS・EMSC・GeoNet・中央氣象署・PTWC・気象庁 bosai・海しる・国土交通省 (通行止め)) も `tests/fixtures/<情報源>/` に置き、それぞれの README.md に、取ったものを縮めたのか作り物なのかと出典を書く。TREM-RTS・SeisJS・YouTube Data API は試験の中で値を作る。
 - **アダプター:** 情報源のサーバーを立てない。`fetch` と WebSocket を差し替えて、304・切断・張り直し・heartbeat の途絶を試す。
-- **中継 (`tests/relay.test.ts`):** 配信元のまねの `fetch` と時計を渡し、配信元が落ちた・混んだ場面 (5xx・429・時間切れ・つながらない) を作る。古いものを取った時刻つきで返すこと、源ごとの長さを過ぎたら返さないこと、続けて失敗したら源ごと控えること、源の様子と知らせ、上限を超えたときに捨てる順を試す。
+- **中継 (`tests/relay.test.ts`):** 配信元のまねの `fetch` と時計を渡し、配信元が落ちた・混んだ場面 (5xx・429・時間切れ・つながらない) を作る。古いものを取った時刻つきで返すこと、源ごとの長さを過ぎたら返さないこと、続けて失敗したら源ごと控えること、源の様子と知らせ、上限を超えたときに捨てる順を試す。 画面が組む中継の URL がどれも許可の表に通ることは `tests/relay-urls.test.ts` が確かめる (中継で読む層や URL を足したら、そこにも足す)。
 - **E2E (後で):** Playwright で、ログインを飛ばした画面に SSE で fixture を流し、表示と通知の判定を見る。GPU を切った CPU の測定もここで。
 - **CI:** `bun run lint` (oxlint・`bun fmt --check`)・`bun run check` (`svelte-check --tsgo --fail-on-warnings`)・`bun test tests`・`bun run build` (警告で失敗)・Docker のビルドと起動して `/health` を見る。chart は `chart.yml` (8 章)、インストーラは `installers.yml` (インストーラと配布物に関わるファイルと、誰を通すかのコード (`hooks.server.ts`・`trust.ts`・`address.ts`) を変えたときと、手で回したときだけ。各 OS で入れて、上げ直して、外すまで)。火山の表の作り直しは `map-data.yml` (1 日 1 回。[map.md](map.md) の「火山の表を作り直す」)。
 
