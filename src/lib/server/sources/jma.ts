@@ -69,6 +69,11 @@ interface FeedKind {
 }
 
 const GAP_MS = 10 * 60_000;
+/**
+ * フィードは取れても、電文の本体が続けてこの回数だけ取れなければ (5xx・408・429)、受けられていないとみなして
+ * 状態を「再接続中」にする (予備の源が動き出す。docs/design.md の 2.1 の「予備の源」)
+ */
+export const TELEGRAM_MISS_LIMIT = 3;
 
 /**
  * 状態をまるごと持つ種別で、同じ府県予報区のものは新しい 1 つだけを残す (並びは新しい順のまま)。
@@ -117,7 +122,7 @@ function feedSource(
    * フィードを取り、まだ取っていない電文を渡す。電文を全部取れてから控える (途中で失敗したら、次も
    * 304 にならず読み直して、取り残しを取得する。`pollSource` と同じ)
    */
-  async function feed(url: string, signal: AbortSignal): Promise<void> {
+  async function feed(url: string, signal: AbortSignal): Promise<boolean> {
     const c = cache.get(url) ?? {};
     const headers: Record<string, string> = { "user-agent": USER_AGENT };
     if (c.etag) headers["if-none-match"] = c.etag;
@@ -126,13 +131,14 @@ function feedSource(
       headers,
       signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
     });
-    if (res.status === 304) return;
+    if (res.status === 304) return true;
     if (!res.ok) throw new Error(`フィードが ${res.status} を返しました`);
-    if (!(await take(url, parseFeed(await res.text()), signal))) return;
+    if (!(await take(url, parseFeed(await res.text()), signal))) return false;
     cache.set(url, {
       etag: res.headers.get("etag") ?? undefined,
       modified: res.headers.get("last-modified") ?? undefined,
     });
+    return true;
   }
 
   /** まだ取っていない電文を、古い順に取って渡す。取れなかった電文があれば false */
@@ -203,11 +209,15 @@ function feedSource(
       /** 一緒に取るほかのフィードの、次に取る時刻と、最後に取れた時刻 */
       const moreNext = new Map<string, number>();
       const moreOk = new Map<string, number>();
+      /** フィードは取れたが、電文の本体を取り残した回が続いた数 */
+      let missed = 0;
       while (!signal.aborted) {
         try {
+          let complete = true;
           if (Date.now() - lastOk > GAP_MS)
-            await feed(opts.longFeedUrl ?? kind.longFeedUrl, signal);
-          await feed(opts.feedUrl ?? kind.feedUrl, signal);
+            complete = await feed(opts.longFeedUrl ?? kind.longFeedUrl, signal);
+          complete =
+            (await feed(opts.feedUrl ?? kind.feedUrl, signal)) && complete;
           lastOk = Date.now();
           // 急がないほかのフィードの失敗は、記録して次の間隔に回すだけにする
           // (主のフィードの状態と間隔に響かせない。警報などの取得を遅らせないため)
@@ -225,8 +235,17 @@ function feedSource(
               log(`${tag} ${m.feedUrl} を取れませんでした: ${err}`);
             }
           }
-          status.seen(false);
-          status.set("connected");
+          // 電文の本体を取り残した回は、受けたことにしない (最後に受けた時刻を進めない)。続けば「再接続中」にする
+          // (フィードだけ取れて電文が 5xx のときも、予備の源が動き出すように)
+          if (complete) {
+            missed = 0;
+            status.seen(false);
+            status.set("connected");
+          } else if (++missed >= TELEGRAM_MISS_LIMIT)
+            status.set(
+              "retrying",
+              `電文を ${missed} 回続けて取れません (配信元が 5xx などを返しています)`,
+            );
         } catch (err) {
           if (signal.aborted) break;
           log(`${tag} フィードを取れませんでした: ${err}`);

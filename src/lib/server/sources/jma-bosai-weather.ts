@@ -4,8 +4,8 @@
  *
  * - **ふだんは取得しない** (状態は `standby`)。主のフィードが `STANDBY_GRACE_MS` より長く取れないときだけ、
  *   60 秒ごとに取る。主のフィードが取れたら、次の回から待機に戻る (配信元の負荷を増やさない)
- * - 警報・注意報は全国の一覧 `warning/data/r8/map.json` (府県予報区と電文の種別ごとのいちばん新しい報。約 1.3MB) を
- *   ETag を付けて取る。中身は気象警報・注意報 (R06) の電文と同じ形 (種別・市町村等・種類のコード・状態) で、
+ * - 警報・注意報は全国の一覧 `warning/data/r8/map.json` (府県予報区と電文の種別ごとのいちばん新しい報。約 1.3MB、圧縮して 48KB ほど) を
+ *   1 分に 1 回まで、ETag と Last-Modified を付けて取る (変わっていなければ 304)。中身は気象警報・注意報 (R06) の電文と同じ形 (種別・市町村等・種類のコード・状態) で、
  *   種類の名前は無いので、解説資料の別表 3 の名前 (`WARNING_KIND_NAMES`) を当てる。府県予報区と市町村等の名前は、
  *   気象庁ホームページの地域の表 `common/const/area.json` から引く (予備を使い始めたときに 1 回だけ取る)
  * - 府県気象防災速報 (線状降水帯・短時間大雪) は、気象情報の一覧 `information/data/r8/information.json` を ETag を
@@ -31,7 +31,8 @@ import {
   type WeatherWarning,
 } from "#lib/model.ts";
 
-import { sleep, StatusTracker, USER_AGENT } from "./retry.ts";
+import { BosaiFetcher, BosaiHttpError } from "./bosai-fetch.ts";
+import { sleep, StatusTracker } from "./retry.ts";
 import type { Incoming, Source, SourceContext } from "./types.ts";
 
 const BASE = "https://www.jma.go.jp/bosai";
@@ -48,6 +49,11 @@ const OVERLAP_MS = 10 * 60_000;
 /** 主のフィードが一度も取れていないときに、予備で採る報の古さの上限 */
 const COLD_START_MS = 24 * 60 * 60_000;
 const INTERVAL_MS = 60_000;
+/**
+ * 全国の警報・注意報の一覧 (`map.json`) を取りに行く最短の間隔。配信元の max-age (60 秒) と同じ。取りに行っても、
+ * 変わっていなければ 304 で本体を運ばない
+ */
+export const MAP_MIN_INTERVAL_MS = 60_000;
 const MAX_BACKOFF_MS = 15 * 60_000;
 /** 一回に取る気象防災速報の本文の数の上限 */
 const MAX_DENBUN = 10;
@@ -351,39 +357,21 @@ export function bosaiWeatherSource(
     kind: "poll",
     everyMs: INTERVAL_MS,
   });
-  const doFetch = opts.fetch ?? fetch;
+  const http = new BosaiFetcher(opts.fetch ?? fetch);
   const wait = opts.sleep ?? sleep;
   const log = opts.log ?? ((m: string) => console.log(m));
   const now = opts.now ?? Date.now;
   const tag = `[${id}]`;
-  const etags = new Map<string, string>();
   let areas: { table: BosaiAreas; at: number } | undefined;
   /** 本文が 404・410 だった速報 (一覧に載っている間は取り直さない) */
   const gone = new Set<string>();
+  /** 全国の警報・注意報の一覧を最後に取りに行った時刻 (`MAP_MIN_INTERVAL_MS` より短くは取らない) */
+  let mapAt = Number.NEGATIVE_INFINITY;
+  /** 採れなかった報のある一覧の本文 (地域の表を取り直したら、一覧を取り直さずに読み直す) */
+  let pendingMap: string | undefined;
 
-  /** 取る。304 なら undefined。200 でも 304 でもなければ例外 */
-  async function get(
-    url: string,
-    signal: AbortSignal,
-    conditional: boolean,
-  ): Promise<{ text: string; etag?: string } | undefined> {
-    const headers: Record<string, string> = { "user-agent": USER_AGENT };
-    const etag = conditional ? etags.get(url) : undefined;
-    if (etag) headers["if-none-match"] = etag;
-    const res = await doFetch(url, {
-      headers,
-      signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
-    });
-    if (res.status === 304) return undefined;
-    if (!res.ok) {
-      const err = new Error(`${url} が ${res.status} を返しました`);
-      (err as Error & { status?: number }).status = res.status;
-      throw err;
-    }
-    return {
-      text: await res.text(),
-      etag: res.headers.get("etag") ?? undefined,
-    };
+  async function get(url: string, signal: AbortSignal, conditional: boolean) {
+    return await http.get(url, signal, conditional);
   }
 
   async function areaTable(signal: AbortSignal): Promise<BosaiAreas> {
@@ -403,9 +391,23 @@ export function bosaiWeatherSource(
 
   async function warnings(signal: AbortSignal, since: number): Promise<void> {
     const table = await areaTable(signal);
-    const r = await get(BOSAI_WARNING_MAP, signal, true);
-    if (!r) return;
-    const { warnings: ws, unknown } = parseBosaiWarnings(r.text, table);
+    let text: string;
+    if (now() - mapAt < MAP_MIN_INTERVAL_MS) {
+      if (pendingMap === undefined) return;
+      text = pendingMap;
+    } else {
+      mapAt = now();
+      // 変わっていなければ 304 で本体を運ばない (落ちている間の量を抑える。docs/design.md の 2.8 の「予備」)
+      const r = await get(BOSAI_WARNING_MAP, signal, true);
+      if (r) {
+        http.remember(BOSAI_WARNING_MAP, r.validators);
+        text = r.text;
+      } else if (pendingMap !== undefined) text = pendingMap;
+      else return;
+    }
+    const { warnings: ws, unknown } = parseBosaiWarnings(text, table);
+    // 採れなかった報があっても控えは覚え (変わっていない一覧を取り直さない)、本文を手元に残して読み直す
+    pendingMap = unknown > 0 ? text : undefined;
     if (unknown > 0) {
       log(
         `${tag} 地域の表に無いか、名前の分からない種類の報が ${unknown} あります`,
@@ -424,8 +426,6 @@ export function bosaiWeatherSource(
       });
       status.seen(true);
     }
-    // 採れなかった報があれば、次の回も 304 にせず読み直す (取り直した地域の表で読めるように)
-    if (r.etag && unknown === 0) etags.set(BOSAI_WARNING_MAP, r.etag);
   }
 
   async function information(
@@ -454,7 +454,7 @@ export function bosaiWeatherSource(
         if (!res) continue;
         body = res.text;
       } catch (err) {
-        const code = (err as Error & { status?: number }).status;
+        const code = err instanceof BosaiHttpError ? err.status : undefined;
         log(`${tag} ${err}`);
         if (code === 404 || code === 410) gone.add(i.name);
         else left = true;
@@ -488,7 +488,7 @@ export function bosaiWeatherSource(
       status.seen(true);
     }
     // 取り残しがあれば、次の回も一覧を 304 にせず読み直す
-    if (!left && r.etag) etags.set(BOSAI_INFORMATION, r.etag);
+    if (!left) http.remember(BOSAI_INFORMATION, r.validators);
   }
 
   return {
