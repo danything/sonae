@@ -37,6 +37,7 @@ https://github.com/user-attachments/assets/10623080-5ec4-4150-8a29-319a88e5f30b
 - 地震・津波・火山 (噴火速報・噴火警報)・気象 (警報・注意報など) の情報を気象庁 (防災情報 XML) から、地震・津波を P2P地震情報・Wolfx Project からも、海外の地震を USGS・EMSC・GeoNet・中央氣象署 (台湾、授権碼があるとき) から、太平洋の津波の参考情報を PTWC (米国) と気象庁ホームページ (国際津波関連情報) から受け、画面には必ず出典と「公式の情報を優先してください」という注意文を出す。気象庁の情報は加工して出しているので、その旨も書く。
 - 地図には、台湾の観測点のいまの揺れ (ExpTech の [TREM](https://exptech.dev) の RTS。非公式) と、有志の観測点のいまの揺れ (Wolfx Project の [SeisJS](https://wolfx.jp/docs/seisjs-api/)。非公式) を点の色で出す。地図に出すだけで、一覧・音・読み上げ・通知では知らせない。
 - 地図には、気象庁の火山の監視カメラ (49 火山の 95 台) の印も置く。押すと、気象庁ホームページのいちばん新しい画像を出す (画像はブラウザが気象庁から直接読む)。
+- 国や自治体が YouTube で流しているライブカメラ (九州地方整備局・杉並区・東京都港湾局の 7 台) の印も置き、押すと YouTube の埋め込みのプレーヤーで見られる。配信中かはサーバーが YouTube Data API で確かめるので、キー (`YOUTUBE_API_KEY`) が無ければリンクだけを出す。プライバシーポリシーは `/privacy` (ログインなしで開ける)。
 - 地図の右下の「重ねる」で、気象庁の雨雲 (いま。いまと 3 時間先までの予測を自動で順に見せる形も)・今後の雨 (降水短時間予報)・雷・竜巻・キキクル (土砂・大雨の危険度) か、国土地理院のハザードマップポータルサイトのハザードマップ (洪水・内水・高潮・津波・土砂災害)・活断層・防災科研の J-SHIS (揺れの確率・地盤の揺れやすさ) を 1 つ重ねられる。線状降水帯の雨域と台風の予報円・暴風警戒域は、出ている間いつも描く。海上保安庁の海しるの海底地殻変動観測点と海域火山 (API のキーがあるとき) と、国土交通省の「通れるマップ」の災害時の通行止めと通れた道 (目安。寄せると薄くし、大きく寄せると隠す) も地図に出す。通行止めと通れた道は、道路局のページから自動で見つけたときか、URL を登録したときに出す。
 
 知らせる条件は、緊急地震速報・地震・津波・火山・気象のそれぞれで「全国のものを知らせる」「住んでいる地域と現在地のものだけ」「知らせない」から選ぶ。地震は、知らせる震度も選ぶ。
@@ -83,8 +84,8 @@ chart はリリースのたびに `oci://ghcr.io/danything/charts/sonae` に出�
    kubectl create namespace sonae
    kubectl -n sonae create secret generic sonae-secrets \
      --from-literal=oidc-client-secret=<クライアントシークレット>
-   # 任意: Web Push の VAPID の秘密鍵 (docs/push.md)・台湾の中央氣象署の授権碼 (docs/cwa.md)・海しるの API のキー (docs/design.md の 2.11)
-   #   --from-file=vapid-private-jwk=vapid.jwk --from-literal=cwa-api-key=<授権碼> --from-literal=msil-api-key=<キー>
+   # 任意: Web Push の VAPID の秘密鍵 (docs/push.md)・台湾の中央氣象署の授権碼 (docs/cwa.md)・海しるの API のキー (docs/design.md の 2.11)・YouTube Data API のキー (2.13)
+   #   --from-file=vapid-private-jwk=vapid.jwk --from-literal=cwa-api-key=<授権碼> --from-literal=msil-api-key=<キー> --from-literal=youtube-api-key=<キー>
    ```
 
 3. 値を書いて入れる。
@@ -112,7 +113,7 @@ chart はリリースのたびに `oci://ghcr.io/danything/charts/sonae` に出�
 
 - 公開の URL (`PUBLIC_URL`・`ORIGIN`) は、書かなければ `httpRoute.hostnames` か `ingress.hosts` の先頭に `https://` を付けたもの。違うときは `sonae.publicUrl` に書く。
 - OIDC の 3 つ (issuer・client id・Secret の `oidc-client-secret`) が揃わないと、画面は開かず `/health` だけ答える。ただし `secrets.name` の Secret に `oidc-client-secret` が無いと、Pod が起動しない。chart は `TRUSTED_NETWORKS` を書かない (書くなら `sonae.extraEnv`。[docs/install.md の「ログイン」](docs/install.md#ログイン))。
-- VAPID の鍵が無ければ Web Push を切って動く。授権碼が無ければ中央氣象署の受信だけを、海しるのキーが無ければ海しるの点だけを切って動く。災害時の通行止めは、国土交通省 道路局のページから通れるマップを自動で見つけて出す。`sonae.roadGeojson` は見つからない災害のための予備で、自動の発見を切るなら `sonae.extraEnv` に `SONAE_ROAD_DISCOVER=off` を書く (docs/design.md の 2.12)。
+- VAPID の鍵が無ければ Web Push を切って動く。授権碼が無ければ中央氣象署の受信だけを、海しるのキーが無ければ海しるの点だけを、YouTube のキーが無ければライブカメラの再生だけを切って動く。災害時の通行止めは、国土交通省 道路局のページから通れるマップを自動で見つけて出す。`sonae.roadGeojson` は見つからない災害のための予備で、自動の発見を切るなら `sonae.extraEnv` に `SONAE_ROAD_DISCOVER=off` を書く (docs/design.md の 2.12)。
 - 既定の `image.tag` は `latest` (main に中身の変更が入るたびに動く)。固定するなら `ghcr.io/danything/sonae` のコミットの sha のタグを書く。
 - Ingress を使うなら `ingress.enabled: true` と `ingress.hosts`。SSE (`/api/stream`) が切れないよう、前段の読み込みのタイムアウトを長くする。
 - PVC は既定で Argo CD に消させない注釈が付く (`persistence.protectFromPruning`)。

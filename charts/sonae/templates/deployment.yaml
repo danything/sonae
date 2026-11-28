@@ -141,6 +141,16 @@ spec:
                   key: {{ .Values.secrets.keys.msilApiKey }}
                   optional: true
             {{- end }}
+            {{- if .Values.secrets.name }}
+            # YouTube Data API のキー。Secret に無ければ環境変数が入らず、YouTube のライブカメラを地図の中で再生せず、
+            # リンクだけを出して普通に動く (optional)。docs/design.md の 2.13
+            - name: YOUTUBE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.name }}
+                  key: {{ .Values.secrets.keys.youtubeApiKey }}
+                  optional: true
+            {{- end }}
             {{- if .Values.voicevox.enabled }}
             # 読み上げの声を作る VOICEVOX (templates/voicevox.yaml)。止まっていると、画面は端末の読み上げで読む
             - name: VOICEVOX_URL

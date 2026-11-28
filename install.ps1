@@ -274,6 +274,8 @@ function Initialize-Env([string]$Bun, [string]$Work) {
                     '# CWA_API_KEY=',
                     '# 海しる (海上保安庁) の API のキー。無ければ海しるの点を出さない (docs/design.md の 2.11)',
                     '# MSIL_API_KEY=',
+                    '# YouTube Data API のキー。無ければライブカメラを地図の中で再生せず、リンクだけを出す (docs/design.md の 2.13)',
+                    '# YOUTUBE_API_KEY=',
                     '# 災害時の通行止めは、国土交通省 道路局のページから通れるマップを自動で見つける。切るなら off (docs/design.md の 2.12)',
                     '# SONAE_ROAD_DISCOVER=off',
                     '# 自動で見つからない災害の予備。通れるマップの GeoJSON の URL (https の *.go.jp。カンマか空白で区切る)',

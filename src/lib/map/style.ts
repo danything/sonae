@@ -15,6 +15,7 @@ import {
   HYPO_RADIUS,
   radiusExpr,
 } from "#lib/map/epicenters.ts";
+import { livecamFeatures } from "#lib/map/livecams.ts";
 import {
   JMATILE,
   N3_TILE_ZOOMS,
@@ -102,6 +103,10 @@ const ROADS_ATTRIBUTION =
 
 const MARINE_ATTRIBUTION =
   '出典：<a href="https://www.msil.go.jp/" target="_blank" rel="noopener">海洋状況表示システム</a> (海底地殻変動観測点・海域火山DB を加工)';
+
+/** YouTube のライブカメラの出典 (全文は `#lib/notice.ts` の CREDITS) */
+const LIVECAMS_ATTRIBUTION =
+  "ライブカメラ: 九州地方整備局・杉並区・東京都港湾局 (YouTube)";
 
 /** 火山の監視カメラの位置の出典 (全文は `#lib/notice.ts` の CREDITS) */
 const CAMERAS_ATTRIBUTION =
@@ -926,6 +931,10 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
     note: `白い縁の暗い四角に白いカメラの形。気象庁が火山を見ているカメラの位置です (ズーム ${CAMERA_MINZOOM} から出します)。押すと、気象庁ホームページのいちばん新しい画像が出ます。画像は 2〜3 分ごとに替わりますが、気象庁の配信で 10 分ほど遅れることがあり、吹き出しを開いている間は 10 分ごとに読み直します。位置はおおよそで、どの向きを撮っているかは火山の活動で変わります`,
   },
   {
+    label: "YouTube のライブカメラ",
+    note: `白い縁の暗い四角に白い再生の三角。国や自治体が YouTube で流している、川と港のライブカメラの位置です (ズーム ${CAMERA_MINZOOM} から出します)。押すと、吹き出しで YouTube のプレーヤーが音を消して再生します。配信中かはサーバーが 5 分ごとに確かめ、配信していないときは再生しません。YouTube の API のキーが無いサーバーでは、YouTube のページへのリンクだけを出します`,
+  },
+  {
     label: "通行止め (災害)",
     note: "白い縁の赤い太い線。国土交通省が災害ごとに出す「通れるマップ」の道路規制情報のうち、いま全面通行止めの区間です。押すと、路線名・区間・規制の内容と理由・更新の時刻が出ます。国土交通省 道路局のページで見つけた災害 (と、サーバーの管理者が登録した URL) の分を出します (30 分ごとに取り直します)。ここに無くても通れるとは限りません",
   },
@@ -1504,6 +1513,12 @@ export function baseStyle(
         data: { type: "FeatureCollection", features: [] },
         attribution: CAMERAS_ATTRIBUTION,
       },
+      // YouTube のライブカメラの位置。表 (`#lib/map/livecams.ts` の LIVECAMS) から作る
+      livecams: {
+        type: "geojson",
+        data: livecamFeatures(),
+        attribution: LIVECAMS_ATTRIBUTION,
+      },
       hypocenters: {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -1917,6 +1932,29 @@ export function baseStyle(
         minzoom: CAMERA_MINZOOM,
         layout: {
           "icon-image": "camera",
+          "icon-allow-overlap": true,
+          "icon-size": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            7,
+            1,
+            10,
+            1.25,
+            13,
+            1.5,
+          ],
+        },
+      },
+      // YouTube のライブカメラ (火山の監視カメラと同じ地に、白い再生の三角)。いつも出し、押すと吹き出しにプレーヤー。
+      // 火山の監視カメラと同じく、ズーム 7 から (`CAMERA_MINZOOM`)
+      {
+        id: "livecams",
+        type: "symbol",
+        source: "livecams",
+        minzoom: CAMERA_MINZOOM,
+        layout: {
+          "icon-image": "livecam",
           "icon-allow-overlap": true,
           "icon-size": [
             "interpolate",
