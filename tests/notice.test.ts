@@ -34,7 +34,7 @@ test("出典: 各機関の規約の例の文言", () => {
   // ハザードマップポータルサイトの出典の記載方法
   expect(all).toContain("出典：「ハザードマップポータルサイト」");
   expect(all).toContain("「ハザードマップポータルサイト」を加工して作成");
-  // 引いたときの Blue Marble: NASA Earth Observatory の頼みと GIBS の謝辞の文
+  // 引いたときの Blue Marble: NASA Earth Observatory が求める出典の文と GIBS の謝辞の文
   expect(all).toContain("NASA Earth Observatory");
   expect(all).toContain(
     "We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS), part of NASA's Earth Science Data and Information System (ESDIS).",

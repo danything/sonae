@@ -3,7 +3,7 @@
  *
  * 仕様: 気象庁防災情報 XML フォーマット 技術資料 (https://xml.kishou.go.jp/tec_material.html)。
  * 読むのは Bun 組み込みの `Bun.XML.parse` (外部の DTD・実体を読まない)。compact の形式では、
- * 属性も子も無い要素は文字列、そうでなければ `@属性`・`#text`・子の名前を鍵にした物になる。
+ * 属性も子も無い要素は文字列、そうでなければ `@属性`・`#text`・子の名前をキーにしたオブジェクトになる。
  */
 
 import { XML } from "bun";
@@ -76,6 +76,12 @@ export function attr(v: V, name: string): string | undefined {
   const a = el[`@${name}`];
   return typeof a === "string" ? a : undefined;
 }
+
+/** 数の文字列を数に。空や読めないものは undefined */
+export const num = (v: string | undefined) => {
+  const n = v === undefined || v.trim() === "" ? Number.NaN : Number(v);
+  return Number.isFinite(n) ? n : undefined;
+};
 
 export const STATUS: Record<string, Status> = {
   通常: "normal",
@@ -350,10 +356,6 @@ function readEarthquakeCount(body: V): {
   counts: EarthquakeCount[];
   next?: string;
 } {
-  const num = (v: string | undefined) => {
-    const n = v === undefined ? Number.NaN : Number(v);
-    return Number.isFinite(n) ? n : undefined;
-  };
   return {
     counts: children(child(body, "EarthquakeCount"), "Item").map((item) => ({
       type: attr(item, "type") ?? "",
@@ -369,6 +371,10 @@ function readEarthquakeCount(body: V): {
 /** 火山: 噴火警報・予報・解説情報・観測報・降灰予報・噴火速報・推定噴煙流向報 (docs/design.md の 3 章) */
 const isVolcanoCode = (c: string): c is VolcanoCode =>
   (VOLCANO_CODES as readonly string[]).includes(c);
+
+/** 降灰予報 (定時・速報・詳細) */
+const isAshCode = (c: VolcanoCode) =>
+  c === "VFVO53" || c === "VFVO54" || c === "VFVO55";
 
 /**
  * 種別ごとの、対象の火山と対象の市町村等の VolcanoInfo の type。
@@ -404,8 +410,9 @@ const VOLCANO_INFO: Record<
 };
 
 /**
- * 警戒の段 (噴火警戒レベル) を種類のコードから取る種別。ほかの種別の種類のコード (降灰予報の 06・07、
- * 観測報の 51 爆発・52 噴火など) は警報の種類ではないので段にしない (火山灰予報の 22 などと重なるため)
+ * 警戒の段 (噴火警戒レベル) を種類のコードから取る種別。ほかの種別の種類のコード (降灰予報の 06〜08・
+ * 観測報の 51 爆発・52 噴火など) は警報の種類ではないので段にしない (火山灰予報 (速報) の 22 は、
+ * レベルの無い火山の火口周辺危険と同じ数で、段にすると取り違える)
  */
 const LEVELED: ReadonlySet<VolcanoCode> = new Set([
   "VFVO50",
@@ -448,7 +455,7 @@ export function readAshPolygon(value: string | undefined): [number, number][] {
 }
 
 /** 降灰予報の範囲 (`Body/AshInfos/AshInfo`。docs/design.md の 2 章の「火山」)。範囲が無ければ空 */
-export function readAshWindows(body: V): AshWindow[] {
+function readAshWindows(body: V): AshWindow[] {
   return children(child(body, "AshInfos"), "AshInfo").flatMap(
     (info): AshWindow[] => {
       const areas = children(info, "Item").flatMap((item): AshArea[] => {
@@ -552,28 +559,17 @@ function readVolcano(body: V, code: VolcanoCode) {
       },
     );
   });
-  const ash = code === "VFVO53" || code === "VFVO54" || code === "VFVO55";
   const cityItems = children(cityInfo, "Item");
-  const cities = cityItems.flatMap((item) =>
-    children(child(item, "Areas"), "Area").flatMap((a) => {
-      const n = textAt(a, "Name");
-      return n ? [n] : [];
-    }),
-  );
-  const cityCodes = cityItems.flatMap((item) =>
-    children(child(item, "Areas"), "Area").flatMap((a) => {
-      const c = textAt(a, "Code");
-      return c ? [c] : [];
-    }),
-  );
-  const wKind = child(cityItems[0], "Kind");
-  const warningName = textAt(wKind, "Name");
-  const content = child(body, "VolcanoInfoContent");
   const names = (item: V, key: "Name" | "Code") =>
     children(child(item, "Areas"), "Area").flatMap((a) => {
       const v = textAt(a, key);
       return v ? [v] : [];
     });
+  const cities = cityItems.flatMap((item) => names(item, "Name"));
+  const cityCodes = cityItems.flatMap((item) => names(item, "Code"));
+  const wKind = child(cityItems[0], "Kind");
+  const warningName = textAt(wKind, "Name");
+  const content = child(body, "VolcanoInfoContent");
   return {
     volcanoes,
     warning:
@@ -586,7 +582,7 @@ function readVolcano(body: V, code: VolcanoCode) {
         : undefined,
     cities: [...new Set(cities)],
     cityCodes: [...new Set(cityCodes)],
-    ash: ash
+    ash: isAshCode(code)
       ? cityItems.flatMap((item): VolcanoAsh[] => {
           const name = textAt(item, "Kind/Name");
           return name
@@ -753,7 +749,6 @@ export function parseJmaXml(xml: string, code: string): Normalized[] {
     const v = readVolcano(body, code);
     const eventId =
       eventIds[0] || v.volcanoes.map((a) => a.code).join("-") || reportedAt;
-    const ashCode = code === "VFVO53" || code === "VFVO54" || code === "VFVO55";
     return [
       {
         type: "volcano",
@@ -784,7 +779,7 @@ export function parseJmaXml(xml: string, code: string): Normalized[] {
           plume: v.plume,
           observation: v.observation,
         },
-        ...(ashCode ? { ash: readAshWindows(body) } : {}),
+        ...(isAshCode(code) ? { ash: readAshWindows(body) } : {}),
       },
     ];
   }

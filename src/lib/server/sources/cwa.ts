@@ -1,7 +1,7 @@
 /**
  * 台湾の中央氣象署 (CWA) のオープンデータ「顯著有感地震報告」(E-A0015-001)。台湾付近の地震 (与那国・沖縄に近い)。
  *
- * - 授権碼 (会員登録で発行される鍵) が要る。環境変数 `CWA_API_KEY` が無ければ、この情報源は作らない
+ * - 授権碼 (会員登録で発行される API のキー) が要る。環境変数 `CWA_API_KEY` が無ければ、この情報源は作らない
  *   (ほかは普段どおり。登録の手順は docs/cwa.md)
  * - 新しい 10 件を 2 分ごとに取る。鍵は地震の番号 (EarthquakeNo) と時刻・M・位置
  * - 時刻 (OriginTime) は台湾の時刻 (UTC+8) で、時差の印が無い
@@ -88,14 +88,14 @@ export function parseCwa(text: string): Incoming[] {
   });
 }
 
-/** 授権碼があれば CWA の情報源を作る。無ければ undefined (受信の一覧に入れない) */
+/** 授権碼があれば CWA の情報源を作る。無ければ undefined (受信の状態には `off` で並べる) */
 export function cwaSource(
   ctx: SourceContext,
   key: string | undefined = process.env.CWA_API_KEY,
   opts: Partial<PollOptions> = {},
 ): Source | undefined {
   if (!key?.trim()) return undefined;
-  // 授権碼は仕様のとおり query の Authorization で渡す。取りに行く輪は、ログと状態の欄で鍵を伏せる (poll.ts の redact)
+  // 授権碼は仕様のとおり query の Authorization で渡す。pollSource は、ログと状態の欄では授権碼を伏せる (poll.ts の redact)
   const url = `${CWA_URL}?${new URLSearchParams({
     Authorization: key.trim(),
     format: "JSON",

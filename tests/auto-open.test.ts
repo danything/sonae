@@ -183,7 +183,7 @@ describe("同じ地震か (followsEew)", () => {
 });
 
 describe("開くリンク (openHref)", () => {
-  test("ほかの鍵は残し、選ぶものは 1 つにする", () => {
+  test("query のほかのキーは残し、選ぶものは 1 つにする", () => {
     const p = new URLSearchParams("about=1&q=old");
     expect(openHref(p, eewTarget, false)).toBe("/?about=1&e=e1");
   });

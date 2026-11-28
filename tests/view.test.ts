@@ -67,7 +67,7 @@ describe("リンク (viewHref・selectHref)", () => {
     );
   });
 
-  test("ほかの鍵は残す", () => {
+  test("query のほかのキーは残す", () => {
     expect(viewHref(p("about=1&e=9"), { e: null })).toBe("/?about=1");
   });
 

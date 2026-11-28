@@ -1,16 +1,18 @@
 /**
- * 台風の進路の予報を地図に描く (docs/map.md の「台風」)。中身は気象庁の台風解析・予報情報 (VPTW60〜65) の値のまま
- * (予報円の中心と半径・暴風警戒域の半径・実況の暴風域と強風域)。色と線は気象庁の台風の図の決まりに合わせる。
+ * 台風の進路の予報とこれまでの経路を地図に描く (docs/map.md の「台風」)。中身は気象庁の台風解析・予報情報 (VPTW60〜65)
+ * の値のまま (予報円の中心と半径・暴風警戒域の半径・実況の中心と暴風域と強風域)。色と線は気象庁の台風の図の決まりに合わせる。
  *
  * - 予報円: 白の破線の円 (中心が 70% の確率で入る範囲)
  * - 予報円の中心を結ぶ線: 白の細い破線
  * - 暴風警戒域: 予報円の外側を囲む赤の実線 (実況の暴風域と、各予報の暴風警戒域の円をまとめた外周)
  * - 暴風域: 赤の太い実線の円 (実況)。強風域: 黄の実線の円 (実況)
+ * - これまでの経路: 黒い縁の青い実線と点 (sonae が受けた報の実況の中心をつないだもの。受けていなかった間は空ける)
  *
  * 円は電文の半径を中心から測って描くだけで、半径や中心を補ったり、予報の時刻の間を足したりはしない。
  * 暴風警戒域の外周は、気象庁の図と同じく、隣り合う円を接線でつないだ形 (凸包) を重ねた外周にする
  */
 
+import type { PopupLine } from "#lib/map/marine.ts";
 import type {
   CircleAxis,
   TyphoonForecast,
@@ -19,8 +21,8 @@ import type {
 } from "#lib/model.ts";
 
 /** 気象庁の台風の図の色。赤は配色の指針の赤 (255,40,0)、黄は強風域の黄 */
-export const TYPHOON_RED = "#ff2800";
-export const TYPHOON_YELLOW = "#ffe600";
+const TYPHOON_RED = "#ff2800";
+const TYPHOON_YELLOW = "#ffe600";
 
 /**
  * 地図に描く台風 (台風ごとにいちばん新しい報)。取消・訓練・試験・消滅の報と、新しい報が 12 時間より来ていない台風は
@@ -226,7 +228,7 @@ export function envelope(rings: P[][]): P[][] {
 
 // ---- 地図の GeoJSON ----
 
-export type TyphoonLineKind =
+type TyphoonLineKind =
   "gale" | "storm" | "forecast" | "track" | "warning" | "past";
 
 // ---- これまでの経路 (docs/map.md の「台風」の「これまでの経路」) ----
@@ -243,10 +245,10 @@ export interface TrackPoint {
  * これまでの経路の点の間がこれより空いたら、sonae が報を受けていなかった抜けとみなし、線でつながない。
  * 台風解析・予報情報の実況は 3 時間ごと (近づくと 1 時間ごと) なので、6 時間を超えれば 1 通より多く欠けている
  */
-export const TRACK_GAP_MS = 6 * 3600_000;
+const TRACK_GAP_MS = 6 * 3600_000;
 
 /** これまでの経路の線の色 (気象庁の台風の図の、これまでの経路の青) */
-export const TYPHOON_PAST_COLOR = "#4a8cff";
+const TYPHOON_PAST_COLOR = "#4a8cff";
 
 /**
  * 1 つの台風の報 (同じ series) から、これまでの経路の点を作る。取消・訓練・試験の報と、中心の無い報は使わない。
@@ -425,21 +427,15 @@ export function dayHour(iso: string): string {
   return `${parts.day}日 ${parts.hour}時`;
 }
 
-/** 吹き出しの 1 行 (海しるの点と同じ形) */
-export interface TyphoonPopupLine {
-  text: string;
-  cls?: string;
-}
-
 /**
- * 押した台風の中心か予報円の中心の吹き出し。名前と号数・中心気圧・最大風速 (最大瞬間風速)・時刻と、予報なら
- * 予報円と暴風警戒域の半径。いちばん下に出典と「予報円は中心が 70% の確率で入る範囲」
+ * 押した台風の中心か予報円の中心の吹き出し。上から名前と号数・いつのものか・大きさと強さの階級・中心気圧・
+ * 最大風速 (最大瞬間風速)。予報なら予報円と暴風警戒域の半径と予報円の説明、実況なら位置の文。いちばん下に出典
  */
 export function typhoonPopup(
   w: WeatherInfo,
   index: number,
   fmt: (iso: string) => string,
-): TyphoonPopupLine[] {
+): PopupLine[] {
   const t = w.typhoon;
   if (!t) return [];
   const f: TyphoonForecast | undefined =
@@ -447,7 +443,7 @@ export function typhoonPopup(
   const name = [typhoonName(t), t.name ? `(${t.name})` : ""]
     .filter(Boolean)
     .join(" ");
-  const lines: TyphoonPopupLine[] = [{ text: name, cls: "bold" }];
+  const lines: PopupLine[] = [{ text: name, cls: "bold" }];
   const s = f ?? t;
   lines.push({
     text: f
@@ -535,7 +531,7 @@ export function nearestTyphoonPoint<T extends { d2: number; index: number }>(
 export const TYPHOON_TRACK_URL = "/api/typhoon-track";
 
 /** 地図の source の出典 (気象庁の電文の値をそのまま描く) */
-export const TYPHOON_ATTRIBUTION = "気象庁 (台風解析・予報情報)";
+const TYPHOON_ATTRIBUTION = "気象庁 (台風解析・予報情報)";
 
 const empty = { type: "FeatureCollection", features: [] };
 /** 線 (`typhoon`) と点 (`typhoon-points`) の source */

@@ -3,11 +3,11 @@
  *
  * - 取るのは海底地殻変動観測点 (GNSS-A、31 点)・海域火山データベース (35 点)・海上保安部署等 (191 点)・
  *   潮汐推算の地点の一覧。どれもめったに変わらない
- * - 潮汐推算の値 (1 日分) は、人が地点を押したときだけ取る (`TideFetcher`。地点と日ごとに覚え、取りに行く回数に上限)
+ * - 潮汐推算の値 (1 日分) は、人が地点を押したときだけ取る (`TideFetcher`。地点と日ごとに覚え、取得する回数に上限)
  * - API のキー (`MSIL_API_KEY`) が無ければ作らない (層を出さないだけで、ほかは普段どおり)。キーはヘッダー
  *   `Ocp-Apim-Subscription-Key` で送り、URL・ログ・状態の欄・ブラウザには出さない
- * - 取ったものは表 `layer_cache` に置く。起動し直しても、前に取ってから 1 日たつまでは取りに行かない
- *   (利用規約の「短い間に大量に取りに行かない」)。層は 1 つずつ順に取る
+ * - 取ったものは表 `layer_cache` に置く。起動し直しても、前に取ってから 1 日たつまでは取得しない
+ *   (利用規約の「短い間に大量に取得しない」)。層は 1 つずつ順に取る
  * - 1 回の答えは 1,000 件・64MB まで。超えると `exceededTransferLimit` が付くので、`resultOffset` で続きを取る
  * - 失敗したら 15 分から倍々に空ける (上限 6 時間)。前に取ったものがあれば、それを出し続ける
  *
@@ -16,6 +16,7 @@
 
 import type { Database } from "bun:sqlite";
 
+import { jstDate } from "#lib/format.ts";
 import type {
   MarineCollection,
   MarineFeature,
@@ -29,11 +30,11 @@ import { LayerCache } from "../layer-cache.ts";
 import { sleep, StatusTracker, USER_AGENT } from "./retry.ts";
 import type { Source, SourceContext } from "./types.ts";
 
-export const MSIL_API = "https://api.msil.go.jp";
+const MSIL_API = "https://api.msil.go.jp";
 
 export interface MsilLayer {
   kind: MarineKind;
-  /** API の頭 (`https://api.msil.go.jp/<path>/v2/MapServer/<layer>/query`) */
+  /** API のパス (`https://api.msil.go.jp/<path>/v2/MapServer/<layer>/query`) */
   path: string;
   layer: number;
   /**
@@ -68,7 +69,7 @@ export function heightOf(v: unknown): number | undefined {
 }
 
 /** 潮汐推算の地点のコード (「0114」)。`/api/tide` で受けるコードもこの形だけ */
-export const TIDE_CODE = /^[0-9A-Za-z]{1,10}$/;
+const TIDE_CODE = /^[0-9A-Za-z]{1,10}$/;
 
 export const MSIL_LAYERS: MsilLayer[] = [
   {
@@ -195,7 +196,7 @@ export function parseMsil(
   return { features, count: doc.features.length, more };
 }
 
-/** 続きを取りに行く回数の上限 (1 回 1,000 件。いまは 1 回で済む) */
+/** 続きを取得する回数の上限 (1 回 1,000 件。いまは 1 回で済む) */
 const MAX_PAGES = 20;
 export const MSIL_INTERVAL_MS = 24 * 60 * 60_000;
 const RETRY_MS = 15 * 60_000;
@@ -265,7 +266,7 @@ export function msilSource(
         signal: AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]),
         redirect: "follow",
       });
-      // 答えの本文に鍵は入らないが、念のため状態の欄には番号だけを出す
+      // 答えの本文にキーは入らないが、念のため状態の欄には番号だけを出す
       if (!res.ok) throw new Error(`${l.path} が ${res.status} を返しました`);
       const r = parseMsil(l, await res.text());
       all.push(...r.features);
@@ -299,7 +300,7 @@ export function msilSource(
             const t = Date.parse(c?.fetchedAt ?? "");
             if (Number.isFinite(t) && now() - t < MSIL_INTERVAL_MS) continue;
             const features = await fetchLayer(l, signal);
-            // 空の答えは、相手の不具合とみなして前のものを残す (31 点・35 点が急に無くなることは無い)
+            // 空の答えは、相手の不具合とみなして前のものを残す (どの層も、点が急に無くなることは無い)
             if (features.length === 0)
               throw new Error(`${l.path} の点が 0 でした`);
             cache.put(
@@ -331,9 +332,9 @@ export function msilSource(
   };
 }
 
-/** 潮汐推算の値を取りに行く回数の上限 (`TIDE_WINDOW_MS` の間に)。家族の数台が地点を押す量には足りる */
+/** 潮汐推算の値を取得する回数の上限 (`TIDE_WINDOW_MS` の間に)。家族の数台が地点を押す量には足りる */
 export const TIDE_MAX_FETCHES = 30;
-export const TIDE_WINDOW_MS = 10 * 60_000;
+const TIDE_WINDOW_MS = 10 * 60_000;
 /** 覚えておく地点と日の数 (1 つ 1 日分で 6KB ほど) */
 const TIDE_CACHE_SIZE = 64;
 const TIDE_TIMEOUT_MS = 30_000;
@@ -343,10 +344,6 @@ export const tideUrl = (code: string, date: string) =>
     stationCode: code,
     date: date.replaceAll("-", ""),
   })}`;
-
-/** 日本時間の暦日 (`YYYY-MM-DD`) */
-const jstDay = (ms: number) =>
-  new Date(ms + 9 * 60 * 60_000).toISOString().slice(0, 10);
 
 /**
  * 推算潮位の答え (`{ time, interval, stationCode, tide }`) を読む。形が違えば例外。
@@ -380,8 +377,8 @@ export function parseTide(code: string, date: string, text: string): TideDay {
 
 /**
  * 潮汐推算の 1 日分の値を、人が地点を押したときだけ取る (`/api/tide`)。推算の値は日ごとに決まって変わらないので、
- * 地点と日ごとにメモリに覚え、同じ地点を押し直しても取りに行かない。取りに行く回数は 10 分に 30 回まで
- * (海しる API 利用規約の「短い間に大量に取りに行かない」)。地点は、1 日 1 回取った地点の一覧にあるコードだけ
+ * 地点と日ごとにメモリに覚え、同じ地点を押し直しても取得しない。取得する回数は 10 分に 30 回まで
+ * (海しる API 利用規約の「短い間に大量に取得しない」)。地点は、1 日 1 回取った地点の一覧にあるコードだけ
  */
 export class TideFetcher {
   private readonly cache = new Map<string, TideDay>();
@@ -411,7 +408,7 @@ export class TideFetcher {
   async today(code: string): Promise<TideDay> {
     if (this.station(code) === undefined)
       throw new TideRefused("この地点の潮汐推算はありません", 404);
-    const date = jstDay(this.now());
+    const date = jstDate(this.now());
     const id = `${code}-${date}`;
     const hit = this.cache.get(id);
     if (hit) return hit;
@@ -453,7 +450,7 @@ export class TideFetcher {
   }
 }
 
-/** 取りに行かずに断ったとき (地点が無い・回数の上限)。文はそのまま画面に出す */
+/** 取得せずに断ったとき (地点が無い・回数の上限)。文はそのまま画面に出す */
 export class TideRefused extends Error {
   constructor(
     message: string,

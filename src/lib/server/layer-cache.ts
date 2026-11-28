@@ -1,13 +1,13 @@
 /**
  * 地図の層のために外から取ったものを、層ごとに 1 行で置く (表 `layer_cache`。docs/design.md の 2.5)。
- * 取り直すまで前のものを出し、起動し直しても取りに行き直さないために使う (海しるは 1 日 1 回)。
+ * 取り直すまで前のものを出し、起動し直しても間隔 (海しるは 1 日 1 回) の前には取り直さないために使う。
  */
 
 import type { Database } from "bun:sqlite";
 
 import { nowIso } from "./time.ts";
 
-export interface CachedLayer<T> {
+interface CachedLayer<T> {
   fetchedAt: string;
   data: T;
 }

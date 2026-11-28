@@ -3,12 +3,12 @@
  *
  * - API のキー (`YOUTUBE_API_KEY`) が無ければ作らない。地図の印は出すが、地図の中では再生せず、チャンネルの
  *   ページへのリンクだけにする (`#lib/map/livecams.ts`)
- * - 動画の ID は配信をやり直すたびに替わるので、表 (`LIVECAMS`) にはチャンネルと題名の言葉を持つ。
+ * - 動画の ID は配信をやり直すたびに替わるので、表 (`LIVECAMS`) にはチャンネルとタイトルの言葉を持つ。
  *   5 分ごとに、いま覚えている ID (初めは表の `seed`) を `videos.list` でまとめて確かめる (1 回 1 単位)。
  *   ライブでなくなったカメラがあれば、そのチャンネルを `search.list` (1 回 100 単位) で探し直す。探し直すのは
  *   チャンネルごとに 3 時間に 1 回まで (1 日の割り当て 1 万単位を守る)
  * - 採るのは、ライブ配信中・公開・埋め込みが許されている・子ども向け (made for kids) でない・表のチャンネルのもの・
- *   題名に表の言葉を含むもの。子ども向けの動画は埋め込むと追跡を止める決まりがあり (Developer Policies III.E.4.j)、
+ *   タイトルに表の言葉を含むもの。子ども向けの動画は埋め込むと追跡を止める決まりがあり (Developer Policies III.E.4.j)、
  *   ライブカメラには無いはずなので、出さない
  * - 取ったものはメモリに置くだけで、DB に残さない (Developer Policies の、API のデータを 30 日を超えて持たない決まり)
  * - キーは URL の query で送る (Data API の決まった形)。ログ・状態の欄・ブラウザには出さない
@@ -25,7 +25,7 @@ import type { Source, SourceContext } from "./types.ts";
 
 export const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
 
-/** いまの ID を確かめる間 (ミリ秒) */
+/** いまの ID を確かめる間隔 (ミリ秒) */
 export const YOUTUBE_CHECK_MS = 5 * 60_000;
 /** 同じチャンネルを探し直す間の下限 (ミリ秒)。search.list は 1 回 100 単位で重い */
 export const YOUTUBE_SEARCH_MIN_MS = 3 * 60 * 60_000;
@@ -124,7 +124,7 @@ export function youtubeSource(
       headers: { "user-agent": USER_AGENT, accept: "application/json" },
       signal: AbortSignal.any([signal, AbortSignal.timeout(TIMEOUT_MS)]),
     });
-    // URL にキーが入るので、エラーには道と番号だけを出す
+    // URL にキーが入るので、エラーには API の名前 (path) と HTTP のステータスだけを出す
     if (!res.ok)
       throw new Error(
         `YouTube Data API の ${path} が ${res.status} を返しました`,
@@ -154,7 +154,7 @@ export function youtubeSource(
   }
 
   /**
-   * 1 回の確かめ。`videos.list` が通れば、そこで確かめた時刻を進める (配信中のカメラは出し続ける)。
+   * 1 回の確認。`videos.list` が通れば、そこで確かめた時刻を進める (配信中のカメラは出し続ける)。
    * 探し直し (`search.list`) の失敗は、チャンネルごとにログに残して次のチャンネルへ進み、失敗の訳を返す
    * (割り当て切れなどで探し直しだけが失敗しても、ほかのカメラを止めない)
    */
@@ -190,7 +190,7 @@ export function youtubeSource(
     return errors;
   }
 
-  /** チャンネルのいまのライブを探し、題名の合う配信をカメラに当てる */
+  /** チャンネルのいまのライブを探し、タイトルの合う配信をカメラに当てる */
   async function research(ch: string, signal: AbortSignal): Promise<void> {
     const r = await get(
       "search",

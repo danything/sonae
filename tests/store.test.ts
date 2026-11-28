@@ -658,7 +658,7 @@ describe("長周期地震動に関する観測情報", () => {
       .replace("<Serial>1</Serial>", "<Serial>2</Serial>");
     const [second] = store.ingest(incoming(later, "b"));
     expect(dataOf<LongPeriod>(second).serial).toBe(2);
-    // 古い報 (第 1 報の訂正の形で後から来た) は捨てる
+    // 後から届いた古い報 (第 1 報) は捨てる
     expect(store.ingest(incoming(xml, "c"))).toEqual([]);
 
     const cancel = later
@@ -686,14 +686,7 @@ describe("長周期地震動に関する観測情報", () => {
 
 test("長周期地震動は地震識別番号と状態で引く (P2P で先に受けて id が番号でない地震でも)", () => {
   const { store } = memoryStore();
-  const xml = fixture("jma/78_01_01_240613_VXSE62.xml");
-  store.ingest({
-    source: "jma",
-    key: "lp",
-    code: "VXSE62",
-    body: xml,
-    items: parseJmaXml(xml, "VXSE62"),
-  });
+  store.ingest(jma("78_01_01_240613_VXSE62.xml"));
   expect(store.longPeriodOf("20201121023300", "normal")?.maxLg).toBe("3");
   expect(store.longPeriodOf("20201121023300", "training")).toBeUndefined();
 });

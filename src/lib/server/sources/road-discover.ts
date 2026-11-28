@@ -116,7 +116,7 @@ export interface Discovered {
   disasters: Disaster[];
 }
 
-export const DISCOVER_CACHE_ID = "road:discover";
+const DISCOVER_CACHE_ID = "road:discover";
 
 export function discovered(db: Database): Discovered | undefined {
   return new LayerCache(db).get<Discovered>(DISCOVER_CACHE_ID)?.data;
@@ -164,7 +164,7 @@ export async function discoverOnce(
   );
   const problems: { name: string; error: string }[] = [];
   const disasters: Disaster[] = [];
-  // 1 つずつ順に読む (同じ所へ並べて取得しない)
+  // 1 つずつ順に読む (同じホストへ並行して取得しない)
   for (const slug of slugs) {
     if (signal.aborted) break;
     const before = prev?.disasters.find((d) => d.slug === slug);

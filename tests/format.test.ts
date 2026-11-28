@@ -48,7 +48,7 @@ test("津波のいちばん強い区分 (解除・なしだけなら none)", () 
   expect(tsunamiTop(t("none"))).toBe("none");
 });
 
-test("受信の状態の 1 行 (受信中は最後に受けた時刻、オフは訳)", () => {
+test("受信の状態の 1 行 (受信中は最後に受けた時刻、オフは理由)", () => {
   const since = "2026-11-13T00:00:00Z";
   expect(
     sourceStateText({

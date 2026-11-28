@@ -21,7 +21,7 @@ import {
   type SocketLike,
   StatusTracker,
 } from "./retry.ts";
-import type { Source, SourceContext } from "./types.ts";
+import type { Normalized, Source, SourceContext } from "./types.ts";
 import {
   parseWolfx,
   parseWolfxEqlist,
@@ -111,34 +111,12 @@ export function wolfxSource(
     schedule(ws);
   }
 
-  /** 地震情報の一覧。一覧は毎回 50 件まるごと来るので、中身の変わった行だけを渡す */
-  function eqlist(value: Record<string, unknown>) {
-    const at = now();
-    for (const { key, item } of parseWolfxEqlist(value, at)) {
+  /** 読んだ報のうち、まだ受けていない鍵のものだけを渡す */
+  function emitNew(code: string, list: { key: string; item: Normalized }[]) {
+    for (const { key, item } of list) {
       if (ctx.seen("wolfx", key)) continue;
       status.seen(true);
-      ctx.emit({ source: "wolfx", key, code: "jma_eqlist", items: [item] });
-    }
-  }
-
-  /** 南海トラフ地震臨時情報など。電文の種別ごとの最新の報がまとめて来るので、まだ受けていない報だけを渡す */
-  function specialEq(value: Record<string, unknown>) {
-    for (const { key, item } of parseWolfxSpecialEq(value)) {
-      if (ctx.seen("wolfx", key)) continue;
-      status.seen(true);
-      ctx.emit({ source: "wolfx", key, code: "jma_special_eq", items: [item] });
-    }
-  }
-
-  /**
-   * 津波の警報・注意報・予報。Wolfx は信頼期限を延ばすたびに (約 1 分ごと) 同じ報を送ってくるので、
-   * 報と予報区の中身が前と同じなら渡さない
-   */
-  function tsunami(value: Record<string, unknown>) {
-    for (const { key, item } of parseWolfxTsunami(value)) {
-      if (ctx.seen("wolfx", key)) continue;
-      status.seen(true);
-      ctx.emit({ source: "wolfx", key, code: "jma_tsunami", items: [item] });
+      ctx.emit({ source: "wolfx", key, code, items: [item] });
     }
   }
 
@@ -151,7 +129,7 @@ export function wolfxSource(
         signal,
         status,
         connect: opts.connect,
-        log: opts.log,
+        log,
         onOpen(ws) {
           current = ws;
           queue = [];
@@ -176,15 +154,18 @@ export function wolfxSource(
           if (value.type === "jma_eqlist") {
             // 問い合わせの答えでも、Wolfx が自分から送ってきたものでも、次の問い合わせはここから数える
             schedule(ws);
-            eqlist(value);
+            // 一覧は毎回 50 件まるごと来る。中身の変わった行だけが新しい鍵になる
+            emitNew("jma_eqlist", parseWolfxEqlist(value, now()));
             return;
           }
           if (value.type === "jma_tsunami") {
-            tsunami(value);
+            // Wolfx は信頼期限を延ばすたびに (約 1 分ごと) 同じ報を送ってくる。報と予報区の中身が同じなら鍵も同じ
+            emitNew("jma_tsunami", parseWolfxTsunami(value));
             return;
           }
           if (value.type === "jma_special_eq") {
-            specialEq(value);
+            // 南海トラフ地震臨時情報など。電文の種別ごとの最新の報がまとめて来る
+            emitNew("jma_special_eq", parseWolfxSpecialEq(value));
             return;
           }
           const m = parseWolfx(value);

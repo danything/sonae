@@ -158,7 +158,7 @@ describe("Wolfx (作った JSON)", () => {
     expect(text).not.toContain("MaxIntensity");
   });
 
-  test("警報: 警報の地域だけを取る", () => {
+  test("警報: 警報の地域を warnAreas に、予報の地域も含めた全部を areas に取る", () => {
     const m = parseWolfx(json("wolfx/made-warning.json"));
     if (m.type !== "eew") throw new Error("eew ではない");
     expect(m.report.kind).toBe("warning");

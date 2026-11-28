@@ -34,14 +34,14 @@ file_array[0]="../camera/315_820081B0/20261128121001.jpg";
 file_array[1]="../camera/315_820081B0/20261128120801.jpg";
 </script>`;
 
-test("ページからいちばん新しい画像を拾う", () => {
+test("ページからいちばん新しい画像の URL と時刻を読む", () => {
   expect(latestFrame(PAGE)).toEqual({
     url: "https://www.data.jma.go.jp/vois/data/obs/camera/315_820081B0/20261128121001.jpg",
     takenAt: "2026-11-28T12:10:01+09:00",
   });
 });
 
-test("決まった形に合わない名前は拾わない (気象庁の画像の置き場の外を読まない)", () => {
+test("決まった形に合わない名前は読まない (気象庁の画像の置き場の外を読まない)", () => {
   expect(latestFrame("")).toBeUndefined();
   expect(
     latestFrame(`file_array[0]="../camera/../../x/20261128121001.jpg"`),
@@ -55,7 +55,7 @@ test("決まった形に合わない名前は拾わない (気象庁の画像の
   expect(
     latestFrame(`file_array[0]="../camera/315_ZZ0081B0/20261128121001.jpg"`),
   ).toBeUndefined();
-  // 1 枚目が無く 2 枚目だけのときも拾わない (いちばん新しいとは限らない)
+  // 1 枚目が無く 2 枚目だけのときも読まない (いちばん新しいとは限らない)
   expect(
     latestFrame(`file_array[1]="../camera/315_820081B0/20261128120801.jpg"`),
   ).toBeUndefined();
@@ -75,7 +75,7 @@ test("カメラのページは 5 桁の番号のときだけ", () => {
 
 test("画像の時刻: 古ければ止まっているかもしれないと書く", () => {
   const frame = latestFrame(PAGE);
-  if (!frame) throw new Error("拾えない");
+  if (!frame) throw new Error("画像が読めない");
   const at = Date.parse(frame.takenAt);
   expect(frameCaption(frame, at + 5 * 60_000)).toBe("11/28 12:10 の画像");
   expect(frameCaption(frame, at + CAMERA_STALE_MS + 1)).toContain(
@@ -145,6 +145,7 @@ test("地図: カメラの層はズーム 7 から、出典つきの source。�
   const layer = style.layers.find((l) => l.id === "cameras");
   expect(layer?.source).toBe("cameras");
   expect(layer?.minzoom).toBe(CAMERA_MINZOOM);
+  expect(CAMERA_MINZOOM).toBe(7);
   // 海しるの点の上、観測点ごとの震度の丸の下
   const ids = style.layers.map((l) => l.id);
   expect(ids.indexOf("cameras")).toBeGreaterThan(ids.indexOf("marine"));

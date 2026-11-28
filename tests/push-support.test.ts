@@ -91,7 +91,7 @@ test("Android の Edge は UA の EdgA で見分ける (パソコンの Edge・C
   expect(isAndroidEdge(EDGE_WINDOWS)).toBe(false);
 });
 
-test("文は、何ができないかと代わりの道を言う", () => {
+test("文は、何ができないかと代わりの方法を書く", () => {
   const edge = pushBlockText(
     { kind: "endpoint", host: "permanently-removed.invalid" },
     EDGE_ANDROID,
@@ -116,7 +116,7 @@ test("文は、何ができないかと代わりの道を言う", () => {
   expect(ios).toContain("「開いているとき」");
 });
 
-test("登録が例外で止まったときも、訳と代わりの道を言う", () => {
+test("登録が例外で止まったときも、理由と代わりの方法を書く", () => {
   const err = new Error("Registration failed - push service error");
   err.name = "AbortError";
   const t = registerFailedText(err);
@@ -141,7 +141,7 @@ describe("通知の許可が無いときの文", () => {
   const EDGE_DESKTOP =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.3650.97";
 
-  test("Android の Edge は、閲覧データの Site settings だけを消すと窓がまた出ることを言う (鍵の印の道筋は出さない)", () => {
+  test("Android の Edge は、閲覧データの Site settings だけを消すと窓がまた出ることを言う (鍵の印からの手順は出さない)", () => {
     const quiet = permissionDeniedText(EDGE_ANDROID, {
       asked: true,
       quiet: true,
@@ -181,7 +181,7 @@ describe("通知の許可が無いときの文", () => {
     );
   });
 
-  test("Edge (PC) は静かな通知の要求に触れ、ほかのブラウザは鍵の印の道筋", () => {
+  test("Edge (PC) は静かな通知の要求に触れ、ほかのブラウザは鍵の印からの手順", () => {
     expect(permissionDeniedText(EDGE_DESKTOP)).toContain(
       "通知の要求を静かにする",
     );

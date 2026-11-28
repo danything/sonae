@@ -1,9 +1,9 @@
 /**
- * HTTP で決まった間隔に取りに行く情報源の輪 (USGS・PTWC・GeoNet・CWA・気象庁 bosai など)。
+ * HTTP で決まった間隔に取得する情報源のループ (USGS・PTWC・GeoNet・CWA・気象庁 bosai など)。
  *
- * - 間隔は情報源ごとに決め、`minIntervalMs` より短くしない (相手のキャッシュの寿命より短く取りに行かない)
+ * - 間隔は情報源ごとに決め、`minIntervalMs` より短くしない (相手のキャッシュの寿命より短い間隔で取得しない)
  * - `If-None-Match`・`If-Modified-Since` を付ける。304 なら何もしない
- * - 続けて失敗したら、2 回目から間隔の 2 倍・4 倍…と空ける (上限 `maxBackoffMs`)。同じ URL を立て続けに取りに行かない
+ * - 続けて失敗したら、2 回目から間隔の 2 倍・4 倍…と空ける (上限 `maxBackoffMs`)。同じ URL を立て続けに取得しない
  * - 読めない形式 (相手の形式が変わった) は、その回を捨てて状態にエラーを出す。ほかの情報源には響かない
  * - 起動したときと、取得が `gapMs` より長く途切れた後に、1 回だけ `backfillUrl` (長い期間の一覧) を読む
  */
@@ -13,9 +13,9 @@ import type { SourceId } from "#lib/model.ts";
 import { sleep, StatusTracker, USER_AGENT } from "./retry.ts";
 import type { Incoming, Source, SourceContext } from "./types.ts";
 
-/** 読むときに使える道具。一覧から本文を取りに行く情報源 (気象庁 bosai の国際津波など) が使う */
+/** 読むときに使える道具。一覧から本文を取得する情報源 (気象庁 bosai の国際津波など) が使う */
 export interface PollTools {
-  /** 本文を 1 つ取る (同じヘッダーを付け、20 秒で諦める)。200 でなければ例外 */
+  /** 本文を 1 つ取る (同じヘッダーを付け、20 秒で打ち切る)。200 でなければ例外 */
   fetchText(url: string): Promise<string>;
   signal: AbortSignal;
   /** この回で取り残したものがある (次の回も一覧を 304 にせず読み直す) */
@@ -31,7 +31,7 @@ export interface PollOptions {
   minIntervalMs: number;
   maxBackoffMs?: number;
   gapMs?: number;
-  /** 付ける要求のヘッダー (Accept・鍵など) */
+  /** 付ける要求のヘッダー (Accept・API のキーなど) */
   headers?: Record<string, string>;
   /** 受けた本文から、渡すもの (鍵が付いた Incoming) を作る。読めなければ例外を投げる */
   parse(
@@ -44,7 +44,7 @@ export interface PollOptions {
   log?: (m: string) => void;
 }
 
-/** 文の中の URL の鍵 (`Authorization=`・`key=`・`token=` の値) を伏せる */
+/** 文の中の URL に入る API のキー (`Authorization=`・`key=`・`token=` の値) を伏せる */
 export const redact = (s: string) =>
   s.replace(
     /([?&](?:authorization|api_?key|key|token)=)[^&\s"'<>]+/gi,
@@ -109,7 +109,7 @@ export function pollSource(ctx: SourceContext, o: PollOptions): Source {
       fresh = true;
     }
     // 渡し終えてから控える (途中で失敗したら、次も 304 にならず読み直す)。取り残しがあれば控えない
-    // (次の回も一覧を読み直して、取り残しを取りに行く)。
+    // (次の回も一覧を読み直して、取り残しを取得する)。
     // 1 日分の URL も同じ控えを使うが、相手が毎分作り直すので、途切れた後に 304 になることはほぼ無い
     if (leftover) cache.delete(url);
     else
@@ -138,7 +138,7 @@ export function pollSource(ctx: SourceContext, o: PollOptions): Source {
         } catch (err) {
           if (signal.aborted) break;
           failures++;
-          // 鍵 (中央氣象署の授権碼など) が URL の query に入っていても、ログと状態の欄には出さない
+          // API のキー (中央氣象署の授権碼など) が URL の query に入っていても、ログと状態の欄には出さない
           const why = redact(String(err));
           log(`[${o.id}] 取れませんでした: ${why}`);
           status.set("retrying", why);

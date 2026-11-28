@@ -25,21 +25,21 @@ export interface StationTable {
 }
 
 /** 設置者 (気象庁ホームページの「震度観測点」の `affi`) */
-export type StationOwner = "jma" | "local" | "nied";
+type StationOwner = "jma" | "local" | "nied";
 const OWNERS: Record<number, StationOwner> = {
   0: "jma",
   1: "local",
   2: "nied",
 };
 /** 吹き出しに出す設置者の文 */
-export const OWNER_TEXT: Record<StationOwner, string> = {
+const OWNER_TEXT: Record<StationOwner, string> = {
   jma: "気象庁の観測点",
   local: "地方公共団体の観測点",
   nied: "防災科学技術研究所の観測点",
 };
 
 /** 表から引いた観測点 */
-export interface StationInfo {
+interface StationInfo {
   at: [number, number];
   /** 市町村 (コード表の書き方。「札幌中央区」)。分からなければ空 */
   city: string;

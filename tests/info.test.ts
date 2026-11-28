@@ -61,7 +61,7 @@ describe("地震の活動状況・地震回数 (VXSE56・60)", () => {
     expect(a.next).toContain("２６日１８時００分頃");
   });
 
-  test("取消は同じ一連の情報に印を付ける", () => {
+  test("取消の電文は取り消されたお知らせにする", () => {
     const { store } = memoryStore();
     store.ingest(incoming(COUNT));
     // 取消の電文は別の地震の番号 (サンプルどうしは別の事象) なので、取消だけの行になる

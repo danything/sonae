@@ -1,6 +1,7 @@
 import { error, json } from "@sveltejs/kit";
 
 import { app } from "#lib/server/receiver.ts";
+import { jsonBody } from "#lib/server/request.ts";
 import { changeVoice, serveSpeech } from "#lib/server/voicevox.ts";
 import { DEFAULT_SPEAKER, type SpeechInfo } from "#lib/voices.ts";
 
@@ -25,17 +26,6 @@ export const GET: RequestHandler = () => {
   return json(v ? v.info() : OFF);
 };
 
-async function body(request: Request): Promise<Record<string, unknown>> {
-  try {
-    const v: unknown = await request.json();
-    if (typeof v === "object" && v !== null)
-      return v as Record<string, unknown>;
-  } catch {
-    // 下で 400
-  }
-  error(400, "JSON の本文が要ります");
-}
-
 /** この家の声を替える。`{ voice }`。ログインした人なら誰でも (`changeVoice`) */
 export const PUT: RequestHandler = ({ locals, request }) =>
   changeVoice(app().voice, locals.user?.subject, request);
@@ -44,7 +34,7 @@ export const PUT: RequestHandler = ({ locals, request }) =>
 export const POST: RequestHandler = async ({ request }) => {
   const v = app().voice;
   if (!v) error(503, "VOICEVOX は使っていません");
-  const b = await body(request);
+  const b = await jsonBody(request);
   if (typeof b.text !== "string" || b.text.length > 500)
     error(400, "text が要ります");
   return serveSpeech(v, b.text);

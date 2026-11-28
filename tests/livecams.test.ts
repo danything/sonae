@@ -106,7 +106,7 @@ const live = (id: string, over: Partial<YtVideo> = {}): YtVideo => ({
   ...over,
 });
 
-test("採るのは、ライブ中・公開・埋め込み可・子ども向けでない・表のチャンネルで題名が合うものだけ", () => {
+test("採るのは、ライブ中・公開・埋め込み可・子ども向けでない・表のチャンネルでタイトルが合うものだけ", () => {
   expect(usable(live("wOvC84yodk4"), cam)).toBe(true);
   const no = (v: YtVideo) => expect(usable(v, cam)).toBe(false);
   no(
@@ -142,7 +142,7 @@ test("採るのは、ライブ中・公開・埋め込み可・子ども向け�
   no(live("bad"));
 });
 
-/** YouTube Data API のまね。呼ばれた道と query を残す */
+/** YouTube Data API の代わり。呼ばれたパスと query を残す */
 function fakeApi(o: { videos: Record<string, YtVideo>; search?: string[] }) {
   const calls: { path: string; q: URLSearchParams }[] = [];
   const f = (async (input: string | URL | Request) => {
@@ -169,7 +169,7 @@ test("キーが無ければ情報源を作らない", () => {
   expect(youtubeSource("  ")).toBeUndefined();
 });
 
-test("覚えている ID がライブのままなら、探し直さない (videos.list だけ)", async () => {
+test("保存した ID がライブのままなら、探し直さない (videos.list だけ)", async () => {
   let t = Date.parse("2026-11-28T03:00:00Z");
   const api = fakeApi({ videos: { wOvC84yodk4: live("wOvC84yodk4") } });
   const ac = new AbortController();
@@ -190,7 +190,7 @@ test("覚えている ID がライブのままなら、探し直さない (video
   expect(src.response().cams[cam.id]?.videoId).toBeUndefined();
 });
 
-test("ライブでなくなったら、チャンネルを探し直して題名の合う配信に替える。探し直しは 3 時間に 1 回まで", async () => {
+test("ライブでなくなったら、チャンネルを探し直してタイトルの合う配信に替える。探し直しは 3 時間に 1 回まで", async () => {
   let t = Date.parse("2026-11-28T03:00:00Z");
   const ended = live("wOvC84yodk4", {
     snippet: { ...live("x").snippet, liveBroadcastContent: "none" },
@@ -258,7 +258,7 @@ test("見つからなければ、3 時間たつまで探し直さない", async 
   expect(src.response().cams[cam.id]?.videoId).toBeUndefined();
 });
 
-test("探し直しが失敗しても、配信中のカメラは出し続け、確かめた時刻は進め、訳を状態に出す", async () => {
+test("探し直しが失敗しても、配信中のカメラは出し続け、確かめた時刻は進め、理由を状態に出す", async () => {
   let t = Date.parse("2026-11-28T03:00:00Z");
   const other = LIVECAMS.find((c) => c.id === "kumagawa") as Livecam;
   const base = fakeApi({ videos: { wOvC84yodk4: live("wOvC84yodk4") } });
@@ -290,7 +290,7 @@ test("探し直しが失敗しても、配信中のカメラは出し続け、�
   expect(r.cams[cam.id]?.videoId).toBe("wOvC84yodk4");
   expect(r.cams[other.id]?.videoId).toBeUndefined();
   expect(r.cams[cam.id]?.checkedAt).toBe("2026-11-28T03:15:00.000Z");
-  // 状態の欄に訳を出す (次の回は 3 時間の間を空けるので探し直さず、直近のエラーは消える)
+  // 状態の欄に理由を出す (次の回は 3 時間の間を空けるので探し直さず、直近のエラーは消える)
   expect(errs.some((e) => e.includes("探し直せませんでした"))).toBe(true);
   expect(logs.join("\n")).toContain("403");
 });

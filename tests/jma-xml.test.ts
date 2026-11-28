@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import type { Quake } from "#lib/model.ts";
 import {
+  num,
   parseFeed,
   parseJmaXml,
   readCoordinate,
@@ -250,4 +251,12 @@ describe("長周期地震動に関する観測情報 (VXSE62)", () => {
     if (item?.type !== "longperiod") throw new Error("longperiod ではない");
     expect(item.report.url).toBeUndefined();
   });
+});
+
+test("電文の数は空白だけなら値なしにし、0 にしない (欠測の回数・水位)", () => {
+  expect(num(" ")).toBeUndefined();
+  expect(num("")).toBeUndefined();
+  expect(num(undefined)).toBeUndefined();
+  expect(num("0")).toBe(0);
+  expect(num("6.19")).toBe(6.19);
 });
