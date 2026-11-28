@@ -115,6 +115,12 @@ interface Health {
   lastOkAt?: number;
   /** いまの失敗の間に、最後に古いものを返した時刻 */
   staleAt?: number;
+  /** 回路を開いた回数 (取れたら 0 に戻す)。待つ長さはこれで倍々にする */
+  opens: number;
+  /** 回路を開いている終わり (ミリ秒) */
+  breakUntil?: number;
+  /** 回路を開いた後に、1 本だけ試している最中か (その間、ほかの要求は取りに行かない) */
+  probing: boolean;
 }
 
 /** 環境変数の数 (正の数でなければ既定) */
@@ -257,7 +263,7 @@ export class Relay {
     const iso = (t: number) => new Date(t).toISOString();
     return Object.keys(this.sources).map((id) => {
       const h = this.health.get(id);
-      const blocked = this.blockedUntil.get(id) ?? 0;
+      const blocked = this.holdUntil(id);
       const state: RelayStatus["state"] =
         blocked > now
           ? "blocked"
@@ -285,39 +291,49 @@ export class Relay {
   private healthOf(id: string): Health {
     let h = this.health.get(id);
     if (!h) {
-      h = { streak: 0 };
+      h = { streak: 0, opens: 0, probing: false };
       this.health.set(id, h);
     }
     return h;
   }
 
-  /** 配信元が答えた (304・404 も、配信元が答えたので取れたうち) */
+  /** 取りに行くのを控える終わり (断られた `Retry-After` か、回路を開いている間。ミリ秒) */
+  private holdUntil(id: string): number {
+    return Math.max(
+      this.blockedUntil.get(id) ?? 0,
+      this.health.get(id)?.breakUntil ?? 0,
+    );
+  }
+
+  /** 配信元が答えた (304・404 も、配信元が答えたので取れたうち)。回路も閉じる */
   private markOk(id: string): void {
     const h = this.healthOf(id);
     h.streak = 0;
     h.since = undefined;
     h.staleAt = undefined;
+    h.opens = 0;
+    h.breakUntil = undefined;
+    h.probing = false;
     h.lastOkAt = this.now();
     this.changed();
   }
 
-  /** 落ちた・返らない・5xx。続けば、その源へ取りに行くのを控える (回路を開く) */
+  /**
+   * 落ちた・返らない・5xx。3 回続けば、その源へ取りに行くのを控える (回路を開く)。開いた後に試した 1 本も
+   * 落ちたら、待つ長さを倍にして開き直す。同時に取りに行っていたものが一度に落ちても、開くのは 1 回に数える
+   */
   private markDown(id: string): void {
     const now = this.now();
     const h = this.healthOf(id);
     h.streak++;
     h.since ??= now;
-    if (h.streak >= BREAK_AFTER) {
-      const ms = Math.min(
-        BREAK_FIRST_MS * 2 ** (h.streak - BREAK_AFTER),
-        BREAK_MAX_MS,
-      );
-      this.blockedUntil.set(
-        id,
-        Math.max(this.blockedUntil.get(id) ?? 0, now + ms),
-      );
+    if (h.probing || (h.opens === 0 && h.streak >= BREAK_AFTER)) {
+      h.probing = false;
+      const ms = Math.min(BREAK_FIRST_MS * 2 ** h.opens, BREAK_MAX_MS);
+      h.opens++;
+      h.breakUntil = now + ms;
       console.warn(
-        `[relay] ${id}: 配信元から ${h.streak} 回続けて取れないので、${Math.round(ms / 1000)} 秒は取りに行きません`,
+        `[relay] ${id}: 配信元から続けて取れないので、${Math.round(ms / 1000)} 秒は取りに行きません`,
       );
     }
     this.changed();
@@ -326,7 +342,9 @@ export class Relay {
   /** 配信元に断られた (429・503) */
   private markBlocked(id: string, until: number): void {
     this.blockedUntil.set(id, until);
-    this.healthOf(id).since ??= this.now();
+    const h = this.healthOf(id);
+    h.since ??= this.now();
+    h.probing = false;
     this.changed();
   }
 
@@ -416,16 +434,22 @@ export class Relay {
         })
       );
 
-    const blocked = this.blockedUntil.get(sourceId) ?? 0;
-    if (blocked > now)
-      return (
-        stale(now) ??
-        noStore(503, "配信元が混んでいるので、待っています", {
-          "retry-after": String(Math.ceil((blocked - now) / 1000)),
-        })
-      );
+    const held = this.holdUntil(sourceId);
+    const busy = (retry: number) =>
+      stale(now) ??
+      noStore(503, "配信元が混んでいるので、待っています", {
+        "retry-after": String(retry),
+      });
+    if (held > now) return busy(Math.ceil((held - now) / 1000));
 
     let p = store ? this.inflight.get(key) : undefined;
+    // 回路を開いた後は、1 本だけ試す。試している間に来たほかの要求は取りに行かない (同じものの要求は、試している 1 本を待つ)
+    const h = this.health.get(sourceId);
+    let probe = false;
+    if (!p && h && h.opens > 0) {
+      if (h.probing) return busy(Math.ceil(FAILED_WAIT_MS / 1000));
+      h.probing = probe = true;
+    }
     if (!p) {
       p = this.gate(sourceId, source).run(() =>
         this.fetchUpstream(sourceId, source, url, range, cached),
@@ -439,6 +463,8 @@ export class Relay {
     try {
       entry = await p;
     } catch (e) {
+      // 配信元の不調でない失敗 (大きすぎる) で試しが終わったときも、次の要求で試せるようにする
+      if (probe && h) h.probing = false;
       const t = this.now();
       if (!(e instanceof Blocked)) this.markFailed(key, t);
       const old = stale(t);
@@ -516,11 +542,11 @@ export class Relay {
       this.markDown(sourceId);
       throw new Error(`upstream ${res.status}`);
     }
-    this.markOk(sourceId);
     const ttl = this.ttlOf(source, res);
     const staleMs = source.staleFor * 1000;
     if (res.status === 304 && cached) {
       void res.body?.cancel();
+      this.markOk(sourceId);
       return {
         ...cached,
         freshUntil: now + ttl * 1000,
@@ -528,12 +554,23 @@ export class Relay {
         fetchedAt: now,
       };
     }
-    // 大きすぎるものは断る (中継するのはタイルや表で、ふつうは数百 KB まで)。Content-Length が無くても、読みながら数えて切る
-    const body = await readCapped(res, MAX_BODY_BYTES);
+    // 大きすぎるものは断る (中継するのはタイルや表で、ふつうは数百 KB まで)。Content-Length が無くても、読みながら数えて切る。
+    // 見出しだけ返して本体の途中で切れた・返らなくなったものは、落ちたのと同じに数える
+    let body: Uint8Array | null;
+    try {
+      body = await readCapped(res, MAX_BODY_BYTES);
+    } catch (e) {
+      console.warn(
+        `[relay] ${sourceId}: 配信元の本体を読み切れません (${e instanceof Error ? e.name : "error"})`,
+      );
+      this.markDown(sourceId);
+      throw e;
+    }
     if (!body) {
       console.warn(`[relay] ${sourceId}: 配信元の応答が大きすぎます`);
       throw new Error("too large");
     }
+    this.markOk(sourceId);
     const out: Record<string, string> = {};
     for (const h of PASS_HEADERS) {
       const v = res.headers.get(h);

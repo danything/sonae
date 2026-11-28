@@ -42,6 +42,9 @@ export const PRIORITY_GRACE_MS: Record<RelayPriority, number> = {
   2: 2 * 3600_000,
 };
 
+/** 返せなくなったものを掃く間隔 */
+const SWEEP_EVERY_MS = 60_000;
+
 type MaybePromise<T> = T | Promise<T>;
 
 /** 中継の置き場 */
@@ -73,6 +76,8 @@ export class MemoryRelayStore implements RelayStore {
     Map<string, Slot>,
   ] = [new Map(), new Map(), new Map()];
   private bytes = 0;
+  /** 返せなくなったものを最後に掃いた時刻 */
+  private sweptAt = -Infinity;
 
   constructor(
     private readonly maxBytes: number,
@@ -128,14 +133,18 @@ export class MemoryRelayStore implements RelayStore {
   }
 
   private evict(): void {
-    // 1. もう返さないもの (配信元が落ちていても返してよい期限を過ぎたもの) から
+    // 1. もう返さないもの (配信元が落ちていても返してよい期限を過ぎたもの) から。全部を見るので、1 分に 1 回まで
+    // (いっぱいのまま要求が続くとき、置くたびに全部を舐めない)
     const now = this.now();
-    for (const tier of this.tiers)
-      for (const [k, s] of tier)
-        if (s.entry.staleUntil <= now) {
-          tier.delete(k);
-          this.bytes -= s.entry.body.byteLength;
-        }
+    if (now - this.sweptAt >= SWEEP_EVERY_MS) {
+      this.sweptAt = now;
+      for (const tier of this.tiers)
+        for (const [k, s] of tier)
+          if (s.entry.staleUntil <= now) {
+            tier.delete(k);
+            this.bytes -= s.entry.body.byteLength;
+          }
+    }
     // 2. 段ごとのいちばん長く使っていないものを、猶予を足した時刻で比べて捨てる
     while (this.bytes > this.maxBytes) {
       let pick:

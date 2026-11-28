@@ -48,11 +48,14 @@ export interface RelayStatus {
 export const RELAY_HEADER = "x-relay";
 export const RELAY_FETCHED_HEADER = "x-relay-fetched-at";
 
-/** 中継の応答が、配信元が落ちていて覚えた古いものを返したものか。古ければ、取った時刻 (ミリ秒)、そうでなければ undefined */
-export function staleFetchedAt(res: Response): number | undefined {
+/**
+ * 中継の応答が、配信元が落ちていて覚えた古いものを返したものか。古くなければ undefined。
+ * 古ければ、配信元から取った時刻 (ミリ秒)。時刻の見出しが読めなければ `fetchedAt` は無い (画面は時刻を出さない)
+ */
+export function relayStale(res: Response): { fetchedAt?: number } | undefined {
   if (res.headers.get(RELAY_HEADER) !== "stale") return undefined;
   const t = Date.parse(res.headers.get(RELAY_FETCHED_HEADER) ?? "");
-  return Number.isFinite(t) ? t : 0;
+  return Number.isFinite(t) ? { fetchedAt: t } : {};
 }
 
 /** 中継の道の頭 */

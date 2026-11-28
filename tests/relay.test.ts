@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { staleFetchedAt } from "#lib/relay.ts";
+import { relayStale } from "#lib/relay.ts";
 import type { RelayEntry, RelayStore } from "#lib/server/relay-store.ts";
 import {
   maxAgeOf,
@@ -535,7 +535,7 @@ test("配信元が 5xx を返す間は、古いものに取った時刻を付け
   expect(a.status).toBe(200);
   expect(a.headers.get("x-relay")).toBe("stale");
   expect(a.headers.get("x-relay-fetched-at")).toBe(fetchedAt);
-  expect(staleFetchedAt(a)).toBe(Date.parse(fetchedAt));
+  expect(relayStale(a)).toEqual({ fetchedAt: Date.parse(fetchedAt) });
   expect(a.headers.get("cache-control")).toBe("no-store");
   expect(await a.text()).toBe("old");
   const s = stat(r, "t");
@@ -548,7 +548,7 @@ test("配信元が 5xx を返す間は、古いものに取った時刻を付け
   c.add(16_000);
   const b = await r.handle("t", "a/1.png", none, h());
   expect(b.headers.get("x-relay")).toBe("miss");
-  expect(staleFetchedAt(b)).toBeUndefined();
+  expect(relayStale(b)).toBeUndefined();
   const back = stat(r, "t");
   expect(back?.state).toBe("ok");
   expect(back?.staleAt).toBeUndefined();
@@ -731,4 +731,80 @@ test("源の表: 古いと危ない気象庁のタイルは短く、地図の下
   expect(s.jmatile.priority).toBe(2);
   expect(s.gsi.priority("skhb04/10/908/403.geojson")).toBe(1);
   expect(s.gsi.priority("seamlessphoto/14/14540/6451.jpg")).toBe(0);
+});
+
+test("回路を開いた後は 1 本だけ試し、試している間に来たほかの要求は取りに行かない", async () => {
+  let down = true;
+  let release: () => void = () => {};
+  const up = upstream(async (_, n) => {
+    if (down) return new Response("err", { status: 500 });
+    // 試しの 1 本 (4 回目) は、こちらが離すまで返らない
+    if (n === 4) await new Promise<void>((r) => (release = r));
+    return png("new", { "cache-control": "max-age=60" });
+  });
+  const c = clock();
+  const r = new Relay({ sources: SRC, fetch: up.fetch, now: c.now });
+  for (const p of ["d/1.png", "d/2.png", "d/3.png"])
+    await r.handle("t", p, none, h());
+  expect(up.calls).toHaveLength(3);
+  down = false;
+  c.add(15_001);
+  const probe = r.handle("t", "d/4.png", none, h());
+  await Promise.resolve();
+  // 試している間のほかの道は、配信元へ行かずに 503
+  const other = await r.handle("t", "d/5.png", none, h());
+  expect(other.status).toBe(503);
+  expect(up.calls).toHaveLength(4);
+  release();
+  expect((await probe).status).toBe(200);
+  expect(stat(r, "t")?.state).toBe("ok");
+  // 戻ったら、ほかの道も取りに行く
+  expect((await r.handle("t", "d/5.png", none, h())).status).toBe(200);
+  expect(up.calls).toHaveLength(5);
+});
+
+test("同時に取りに行っていたものが一度に落ちても、回路を開くのは 1 回に数える (待つのは 15 秒から)", async () => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => (release = r));
+  const up = upstream(async () => {
+    await gate;
+    return new Response("err", { status: 500 });
+  });
+  const c = clock();
+  const r = new Relay({ sources: SRC, fetch: up.fetch, now: c.now });
+  const all = ["e/1", "e/2", "e/3", "e/4", "e/5", "e/6"].map((p) =>
+    r.handle("t", `${p}.png`, none, h()),
+  );
+  release();
+  await Promise.all(all);
+  expect(stat(r, "t")?.retryAt).toBe(new Date(c.now() + 15_000).toISOString());
+});
+
+test("見出しの後に本体の途中で切れたものも、落ちたのと同じに数えて古いものを返す", async () => {
+  let broken = false;
+  const up = upstream(() => {
+    if (!broken) return png("old", { "cache-control": "max-age=60" });
+    const body = new ReadableStream<Uint8Array>({
+      start(ctl) {
+        ctl.enqueue(new TextEncoder().encode("ha"));
+        ctl.error(new DOMException("timed out", "TimeoutError"));
+      },
+    });
+    return new Response(body, { status: 200 });
+  });
+  const c = clock();
+  const r = new Relay({ sources: SRC, fetch: up.fetch, now: c.now });
+  await r.handle("t", "f/1.png", none, h());
+  broken = true;
+  c.add(61_000);
+  const a = await r.handle("t", "f/1.png", none, h());
+  expect(a.headers.get("x-relay")).toBe("stale");
+  expect(await a.text()).toBe("old");
+  expect(stat(r, "t")?.state).toBe("failing");
+});
+
+test("取った時刻の見出しが読めない古いものは、時刻を出さない", () => {
+  const res = new Response("x", { headers: { "x-relay": "stale" } });
+  expect(relayStale(res)).toEqual({});
+  expect(relayStale(new Response("x"))).toBeUndefined();
 });
