@@ -1,0 +1,58 @@
+{
+  "type": "jma_tsunami",
+  "status": "active",
+  "reason": "official_snapshot",
+  "trusted": true,
+  "validUntil": "2011-03-11T05:51:29.000Z",
+  "report": {
+    "id": "made-vtse41-0001",
+    "product": "VTSE41",
+    "time": "2011-03-11T05:49:00.000Z",
+    "status": "issued",
+    "issuedAt": "2011-03-11T05:49:59.000Z",
+    "title": "大津波警報・津波警報・津波注意報・津波予報",
+    "eventIds": ["20110311144640"]
+  },
+  "areas": [
+    {
+      "code": "210",
+      "name": "岩手県",
+      "level": "major_warning",
+      "kind": "53",
+      "previousKind": "00",
+      "firstWave": { "condition": "津波到達中と推測" },
+      "maxWave": { "height": null, "text": "巨大", "heightCondition": "不明" }
+    },
+    {
+      "code": "220",
+      "name": "宮城県",
+      "level": "major_warning",
+      "kind": "53",
+      "previousKind": "00",
+      "firstWave": { "time": "2011-03-11T06:00:00.000Z" },
+      "maxWave": { "height": null, "text": "巨大", "heightCondition": "不明" }
+    },
+    {
+      "code": "101",
+      "name": "北海道太平洋沿岸中部",
+      "level": "warning",
+      "kind": "51",
+      "previousKind": "00",
+      "firstWave": { "time": "2011-03-11T06:30:00.000Z" },
+      "maxWave": { "height": null, "text": "高い", "heightCondition": "不明" }
+    },
+    {
+      "code": "100",
+      "name": "北海道太平洋沿岸東部",
+      "level": "advisory",
+      "kind": "62",
+      "previousKind": "00",
+      "firstWave": { "time": "2011-03-11T06:30:00.000Z" },
+      "maxWave": { "height": null, "heightCondition": "不明" }
+    }
+  ],
+  "observations": [],
+  "lastKnown": { "areas": [], "observations": [], "text": "(作り物。読まない)" },
+  "comments": { "warning": "(作り物。読まない)" },
+  "md5": "made"
+}

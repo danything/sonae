@@ -246,7 +246,7 @@ export interface Tsunami {
   /** どの予報区も警報・注意報・予報ではなくなった */
   ended: boolean;
   provisional: boolean;
-  sources: ("jma" | "p2p")[];
+  sources: ("jma" | "p2p" | "wolfx")[];
   updatedAt: string;
 }
 

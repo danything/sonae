@@ -15,3 +15,7 @@
 - `made-special-eq.json` (南海トラフ・北海道・三陸沖の情報 `jma_special_eq`) は、同じ文書の「気象庁 特別地震情報 JSON API」の
   項目の一覧と、2026-11-28 に受けた形 (`reports[]` に `id`・`product`・`time`・`status`・`eventIds`・`kind`・`code`・`label`・`title`・`text`) に合わせて作った。
   VYSE50 の値は気象庁のサンプル電文 (`tests/fixtures/jma/74_01_01_200512_VYSE50.xml`、調査中) の文、VYSE52 は作り物。`id` は作り物 (Wolfx の id はハッシュ)
+- `made-tsunami.json` (津波の警報・注意報・予報 `jma_tsunami`) は、同じ文書の「気象庁 津波情報 JSON API」の項目の一覧と、公式の例
+  (https://wolfx.jp/examples/jma_tsunami/major_warning.json の形) に合わせて作った。値は気象庁のサンプル電文
+  (`tests/fixtures/jma/32-39_11_02_250206_VTSE41.xml`、2011-03-11) の最初の 4 つの予報区。Wolfx が独自に決めた状態
+  (`status`・`trusted`・`validUntil`・`lastKnown`) は、読まないことを確かめるために入れてある。`id` は作り物
