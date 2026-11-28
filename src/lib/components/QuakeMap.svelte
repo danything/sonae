@@ -1569,8 +1569,17 @@
         if (
           now.length !== frames.length ||
           now[0]?.validtime !== frames[0]?.validtime
-        )
+        ) {
           snow = frames;
+          // 予測が減ったら、選んでいる枚を並びの中へ戻す (‹ を押しても動かないように見えない)
+          snowStep = Math.max(
+            0,
+            Math.min(
+              untrack(() => snowStep),
+              frames.length - 1,
+            ),
+          );
+        }
         return SNOW_POLL_MS;
       },
       () => {
