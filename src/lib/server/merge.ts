@@ -229,7 +229,11 @@ export function mergeTsunami(
   id: string,
   now: string,
 ): Tsunami | null {
-  if (prev && r.source === "p2p" && !prev.provisional) return null;
+  if (prev && r.source !== "jma" && !prev.provisional) return null;
+  // Wolfx は P2P の予備。前と同じか古い報は捨てる (同じ時刻なら P2P か先に受けたものを残す)。
+  // Wolfx は気象庁の有効期限が過ぎると同じ報の予報区を空にして送り直すので、同じ報の送り直しも採らない
+  if (prev && r.source === "wolfx" && ms(r.reportedAt) <= ms(prev.issuedAt))
+    return null;
   // 古い報は捨てる。ただし P2P のつなぎの上には、気象庁の XML を時刻に関わらず重ねる
   const replacesP2p = prev?.provisional === true && r.source === "jma";
   if (
@@ -297,14 +301,24 @@ export function mergeTsunami(
   return next;
 }
 
-/** お知らせ。同じ番号の新しい報で置き換え、取消で無効にする */
+/**
+ * お知らせ。同じ番号の新しい報で置き換え、取消で無効にする。
+ * 同じ報 (発表の時刻と種類が同じ) は捨てる。ただし Wolfx の予備 (`source: "wolfx"`、見出しが無い) を
+ * 先に受けていて、気象庁 XML の同じ報が後から来たら、XML のもので置き換える。時刻は書き方
+ * (XML は日本時間、Wolfx は UTC) が違うので、ミリ秒で比べる
+ */
 export function mergeAdvisory(
   prev: Advisory | undefined,
   a: Omit<Advisory, "updatedAt" | "cancelled">,
   now: string,
 ): Advisory | null {
   if (prev && ms(a.reportedAt) < ms(prev.reportedAt)) return null;
-  if (prev && a.reportedAt === prev.reportedAt && a.infoType === prev.infoType)
+  if (
+    prev &&
+    ms(a.reportedAt) === ms(prev.reportedAt) &&
+    a.infoType === prev.infoType &&
+    !(prev.source === "wolfx" && a.source === undefined)
+  )
     return null;
   if (a.infoType === "取消") {
     if (!prev) return { ...a, cancelled: true, updatedAt: now };

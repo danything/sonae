@@ -246,7 +246,7 @@ export interface Tsunami {
   /** どの予報区も警報・注意報・予報ではなくなった */
   ended: boolean;
   provisional: boolean;
-  sources: ("jma" | "p2p")[];
+  sources: ("jma" | "p2p" | "wolfx")[];
   updatedAt: string;
 }
 
@@ -336,7 +336,7 @@ export interface Advisory {
     /** 気象庁の国際津波関連情報 (北西太平洋) */
     | "WEPA40";
   /** 気象庁の防災情報 XML 以外から来たとき、その情報源 */
-  source?: "ptwc" | "jma-bosai";
+  source?: "ptwc" | "jma-bosai" | "wolfx";
   /** 元の電報のページ (英文など) */
   url?: string;
   /** 地震回数 (VXSE60)。期間ごとの回数と、そのうち震度 1 以上の回数 */
