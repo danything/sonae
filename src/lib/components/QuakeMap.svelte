@@ -151,6 +151,8 @@
   } from "#lib/map/rain.ts";
   import { type MapView, ViewKeeper } from "#lib/map/restore.ts";
   import {
+    designatedRiverUrl,
+    floodTiles,
     latestRisk,
     nextRiskPoll,
     RISK_CREDIT,
@@ -166,6 +168,10 @@
     RISKS,
     riskStale,
     riskTiles,
+    RIVER_CALM_COLOR,
+    RIVER_MAP_URL,
+    riverFeatures,
+    riverSegments,
   } from "#lib/map/risk.ts";
   import {
     type RoadLine,
@@ -1315,15 +1321,54 @@
       clearTimeout(timer);
     };
   });
-  // いまの 1 枚に差し替える (10 分ごと・土砂と大雨を選び替えたとき)
+  // いまの 1 枚に差し替える (10 分ごと・土砂と大雨などを選び替えたとき)。洪水は川の線の source を差し替え、
+  // 洪水予報の出ている指定河川の区間 (段のあるもの。出ていなければ空) を読む
   $effect(() => {
     if (!map || !riskFrame) return;
-    const url = riskTiles(riskFrame, riskFrame.element);
+    const frame = riskFrame;
+    const river = frame.element === "flood";
     for (const n of RISK_TILE_ZOOMS) {
-      const src = map.getSource(`risk-${n}`);
+      const src = map.getSource(river ? `riskflood-${n}` : `risk-${n}`);
       if (src && "setTiles" in src)
-        (src as { setTiles(t: string[]): void }).setTiles([url]);
+        (src as { setTiles(t: string[]): void }).setTiles([
+          river ? floodTiles(frame) : riskTiles(frame, frame.element),
+        ]);
     }
+    if (!river) return;
+    const aborter = new AbortController();
+    void (async () => {
+      try {
+        const r = await fetch(designatedRiverUrl(frame), {
+          credentials: "omit",
+          referrerPolicy: "no-referrer",
+          signal: AbortSignal.any([
+            aborter.signal,
+            AbortSignal.timeout(15_000),
+          ]),
+        });
+        if (!r.ok) throw new Error(`designated_river: ${r.status}`);
+        const segments = riverSegments(await r.json());
+        if (map) setData(map, "river", riverFeatures(segments));
+      } catch (err) {
+        if (aborter.signal.aborted) return;
+        // 読めなければ前の区間を残す (古い区間は凡例の時刻で分かる)
+        console.warn(`指定河川の洪水予報の区間を読めませんでした: ${err}`);
+      }
+    })();
+    return () => aborter.abort();
+  });
+  // 指定河川の地図 (水色の線。変わらない) は、洪水を選んだときに 1 度だけ読む。読めなかったとき (オフラインなど) に
+  // 選び直せば読み直せるよう、洪水を外したら読み直す印を戻す (2 度目はブラウザのキャッシュから読む)
+  let riverMapLoaded = false;
+  $effect(() => {
+    if (!map) return;
+    if (chosenRisk?.draw !== "river" || !riskOn) {
+      riverMapLoaded = false;
+      return;
+    }
+    if (riverMapLoaded || !map.getSource("river-map")) return;
+    riverMapLoaded = true;
+    setData(map, "river-map", RIVER_MAP_URL);
   });
   /** キキクルが古いか (40 分より前の判定しか取れていない) */
   const riskOld = $derived(
@@ -3238,7 +3283,7 @@
                 読み込んでいます…
               </p>
             {/if}
-            <ul class="risk-scale">
+            <ul class="risk-scale" class:river={chosenRisk.draw === "river"}>
               {#each RISK_LEGEND as l (l.label)}
                 <li>
                   <span class="rain-swatch" style:background={l.color}
@@ -3247,10 +3292,23 @@
                   >
                 </li>
               {/each}
+              {#if chosenRisk.draw === "river"}
+                <li>
+                  <span class="rain-swatch" style:background={RIVER_CALM_COLOR}
+                  ></span><span class="tiny">今後の情報等に留意</span>
+                </li>
+              {/if}
             </ul>
-            <p class="tiny muted">
-              {chosenRisk.about}色が無い所は「今後の情報等に留意」です。
-            </p>
+            {#if chosenRisk.draw === "river"}
+              <p class="tiny muted">{chosenRisk.about}</p>
+              <p class="tiny muted">
+                洪水予報の中身は、一覧の「気象」で読めます。
+              </p>
+            {:else}
+              <p class="tiny muted">
+                {chosenRisk.about}色が無い所は「今後の情報等に留意」です。
+              </p>
+            {/if}
             <p class="tiny muted">
               出典: <a href={RISK_PAGE} target="_blank" rel="noopener"
                 >{RISK_CREDIT}</a
@@ -3971,6 +4029,12 @@
     height: 0.75rem;
     border: 1px solid rgb(0 0 0 / 0.35);
     border-radius: 2px;
+  }
+  /* 洪水キキクルは川の線なので、見本も暗い縁の太い線にする (地図と同じ形) */
+  .risk-scale.river .rain-swatch {
+    height: 0.375rem;
+    border: 1px solid #333333;
+    border-radius: 0;
   }
   /* 降灰予報の範囲の凡例。地図と同じ色・縁・透かし (白い地の上に重ねた見え方)。噴石は白地に赤の縞 */
   .ash-scale {
