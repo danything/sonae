@@ -478,6 +478,31 @@ describe("Wolfx", () => {
     // 同じ報がまた来ても渡さない
     socket?.fire("message", { data: special });
     expect(got).toHaveLength(2);
+
+    // 3 つ目の問い合わせは津波。Wolfx は信頼期限を延ばすたびに同じ報を送ってくるが、渡すのは 1 度だけ
+    await tick(30);
+    expect(socket?.sent).toEqual([
+      "query_jmaeqlist",
+      "query_jmaspecialeq",
+      "query_jmatsunami",
+    ]);
+    const tsunami = JSON.parse(fixture("wolfx/made-tsunami.json")) as Record<
+      string,
+      unknown
+    >;
+    socket?.fire("message", { data: JSON.stringify(tsunami) });
+    socket?.fire("message", {
+      data: JSON.stringify({
+        ...tsunami,
+        validUntil: "2011-03-11T05:52:29.000Z",
+        md5: "next",
+      }),
+    });
+    expect(got.map((m) => m.code)).toEqual([
+      "jma_special_eq",
+      "jma_special_eq",
+      "jma_tsunami",
+    ]);
     ac.abort();
     await run;
   });

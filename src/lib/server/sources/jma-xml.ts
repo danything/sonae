@@ -248,7 +248,10 @@ function readComments(body: V): string[] {
 }
 
 /** 警報等情報要素／津波警報・注意報・予報 のコード。知らないコードは名前で見る */
-function tsunamiGrade(code: string | undefined, name: string): TsunamiGrade {
+export function tsunamiGrade(
+  code: string | undefined,
+  name: string,
+): TsunamiGrade {
   switch (code) {
     case "52":
     case "53":

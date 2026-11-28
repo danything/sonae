@@ -16,6 +16,7 @@ import {
   parseWolfx,
   parseWolfxEqlist,
   parseWolfxSpecialEq,
+  parseWolfxTsunami,
 } from "#lib/server/sources/wolfx-json.ts";
 
 import { prefs } from "./events.ts";
@@ -393,6 +394,82 @@ describe("津波", () => {
       issue: { source: "気象庁", time: "2011/03/11 15:00:00", type: "Focus" },
     };
     expect(store.ingest(p2p(later, "p2p-t2"))).toEqual([]);
+  });
+
+  describe("Wolfx の津波 (P2P の 552 の予備)", () => {
+    const wolfxTsunami = (over: Record<string, unknown> = {}): Incoming => {
+      const [t] = parseWolfxTsunami({
+        ...json("wolfx/made-tsunami.json"),
+        ...over,
+      });
+      if (!t) throw new Error("津波が無い");
+      return {
+        source: "wolfx",
+        key: t.key,
+        code: "jma_tsunami",
+        items: [t.item],
+      };
+    };
+    const report = json("wolfx/made-tsunami.json").report as Record<
+      string,
+      unknown
+    >;
+
+    test("Wolfx が先なら速報として出し、XML が来たら置き換える。XML の後の Wolfx は捨てる", () => {
+      const { store } = memoryStore();
+      const [a] = store.ingest(wolfxTsunami());
+      const t1 = dataOf<Tsunami>(a);
+      expect(t1).toMatchObject({
+        id: "20110311144640",
+        provisional: true,
+        sources: ["wolfx"],
+        ended: false,
+      });
+      expect(t1.areas.some((x) => x.grade === "major")).toBe(true);
+      const [b] = store.ingest(jma("32-39_11_02_250206_VTSE41.xml"));
+      expect(dataOf<Tsunami>(b)).toMatchObject({
+        id: t1.id,
+        provisional: false,
+        sources: ["wolfx", "jma"],
+      });
+      const later = wolfxTsunami({
+        report: { ...report, id: "later", time: "2011-03-11T06:00:00.000Z" },
+      });
+      expect(store.ingest(later)).toEqual([]);
+    });
+
+    test("同じ報の送り直しは採らない。新しい報は採る", () => {
+      const { store } = memoryStore();
+      store.ingest(wolfxTsunami());
+      // 同じ報で予報区が変わって見えても (期限の過ぎた報など)、同じ時刻の報は採らない
+      const same = wolfxTsunami({
+        areas: [{ code: "210", name: "岩手県", level: "forecast", kind: "71" }],
+      });
+      expect(store.ingest(same)).toEqual([]);
+      const newer = wolfxTsunami({
+        report: { ...report, id: "newer", time: "2011-03-11T06:00:00.000Z" },
+        areas: [{ code: "210", name: "岩手県", level: "forecast", kind: "71" }],
+      });
+      const [n] = store.ingest(newer);
+      expect(dataOf<Tsunami>(n).areas).toHaveLength(1);
+      expect(dataOf<Tsunami>(n).provisional).toBe(true);
+    });
+
+    test("同じ時刻なら、P2P は Wolfx の上に重ねる。Wolfx は P2P の上に重ねない", () => {
+      const p2pAt = {
+        ...json("p2p/spec-552.json"),
+        issue: { source: "気象庁", time: "2011/03/11 14:49:00", type: "Focus" },
+      };
+      const first = memoryStore();
+      first.store.ingest(wolfxTsunami());
+      const [b] = first.store.ingest(p2p(p2pAt, "p2p-w1"));
+      expect(dataOf<Tsunami>(b).sources).toEqual(["wolfx", "p2p"]);
+      expect(dataOf<Tsunami>(b).provisional).toBe(true);
+
+      const second = memoryStore();
+      second.store.ingest(p2p(p2pAt, "p2p-w2"));
+      expect(second.store.ingest(wolfxTsunami())).toEqual([]);
+    });
   });
 
   test("P2P だけの津波を結ぶのは 2 日以内。日本時間の書き方の時刻でも、時刻で比べる", () => {

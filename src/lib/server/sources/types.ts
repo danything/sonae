@@ -31,7 +31,7 @@ export interface QuakeIncoming {
 
 export interface TsunamiReport {
   code: "VTSE41" | "VTSE51" | "VTSE52" | "P2P552";
-  source: "jma" | "p2p";
+  source: "jma" | "p2p" | "wolfx";
   eventIds: string[];
   status: Status;
   infoType: "発表" | "訂正" | "取消";

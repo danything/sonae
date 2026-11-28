@@ -229,7 +229,11 @@ export function mergeTsunami(
   id: string,
   now: string,
 ): Tsunami | null {
-  if (prev && r.source === "p2p" && !prev.provisional) return null;
+  if (prev && r.source !== "jma" && !prev.provisional) return null;
+  // Wolfx は P2P の予備。前と同じか古い報は捨てる (同じ時刻なら P2P か先に受けたものを残す)。
+  // Wolfx は気象庁の有効期限が過ぎると同じ報の予報区を空にして送り直すので、同じ報の送り直しも採らない
+  if (prev && r.source === "wolfx" && ms(r.reportedAt) <= ms(prev.issuedAt))
+    return null;
   // 古い報は捨てる。ただし P2P のつなぎの上には、気象庁の XML を時刻に関わらず重ねる
   const replacesP2p = prev?.provisional === true && r.source === "jma";
   if (

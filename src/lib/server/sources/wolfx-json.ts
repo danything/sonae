@@ -14,10 +14,11 @@ import {
   type ObservedIntensity,
   type QuakeKind,
   type QuakeReport,
+  type TsunamiArea,
 } from "#lib/model.ts";
 import { jstToIso } from "#lib/server/time.ts";
 
-import { STATUS } from "./jma-xml.ts";
+import { STATUS, tsunamiGrade } from "./jma-xml.ts";
 import type { EewReport, Normalized, QuakeIncoming } from "./types.ts";
 
 type Json = Record<string, unknown>;
@@ -288,4 +289,113 @@ export function parseWolfxSpecialEq(value: unknown): WolfxAdvisory[] {
     });
   }
   return out;
+}
+
+/**
+ * 津波警報等の種類のコード (`areas[].kind`) の名前。気象庁のコード表の「津波警報等」の種類のうち、
+ * Wolfx の `level` と照らせる名前だけを持つ。知らないコードは `level` の名前にする
+ */
+const TSUNAMI_KIND_NAMES: Record<string, string> = {
+  "00": "津波なし",
+  "50": "警報解除",
+  "51": "津波警報",
+  "52": "大津波警報",
+  "53": "大津波警報：発表",
+  "60": "津波注意報解除",
+  "62": "津波注意報",
+  "71": "津波予報（若干の海面変動）",
+  "72": "津波予報（若干の海面変動）",
+  "73": "津波予報（若干の海面変動）",
+};
+const TSUNAMI_LEVEL_NAMES: Record<string, string> = {
+  major_warning: "大津波警報",
+  warning: "津波警報",
+  advisory: "津波注意報",
+  forecast: "津波予報",
+  cleared: "解除",
+  none: "津波なし",
+};
+
+export interface WolfxTsunami {
+  /** 情報源の中での重複の除去の鍵。Wolfx の報告の ID と、予報区の中身の要約 */
+  key: string;
+  item: Extract<Normalized, { type: "tsunami" }>;
+}
+
+/**
+ * 気象庁の津波情報 (jma_tsunami) を読む。P2P地震情報の 552 の予備 (docs/design.md の 2.2 の「津波」)。
+ * 中身はいちばん新しい VTSE41 (津波警報・注意報・予報) の全国の予報区。
+ *
+ * - **Wolfx が独自に決めた値 (`status`・`reason`・`trusted`・`validUntil`・`lastKnown`) は読まない・見せない。**
+ *   使うのは報 (`report`) と、予報区の公式の分類 (`kind`・`level`) と高さの文 (`maxWave.text`) と第 1 波の時刻・状態だけ
+ * - 予報区の並びが空の発表は捨てる。Wolfx は気象庁の有効期限が過ぎると、同じ報の予報区を空にして送る (expired)。
+ *   空でも安全を意味しないので、「終わった」として取り込まない
+ * - 観測 (`observations`。VTSE51・52) と本文 (`text`・`comments`) は読まない (気象庁 XML で受ける)
+ * - 訓練・試験の印は無い。表題に「訓練」「試験」とあるものは、そう扱う
+ * - `report.status` の値の一覧は、文書の津波の節に無い (2026-11-28 に確かめた)。特別地震情報と同じ語 (`issued`・`corrected`・`cancelled`) と見て読み、
+ *   知らない値は「発表」にする。知らない形の取消は予報区が空で届くので、上の決まりで捨てる (取消は P2P と気象庁 XML でも受ける)
+ */
+export function parseWolfxTsunami(value: unknown): WolfxTsunami[] {
+  const o = obj(value);
+  const r = obj(o.report);
+  if (r.product !== "VTSE41") return [];
+  const reportedAt = str(r.time);
+  if (!reportedAt || !Number.isFinite(Date.parse(reportedAt))) return [];
+  const infoType =
+    SPECIAL_INFO_TYPE[str(r.status) as keyof typeof SPECIAL_INFO_TYPE] ??
+    "発表";
+  const areas = (Array.isArray(o.areas) ? o.areas : [])
+    .map(obj)
+    .flatMap((a): TsunamiArea[] => {
+      const name = str(a.name);
+      if (!name) return [];
+      const kind = str(a.kind);
+      const kindName =
+        (kind && TSUNAMI_KIND_NAMES[kind]) ??
+        TSUNAMI_LEVEL_NAMES[str(a.level) ?? ""] ??
+        "";
+      const first = obj(a.firstWave);
+      const max = obj(a.maxWave);
+      const condition = str(first.condition);
+      return [
+        {
+          code: str(a.code),
+          name,
+          grade: tsunamiGrade(kind, kindName),
+          kindName,
+          immediate: condition === "ただちに津波来襲と予測" || undefined,
+          arrivalTime: str(first.time),
+          condition,
+          maxHeightText: str(max.text) ?? str(max.condition),
+        },
+      ];
+    });
+  if (infoType !== "取消" && areas.length === 0) return [];
+  const title = str(r.title) ?? "";
+  const eventIds = (Array.isArray(r.eventIds) ? r.eventIds : [])
+    .map(str)
+    .filter((v): v is string => v !== undefined);
+  const digest = Bun.hash(JSON.stringify([infoType, areas])).toString(16);
+  return [
+    {
+      key: `tsunami-${str(r.id) ?? reportedAt}-${digest}`,
+      item: {
+        type: "tsunami",
+        report: {
+          code: "VTSE41",
+          source: "wolfx",
+          eventIds,
+          status: title.includes("訓練")
+            ? "training"
+            : title.includes("試験")
+              ? "test"
+              : "normal",
+          infoType,
+          reportedAt,
+          areas: infoType === "取消" ? [] : areas,
+          observations: [],
+        },
+      },
+    },
+  ];
 }

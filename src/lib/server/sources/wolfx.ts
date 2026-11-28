@@ -1,11 +1,11 @@
 /**
  * Wolfx Open API の WebSocket (`wss://ws-api.wolfx.jp/all_eew`)。気象庁の緊急地震速報 (`jma_eew`) と、
  * 地震情報の一覧 (`jma_eqlist`、P2P地震情報の予備)、南海トラフ地震臨時情報など (`jma_special_eq`、
- * 気象庁 XML の予備) を 1 つの接続で受ける。
+ * 気象庁 XML の予備)、津波の警報・注意報・予報 (`jma_tsunami`、P2P地震情報の 552 の予備) を 1 つの接続で受ける。
  *
  * - 接続は 1 本 (文書の「接続は再利用し、短時間に接続を繰り返さない」)。`all_eew` は Wolfx のすべての JSON API の配信を流すので、`type` で
  *   使うものだけを採り、ほか (中国の速報など) は捨てる。`exclude` で外さない訳は docs/design.md の 1 章の「入れない」
- * - つながったら `query_jmaeqlist`・`query_jmaspecialeq` を送り、いまのものを受ける (切れていた間の分を埋める)。
+ * - つながったら `query_jmaeqlist`・`query_jmaspecialeq`・`query_jmatsunami` を送り、いまのものを受ける (切れていた間の分を埋める)。
  *   問い合わせは続けて送ると最初の 1 つにしか答えないので、間を 2 秒空ける (2026-11-28 に確かめた)
  * - 地震のときに Wolfx が一覧を自分から送ってくるかは確かめられていないので、つながっている間は
  *   最後に一覧を受けてから 60 秒たつごとに問い合わせ直す (自分から送ってきたら、そこから数え直す)
@@ -26,6 +26,7 @@ import {
   parseWolfx,
   parseWolfxEqlist,
   parseWolfxSpecialEq,
+  parseWolfxTsunami,
 } from "./wolfx-json.ts";
 
 const WOLFX_WS = "wss://ws-api.wolfx.jp/all_eew";
@@ -129,6 +130,18 @@ export function wolfxSource(
     }
   }
 
+  /**
+   * 津波の警報・注意報・予報。Wolfx は信頼期限を延ばすたびに (約 1 分ごと) 同じ報を送ってくるので、
+   * 報と予報区の中身が前と同じなら渡さない
+   */
+  function tsunami(value: Record<string, unknown>) {
+    for (const { key, item } of parseWolfxTsunami(value)) {
+      if (ctx.seen("wolfx", key)) continue;
+      status.seen(true);
+      ctx.emit({ source: "wolfx", key, code: "jma_tsunami", items: [item] });
+    }
+  }
+
   return {
     id: "wolfx",
     status: () => status.get(),
@@ -145,6 +158,7 @@ export function wolfxSource(
           lastAskAt = Number.NEGATIVE_INFINITY;
           query(ws);
           ask(ws, "query_jmaspecialeq");
+          ask(ws, "query_jmatsunami");
         },
         onClose() {
           // 切れている間は問い合わせない。つなぎ直したら onOpen から始め直す
@@ -163,6 +177,10 @@ export function wolfxSource(
             // 問い合わせの答えでも、Wolfx が自分から送ってきたものでも、次の問い合わせはここから数える
             schedule(ws);
             eqlist(value);
+            return;
+          }
+          if (value.type === "jma_tsunami") {
+            tsunami(value);
             return;
           }
           if (value.type === "jma_special_eq") {
