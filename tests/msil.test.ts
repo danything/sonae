@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
-import { marinePopup, nearestMarine } from "#lib/map/marine.ts";
+import {
+  marinePopup,
+  nearestMarine,
+  type TideDay,
+  tideDayLabel,
+  tidePolyline,
+  tideTurns,
+  tideTurnText,
+} from "#lib/map/marine.ts";
 import { openDb } from "#lib/server/db.ts";
 import { LayerCache } from "#lib/server/layer-cache.ts";
 import {
@@ -12,13 +20,21 @@ import {
   msilSource,
   msilUrl,
   parseMsil,
+  parseTide,
+  TIDE_MAX_FETCHES,
+  TideFetcher,
+  TideRefused,
+  tideUrl,
 } from "#lib/server/sources/msil.ts";
 
 import { fixture } from "./helpers.ts";
 
-const [GNSSA, VOLCANO] = MSIL_LAYERS as [
-  (typeof MSIL_LAYERS)[number],
-  (typeof MSIL_LAYERS)[number],
+type Layer = (typeof MSIL_LAYERS)[number];
+const [GNSSA, VOLCANO, OFFICE, TIDE] = MSIL_LAYERS as [
+  Layer,
+  Layer,
+  Layer,
+  Layer,
 ];
 const KEY = "test-key-0123";
 
@@ -144,6 +160,8 @@ const BODIES = {
     "msil/seabed-crust-deformation-info.json",
   ),
   "marine-volcano-DB": fixture("msil/marine-volcano-DB.json"),
+  "coast-guard-office": fixture("msil/coast-guard-office.json"),
+  "tide-prediction": fixture("msil/tide-station.json"),
 };
 
 describe("海しるの情報源", () => {
@@ -171,6 +189,8 @@ describe("海しるの情報源", () => {
     expect(calls.map((c) => new URL(c.url).pathname)).toEqual([
       "/seabed-crust-deformation-info/v2/MapServer/1/query",
       "/marine-volcano-DB/v2/MapServer/1/query",
+      "/coast-guard-office/v2/MapServer/1/query",
+      "/tide-prediction/v3/station",
     ]);
     for (const c of calls) {
       expect(c.headers["ocp-apim-subscription-key"]).toBe(KEY);
@@ -178,10 +198,13 @@ describe("海しるの情報源", () => {
     }
     expect(waits).toEqual([MSIL_INTERVAL_MS]);
     const r = marineResponse(db, true);
-    expect(r.data.features).toHaveLength(7);
+    // 3 + 4 + 2 + 2 (形の違うコードの地点は捨てる)
+    expect(r.data.features).toHaveLength(11);
     expect(r.fetchedAt).toEqual({
       gnssa: "2026-11-20T00:00:00.000Z",
       volcano: "2026-11-20T00:00:00.000Z",
+      office: "2026-11-20T00:00:00.000Z",
+      tide: "2026-11-20T00:00:00.000Z",
     });
     expect(source?.status().state).toBe("stopped");
   });
@@ -192,6 +215,8 @@ describe("海しるの情報源", () => {
     const fc = { type: "FeatureCollection", features: [] };
     cache.put(cacheId("gnssa"), fc, "2026-11-19T12:00:00.000Z");
     cache.put(cacheId("volcano"), fc, "2026-11-19T18:00:00.000Z");
+    cache.put(cacheId("office"), fc, "2026-11-19T18:00:00.000Z");
+    cache.put(cacheId("tide"), fc, "2026-11-19T18:00:00.000Z");
     const { f, calls } = fakeFetch(BODIES);
     const waits: number[] = [];
     const controller = new AbortController();
@@ -220,6 +245,8 @@ describe("海しるの情報源", () => {
       "seabed-crust-deformation-info@0": JSON.stringify(first),
       "seabed-crust-deformation-info@3": JSON.stringify(second),
       "marine-volcano-DB": BODIES["marine-volcano-DB"],
+      "coast-guard-office": BODIES["coast-guard-office"],
+      "tide-prediction": BODIES["tide-prediction"],
     });
     const controller = new AbortController();
     await msilSource(db, KEY, {
@@ -229,7 +256,7 @@ describe("海しるの情報源", () => {
     })?.run(controller.signal);
     expect(
       calls.map((c) => new URL(c.url).searchParams.get("resultOffset")),
-    ).toEqual([null, "3", null]);
+    ).toEqual([null, "3", null, null, null]);
     expect(
       marineResponse(db, true).data.features.filter(
         (x) => x.properties.kind === "gnssa",
@@ -331,5 +358,237 @@ describe("海しるの点の吹き出し", () => {
       d2: 4,
     });
     expect(nearestMarine([])).toBeUndefined();
+  });
+});
+
+describe("海上保安部署等と潮汐推算の地点", () => {
+  test("海上保安部署等は名前・所在地・電話番号・海上保安庁のページ", () => {
+    const r = parseMsil(OFFICE, fixture("msil/coast-guard-office.json"));
+    expect(r.features.map((f) => f.properties)).toEqual([
+      {
+        kind: "office",
+        name: "横須賀海上保安部",
+        address: "〒237-0071 神奈川県横須賀市田浦港町無番地",
+        phone: "046-862-0118",
+        url: "https://www.kaiho.mlit.go.jp/03kanku/yokosuka/",
+      },
+      {
+        kind: "office",
+        name: "作り物海上保安署",
+        address: "千葉県千葉市作り物町 1",
+        phone: undefined,
+        url: undefined,
+      },
+    ]);
+  });
+
+  test("潮汐推算の地点は名前とコード。形の違うコードは捨てる", () => {
+    const r = parseMsil(TIDE, fixture("msil/tide-station.json"));
+    expect(r.features.map((f) => f.properties)).toEqual([
+      { kind: "tide", name: "根室", code: "0114" },
+      { kind: "tide", name: "作り物港", code: "9901" },
+    ]);
+    expect(TIDE.url).toBe("https://api.msil.go.jp/tide-prediction/v3/station");
+  });
+
+  test("吹き出し: 海上保安部署は 118 番、潮汐推算は推算であること", () => {
+    expect(
+      marinePopup({
+        kind: "office",
+        name: "横須賀海上保安部",
+        address: "〒237-0071 神奈川県横須賀市田浦港町無番地",
+        phone: "046-862-0118",
+        url: "https://www.kaiho.mlit.go.jp/03kanku/yokosuka/",
+      }).map((l) => l.text),
+    ).toEqual([
+      "横須賀海上保安部",
+      "海上保安部署 (海上保安庁)",
+      "〒237-0071 神奈川県横須賀市田浦港町無番地",
+      "電話 046-862-0118",
+      "海の事件・事故は 118 番 (海上保安庁)",
+      "部署のページ (海上保安庁)",
+      "出典：海洋状況表示システム (海しる)。海上保安庁が保証するものではありません",
+    ]);
+    const tide = marinePopup({ kind: "tide", name: "根室", code: "0114" });
+    expect(tide.map((l) => l.text).slice(0, 2)).toEqual([
+      "根室",
+      "潮汐推算の地点 (海上保安庁)",
+    ]);
+    expect(tide[2]?.text).toContain("津波や高潮の観測ではなく");
+  });
+});
+
+/** 1 分ごとの 1 日分 (半日周期の作り物)。山は 3:00 と 15:25 ごろ */
+function sineDay(date = "2026-11-28"): TideDay {
+  const tide = Array.from({ length: 1441 }, (_, i) =>
+    Math.round(100 + 80 * Math.cos(((i - 180) / 745) * 2 * Math.PI)),
+  );
+  return {
+    code: "9901",
+    date,
+    start: new Date(Date.parse(`${date}T00:00:00+09:00`)).toISOString(),
+    stepSec: 60,
+    tide,
+  };
+}
+
+describe("潮汐推算の値", () => {
+  test("推算潮位の答えを読む。値の並びが半日に満たない例は 1 時間ごとと読む", () => {
+    const d = parseTide(
+      "0114",
+      "2026-01-05",
+      fixture("msil/tide-data-example.json"),
+    );
+    expect(d.stepSec).toBe(3600);
+    expect(d.start).toBe("2026-01-05T12:00:00.000Z");
+    expect(d.tide).toHaveLength(24);
+    const full = parseTide(
+      "0114",
+      "2026-11-28",
+      JSON.stringify({
+        interval: 60,
+        stationCode: "0114",
+        tide: sineDay().tide,
+      }),
+    );
+    expect(full.stepSec).toBe(60);
+    // time が無ければ、その日の 0 時 (日本時間) から
+    expect(full.start).toBe("2026-11-27T15:00:00.000Z");
+    expect(() => parseTide("0114", "2026-11-28", "{}")).toThrow();
+    expect(() =>
+      parseTide("0114", "2026-11-28", JSON.stringify({ tide: [1, "x"] })),
+    ).toThrow();
+  });
+
+  test("満潮と干潮は値の山と谷を拾うだけ。日の端は拾わない", () => {
+    const turns = tideTurns(sineDay());
+    expect(turns.map((t) => t.kind)).toEqual(["high", "low", "high", "low"]);
+    expect(turns.map(tideTurnText)).toEqual([
+      "満潮 3:00 180 cm",
+      "干潮 9:13 20 cm",
+      "満潮 15:25 180 cm",
+      "干潮 21:38 20 cm",
+    ]);
+  });
+
+  test("同じ値が続く山は真ん中の時刻。小さな揺れは拾わない", () => {
+    const d: TideDay = {
+      code: "x",
+      date: "2026-11-28",
+      start: "2026-11-27T15:00:00.000Z",
+      stepSec: 600,
+      // 10 分ごと。1:00〜1:20 が同じ高さの山、2:30 の小さな揺れ (前後 90 分の中でいちばん高くない)
+      tide: [
+        10, 20, 30, 40, 50, 60, 70, 70, 70, 60, 50, 40, 30, 31, 30, 20, 10, 5,
+        0, 5,
+      ],
+    };
+    expect(tideTurns(d).map((t) => [t.kind, tideTurnText(t)])).toEqual([
+      ["high", "満潮 1:10 70 cm"],
+      ["low", "干潮 3:00 0 cm"],
+    ]);
+  });
+
+  test("図の線は値の高さを図の中で合わせる", () => {
+    const d: TideDay = {
+      code: "x",
+      date: "2026-11-28",
+      start: "2026-11-27T15:00:00.000Z",
+      stepSec: 600,
+      tide: [0, 50, 100],
+    };
+    expect(tidePolyline(d, 100, 10)).toEqual({
+      points: "0.0,10.0 50.0,5.0 100.0,0.0",
+      min: 0,
+      max: 100,
+    });
+    expect(tideDayLabel("2026-11-28")).toBe("11/28(土)");
+  });
+
+  test("URL は地点のコードと日 (8 桁)。鍵は入れない", () => {
+    expect(tideUrl("0114", "2026-11-28")).toBe(
+      "https://api.msil.go.jp/tide-prediction/v3/data?stationCode=0114&date=20261128",
+    );
+  });
+});
+
+describe("潮汐推算を取りに行く (/api/tide)", () => {
+  function setup(now = Date.parse("2026-11-28T03:00:00Z")) {
+    const db = openDb(":memory:");
+    new LayerCache(db).put(cacheId("tide"), {
+      type: "FeatureCollection",
+      features: parseMsil(TIDE, fixture("msil/tide-station.json")).features,
+    });
+    const calls: { url: string; headers: Record<string, string> }[] = [];
+    const f = (async (url: string, init: RequestInit) => {
+      calls.push({ url, headers: init.headers as Record<string, string> });
+      return new Response(
+        JSON.stringify({
+          time: "2026-11-28T00:00:00+09:00",
+          interval: 60,
+          stationCode: "0114",
+          tide: sineDay().tide,
+        }),
+      );
+    }) as typeof fetch;
+    let t = now;
+    const fetcher = new TideFetcher(db, KEY, { fetch: f, now: () => t });
+    return { fetcher, calls, advance: (ms: number) => (t += ms) };
+  }
+
+  test("一覧にある地点の今日の値を取り、同じ日は覚えたものを返す", async () => {
+    const { fetcher, calls, advance } = setup();
+    const d = await fetcher.today("0114");
+    expect(d.date).toBe("2026-11-28");
+    expect(d.tide).toHaveLength(1441);
+    await fetcher.today("0114");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.headers["ocp-apim-subscription-key"]).toBe(KEY);
+    expect(calls[0]?.url).not.toContain(KEY);
+    expect(calls[0]?.url).toContain("date=20261128");
+    // 日本時間の日が替わったら取り直す
+    advance(15 * 60 * 60_000);
+    expect((await fetcher.today("0114")).date).toBe("2026-11-29");
+    expect(calls).toHaveLength(2);
+  });
+
+  test("一覧に無い地点・形の違うコードは取りに行かない", async () => {
+    const { fetcher, calls } = setup();
+    for (const code of ["1234", "../x", ""]) {
+      const err = await fetcher.today(code).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(TideRefused);
+      expect((err as TideRefused).status).toBe(404);
+    }
+    expect(calls).toHaveLength(0);
+  });
+
+  test("10 分に 30 回より多くは取りに行かない", async () => {
+    const db = openDb(":memory:");
+    const features = Array.from({ length: TIDE_MAX_FETCHES + 1 }, (_, i) => ({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [140, 35] },
+      properties: { kind: "tide", name: `地点${i}`, code: String(1000 + i) },
+    }));
+    new LayerCache(db).put(cacheId("tide"), {
+      type: "FeatureCollection",
+      features,
+    });
+    let n = 0;
+    const f = (async () => {
+      n++;
+      return new Response(JSON.stringify({ tide: sineDay().tide }));
+    }) as unknown as typeof fetch;
+    let t = Date.parse("2026-11-28T03:00:00Z");
+    const fetcher = new TideFetcher(db, KEY, { fetch: f, now: () => t });
+    for (let i = 0; i < TIDE_MAX_FETCHES; i++)
+      await fetcher.today(String(1000 + i));
+    const err = await fetcher
+      .today(String(1000 + TIDE_MAX_FETCHES))
+      .catch((e: unknown) => e);
+    expect((err as TideRefused).status).toBe(429);
+    expect(n).toBe(TIDE_MAX_FETCHES);
+    t += 10 * 60_000;
+    await fetcher.today(String(1000 + TIDE_MAX_FETCHES));
+    expect(n).toBe(TIDE_MAX_FETCHES + 1);
   });
 });
