@@ -299,7 +299,7 @@ export function mergeTsunami(
     ended: !highest({ areas }),
     provisional: base.provisional && !jmaAreas,
     sources: union(base.sources, [r.source]),
-    areasSource: r.code === "VTSE52" ? base.areasSource : r.source,
+    areasSource: r.areas !== undefined ? r.source : base.areasSource,
     updatedAt: now,
   };
   return next;

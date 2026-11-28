@@ -253,7 +253,7 @@ export interface Tsunami {
   provisional: boolean;
   /** 受けた源。`jma-bosai` は気象庁ホームページの JSON (地震火山 XML の予備) */
   sources: ("jma" | "jma-bosai" | "p2p" | "wolfx")[];
-  /** いまの予報区の並びを受けた源 (津波警報・注意報・予報と津波情報。沖合の観測 (VTSE52) では替えない)。前のデータには無い */
+  /** いまの予報区の並びを受けた源 (予報区を持たない報 (沖合の観測 VTSE52 など) では替えない)。前のデータには無い */
   areasSource?: Tsunami["sources"][number];
   updatedAt: string;
 }
