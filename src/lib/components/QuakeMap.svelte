@@ -26,6 +26,19 @@
   } from "#lib/format.ts";
   import { isLite } from "#lib/lite.ts";
   import {
+    ASH_STRIPE,
+    ashBounds,
+    ashDefaultWindow,
+    ashDrawn,
+    ashExpired,
+    ashExplain,
+    ashFeatures,
+    ashLegend,
+    ashStripeImage,
+    ashWindowTitle,
+    VOLCANO_ASH_URL,
+  } from "#lib/map/ash.ts";
+  import {
     CAMERA_EMPTY,
     CAMERA_FAILED,
     CAMERA_MIN_WIDTH,
@@ -226,6 +239,7 @@
     type Quake,
     type Tsunami,
     type Volcano,
+    type VolcanoAshMap,
     type WeatherInfo,
     type WeatherWarning,
   } from "#lib/model.ts";
@@ -403,6 +417,7 @@
         for (const [id, img] of Object.entries(marineIcons()))
           created.addImage(id, img, { pixelRatio: 2 });
         created.addImage("camera", cameraIcon(), { pixelRatio: 2 });
+        created.addImage(ASH_STRIPE, ashStripeImage(), { pixelRatio: 2 });
         void loadMarine(created);
         void loadCameras(created);
         void loadRoads(created);
@@ -749,6 +764,63 @@
     untrack(() => typhoonPopupEl?.remove());
   });
 
+  // ---- 降灰予報の範囲 (docs/map.md の「降灰予報の範囲」) ----
+  // 一覧で降灰予報 (定時・速報・詳細) を選んだときだけ、範囲の多角形を /api/volcano-ash から読んで描く
+  // (一覧の報には持たせない)。時刻の区切りは凡例の ‹ › で人が動かす (自動では動かさない)
+  let ashMap = $state<VolcanoAshMap | null>(null);
+  let ashIndex = $state(0);
+  /** 範囲を描けないときに右下に書く一言 (読めなかった・残していない) */
+  let ashNote = $state("");
+  $effect(() => {
+    const v = ashDrawn(volcano) ? volcano : null;
+    ashMap = null;
+    ashNote = "";
+    if (!v) return;
+    const aborter = new AbortController();
+    fetch(`${VOLCANO_ASH_URL}?id=${encodeURIComponent(v.id)}`, {
+      signal: aborter.signal,
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.json() as Promise<{ ash: VolcanoAshMap | null }>;
+      })
+      .then(({ ash }) => {
+        if (!ash || ash.windows.length === 0) {
+          // 定時は火山ごとにいちばん新しい報の範囲だけを残す。前に受けた報には範囲が無いこともある
+          ashNote =
+            v.code === "VFVO53"
+              ? "この報の範囲は残していません。定時の降灰予報は、火山ごとにいちばん新しい報の範囲だけを描きます。"
+              : "この報には、地図に描く範囲がありません。";
+          return;
+        }
+        ashIndex = ashDefaultWindow(ash.windows, Date.now());
+        ashMap = ash;
+      })
+      .catch((err: unknown) => {
+        if (!aborter.signal.aborted) {
+          console.warn(`降灰予報の範囲を読めませんでした: ${err}`);
+          ashNote =
+            "降灰予報の範囲を読み込めませんでした。選び直すと読み直します。";
+        }
+      });
+    return () => aborter.abort();
+  });
+  /** 降灰予報の範囲を描いているか (選んだ報の範囲を読めた) */
+  const ashShown = $derived(
+    ashMap !== null && volcano !== null && ashMap.id === volcano.id,
+  );
+  const ashWindow = $derived(ashShown ? ashMap?.windows[ashIndex] : undefined);
+  $effect(() => {
+    if (!map) return;
+    setData(
+      map,
+      "ash",
+      ashShown && ashMap
+        ? ashFeatures(ashMap.windows, ashIndex)
+        : { type: "FeatureCollection", features: [] },
+    );
+  });
+
   // 台湾の観測点 (TREM-RTS)。地震の間は 0.5 秒ごとに替わるので、この点だけを差し替える
   $effect(() => {
     if (map) setData(map, "rts", rtsFeatures(rtsStations, rts));
@@ -1082,6 +1154,16 @@
    */
   const quakeShown = $derived(quake !== undefined);
   /**
+   * 地震か降灰予報の範囲を見ている間。どちらも面の色 (震度・降灰の量) を読むので、警報・注意報の塗りと、色の
+   * ぶつかる重ねる図 (雨雲・キキクル・雷・竜巻・今後の雨) を隠す (docs/map.md の「地震を選んでいる間」「降灰予報の範囲」)
+   */
+  const focusShown = $derived(quakeShown || ashShown);
+  /** 隠していることの一言の「何を選んでいる間か」とわけ */
+  const focusWhat = $derived(quakeShown ? "地震" : "降灰予報");
+  const focusWhy = $derived(
+    quakeShown ? "震度の色と重なるため" : "降灰の範囲の色と重なるため",
+  );
+  /**
    * 地図の箱の高さ (px)。低い地図 (スマホの形の一覧のタブで上に残す地図) では、隠していることの一言が震央や丸を
    * 覆うので出さない。地図のタブへ移って地図が高くなると出す
    */
@@ -1091,7 +1173,7 @@
   // 時刻の表をブラウザから直接取り、いまの 1 枚のタイルに差し替える。取るのは雨雲を出している間だけで、
   // 画面が見えていない間 (裏のタブ・閉じた画面) と地震を選んでいる間 (雨雲を隠す) は止める
   /** 雨雲を出しているか (選んでいて、地震を選んでいない) */
-  const rainOn = $derived(rainShown(hazard, quakeShown));
+  const rainOn = $derived(rainShown(hazard, focusShown));
   let rainFrame = $state<RainFrame | null>(null);
   /** 最後に時刻の表を取りに行った時刻 (雨雲が古いかを決める) と、そのとき読めなかったか */
   let rainChecked = $state(0);
@@ -1104,7 +1186,7 @@
     return () => document.removeEventListener("visibilitychange", seen);
   });
   /** 雨雲 (いま→予測) を出しているか。いまの 1 枚は雨雲と同じ時刻の表から取る (docs/map.md の「雨雲 (いま→予測)」) */
-  const loopOn = $derived(loopShown(hazard, quakeShown));
+  const loopOn = $derived(loopShown(hazard, focusShown));
   $effect(() => {
     if (!map || !(rainOn || loopOn) || !pageVisible) return;
     let stopped = false;
@@ -1165,7 +1247,7 @@
   /** 選んでいるキキクル (土砂・大雨) */
   const chosenRisk = $derived(riskOf(hazard));
   /** キキクルを出しているか (選んでいて、地震を選んでいない) */
-  const riskOn = $derived(riskShown(hazard, quakeShown));
+  const riskOn = $derived(riskShown(hazard, focusShown));
   /** いまの 1 枚と、それがどのキキクルのものか (土砂と大雨を選び替えたら、前の 1 枚は使わない) */
   let riskFrame = $state<(RiskFrame & { element: RiskKind["element"] }) | null>(
     null,
@@ -1242,7 +1324,7 @@
   /** 選んでいる雷か竜巻 */
   const chosenNowc = $derived(nowcOf(hazard));
   /** 雷・竜巻・今後の雨を出しているか (選んでいて、地震を選んでいない) */
-  const nowcOn = $derived(nowcShown(hazard, quakeShown));
+  const nowcOn = $derived(nowcShown(hazard, focusShown));
   let nowcFrame = $state<(NowcFrame & { element: NowcKind["element"] }) | null>(
     null,
   );
@@ -1542,18 +1624,18 @@
 
   /** 気象警報・注意報の塗りを隠しているか (重ねる図が重なっているか、地震を選んでいるため) */
   const warningsHidden = $derived(
-    covered || rainOn || loopOn || riskOn || nowcOn || quakeShown,
+    covered || rainOn || loopOn || riskOn || nowcOn || focusShown,
   );
   $effect(() => {
     if (!map) return;
     for (const [layer, on] of Object.entries({
       ...hazardVisibility(hazard),
-      ...rainVisibility(hazard, quakeShown, rainFrame !== null),
-      ...riskVisibility(hazard, quakeShown, riskReady),
-      ...nowcVisibility(hazard, quakeShown, nowcReady),
-      ...rasrfVisibility(hazard, quakeShown, forecastFrame !== null),
-      ...loopVisibility(hazard, quakeShown, loopSlots),
-      ...overlayVisibility(hazard, zoom, quakeShown),
+      ...rainVisibility(hazard, focusShown, rainFrame !== null),
+      ...riskVisibility(hazard, focusShown, riskReady),
+      ...nowcVisibility(hazard, focusShown, nowcReady),
+      ...rasrfVisibility(hazard, focusShown, forecastFrame !== null),
+      ...loopVisibility(hazard, focusShown, loopSlots),
+      ...overlayVisibility(hazard, zoom, focusShown),
     }))
       map.setLayoutProperty(layer, "visibility", on ? "visible" : "none");
     // 塗りを隠している間は、塗った所の吹き出しも出さない
@@ -2634,10 +2716,13 @@
         : undefined;
     // 選んだ台風は、いまの強風域と予報円・暴風警戒域が収まるように (続報では寄せ直さない)
     const ty = !eew && !vm && !fq && !office ? typhoon : null;
+    // 選んだ降灰予報の範囲を読めたら、全部の区切りの範囲が収まるように (火山へ寄せた後に 1 度だけ寄せ直す。
+    // 範囲は 2 km ほどから 100 km ほどまであり、火山へ寄せるズーム 5.5 では小さすぎて見えないため)
+    const ab = vm && ashShown && ashMap ? ashBounds(ashMap.windows) : undefined;
     const key = eew
       ? `eew:${eew.eventId}`
       : vm
-        ? `volcano:${volcano?.id}`
+        ? `volcano:${volcano?.id}${ab ? ":ash" : ""}`
         : fq
           ? `foreign:${fq.id}`
           : office
@@ -2673,6 +2758,30 @@
         ...cam,
         zoom: Math.max(3.5, Math.min(cam.zoom ?? 5, 6)),
       });
+      return;
+    }
+    if (ab) {
+      if (key === focused) return;
+      const cam = map.cameraForBounds(
+        [
+          [ab[0], ab[1]],
+          [ab[2], ab[3]],
+        ],
+        // 広い形は右下に凡例 (幅 18rem ほど) が出るので、その分を右に空ける
+        {
+          padding: {
+            ...focusPadding(),
+            right: document.documentElement.hasAttribute("data-phone")
+              ? 24
+              : Math.min(320, (container?.clientWidth ?? 0) * 0.35),
+          },
+        },
+      );
+      if (!cam) return;
+      focused = key;
+      remember();
+      // 小さな範囲でも寄せすぎず (まわりの町が分かるように)、大きな範囲でも引きすぎない
+      map.jumpTo({ ...cam, zoom: Math.max(7, Math.min(cam.zoom ?? 9, 11)) });
       return;
     }
     if (office && !eew && !vm && !fq) {
@@ -2884,10 +2993,12 @@
           <!-- 隠している層があることと、戻し方。図が重ならないズーム (活断層の 11 未満) では隠さない -->
           {#if covered}
             <p class="tiny muted" data-testid="hazard-hidden">
-              色がぶつからないよう、警報・注意報と震度の塗り{roadSpeedDrawn
+              色がぶつからないよう、警報・注意報と{ashShown
+                ? "降灰の範囲"
+                : "震度"}の塗り{roadSpeedDrawn
                 ? "・通れた道 (目安) の線"
-                : ""}を隠しています (特別警報・緊急地震速報は縁取りで出します)。{quakeShown
-                ? "「なし」に戻すと、震度の塗りは元に戻ります。警報・注意報の塗りは、一覧へ戻ると元に戻ります。"
+                : ""}を隠しています (特別警報・緊急地震速報は縁取りで出します)。{focusShown
+                ? `「なし」に戻すと、${ashShown ? "降灰の範囲" : "震度"}の塗りは元に戻ります。警報・注意報の塗りは、一覧へ戻ると元に戻ります。`
                 : "「なし」に戻すと元に戻ります。"}
             </p>
           {:else}
@@ -2948,9 +3059,9 @@
           </figure>
         {:else if boxHeight >= NOTE_MIN_HEIGHT}
           <p class="map-note tiny muted" data-testid="quake-hides-rain">
-            地震を選んでいる間は、雨雲{warningsPainted
+            {focusWhat}を選んでいる間は、雨雲{warningsPainted
               ? "と気象警報・注意報の塗り"
-              : ""}を隠しています (震度の色と重なるため){specialPainted
+              : ""}を隠しています ({focusWhy}){specialPainted
               ? "。特別警報は縁取りで出します"
               : ""}。一覧へ戻ると元に戻ります。
           </p>
@@ -3010,9 +3121,9 @@
           </figure>
         {:else if boxHeight >= NOTE_MIN_HEIGHT}
           <p class="map-note tiny muted" data-testid="quake-hides-risk">
-            地震を選んでいる間は、キキクル{warningsPainted
+            {focusWhat}を選んでいる間は、キキクル{warningsPainted
               ? "と気象警報・注意報の塗り"
-              : ""}を隠しています (震度の色と重なるため){specialPainted
+              : ""}を隠しています ({focusWhy}){specialPainted
               ? "。特別警報は縁取りで出します"
               : ""}。一覧へ戻ると元に戻ります。
           </p>
@@ -3070,11 +3181,11 @@
           </figure>
         {:else if boxHeight >= NOTE_MIN_HEIGHT}
           <p class="map-note tiny muted" data-testid="quake-hides-nowc">
-            地震を選んでいる間は、{chosenNowc.label.replace(
+            {focusWhat}を選んでいる間は、{chosenNowc.label.replace(
               / \(.*\)$/,
               "",
             )}{warningsPainted ? "と気象警報・注意報の塗り" : ""}を隠しています
-            (震度の色と重なるため){specialPainted
+            ({focusWhy}){specialPainted
               ? "。特別警報は縁取りで出します"
               : ""}。一覧へ戻ると元に戻ります。
           </p>
@@ -3207,9 +3318,9 @@
           </figure>
         {:else if boxHeight >= NOTE_MIN_HEIGHT}
           <p class="map-note tiny muted" data-testid="quake-hides-loop">
-            地震を選んでいる間は、雨雲{warningsPainted
+            {focusWhat}を選んでいる間は、雨雲{warningsPainted
               ? "と気象警報・注意報の塗り"
-              : ""}を隠しています (震度の色と重なるため){specialPainted
+              : ""}を隠しています ({focusWhy}){specialPainted
               ? "。特別警報は縁取りで出します"
               : ""}。一覧へ戻ると元に戻ります。
           </p>
@@ -3290,13 +3401,86 @@
           </figure>
         {:else if boxHeight >= NOTE_MIN_HEIGHT}
           <p class="map-note tiny muted" data-testid="quake-hides-forecast">
-            地震を選んでいる間は、今後の雨{warningsPainted
+            {focusWhat}を選んでいる間は、今後の雨{warningsPainted
               ? "と気象警報・注意報の塗り"
-              : ""}を隠しています (震度の色と重なるため){specialPainted
+              : ""}を隠しています ({focusWhy}){specialPainted
               ? "。特別警報は縁取りで出します"
               : ""}。一覧へ戻ると元に戻ります。
           </p>
         {/if}
+      {/if}
+      {#if ashShown && ashMap && volcano}
+        <!--
+          選んだ降灰予報の範囲の凡例。いつの予想かを大きく出し、区切りが幾つかあれば ‹ › で動かす (自動では動かさない)。
+          定時は噴火していなくても出るので、いま降っている所ではないことをいつも書く (docs/map.md の「降灰予報の範囲」)
+        -->
+        <figure class="legend rain-legend" data-testid="ash-legend">
+          <figcaption class="small bold">
+            {volcano.title.normalize("NFKC")}
+          </figcaption>
+          <p class="forecast-time bold" data-testid="ash-time">
+            {ashWindowTitle(ashMap.code, ashWindow)}
+          </p>
+          {#if ashMap.windows.length > 1}
+            <div class="forecast-step">
+              <button
+                type="button"
+                class="ghost small step"
+                aria-label="1 つ前の区切り"
+                disabled={ashIndex <= 0}
+                onclick={() => (ashIndex = Math.max(0, ashIndex - 1))}
+                data-testid="ash-prev">‹</button
+              >
+              <span class="small"
+                >{(ashWindow?.label ?? "").normalize("NFKC")}</span
+              >
+              <button
+                type="button"
+                class="ghost small step"
+                aria-label="1 つ先の区切り"
+                disabled={ashIndex >= ashMap.windows.length - 1}
+                onclick={() =>
+                  (ashIndex = Math.min(
+                    (ashMap?.windows.length ?? 1) - 1,
+                    ashIndex + 1,
+                  ))}
+                data-testid="ash-next">›</button
+              >
+            </div>
+          {/if}
+          <ul class="ash-scale">
+            {#each ashLegend(ashWindow) as l (l.name)}
+              <li>
+                <span
+                  class="ash-swatch"
+                  data-stripe={l.style.stripe ? "" : undefined}
+                  style:--ash-fill={l.style.fill}
+                  style:--ash-line={l.style.line}
+                  style:--ash-opacity={l.style.opacity}
+                ></span><span class="tiny">{l.name}</span>
+              </li>
+            {/each}
+          </ul>
+          <p class="tiny muted">
+            {#if ashExpired(volcano, Date.now())}
+              <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
+              有効期限 ({jst(volcano.validUntil ?? "")}) を過ぎた予報です。
+            {/if}
+            {ashExplain(ashMap.code, volcano.eventTime)}
+          </p>
+          <p class="tiny muted">出典: 気象庁 (降灰予報)</p>
+          {#if warningsPainted && !covered}
+            <p class="tiny muted" data-testid="ash-hides-warnings">
+              色がぶつからないよう、警報・注意報の塗りを隠しています{specialPainted
+                ? " (特別警報は縁取りで出します)"
+                : ""}。一覧へ戻ると元に戻ります。
+            </p>
+          {/if}
+        </figure>
+      {:else if ashNote && boxHeight >= NOTE_MIN_HEIGHT}
+        <p class="map-note tiny muted" data-testid="ash-note">
+          {ashNote}
+        </p>
       {/if}
       {#if slmcsAt && boxHeight >= NOTE_MIN_HEIGHT}
         <!-- 線状降水帯の雨域を描いている間だけ、赤い線が何かを書く (いつも描く層なので、凡例の代わり) -->
@@ -3643,6 +3827,41 @@
     height: 0.75rem;
     border: 1px solid rgb(0 0 0 / 0.35);
     border-radius: 2px;
+  }
+  /* 降灰予報の範囲の凡例。地図と同じ色・縁・透かし (白い地の上に重ねた見え方)。噴石は白地に赤の縞 */
+  .ash-scale {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .ash-scale li {
+    display: flex;
+    align-items: center;
+    gap: var(--so-space-2);
+    margin: 0;
+  }
+  .ash-swatch {
+    position: relative;
+    flex: none;
+    width: 1rem;
+    height: 0.75rem;
+    border: 2px solid var(--ash-line);
+    border-radius: 2px;
+    background: #fff;
+  }
+  .ash-swatch::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: var(--ash-fill);
+    opacity: var(--ash-opacity);
+  }
+  .ash-swatch[data-stripe]::before {
+    background: repeating-linear-gradient(45deg, #f00 0 2px, #fff 2px 5px);
+    opacity: 1;
   }
   /* 古い雨雲・読めないときの印。字は本文の色のまま、アイコンだけ注意の色 (denpa の 6 章「通知」) */
   .rain-time .warn-mark {

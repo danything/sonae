@@ -1,9 +1,9 @@
 /**
  * Wolfx Open API の気象庁の緊急地震速報 (jma_eew) と地震情報の一覧 (jma_eqlist、下) を読む。
  *
- * 仕様: Wolfx Open API Usage Guidelines (https://wolfx.jp/en/docs/open-api/) の
- * 「JMA Earthquake Early Warning JSON API」の項目の一覧と、WebSocket の説明
- * (https://wolfx.jp/en/docs/websocket/)。
+ * 仕様: Wolfx Open API 利用ガイド (https://wolfx.jp/docs/open-api) の「気象庁 緊急地震速報 JSON API」の
+ * 項目の一覧と公式の応答の例 (https://wolfx.jp/examples/jma_eew/)、WebSocket の説明 (https://wolfx.jp/docs/websocket)。
+ * 日本語の文書が正で、英語の文書は 2026-11-25 まで `WarnArea[].Type` を違って書いていた。
  *
  * **原文 (`OriginalText`) は読まない・残さない** (中身は気象庁の電文で、Wolfx の規約の五条で気象庁の条件に従う。配り直してよいと確かめられない。docs/design.md の 5 章)。
  * 最大予測震度 (`MaxIntensity`・`WarnArea[].Shindo1/2`) も読まない (docs/design.md の 5 章)。
@@ -40,6 +40,12 @@ const names = (v: unknown, keep: (a: Json) => boolean): string[] =>
     .filter(keep)
     .map((a) => str(a.Chiiki))
     .filter((n): n is string => n !== undefined);
+
+/**
+ * 警報の地域か (`WarnArea[].Type`)。実際の JSON と公式の例は `警報`・`予報` で来る
+ * (日本語の文書もそう書く)。英語の文書は 2026-11-25 まで `Warning`・`Forecast` と書いていたので、そちらも受ける
+ */
+const isWarningArea = (a: Json) => a.Type === "警報" || a.Type === "Warning";
 
 /** WebSocket の 1 通 (または HTTP の jma_eew.json) を読む */
 export function parseWolfx(value: unknown): WolfxMessage {
@@ -86,7 +92,7 @@ export function parseWolfx(value: unknown): WolfxMessage {
         }
       : undefined,
     magnitude: placeholder ? undefined : magnitude,
-    warnAreas: names(o.WarnArea, (a) => a.Type === "Warning"),
+    warnAreas: names(o.WarnArea, isWarningArea),
     // 予報の地域も含めた全部 (名前だけ。Shindo1/2 は読まない)。通知の「住んでいる地域と現在地」の判定に使う
     areas: names(o.WarnArea, () => true),
   };

@@ -260,6 +260,17 @@ const MIGRATIONS: string[] = [
     data TEXT NOT NULL
   );
   `,
+  `
+  -- 降灰予報 (VFVO53〜55) の範囲の多角形。火山の報 (volcanoes) の id ごとに 1 行。地図で選んだときだけ読む。
+  -- 定時 (VFVO53) は series ごとにいちばん新しい報だけを残す。data は AshWindow[] の JSON
+  CREATE TABLE volcano_ash (
+    id TEXT PRIMARY KEY,
+    series TEXT NOT NULL,
+    reported_at TEXT NOT NULL,
+    data TEXT NOT NULL
+  );
+  CREATE INDEX volcano_ash_series ON volcano_ash (series);
+  `,
 ];
 
 export function openDb(path: string): Database {
