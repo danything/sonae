@@ -1,13 +1,19 @@
 /**
  * 雨雲 (気象庁の高解像度降水ナウキャストの、いまの降水強度)。docs/map.md の「雨雲」。
- * 気象庁ホームページの雨雲の動きの画面が読むタイルを、ブラウザから直接読む。公式の API ではなく、予告なく変わる。
+ * 気象庁ホームページの雨雲の動きの画面が読むタイルを、sonae のサーバーの中継 (`#lib/relay.ts`) を通して読む。公式の API ではなく、予告なく変わる。
  * 出すのは観測から作った「いま」の 1 枚だけで、高解像度降水ナウキャストの 1 時間先の予測も、自分で先を予想することもしない
  * (docs/design.md の 5 章)。DOM にも MapLibre にも触らない (試験できるように)
  */
 
-import { nextPoll, stampAge, stampIso, stepLayerZoom } from "#lib/map/nowc.ts";
+import {
+  JMATILE,
+  nextPoll,
+  stampAge,
+  stampIso,
+  stepLayerZoom,
+} from "#lib/map/nowc.ts";
 
-export const NOWC = "https://www.jma.go.jp/bosai/jmatile/data/nowc";
+export const NOWC = `${JMATILE}/nowc`;
 /** いまと過去 3 時間の時刻の表 (5 分ごと。新しい順)。予測の表 (N2) は読まない */
 export const RAIN_TIMES_URL = `${NOWC}/targetTimes_N1.json`;
 /** 気象庁ホームページの雨雲の動きの画面 (凡例と出典のリンク) */

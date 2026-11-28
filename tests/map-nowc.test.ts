@@ -97,7 +97,7 @@ test("雷・竜巻: いちばん新しい解析 (basetime と validtime が同�
     member: "none",
   });
   expect(nowcTiles(f!, "thns")).toBe(
-    "https://www.jma.go.jp/bosai/jmatile/data/nowc/20261120163000/none/20261120163000/surf/thns/{z}/{x}/{y}.png",
+    "/relay/jmatile/nowc/20261120163000/none/20261120163000/surf/thns/{z}/{x}/{y}.png",
   );
   // 雷の監視 (liden) だけの行は選ばない
   expect(latestAnalysis(N3, "trns")?.validtime).toBe("20261120163000");
@@ -162,7 +162,7 @@ test("今後の雨: 予測のあるいちばん新しい basetime の行を、�
     }),
   ).toBe(1.5);
   expect(rasrfTiles(frames[0]!)).toBe(
-    "https://www.jma.go.jp/bosai/jmatile/data/rasrf/20261120163000/immed/20261120173000/surf/rasrf/{z}/{x}/{y}.png",
+    "/relay/jmatile/rasrf/20261120163000/immed/20261120173000/surf/rasrf/{z}/{x}/{y}.png",
   );
   expect(forecastFrames([])).toEqual([]);
   // 解析が 80 分より前なら古い (2 回続けて新しい予測が取れていない)
@@ -174,7 +174,7 @@ test("今後の雨: 予測のあるいちばん新しい basetime の行を、�
 test("線状降水帯: 解析の雨域の GeoJSON を読み、面と線だけを描く", () => {
   const f = latestAnalysis(N3, "slmcs_unify")!;
   expect(slmcsUrl(f)).toBe(
-    "https://www.jma.go.jp/bosai/jmatile/data/nowc/20261120163000/none/20261120163000/surf/slmcs_unify/data.geojson",
+    "/relay/jmatile/nowc/20261120163000/none/20261120163000/surf/slmcs_unify/data.geojson",
   );
   // 出ていないときは空の FeatureCollection が来る (2026-11-21 の形)
   expect(slmcsFeatures({ type: "FeatureCollection", features: [] })).toEqual({

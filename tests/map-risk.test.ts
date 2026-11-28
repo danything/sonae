@@ -98,7 +98,7 @@ test("タイルの URL と判定の時刻", () => {
     member: "immed0",
   };
   expect(riskTiles(f, "land")).toBe(
-    "https://www.jma.go.jp/bosai/jmatile/data/risk/20261120155000/immed0/20261120155000/surf/land/{z}/{x}/{y}.png",
+    "/relay/jmatile/risk/20261120155000/immed0/20261120155000/surf/land/{z}/{x}/{y}.png",
   );
   expect(riskTiles(f, "rain_mesh")).toContain("/surf/rain_mesh/");
   expect(riskIso(f)).toBe("2026-11-20T15:50:00Z");
@@ -217,13 +217,13 @@ test("洪水: 中小河川のベクトルタイルと指定河川の区間の UR
     member: "immed0",
   };
   expect(floodTiles(f)).toBe(
-    "https://www.jma.go.jp/bosai/jmatile/data/risk/20261128042000/immed0/20261128042000/surf/flood/{z}/{x}/{y}.pbf",
+    "/relay/jmatile/risk/20261128042000/immed0/20261128042000/surf/flood/{z}/{x}/{y}.pbf",
   );
   expect(designatedRiverUrl(f)).toBe(
-    "https://www.jma.go.jp/bosai/jmatile/data/risk/20261128042000/immed0/20261128042000/surf/designated_river/data.geojson",
+    "/relay/jmatile/risk/20261128042000/immed0/20261128042000/surf/designated_river/data.geojson",
   );
   expect(RIVER_MAP_URL).toBe(
-    "https://www.jma.go.jp/bosai/jmatile/data/map/none/none/none/surf/designated_river/data.geojson",
+    "/relay/jmatile/map/none/none/none/surf/designated_river/data.geojson",
   );
   const style = baseStyle("", "risk-flood", null, f) as {
     sources: Record<string, { type: string; tileSize?: number }>;

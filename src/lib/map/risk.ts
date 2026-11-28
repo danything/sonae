@@ -1,14 +1,20 @@
 /**
  * キキクル (気象庁の危険度分布。土砂・大雨・浸水・洪水)。docs/map.md の「キキクル」。
- * 気象庁ホームページのキキクルの画面が読むタイルと川の線を、ブラウザから直接読む。公式の API ではなく、予告なく変わる。
+ * 気象庁ホームページのキキクルの画面が読むタイルと川の線を、sonae のサーバーの中継 (`#lib/relay.ts`) を通して読む。公式の API ではなく、予告なく変わる。
  * 気象庁が判定した危険度の 1 枚を、色も値も変えずに重ねるだけで、sonae が危険度を判定し直すことはしない
  * (docs/design.md の 5 章)。DOM にも MapLibre にも触らない (試験できるように)
  */
 
-import { nextPoll, type NowcFrame, stampAge, stampIso } from "#lib/map/nowc.ts";
+import {
+  JMATILE,
+  nextPoll,
+  type NowcFrame,
+  stampAge,
+  stampIso,
+} from "#lib/map/nowc.ts";
 import { RAIN_TILE_ZOOMS } from "#lib/map/rain.ts";
 
-const RISK = "https://www.jma.go.jp/bosai/jmatile/data/risk";
+const RISK = `${JMATILE}/risk`;
 /** 時刻の表 (10 分ごと。新しい順。いまと過去 6 時間ほど) */
 export const RISK_TIMES_URL = `${RISK}/targetTimes.json`;
 /** 気象庁ホームページのキキクルの画面 (凡例と出典のリンク) */
@@ -169,8 +175,7 @@ export const RISK_LEGEND: { color: string; label: string; level: string }[] = [
 // element `flood`。2026-11-28 に読んだ) に合わせる。気象庁が判定した段をそのまま色にし、段を作り直さない
 
 /** 川の地図 (変わらないもの) */
-const RISK_MAP =
-  "https://www.jma.go.jp/bosai/jmatile/data/map/none/none/none/surf";
+const RISK_MAP = `${JMATILE}/map/none/none/none/surf`;
 /** 指定河川 (国と都道府県が洪水予報をする川、340 の区間) の線。gzip で 290KB ほど。いまの段は持たない */
 export const RIVER_MAP_URL = `${RISK_MAP}/designated_river/data.geojson`;
 /** 指定河川の地図・灰色の縁・区間の名前を出す地図のズーム (気象庁の画面の 8 は 256px のタイルのズームで、MapLibre の地図のズームでは 7) */

@@ -1192,7 +1192,7 @@
   let boxHeight = $state(0);
   const NOTE_MIN_HEIGHT = 420;
   // ---- 雨雲 (気象庁の高解像度降水ナウキャストのいま。docs/map.md の「雨雲」) ----
-  // 時刻の表をブラウザから直接取り、いまの 1 枚のタイルに差し替える。取るのは雨雲を出している間だけで、
+  // 時刻の表をサーバーの中継 (`#lib/relay.ts`) から取り、いまの 1 枚のタイルに差し替える。取るのは雨雲を出している間だけで、
   // 画面が見えていない間 (裏のタブ・閉じた画面) と地震を選んでいる間 (雨雲を隠す) は止める
   /** 雨雲を出しているか (選んでいて、地震を選んでいない) */
   const rainOn = $derived(rainShown(hazard, focusShown));
@@ -1219,10 +1219,9 @@
     const poll = async () => {
       let wait = RAIN_RETRY_MS;
       try {
-        // 表は配信の CDN が 60 秒覚える。ブラウザのキャッシュは ETag で確かめ直す
+        // 表は配信の CDN が 60 秒覚え、サーバーの中継はその残りの間だけ覚える。ブラウザのキャッシュは ETag で確かめ直す
         const r = await fetch(RAIN_TIMES_URL, {
           cache: "no-cache",
-          credentials: "omit",
           referrerPolicy: "no-referrer",
           // 返らないまま止まると次を取らないので、10 秒で失敗にして 1 分後に取り直す
           signal: AbortSignal.timeout(10_000),
@@ -1265,7 +1264,7 @@
   );
 
   // ---- キキクル (気象庁の土砂・大雨の危険度。docs/map.md の「キキクル」) ----
-  // 雨雲と同じく、時刻の表をブラウザから直接取り、いまの 1 枚のタイルに差し替える。取るのはキキクルを出している間だけ
+  // 雨雲と同じく、時刻の表をサーバーの中継 (`#lib/relay.ts`) から取り、いまの 1 枚のタイルに差し替える。取るのはキキクルを出している間だけ
   /** 選んでいるキキクル (土砂・大雨) */
   const chosenRisk = $derived(riskOf(hazard));
   /** キキクルを出しているか (選んでいて、地震を選んでいない) */
@@ -1291,7 +1290,6 @@
       try {
         const r = await fetch(RISK_TIMES_URL, {
           cache: "no-cache",
-          credentials: "omit",
           referrerPolicy: "no-referrer",
           signal: AbortSignal.timeout(10_000),
         });
@@ -1340,7 +1338,6 @@
     void (async () => {
       try {
         const r = await fetch(designatedRiverUrl(frame), {
-          credentials: "omit",
           referrerPolicy: "no-referrer",
           signal: AbortSignal.any([
             aborter.signal,
@@ -1381,7 +1378,7 @@
   );
 
   // ---- 雷・竜巻 (気象庁のナウキャストのいまの解析。docs/map.md の「雷・竜巻」) ----
-  // キキクルと同じく、時刻の表をブラウザから直接取り、いまの 1 枚に差し替える。取るのは出している間だけ
+  // キキクルと同じく、時刻の表をサーバーの中継 (`#lib/relay.ts`) から取り、いまの 1 枚に差し替える。取るのは出している間だけ
   /** 選んでいる雷か竜巻 */
   const chosenNowc = $derived(nowcOf(hazard));
   /** 雷・竜巻・今後の雨を出しているか (選んでいて、地震を選んでいない) */
@@ -1407,7 +1404,6 @@
       try {
         const r = await fetch(url, {
           cache: "no-cache",
-          credentials: "omit",
           referrerPolicy: "no-referrer",
           signal: AbortSignal.timeout(10_000),
         });
@@ -1650,7 +1646,6 @@
         if (f.validtime !== last) {
           last = f.validtime;
           void fetch(slmcsUrl(f), {
-            credentials: "omit",
             referrerPolicy: "no-referrer",
             signal: AbortSignal.any([
               aborter.signal,
