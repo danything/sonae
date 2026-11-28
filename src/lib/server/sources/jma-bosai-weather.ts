@@ -529,12 +529,17 @@ export function bosaiWeatherSource(
           fail++;
           status.set("retrying", errors.join(" / "));
         }
-        await wait(
+        // 待ちを延ばしている間も 1 分ごとに主を見て、戻っていれば切り上げる (待ちが明けるまで「再接続中」に残さない)
+        let left =
           fail === 0
             ? INTERVAL_MS
-            : Math.min(MAX_BACKOFF_MS, INTERVAL_MS * 2 ** (fail - 1)),
-          signal,
-        );
+            : Math.min(MAX_BACKOFF_MS, INTERVAL_MS * 2 ** (fail - 1));
+        while (left > 0 && !signal.aborted) {
+          const step = Math.min(left, INTERVAL_MS);
+          await wait(step, signal);
+          left -= step;
+          if (left > 0 && !primaryDown(opts.primary(), now())) break;
+        }
       }
       status.set("stopped");
     },

@@ -355,9 +355,12 @@ describe("主の源が取れない間だけ取る", () => {
     expect(step).toBeGreaterThanOrEqual(5);
   });
 
-  test("予備の取得に失敗したら状態にエラーを出し、間隔を空ける", async () => {
+  test("予備の取得に失敗したら状態にエラーを出し、間隔を空ける (待つ間も 1 分ごとに主を見る)", async () => {
     const { ctx } = sourceContext();
-    const waits: number[] = [];
+    /** 回ごとに、次の回までに待った長さ */
+    const gaps: number[] = [0];
+    /** 前に取りに行ってから眠ったか (次に取りに行ったら、新しい回) */
+    let slept = false;
     const controller = new AbortController();
     const source = bosaiWeatherSource(ctx, {
       primary: () => ({
@@ -366,17 +369,54 @@ describe("主の源が取れない間だけ取る", () => {
         lastSeenAt: "2026-11-28T08:00:00.000Z",
       }),
       now: () => at("2026-11-28T09:20:00Z"),
-      fetch: (async () =>
-        new Response("busy", { status: 503 })) as unknown as typeof fetch,
+      fetch: (async () => {
+        if (slept) gaps.push(0);
+        slept = false;
+        return new Response("busy", { status: 503 });
+      }) as unknown as typeof fetch,
       sleep: async (ms) => {
-        waits.push(ms);
-        if (waits.length >= 3) controller.abort();
+        expect(ms).toBe(60_000);
+        gaps[gaps.length - 1] = (gaps.at(-1) ?? 0) + ms;
+        slept = true;
+        if (gaps.length >= 4) controller.abort();
       },
       log: () => {},
     });
     await source.run(controller.signal);
-    expect(waits).toEqual([60_000, 120_000, 240_000]);
+    expect(gaps.slice(0, 3)).toEqual([60_000, 120_000, 240_000]);
     expect(source.status().lastError).toContain("503");
+  });
+
+  test("待ちを延ばしている間に主が戻れば、待ちが明けるのを待たずに待機に戻る", async () => {
+    const { ctx } = sourceContext();
+    let primaryOk = false;
+    let sleeps = 0;
+    const states: string[] = [];
+    const controller = new AbortController();
+    const source = bosaiWeatherSource(ctx, {
+      primary: () =>
+        primaryOk
+          ? base
+          : {
+              ...base,
+              state: "retrying",
+              lastSeenAt: "2026-11-28T08:00:00.000Z",
+            },
+      now: () => at("2026-11-28T09:20:00Z"),
+      fetch: (async () =>
+        new Response("busy", { status: 503 })) as unknown as typeof fetch,
+      sleep: async () => {
+        sleeps++;
+        states.push(source.status().state);
+        // 4 回失敗して 8 分待ちに入った後の、1 分目に主が戻る
+        if (sleeps === 1 + 1 + 2 + 4 + 1) primaryOk = true;
+        if (sleeps >= 11) controller.abort();
+      },
+      log: () => {},
+    });
+    await source.run(controller.signal);
+    expect(states.at(-1)).toBe("standby");
+    expect(states.filter((s) => s === "standby").length).toBeGreaterThan(0);
   });
 
   test("警報・注意報の一覧が取れなくても、気象防災速報は取る", async () => {
@@ -564,3 +604,56 @@ function warningIncoming(
     items: [{ type: "warning" as const, warning }],
   };
 }
+
+describe("予備で受けた訂正 (store)", () => {
+  test("警報・注意報: 気象庁 XML の同じ時刻の報があっても、予備の訂正は採る。同じ訂正の受け直しと XML の訂正の置き換えはしない", () => {
+    const { store } = memoryStore();
+    const w = parseBosaiWarnings(MAP, areas).warnings.find(
+      (x) => x.warning.code === "VPWW58",
+    )?.warning;
+    if (!w) throw new Error("無い");
+    store.ingest(warningIncoming("jma-weather", { ...w, source: undefined }));
+    const fix = { ...w, infoType: "訂正" as const };
+    expect(
+      store.ingest(warningIncoming("jma-bosai-weather", fix, "2")),
+    ).toHaveLength(1);
+    expect(
+      store.ingest(warningIncoming("jma-bosai-weather", fix, "3")),
+    ).toEqual([]);
+    // XML の訂正は予備の訂正を置き換え、その後の予備の訂正では置き換えない
+    expect(
+      store.ingest(
+        warningIncoming("jma-weather", { ...fix, source: undefined }, "4"),
+      ),
+    ).toHaveLength(1);
+    expect(
+      store.ingest(warningIncoming("jma-bosai-weather", fix, "5")),
+    ).toEqual([]);
+  });
+
+  test("気象防災速報: 受けている報 (気象庁 XML) の訂正を予備で受けたら置き換え、同じ訂正は受け直さない", () => {
+    const { store } = memoryStore();
+    const info = parseBosaiDenbun(DENBUN);
+    if (!info) throw new Error("無い");
+    const incoming = (
+      source: "jma-bosai-weather" | "jma-weather",
+      key: string,
+      i: typeof info,
+    ) => ({
+      source,
+      key,
+      code: "VPBS50",
+      items: [{ type: "weather" as const, info: i }],
+    });
+    store.ingest(incoming("jma-weather", "a", { ...info, source: undefined }));
+    const fix = {
+      ...info,
+      infoType: "訂正" as const,
+      headline: "訂正した見出し",
+    };
+    const [got] = store.ingest(incoming("jma-bosai-weather", "b", fix));
+    expect(got?.type === "weather" && got.data.headline).toBe("訂正した見出し");
+    expect(got?.type === "weather" && got.data.id).toBe(info.id);
+    expect(store.ingest(incoming("jma-bosai-weather", "c", fix))).toEqual([]);
+  });
+});

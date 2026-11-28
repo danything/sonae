@@ -463,47 +463,65 @@ export function bosaiEqvolSource(
       return s.state === "standby" ? { ...s, reason: STANDBY_REASON } : s;
     },
     async run(signal) {
-      let fail = 0;
+      /** 一覧ごとの、続けて取れなかった数と、次に取りに行く時刻と、最後の訳 (1 つの一覧の失敗で、ほかの一覧を待たせない) */
+      const held = new Map<
+        string,
+        { fail: number; until: number; error: string }
+      >();
+      const parts = [
+        ["tsunami", tsunami],
+        ["VFVO56", volcano("VFVO56")],
+        ["VFVO50", volcano("VFVO50")],
+      ] as const;
       while (!signal.aborted) {
         if (!primaryDown(opts.primary(), now())) {
-          fail = 0;
+          held.clear();
           status.set("standby");
           await wait(INTERVAL_MS, signal);
           continue;
         }
         const since = cutoff();
-        // 津波・噴火警報・噴火速報は別の一覧なので、どれかが取れなくてもほかは取る
+        // 津波・噴火警報・噴火速報は別の一覧なので、どれかが取れなくてもほかは取る。続けて取れない一覧だけ、
+        // 倍々 (上限 15 分) に間を空ける
         const errors: string[] = [];
         /** 一覧は取れたが、読めない報・取れない報があった訳 (待つ長さは延ばさず、受信の状態に出す) */
         const problems: string[] = [];
-        for (const part of [tsunami, volcano("VFVO56"), volcano("VFVO50")]) {
+        for (const [name, part] of parts) {
+          const h = held.get(name);
+          if (h && h.until > now()) {
+            errors.push(h.error);
+            continue;
+          }
           try {
             problems.push(...(await part(signal, since)));
+            held.delete(name);
           } catch (err) {
             if (signal.aborted) break;
             log(`${tag} 取れませんでした: ${err}`);
+            const fail = (h?.fail ?? 0) + 1;
+            const backoff = Math.min(
+              MAX_BACKOFF_MS,
+              INTERVAL_MS * 2 ** (fail - 1),
+            );
+            // 1 回目の失敗は次の回 (1 分後) に取り直す。間は回の間隔から少し引いて、時計のずれで 1 回飛ばさない
+            held.set(name, {
+              fail,
+              until: now() + backoff - INTERVAL_MS / 2,
+              error: String(err),
+            });
             errors.push(String(err));
           }
         }
         if (signal.aborted) break;
         if (errors.length === 0) {
-          fail = 0;
           status.seen(false);
           if (problems.length > 0) status.set("retrying", problems.join(" / "));
           else {
             status.set("connected");
             status.recovered();
           }
-        } else {
-          fail++;
-          status.set("retrying", errors.join(" / "));
-        }
-        await wait(
-          fail === 0
-            ? INTERVAL_MS
-            : Math.min(MAX_BACKOFF_MS, INTERVAL_MS * 2 ** (fail - 1)),
-          signal,
-        );
+        } else status.set("retrying", [...errors, ...problems].join(" / "));
+        await wait(INTERVAL_MS, signal);
       }
       status.set("stopped");
     },

@@ -601,3 +601,35 @@ test("火山の本文が一覧より古いまま続けば、取り直しなが�
   expect(states[4]?.state).toBe("retrying");
   expect(states[5]?.lastError).toContain("古いままです");
 });
+
+test("1 つの一覧が続けて取れなくても、ほかの一覧は 1 分ごとに取り、取れない一覧だけ間を空ける", async () => {
+  const { ctx } = sourceContext();
+  let t = Date.parse("2026-11-28T09:20:00Z");
+  const asked = new Map<string, number>();
+  let last = "";
+  let rounds = 0;
+  const controller = new AbortController();
+  const source = bosaiEqvolSource(ctx, {
+    primary: () => ({ ...base, state: "retrying", lastSeenAt: undefined }),
+    now: () => t,
+    fetch: (async (url: string) => {
+      asked.set(url, (asked.get(url) ?? 0) + 1);
+      return url === BOSAI_VOLCANO_ERUPTION
+        ? new Response("not found", { status: 404 })
+        : new Response("[]");
+    }) as unknown as typeof fetch,
+    sleep: async (ms) => {
+      expect(ms).toBe(60_000);
+      t += ms;
+      last = source.status().state;
+      if (++rounds >= 8) controller.abort();
+    },
+    log: () => {},
+  });
+  await source.run(controller.signal);
+  expect(asked.get(BOSAI_TSUNAMI_LIST)).toBe(8);
+  expect(asked.get(BOSAI_VOLCANO_WARNING)).toBe(8);
+  // 0・1・3・7 分目 (間は 1・2・4 分)
+  expect(asked.get(BOSAI_VOLCANO_ERUPTION)).toBe(4);
+  expect(last).toBe("retrying");
+});
