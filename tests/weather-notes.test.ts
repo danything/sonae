@@ -262,3 +262,47 @@ describe("フィード", () => {
     expect(urls.filter((u) => u.endsWith("extra.xml")).length).toBe(2);
   });
 });
+
+test("その他のフィードで電文を取り残したら、取れたことにせず、後で長期フィードを読み直して取る", async () => {
+  const { setSystemTime } = await import("bun:test");
+  const { ctx } = sourceContext();
+  const feed = (entries: string[]) =>
+    `<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom">${entries
+      .map(
+        (u) =>
+          `<entry><title>t</title><id>${u}</id><updated>2026-11-21T00:00:00Z</updated><link type="application/xml" href="${u}"/></entry>`,
+      )
+      .join("")}</feed>`;
+  const tide =
+    "https://example.invalid/data/20230919042300_0_VMCJ55_015000.xml";
+  let t = Date.parse("2026-11-28T00:00:00Z");
+  setSystemTime(new Date(t));
+  let tideAsked = 0;
+  const fakeFetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    // 長期フィードにだけ載っている
+    if (url.endsWith("other_l.xml")) return new Response(feed([tide]));
+    if (url.includes("/feed/")) return new Response(feed([]));
+    if (url === tide && ++tideAsked === 1)
+      return new Response("busy", { status: 503 });
+    if (url === tide) return new Response(fixture(`jma/${FUKUSHINDO}`));
+    return new Response("", { status: 404 });
+  }) as typeof fetch;
+  const ac = new AbortController();
+  let rounds = 0;
+  const src = jmaWeatherSource(ctx, {
+    fetch: fakeFetch,
+    log: () => {},
+    sleep: async () => {
+      t += 60_000;
+      setSystemTime(new Date(t));
+      if (++rounds >= 20) ac.abort();
+    },
+  });
+  try {
+    await src.run(ac.signal);
+  } finally {
+    setSystemTime();
+  }
+  expect(tideAsked).toBe(2);
+});

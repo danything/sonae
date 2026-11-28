@@ -71,6 +71,9 @@ const esc = (s: string) =>
 /** 要素の名前に使ってよい字か (JSON のキーをそのまま要素にするので、ほかの字は捨てる) */
 const NAME = /^[A-Za-z_][A-Za-z0-9_.-]*$/;
 
+/** 電文が数でなく言葉で書く津波の高さ (気象庁の「津波の高さ」の表現) */
+const HEIGHT_WORDS = new Set(["巨大", "高い"]);
+
 const FULL = (s: string) =>
   s.replace(/[0-9.]/g, (c) =>
     c === "." ? "．" : String.fromCharCode(c.charCodeAt(0) + 0xfee0),
@@ -78,12 +81,14 @@ const FULL = (s: string) =>
 
 /**
  * 津波の高さの値 (bosai は電文の `jmx_eb:TsunamiHeight` の値と条件を 1 つの文字にしている。「<0.2」「>10」「1」
- * 「巨大」) から、電文の `description` (「０．２ｍ未満」「１０ｍ超」「１ｍ」「巨大」) を作り直す
+ * 「巨大」) から、電文の `description` (「０．２ｍ未満」「１０ｍ超」「１ｍ」「巨大」) を作り直す。
+ * 数でも、電文が言葉で書く高さ (「巨大」「高い」) でもない値 (「NaN」・空など) は、作らずに空を返す
+ * (読み方は高さの条件 `MaxHeight/Condition` に落ちる。知らない形の字を高さとして出さない)
  */
 export function tsunamiHeightText(v: string): string {
   const t = v.trim();
   const m = /^([<>]?)(\d+(?:\.\d+)?)$/.exec(t);
-  if (!m) return t;
+  if (!m) return HEIGHT_WORDS.has(t) ? t : "";
   const n = `${FULL(m[2] ?? "")}ｍ`;
   return m[1] === "<" ? `${n}未満` : m[1] === ">" ? `${n}超` : n;
 }
@@ -162,7 +167,7 @@ export function parseBosaiTsunami(
   );
   return parseJmaXml(xml, code).map((n) =>
     n.type === "tsunami"
-      ? { ...n, report: { ...n.report, source: "jma-bosai" } }
+      ? { ...n, report: { ...n.report, source: "jma-bosai-eqvol" } }
       : n,
   );
 }

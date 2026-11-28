@@ -31,7 +31,7 @@ import {
   type WeatherWarning,
 } from "#lib/model.ts";
 
-import { BosaiFetcher, BosaiHttpError } from "./bosai-fetch.ts";
+import { BosaiFetcher, retryable } from "./bosai-fetch.ts";
 import { sleep, StatusTracker } from "./retry.ts";
 import type { Incoming, Source, SourceContext } from "./types.ts";
 
@@ -453,10 +453,10 @@ export function bosaiWeatherSource(
         if (!res) continue;
         body = res.text;
       } catch (err) {
-        const code = err instanceof BosaiHttpError ? err.status : undefined;
         log(`${tag} ${err}`);
-        if (code === 404 || code === 410) gone.add(i.name);
-        else left = true;
+        // 取り直しても取れない失敗 (404・410・大きすぎる本文など) は、一覧に載っている間は取り直さない
+        if (retryable(err)) left = true;
+        else gone.add(i.name);
         continue;
       }
       let incoming: Incoming;
@@ -497,10 +497,21 @@ export function bosaiWeatherSource(
       return s.state === "standby" ? { ...s, reason: STANDBY_REASON } : s;
     },
     async run(signal) {
-      let fail = 0;
+      /**
+       * 一覧ごとの、続けて取れなかった数と、次に取りに行く時刻と、最後の訳。1 つの一覧の失敗で、もう片方を待たせない
+       * (警報の一覧が取れなくても、線状降水帯の気象防災速報は 1 分ごとに取る。津波と火山の予備と同じ形)
+       */
+      const held = new Map<
+        string,
+        { fail: number; until: number; error: string }
+      >();
+      const parts = [
+        ["warnings", warnings],
+        ["information", information],
+      ] as const;
       while (!signal.aborted) {
         if (!primaryDown(opts.primary(), now())) {
-          fail = 0;
+          held.clear();
           status.set("standby");
           await wait(INTERVAL_MS, signal);
           continue;
@@ -508,38 +519,41 @@ export function bosaiWeatherSource(
         // 主が落ちている間は主の最後に取れた時刻が動かないので、境は落ちてから変わらない。
         // 一覧が 304 の間に境が動いても、受けた報は ctx.seen で除くので二重にはならない
         const since = cutoff();
-        // 警報・注意報と気象防災速報は別の一覧なので、片方が取れなくても、もう片方は取る
         const errors: string[] = [];
-        for (const part of [warnings, information]) {
+        for (const [name, part] of parts) {
+          const h = held.get(name);
+          if (h && h.until > now()) {
+            errors.push(h.error);
+            continue;
+          }
           try {
             await part(signal, since);
+            held.delete(name);
           } catch (err) {
             if (signal.aborted) break;
             log(`${tag} 取れませんでした: ${err}`);
+            const fail = (h?.fail ?? 0) + 1;
+            const backoff = Math.min(
+              MAX_BACKOFF_MS,
+              INTERVAL_MS * 2 ** (fail - 1),
+            );
+            // 1 回目の失敗は次の回 (1 分後) に取り直す。間は回の間隔から少し引いて、時計のずれで 1 回飛ばさない
+            held.set(name, {
+              fail,
+              until: now() + backoff - INTERVAL_MS / 2,
+              error: String(err),
+            });
             errors.push(String(err));
           }
         }
         if (signal.aborted) break;
         if (errors.length === 0) {
-          fail = 0;
           status.seen(false);
           status.set("connected");
           status.recovered();
-        } else {
-          fail++;
-          status.set("retrying", errors.join(" / "));
-        }
-        // 待ちを延ばしている間も 1 分ごとに主を見て、戻っていれば切り上げる (待ちが明けるまで「再接続中」に残さない)
-        let left =
-          fail === 0
-            ? INTERVAL_MS
-            : Math.min(MAX_BACKOFF_MS, INTERVAL_MS * 2 ** (fail - 1));
-        while (left > 0 && !signal.aborted) {
-          const step = Math.min(left, INTERVAL_MS);
-          await wait(step, signal);
-          left -= step;
-          if (left > 0 && !primaryDown(opts.primary(), now())) break;
-        }
+        } else status.set("retrying", errors.join(" / "));
+        // 回の間はいつも 1 分 (主が戻れば次の回で待機に戻る)
+        await wait(INTERVAL_MS, signal);
       }
       status.set("stopped");
     },

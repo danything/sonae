@@ -304,7 +304,8 @@ function readTsunamiForecast(body: V): TsunamiArea[] | undefined {
         arrivalTime: textAt(fh, "ArrivalTime"),
         condition: textAt(fh, "Condition"),
         maxHeightText:
-          attr(height, "description") ?? textAt(item, "MaxHeight/Condition"),
+          // 高さの説明が無いか空なら、条件 (「高い」など) に落とす
+          attr(height, "description") || textAt(item, "MaxHeight/Condition"),
       },
     ];
   });
@@ -328,7 +329,7 @@ function readTsunamiObservation(
           offshore,
           arrivalTime: textAt(st, "FirstHeight/ArrivalTime"),
           initial: textAt(st, "FirstHeight/Initial"),
-          maxHeightText: attr(height, "description"),
+          maxHeightText: attr(height, "description") || undefined,
           condition:
             textAt(st, "MaxHeight/Condition") ??
             textAt(st, "FirstHeight/Condition"),

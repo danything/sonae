@@ -60,6 +60,43 @@ const eewKey = (eventId: string, status: Status) =>
 /** 原文を残す期間 (docs/design.md の 2.1) */
 const RAW_RETENTION_DAYS = 30;
 
+/** 警報・注意報の、知らせと画面に効く中身 (訂正の訂正を見分ける。種類・受けた所・時刻の印は除く) */
+function warningContent(w: Omit<WeatherWarning, "updatedAt">): string {
+  const {
+    infoType: _i,
+    source: _s,
+    updatedAt: _u,
+    ...rest
+  } = w as WeatherWarning;
+  return JSON.stringify(rest);
+}
+
+/** 気象の報の、知らせと画面に効く中身 (訂正の訂正を見分ける) */
+function infoContent(w: Omit<WeatherInfo, "updatedAt" | "cancelled">): string {
+  const {
+    id: _id,
+    infoType: _i,
+    source: _s,
+    updatedAt: _u,
+    cancelled: _c,
+    ...rest
+  } = w as WeatherInfo;
+  return JSON.stringify(rest);
+}
+
+/**
+ * DB の津波を読む。前は予備 (気象庁ホームページの JSON) の源を `jma-bosai` と書いていたので、`jma-bosai-eqvol` に読み替える
+ * (国際津波の源の名前 `jma-bosai` とぶつかるため替えた。津波の `sources` の `jma-bosai` は、いつも予備の意味だった)
+ */
+export function readTsunami(data: string): Tsunami {
+  const t = JSON.parse(data) as Tsunami;
+  const old = (s: string) => (s === "jma-bosai" ? "jma-bosai-eqvol" : s);
+  t.sources = t.sources.map(old) as Tsunami["sources"];
+  if (t.areasSource)
+    t.areasSource = old(t.areasSource) as Tsunami["areasSource"];
+  return t;
+}
+
 export class Store {
   constructor(
     readonly db: Database,
@@ -242,25 +279,23 @@ export class Store {
       const d = ms(w.reportedAt) - ms(prev.reportedAt);
       if (d < 0) return [];
       if (d === 0) {
-        const xmlOverBosai =
-          prev.source === "jma-bosai" && w.source === undefined;
-        // 予備の訂正は、手元の報が訂正でなければ採る (気象庁 XML が落ちている間に出た訂正を、XML が戻るまで捨てない)
-        const bosaiCorrection =
-          w.source === "jma-bosai" &&
-          w.infoType === "訂正" &&
-          prev.infoType !== "訂正";
-        const bosaiOverXml =
-          prev.source === undefined &&
-          w.source === "jma-bosai" &&
-          !bosaiCorrection;
-        // 予備の同じ訂正を毎回受け直しても、鳴らし直さない
-        const bosaiAgain = w.source === "jma-bosai" && prev.infoType === "訂正";
-        if (
-          bosaiOverXml ||
-          bosaiAgain ||
-          (w.infoType !== "訂正" && !xmlOverBosai)
-        )
-          return [];
+        const fix = w.infoType === "訂正";
+        const prevFix = prev.infoType === "訂正";
+        const take =
+          w.source === undefined
+            ? // 気象庁 XML: 予備の報は置き換える。ただし予備の訂正を、訂正でない報で訂正前に戻さない。
+              // XML どうしは訂正だけ置き換える
+              prev.source === "jma-bosai"
+              ? !(prevFix && !fix)
+              : fix
+            : // 予備: 訂正だけを採る (気象庁 XML が落ちている間に出た訂正を、XML が戻るまで捨てない)。
+              // 手元も予備の訂正なら、中身が違う (訂正の訂正) ときだけ採る (毎分の受け直しで鳴らし直さない)。
+              // 手元が気象庁 XML の訂正なら採らない (XML と予備では同じ中身でも題や持つ項目が違うので、比べない)
+              fix &&
+              (!prevFix ||
+                (prev.source === "jma-bosai" &&
+                  warningContent(prev) !== warningContent(w)));
+        if (!take) return [];
       }
     }
     const next: WeatherWarning = { ...w, updatedAt: now };
@@ -308,19 +343,33 @@ export class Store {
       updatedAt: now,
     };
     if (w.infoType !== "発表") {
-      const row = this.db
+      const latest = this.db
         .query<{ data: string }, [string]>(
           `SELECT data FROM weather_infos WHERE series = ?
            ORDER BY datetime(reported_at) DESC LIMIT 1`,
         )
         .get(w.series);
+      // 訂正は、同じ一連の情報で同じ時刻の報を置き換える (古い報の訂正で、後の報の行を上書きしない)。
+      // 同じ時刻の報が無ければ、前のとおり一連の情報のいちばん新しい報を置き換える (訂正の時刻が原報と違っても並べ直さない)
+      const same =
+        w.infoType === "訂正"
+          ? this.db
+              .query<{ data: string }, [string, string]>(
+                `SELECT data FROM weather_infos WHERE series = ?
+                 AND datetime(reported_at) = datetime(?) LIMIT 1`,
+              )
+              .get(w.series, w.reportedAt)
+          : null;
+      const row = same ?? latest;
       const prev = row ? (JSON.parse(row.data) as WeatherInfo) : undefined;
-      // 予備の訂正は、同じか新しい訂正を受けていれば採らない (気象庁 XML の訂正を置き換えず、予備の同じ訂正で鳴らし直さない)
+      // 予備の訂正は、手元も訂正で中身が同じなら採らない (気象庁 XML の訂正を置き換えず、毎分の受け直しで鳴らし直さない)。
+      // 中身が違えば訂正の訂正として採る
       if (
         w.source === "jma-bosai" &&
         w.infoType === "訂正" &&
         prev?.infoType === "訂正" &&
-        ms(prev.reportedAt) >= ms(w.reportedAt)
+        // 手元が気象庁 XML の訂正なら比べずに採らない (形が違う)。予備どうしは同じ作りなので中身で比べる
+        (prev.source !== "jma-bosai" || infoContent(prev) === infoContent(w))
       )
         return [];
       if (prev && w.infoType === "取消") {
@@ -744,7 +793,7 @@ export class Store {
         "SELECT data FROM tsunamis WHERE status = ? AND datetime(issued_at) >= datetime(?) ORDER BY datetime(issued_at) DESC",
       )
       .all(r.status, new Date(at - 2 * DAY).toISOString())
-      .map((row) => JSON.parse(row.data) as Tsunami);
+      .map((row) => readTsunami(row.data));
     if (r.eventIds.length > 0) {
       const byId = recent.find((t) =>
         t.eventIds.some((id) => r.eventIds.includes(id)),
@@ -783,7 +832,7 @@ export class Store {
         "SELECT data FROM tsunamis WHERE id = ?",
       )
       .get(id);
-    return row ? (JSON.parse(row.data) as Tsunami) : undefined;
+    return row ? readTsunami(row.data) : undefined;
   }
 
   advisory(id: string): Advisory | undefined {
@@ -848,7 +897,7 @@ export class Store {
          ORDER BY datetime(issued_at) DESC LIMIT ?`,
       )
       .all(limit)
-      .map((r) => JSON.parse(r.data) as Tsunami);
+      .map((r) => readTsunami(r.data));
   }
 
   eews(limit = 20, includeTraining = false): Eew[] {

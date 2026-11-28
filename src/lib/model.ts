@@ -251,8 +251,11 @@ export interface Tsunami {
   /** どの予報区も警報・注意報・予報ではなくなった */
   ended: boolean;
   provisional: boolean;
-  /** 受けた源。`jma-bosai` は気象庁ホームページの JSON (地震火山 XML の予備) */
-  sources: ("jma" | "jma-bosai" | "p2p" | "wolfx")[];
+  /**
+   * 受けた源。`jma-bosai-eqvol` は気象庁ホームページの JSON (地震火山 XML の予備。源の `jma-bosai-eqvol`)。
+   * 前は `jma-bosai` と書いていた (国際津波の源の名前とぶつかるので替えた。DB の前のデータは store が読むときに読み替える)
+   */
+  sources: ("jma" | "jma-bosai-eqvol" | "p2p" | "wolfx")[];
   /** いまの予報区の並びを受けた源 (予報区を持たない報 (沖合の観測 VTSE52 など) では替えない)。前のデータには無い */
   areasSource?: Tsunami["sources"][number];
   updatedAt: string;
@@ -531,7 +534,9 @@ export interface Volcano {
   /** そのほかの観測 (降灰予報の OtherObservation。複数行の文) */
   observation?: string;
   /**
-   * 気象庁ホームページの JSON (地震火山 XML の予備) から受けた報 (docs/design.md の 2.1)。気象庁 XML の同じ報 (同じ id) が
+   * 気象庁ホームページの JSON (地震火山 XML の予備。源は `jma-bosai-eqvol`) から受けた報 (docs/design.md の 2.1)。
+   * この `jma-bosai` は「気象庁ホームページの JSON から」の印で、源の名前 (`SourceId` の `jma-bosai` は国際津波) ではない。
+   * 気象庁 XML の同じ報 (同じ id) が
    * 届いたら、そちらに置き換わり、この印は消える
    */
   source?: "jma-bosai";
@@ -799,7 +804,8 @@ export interface WeatherWarning {
   released: WarningArea[];
   /**
    * 受けた所。無ければ気象庁 XML。`jma-bosai` は、気象 XML が取れない間に気象庁ホームページの JSON から
-   * 受けたもの (docs/design.md の 2.8 の「予備」)。気象庁 XML の同じ報が届いたら置き換わる
+   * 受けたもの (docs/design.md の 2.8 の「予備」。源は `jma-bosai-weather`)。気象庁 XML の同じ報が届いたら置き換わる。
+   * この `jma-bosai` は「気象庁ホームページの JSON から」の印で、源の名前 (`SourceId` の `jma-bosai` は国際津波) ではない
    */
   source?: "jma-bosai";
   updatedAt: string;
