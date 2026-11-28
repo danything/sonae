@@ -74,9 +74,9 @@ const MAX_BODY_BYTES = 16 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 15_000;
 /** 断られたときに待つ秒数の既定と上限 */
 const COOLDOWN_DEFAULT_S = 60;
+const COOLDOWN_MAX_S = 600;
 /** 中継の応答に付ける CSP。何も読まず、何も動かさない */
 const RELAY_CSP = "default-src 'none'; sandbox";
-const COOLDOWN_MAX_S = 600;
 /** 404・410 を覚える期限の上限 (海の上の避難場所のタイルなど、無いものを何度も聞かない) */
 const MISSING_TTL_S = 300;
 /** 落ちた・返らない・5xx のあと、同じものを取り直すまで待つ長さ */
