@@ -31,12 +31,12 @@ import {
   undoJob,
 } from "./notify.ts";
 
-export interface Vapid {
+interface Vapid {
   /** 秘密鍵 (JWK) */
   jwk: JsonWebKey;
   /** 公開鍵 (非圧縮の点、base64url)。ブラウザの applicationServerKey */
   publicKey: string;
-  /** 配信サービスが困ったときの連絡先 (https の URL か mailto:) */
+  /** 配信サービスの運営者が問い合わせに使う連絡先 (https の URL か mailto:) */
   subject: string;
 }
 
@@ -126,7 +126,7 @@ const MAX_PER_USER = 20;
 /** 送った控え (同じ事象で鳴らし直さないため) を残す日数 */
 const LOG_DAYS = 30;
 
-export interface StoredSubscription extends Subscription {
+interface StoredSubscription extends Subscription {
   subject: string;
   prefs: PushPrefs;
   label: string;
@@ -152,7 +152,7 @@ const fromRow = (r: Row): StoredSubscription => ({
   createdAt: r.created_at,
 });
 
-export type SendResult = "ok" | "gone" | "error";
+type SendResult = "ok" | "gone" | "error";
 
 export class Pusher {
   private readonly fetch: typeof fetch;

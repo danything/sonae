@@ -1,14 +1,15 @@
 /**
  * 気象庁防災情報 XML (PULL 型)。高頻度フィードを 60 秒ごとに取る。地震火山 (eqvol.xml) と、
- * 気象の随時 (extra.xml。警報・注意報など) の 2 つを、同じ作りの別の情報源として動かす。
+ * 気象の随時 (extra.xml。警報・注意報など) の 2 つを、同じ作りの別の情報源として動かす。気象の情報源は、
+ * その他 (other.xml。潮位の解説情報) と定時 (regular.xml。早期注意情報) のフィードも間隔を空けて取る。
  *
  * - `If-None-Match` と `If-Modified-Since` を付ける (変わっていなければ 304)。`Cache-Control: max-age=60`
  *   なので 60 秒より短くしない
  * - 一度取った電文は取り直さない (Atom の id を raw_messages に持つ)。404・410 が返った電文も、
  *   そのフィードに載っている間は取り直さない (メモリに持つ。5xx などの一時的な失敗は次の回に取り直す)
- * - 起動したときと、取得が 10 分以上途切れた後に、長期フィード (eqvol_l.xml・extra_l.xml) を 1 回だけ読む
+ * - 起動したときと、取得が 10 分以上途切れた後に、長期フィード (eqvol_l.xml・extra_l.xml など) を 1 回だけ読む
  * - 1 日 10GB を超えると IP が遮断される。種別で絞り、知らない種別は取らない
- * - その時点の状態をまるごと持つ種別 (府県予報区ごとの警報・注意報) は、同じ府県予報区のいちばん新しい
+ * - その時点の状態をまるごと持つ種別 (府県予報区ごとの警報・注意報と早期注意情報) は、同じ府県予報区のいちばん新しい
  *   電文だけを取る (古いものは新しいもので置き換わるので、取っても使わない)
  *
  * 出典: 気象庁防災情報 XML の公開 (https://www.data.jma.go.jp/developer/xml/feed/)。
@@ -106,7 +107,7 @@ function feedSource(
   const cache = new Map<string, { etag?: string; modified?: string }>();
   /**
    * フィードごとの、404・410 が返った電文 (Atom の id)。そのフィードを読んで載っていなければ忘れる。
-   * 長期フィードと高頻度のフィードに同じ電文が載るので、どちらかで覚えていれば取りに行かない
+   * 長期フィードと高頻度のフィードに同じ電文が載るので、どちらかで覚えていれば取得しない
    */
   const gone = new Map<string, Set<string>>();
   const isGone = (id: string) => [...gone.values()].some((s) => s.has(id));
@@ -114,7 +115,7 @@ function feedSource(
 
   /**
    * フィードを取り、まだ取っていない電文を渡す。電文を全部取れてから控える (途中で失敗したら、次も
-   * 304 にならず読み直して、取り残しを取りに行く。`pollSource` と同じ)
+   * 304 にならず読み直して、取り残しを取得する。`pollSource` と同じ)
    */
   async function feed(url: string, signal: AbortSignal): Promise<void> {
     const c = cache.get(url) ?? {};
@@ -162,7 +163,7 @@ function feedSource(
         log(`${tag} ${e.url} が ${res.status} を返しました`);
         // 取り直すのは、待てば取れそうなもの (5xx・408・429) だけ。404・410 などは取り直しても
         // 取れないので、取り残しに数えない (毎回フィードを読み直さない)。404・410 は覚えて、
-        // フィードが変わって読み直しても、載っている間は取りに行かない
+        // フィードが変わって読み直しても、載っている間は取得しない
         if (res.status >= 500 || res.status === 408 || res.status === 429)
           all = false;
         else if (res.status === 404 || res.status === 410) missing.add(e.id);

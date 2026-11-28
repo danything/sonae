@@ -22,6 +22,9 @@ import {
 } from "./helpers.ts";
 
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
+/** 中身の無い電文 (フィードに載っているほかの種別に返す) */
+const EMPTY_REPORT =
+  "<Report><Control><Status>通常</Status></Control><Head><ReportDateTime>2008-06-14T08:00:00+09:00</ReportDateTime></Head></Report>";
 
 describe("気象庁のフィード", () => {
   test("条件付きで取り、304 なら何もしない。取る種別だけを、古い順に取る", async () => {
@@ -56,9 +59,7 @@ describe("気象庁のフィード", () => {
             ? "32-35_06_01_240613_VXSE52.xml"
             : null;
       if (file) return new Response(fixture(`jma/${file}`));
-      return new Response(
-        "<Report><Control><Status>通常</Status></Control><Head><ReportDateTime>2008-06-14T08:00:00+09:00</ReportDateTime></Head></Report>",
-      );
+      return new Response(EMPTY_REPORT);
     }) as typeof fetch;
 
     const ac = new AbortController();
@@ -115,9 +116,7 @@ describe("気象庁のフィード", () => {
         failed = true;
         return new Response("", { status });
       }
-      return new Response(
-        "<Report><Control><Status>通常</Status></Control><Head><ReportDateTime>2008-06-14T08:00:00+09:00</ReportDateTime></Head></Report>",
-      );
+      return new Response(EMPTY_REPORT);
     }) as typeof fetch;
     const ac = new AbortController();
     let rounds = 0;
@@ -134,7 +133,7 @@ describe("気象庁のフィード", () => {
     return { feeds, vxse53: got.filter((m) => m.code === "VXSE53").length };
   }
 
-  test("取れなかった電文 (5xx) があれば控えず、次の回もフィードを読み直して取りに行く", async () => {
+  test("取れなかった電文 (5xx) があれば控えず、次の回もフィードを読み直して取得する", async () => {
     // 1 回目は VXSE53 が取れず、控えないので 2 回目も読み直して取る。取り終えたので、3 回目は条件付き
     expect(await failOnce(503)).toEqual({
       feeds: [undefined, undefined, '"abc"'],
@@ -151,7 +150,7 @@ describe("気象庁のフィード", () => {
 
   /**
    * フィードが毎回変わり (304 にならない)、3 回目だけ VXSE53 が載っていないとき、VXSE53 がいつも `status` を
-   * 返すなら、4 回まわして VXSE53 を何回取りに行くか
+   * 返すなら、4 回まわして VXSE53 を何回取得するか
    */
   async function alwaysFail(status: number | "network") {
     const { ctx } = context();
@@ -177,9 +176,7 @@ describe("気象庁のフィード", () => {
         if (status === "network") throw new TypeError("fetch failed");
         return new Response("", { status });
       }
-      return new Response(
-        "<Report><Control><Status>通常</Status></Control><Head><ReportDateTime>2008-06-14T08:00:00+09:00</ReportDateTime></Head></Report>",
-      );
+      return new Response(EMPTY_REPORT);
     }) as typeof fetch;
     const ac = new AbortController();
     let rounds = 0;
@@ -227,8 +224,8 @@ describe("気象庁のフィード", () => {
   });
 });
 
-describe("WebSocket の輪", () => {
-  test("切れたら張り直し、無通信が続いたら死んだとみなす", async () => {
+describe("WebSocket の接続と張り直し", () => {
+  test("切れたら張り直し、無通信が続いたら切って張り直す", async () => {
     const sockets: FakeSocket[] = [];
     const ac = new AbortController();
     const status = new StatusTracker("p2p");
@@ -507,7 +504,7 @@ describe("Wolfx", () => {
     await run;
   });
 
-  test("閉じかけの接続で問い合わせが投げても落ちず、次の問い合わせを続ける", async () => {
+  test("閉じかけの接続で送信が例外を投げても止まらず、次の問い合わせを続ける", async () => {
     const { ctx } = context();
     const ac = new AbortController();
     const logs: string[] = [];

@@ -8,7 +8,7 @@
  * | `TRUSTED_PROXIES`  | 前段 (リバースプロキシ) のアドレス。ここから来たときだけ `X-Forwarded-For` を読む                     |
  * | `ALLOWED_HOSTS`    | ログインなしで開いてよい名前 (カンマ区切り。`.example.com` でその下も)。IP・localhost・家の中の名前は書かなくてよい |
  *
- * - **通すのは、アドレスが `TRUSTED_NETWORKS` に当たり、かつ知っている名前で来たときだけ。** アドレスだけで通すと、
+ * - **通すのは、アドレスが `TRUSTED_NETWORKS` に当たり、かつログインなしで開いてよい名前 (`knownHost`) で来たときだけ。** アドレスだけで通すと、
  *   DNS リバインディング (悪いサイトが自分の名前を LAN の sonae の IP に向け直す) で、LAN の人のブラウザから
  *   そのサイトの一部として読み書きされる。攻める側が自分の名前として用意できないもの (IP の直書き・localhost・
  *   ドットの無い名前・家の中だけの名前・`ALLOWED_HOSTS`) だけを通す
@@ -43,7 +43,7 @@ const LOCAL_SUFFIXES = [
   ".internal",
 ] as const;
 
-export interface TrustConfig {
+interface TrustConfig {
   networks: string[];
   proxies: string[];
   allowedHosts: string[];
@@ -121,7 +121,7 @@ export type TrustResult =
   | { ok: false; address: string; reason: "host"; host: string };
 
 /**
- * 信頼するネットワークの中から、知っている名前で来たか。`peer` は直の相手 (`getClientAddress()`)。
+ * 信頼するネットワークの中から、ログインなしで開いてよい名前で来たか。`peer` は直の相手 (`getClientAddress()`)。
  * 名前は `Host` と、`HOST_HEADER` を設定していればそのヘッダも見る (adapter が名前に使うほう。
  * `X-Forwarded-Host` のようなヘッダは同じオリジンのスクリプトからなら付けられるので、片方だけでは足りない)
  */
@@ -150,7 +150,7 @@ export function checkTrusted(
   return { ok: true, address };
 }
 
-/** 知らない名前で来たことを知らせた名前 (同じ名前で何度来ても 1 度だけ。覚えるのは上限まで) */
+/** 開いてよい名前ではないとログに出した名前 (同じ名前で何度来ても 1 度だけ。持つのは上限まで) */
 const reported = new Set<string>();
 
 /**
@@ -173,15 +173,17 @@ export function crossSiteWrite(request: Request, origin: string): boolean {
   return from !== null && from !== origin;
 }
 
-/** 信頼するネットワークの中から知らない名前で来たとき、ログに理由を 1 度だけ出す */
+/** 信頼するネットワークの中から、開いてよい名前ではない名前で来たとき、ログに理由を 1 度だけ出す */
 export function reportForeignHost(address: string, host: string): void {
   if (reported.has(host) || reported.size > 64) return;
   reported.add(host);
   if (reported.size > 64) {
-    console.warn("[auth] 知らない名前が多いので、これより後は知らせません");
+    console.warn(
+      "[auth] 開いてよい名前ではない名前が多いので、これより後はログに出しません",
+    );
     return;
   }
   console.warn(
-    `[auth] 信頼するネットワーク (${address}) から、知らない名前「${host || "(名前なし)"}」で来たので、ログインなしでは通しません。この名前で開くなら ALLOWED_HOSTS に足してください (docs/install.md)`,
+    `[auth] 信頼するネットワーク (${address}) から、開いてよい名前ではない「${host || "(名前なし)"}」で来たので、ログインなしでは通しません。この名前で開くなら ALLOWED_HOSTS に足してください (docs/install.md)`,
   );
 }

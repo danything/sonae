@@ -20,6 +20,7 @@ import type { RtsStation } from "#lib/rts.ts";
 import type { RtsBoard } from "../rts-board.ts";
 import {
   type Connect,
+  refreshLoop,
   runSocket,
   sleep,
   StatusTracker,
@@ -64,7 +65,7 @@ export function parseSeisList(doc: unknown): Map<string, RtsStation> {
   return out;
 }
 
-/** 1 件の観測の値。heartbeat や読めないものは undefined */
+/** 1 件の観測の値 */
 export interface SeisReading {
   id: string;
   /** 計測震度 (観測点が計算したもの) */
@@ -74,6 +75,7 @@ export interface SeisReading {
   private: boolean;
 }
 
+/** 1 件を読む。heartbeat や読めないものは undefined */
 export function parseSeis(doc: unknown): SeisReading | undefined {
   if (typeof doc !== "object" || doc === null) return undefined;
   const m = doc as Record<string, unknown>;
@@ -162,21 +164,6 @@ export function seisSource(board: RtsBoard, o: SeisOptions = {}): Source {
     }
   }
 
-  /** 1 日ごとに観測点の一覧を取り直す。取れなければ 10 分から倍々 (上限 6 時間) で試す */
-  async function listLoop(signal: AbortSignal): Promise<void> {
-    let fail = 0;
-    while (!signal.aborted) {
-      const ok = await loadList(signal);
-      fail = ok ? 0 : fail + 1;
-      await wait(
-        ok
-          ? (o.listEveryMs ?? 24 * 60 * 60_000)
-          : Math.min(6 * 60 * 60_000, 10 * 60_000 * 2 ** (fail - 1)),
-        signal,
-      );
-    }
-  }
-
   /**
    * 受けた値を 1 つ入れる。一覧に無い観測点も、位置が付いていれば足す (上限 `MAX_FOUND`)。
    * 観測点の表の変わり目は、次のまとめ (`flush`) で画面に配る
@@ -211,7 +198,13 @@ export function seisSource(board: RtsBoard, o: SeisOptions = {}): Source {
     id: "seisjs",
     status: () => status.get(),
     async run(signal) {
-      void listLoop(signal).catch((err: unknown) =>
+      // 1 日ごとに観測点の一覧を取り直す
+      void refreshLoop(
+        loadList,
+        o.listEveryMs ?? 24 * 60 * 60_000,
+        wait,
+        signal,
+      ).catch((err: unknown) =>
         log(`[seisjs] 観測点の一覧の取得が止まりました: ${err}`),
       );
       const timer = setInterval(flush, o.flushMs ?? 1_000);

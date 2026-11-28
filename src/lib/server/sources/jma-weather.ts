@@ -1,5 +1,5 @@
 /**
- * 気象庁防災情報 XML の気象の電文 (随時のフィード extra.xml) を、正規化したモデルに読む
+ * 気象庁防災情報 XML の気象の電文 (随時 extra.xml・その他 other.xml・定時 regular.xml のフィード) を、正規化したモデルに読む
  * (docs/design.md の 2.8)。読み方の部品は jma-xml.ts と同じ。
  *
  * 仕様: 技術資料 (https://xml.kishou.go.jp/tec_material.html) の解説資料 (`jmaxml_20261104_Manual(pdf).zip`)。
@@ -16,7 +16,6 @@ import {
   type OutlookRank,
   outlookRank,
   type RiverStation,
-  type TyphoonNow,
   WARNING_CODES,
   type WarningArea,
   type WarningCode,
@@ -30,7 +29,7 @@ import {
 
 import {
   readForecasts,
-  readNowAreas,
+  readTyphoonNow,
   readTyphoonProbability,
 } from "./jma-typhoon.ts";
 import {
@@ -39,6 +38,7 @@ import {
   child,
   children,
   infoTypeOf,
+  num,
   STATUS,
   text,
   textAt,
@@ -142,7 +142,7 @@ const placeOf = (item: V) =>
  * - 文だけの節 (概況・防災事項・付加情報・天候情報の本文) は、Property の Type か Text の type を見出しにする
  * - 時系列の節 (雨の予想・風の実況など) は、時刻ごとの解説の文の下に、地域・地点ごとの値を、全角の空白で字下げして「地域 値」で並べる (電文の文の形)
  */
-export function readSections(body: V): WeatherSection[] {
+function readSections(body: V): WeatherSection[] {
   const out: WeatherSection[] = [];
   const push = (title: string, add: string[]) => {
     if (add.length === 0) return;
@@ -237,7 +237,7 @@ const range = (prefix: string, from: number, to: number) =>
   Array.from({ length: to - from + 1 }, (_, i) => `${prefix}${from + i}`);
 
 /** 早期注意情報 (警報級の可能性)。定時のフィード (regular.xml) に載る */
-export const OUTLOOK_CODES = ["VPFD61", "VPFW60"] as const;
+const OUTLOOK_CODES = ["VPFD61", "VPFW60"] as const;
 
 /** 気象のフィードから取る種別 */
 export const WEATHER_CODES: ReadonlySet<string> = new Set<string>([
@@ -346,16 +346,11 @@ function headlineAreas(head: V): { code: string; name: string }[] {
   return [...out].map(([code, name]) => ({ code, name }));
 }
 
-const num = (v: string | undefined) => {
-  const n = v === undefined ? Number.NaN : Number(v);
-  return Number.isFinite(n) ? n : undefined;
-};
-
 /**
  * 早期注意情報 (警報級の可能性) の地域ごとの、現象ごと・日ごとの段。時間帯 (明日までは 6 時間ごと) は
  * 日本時間の暦日にまとめ、その日のいちばん高い段を採る。高・中だけを持ち、「なし」と値なしは持たない
  */
-export function readOutlook(body: V): WarningOutlook["areas"] {
+function readOutlook(body: V): WarningOutlook["areas"] {
   const out: WarningOutlook["areas"] = [];
   for (const infos of children(body, "MeteorologicalInfos"))
     for (const tsi of children(infos, "TimeSeriesInfo")) {
@@ -478,69 +473,6 @@ function readStations(body: V): RiverStation[] {
   }
   // 基準観測所を先に (ほかは電文の順のまま)
   return [...out.filter((s) => s.base), ...out.filter((s) => !s.base)];
-}
-
-/** 台風解析・予報情報の、いちばん初めの「実況」 */
-function readTyphoon(body: V): TyphoonNow | undefined {
-  const infos = children(
-    children(body, "MeteorologicalInfos").find(
-      (m) => attr(m, "type") === "台風情報",
-    ),
-    "MeteorologicalInfo",
-  );
-  const now =
-    infos.find((i) => attr(child(i, "DateTime"), "type") === "実況") ??
-    infos[0];
-  if (!now) return undefined;
-  // 実況の時刻 (経路の点の時刻。docs/map.md の「台風」の「これまでの経路」)。推定などの報には無い
-  const at = child(now, "DateTime");
-  const time = attr(at, "type") === "実況" ? text(at) : undefined;
-  const props = children(child(now, "Item"), "Kind").map((k) =>
-    child(k, "Property"),
-  );
-  const part = (name: string) =>
-    props.map((p) => child(p, name)).find((x) => x !== undefined);
-  const name = part("TyphoonNamePart");
-  const cls = part("ClassPart");
-  const center = part("CenterPart");
-  const wind = part("WindPart");
-  const coord = children(center, "jmx_eb:Coordinate").find(
-    (c) => attr(c, "type") === "中心位置（度）",
-  );
-  const m = /^([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)/.exec(text(coord) ?? "");
-  const speed = children(center, "jmx_eb:Speed").find(
-    (s) => attr(s, "unit") === "km/h",
-  );
-  const ms = (type: string) =>
-    num(
-      text(
-        children(wind, "jmx_eb:WindSpeed").find(
-          (w) => attr(w, "type") === type && attr(w, "unit") === "m/s",
-        ),
-      ),
-    );
-  return {
-    ...(time ? { time } : {}),
-    number: textAt(name, "Number"),
-    name: textAt(name, "Name"),
-    nameKana: textAt(name, "NameKana"),
-    remark: textAt(name, "Remark"),
-    className: textAt(cls, "jmx_eb:TyphoonClass"),
-    areaClass: textAt(cls, "jmx_eb:AreaClass"),
-    intensityClass: textAt(cls, "jmx_eb:IntensityClass"),
-    lat: m ? Number(m[1]) : undefined,
-    lon: m ? Number(m[2]) : undefined,
-    location: textAt(center, "Location"),
-    direction: textAt(center, "jmx_eb:Direction"),
-    speed: attr(speed, "description") ?? text(speed),
-    pressureHpa: num(textAt(center, "jmx_eb:Pressure")),
-    maxWindMs: ms("最大風速"),
-    maxGustMs: ms("最大瞬間風速"),
-    ...readNowAreas(now, {
-      lat: m ? Number(m[1]) : undefined,
-      lon: m ? Number(m[2]) : undefined,
-    }),
-  };
 }
 
 /**
@@ -713,7 +645,7 @@ export function parseWeatherXml(
               const n = textAt(a, "Name");
               return c && n ? [{ code: c, name: n }] : [];
             }),
-      typhoon: kind === "typhoon" ? readTyphoon(body) : undefined,
+      typhoon: kind === "typhoon" ? readTyphoonNow(body) : undefined,
       typhoonForecasts: kind === "typhoon" ? readForecasts(body) : undefined,
       stations: kind === "flood" ? readStations(body) : undefined,
     };

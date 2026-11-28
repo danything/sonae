@@ -13,12 +13,12 @@ import {
 } from "#lib/rts.ts";
 
 /** 画面に送るときの SSE の event の名前 */
-export interface RtsEvents {
+interface RtsEvents {
   stations: string;
   frame: string;
 }
 
-export interface RtsBoardOptions {
+interface RtsBoardOptions {
   /** 既定は TREM-RTS の `rts-stations`・`rts` */
   events?: RtsEvents;
   /**

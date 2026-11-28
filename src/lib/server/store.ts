@@ -438,7 +438,7 @@ export class Store {
     );
   }
 
-  warning(id: string): WeatherWarning | undefined {
+  private warning(id: string): WeatherWarning | undefined {
     const row = this.db
       .query<{ data: string }, [string]>(
         "SELECT data FROM weather_warnings WHERE id = ?",
@@ -596,7 +596,7 @@ export class Store {
 
   /**
    * 降灰予報の範囲を、報の id ごとに置く (一覧の報には持たせない。地図で選んだときに `volcanoAsh` で読む)。
-   * 定時 (VFVO53) は火山ごとに 3 時間おきに出て 1 通 20 KB ほどあるので、同じ series のいちばん新しい報だけを残す
+   * 定時 (VFVO53) は火山ごとに 3 時間おきに出て 1 通 15〜35 KB あるので、同じ series のいちばん新しい報だけを残す
    */
   private putAsh(v: Volcano, series: string, ash: AshWindow[]): void {
     // 定時の古い報があとから届いたとき (取りこぼしの取り直しなど) は置かない
@@ -685,7 +685,7 @@ export class Store {
     );
   }
 
-  /** 地震識別番号が重なる津波、無ければ (P2P だけの) いま続いている津波に結ぶ */
+  /** 地震識別番号が重なる津波、無ければ番号の無い (P2P などだけの) いま続いている津波に結ぶ */
   private findTsunami(r: TsunamiReport): Tsunami | undefined {
     // 時刻の書き方 (+09:00 と Z) が混ざるので、文字のままではなく datetime() で比べる
     const at = ms(r.reportedAt);
@@ -701,7 +701,7 @@ export class Store {
         t.eventIds.some((id) => r.eventIds.includes(id)),
       );
       if (byId) return byId;
-      // P2P で先に受けた津波 (番号なし) が続いていれば、そこに XML を重ねる
+      // P2P で先に受けた津波 (番号なし) が続いていれば、そこに重ねる
       return recent.find(
         (t) =>
           t.eventIds.length === 0 &&

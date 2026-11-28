@@ -257,7 +257,7 @@ describe("フィード", () => {
       },
     });
     await src.run(ac.signal);
-    // 1 回目に失敗した other_l.xml は、2 回目 (60 秒後) には取りに行かない (5 分ごと)
+    // 1 回目に失敗した other_l.xml は、2 回目 (60 秒後) には取得しない (5 分ごと)
     expect(urls.filter((u) => u.includes("/other")).length).toBe(1);
     expect(urls.filter((u) => u.endsWith("extra.xml")).length).toBe(2);
   });

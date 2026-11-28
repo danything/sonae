@@ -31,7 +31,7 @@ export class KeepAwake {
 
   constructor(private readonly locks: Locks | undefined) {}
 
-  /** いま持っている (または取りに行っている) */
+  /** いま持っている (または取ろうとしている) */
   get on(): boolean {
     return this.release !== undefined;
   }

@@ -19,7 +19,16 @@ export const PENDING_TTL = 10 * 60;
 export const SESSION_TTL = 180 * 24 * 60 * 60;
 const EXTEND_AFTER = 24 * 60 * 60 * 1000;
 
-export interface Session {
+/** `COOKIE` と `PENDING_COOKIE` の属性。https で開いたときだけ Secure を付ける */
+export const cookieOptions = (url: URL, maxAge: number) => ({
+  path: "/",
+  httpOnly: true,
+  sameSite: "lax" as const,
+  secure: url.protocol === "https:",
+  maxAge,
+});
+
+interface Session {
   /** 生の ID。Cookie に置く値で、DB には無い */
   id: string;
   subject: string;

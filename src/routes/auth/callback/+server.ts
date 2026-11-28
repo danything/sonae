@@ -6,8 +6,10 @@ import {
   readPending,
   redirectUri,
 } from "#lib/server/oidc.ts";
+import { plain } from "#lib/server/request.ts";
 import {
   COOKIE,
+  cookieOptions,
   create,
   PENDING_COOKIE,
   SESSION_TTL,
@@ -18,15 +20,11 @@ import type { RequestHandler } from "./$types";
 
 // 人が見る画面。何が起きたか読めないと、設定のどこが悪いのか追えない
 const failed = (message: string) =>
-  new Response(`ログインできませんでした: ${message}`, {
-    status: 403,
-    headers: { "content-type": "text/plain; charset=utf-8" },
-  });
+  plain(403, `ログインできませんでした: ${message}`);
 
 /** IdP から戻ってくるところ。state が合うことが「自分が始めたログイン」の証拠。 */
 export const GET: RequestHandler = async ({ url, cookies }) => {
-  if (!enabled())
-    return new Response("OIDC が設定されていません", { status: 404 });
+  if (!enabled()) return plain(404, "OIDC が設定されていません");
   const pending = readPending(cookies.get(PENDING_COOKIE));
   cookies.delete(PENDING_COOKIE, { path: "/" });
 
@@ -52,12 +50,6 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
   }
   const session = create(who.subject, who.name);
   console.log(`[auth] ログイン: ${who.name || who.subject}`);
-  cookies.set(COOKIE, session.id, {
-    path: "/",
-    httpOnly: true,
-    sameSite: "lax",
-    secure: url.protocol === "https:",
-    maxAge: SESSION_TTL,
-  });
+  cookies.set(COOKIE, session.id, cookieOptions(url, SESSION_TTL));
   redirect(303, pending.to);
 };

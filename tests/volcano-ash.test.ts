@@ -79,7 +79,7 @@ describe("電文の範囲を読む", () => {
     ]);
   });
 
-  test("火山灰予報 (名前が変わったあとの電文): 深さごとの範囲 (31〜37) と小さな噴石 (40)", () => {
+  test("火山灰予報 (名前が変わる予定の新しい形の電文): 深さごとの範囲 (31〜37) と小さな噴石 (40)", () => {
     const w = ashOf(KAZANBAI);
     expect(w).toHaveLength(1);
     expect(w[0]?.areas.map((a) => a.code)).toEqual([

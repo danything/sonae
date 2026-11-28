@@ -15,7 +15,7 @@ const fail = (error: string, status: number) =>
 
 /**
  * 潮汐推算の地点の、今日 (日本時間) の推算の潮位 (docs/design.md の 2.11)。地図で地点を押したときに画面が読む。
- * サーバーが海しるへ取りに行き (キーはブラウザに渡さない)、地点と日ごとに覚える。キーが無ければ 404
+ * サーバーが海しるから取得し (キーはブラウザに渡さない)、地点と日ごとに持つ。キーが無ければ 404
  */
 export const GET = async ({ url }: { url: URL }) => {
   const key = msilKey();

@@ -22,7 +22,7 @@ process.env.SONAE_DATA = mkdtempSync(join(tmpdir(), "sonae-trust-"));
 const LAN = "127.0.0.0/8,::1/128,192.168.0.0/16,10.0.0.0/8";
 const h = (o: Record<string, string>) => new Headers(o);
 
-describe("知っている名前 (DNS リバインディング除け)", () => {
+describe("通す名前 (DNS リバインディング除け)", () => {
   test("IP の直書き・localhost・ドットの無い名前・家の中の名前は通す", () => {
     for (const host of [
       "192.168.1.5:3030",
@@ -163,7 +163,7 @@ describe("信頼するネットワークの判定", () => {
     ).toBe(true);
   });
 
-  test("ADDRESS_HEADER を設定していたら使わない (接続元を誰でも名乗れるため)", () => {
+  test("ADDRESS_HEADER を設定していたら、信頼するネットワークを使わない (接続元を誰でも名乗れるため)", () => {
     const c2 = trustConfig({
       TRUSTED_NETWORKS: LAN,
       ADDRESS_HEADER: "x-forwarded-for",
@@ -295,7 +295,7 @@ describe("ほかのサイトから送らせた書き込み (ログインなし�
     expect(
       crossSiteWrite(req("GET", { "sec-fetch-site": "cross-site" }), origin),
     ).toBe(false);
-    // ブラウザでない道具 (Origin も Sec-Fetch-Site も付けない) は、ほかのサイトから送らせることができない
+    // ブラウザでない道具 (Origin も Sec-Fetch-Site も付けない) は、ほかのサイトから送らせられない
     expect(crossSiteWrite(req("POST", {}), origin)).toBe(false);
     // 前段が TLS を終えて url.origin が http のままでも、ブラウザが same-origin と言えば通す (Origin の scheme は違う)
     expect(

@@ -299,7 +299,7 @@ export function floodStationsText(w: Pick<WeatherInfo, "stations">): string {
 }
 
 /**
- * 気象の報のタイトル。台風は電文の題名がどれも「台風解析・予報情報」なので、台風番号と名前にする
+ * 気象の報のタイトル。台風は電文のタイトルがどれも「台風解析・予報情報」なので、台風番号と名前にする
  * (「台風第 32 号 CEMPAKA」。番号の上 2 桁は年)
  */
 export function weatherTitle(
@@ -316,8 +316,7 @@ export function weatherTitle(
  * 全角の数字を半角に、終わりの全角の括弧を空白に替える
  */
 export const volcanoKindText = (kind: string) =>
-  kind
-    .replace(/[０-９]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))
+  kindText(kind)
     .replace(/（([^（）]*)）$/, " $1")
     .trim();
 

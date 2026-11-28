@@ -72,7 +72,7 @@ function upsert<T extends Keyed>(
   return rest.slice(0, limit);
 }
 
-export class Live {
+class Live {
   eews = $state<Eew[]>([]);
   quakes = $state<Quake[]>([]);
   tsunamis = $state<Tsunami[]>([]);

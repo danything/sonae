@@ -96,7 +96,7 @@ test("ハザードマップ: 浸水継続時間と家屋倒壊等は選択肢に
   expect(hazardChoice("flood-collapse")).toBe("flood");
   expect(hazardChoice("tsunami")).toBe("tsunami");
   expect(hazardChoice("rain")).toBe("rain");
-  // 端末に覚えた選択は、凡例の上で切り替えた図もそのまま読む
+  // 端末に保存した選択は、凡例の上で切り替えた図もそのまま読む
   for (const id of ["flood-duration", "flood-collapse", "naisui", "hightide"])
     expect(readHazard(id)).toBe(id as never);
   // 選んでいるのが何の図か、ボタンに名前を残す (いま洪水が起きているように読めないように)

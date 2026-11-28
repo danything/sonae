@@ -11,7 +11,7 @@
  *   ExpTech が「地震の間のデータだけ要るなら sleep」と勧めている。ふだんの観測点は灰色の点で置く
  * - 張り直しは文書のとおり 3 秒から倍々、上限 60 秒に揺らぎを足す。429 は 60 秒より短く張り直さない。
  *   90 秒何も来なければ (ping も含めて) 切れたとみなす
- * - 観測点の表は起動したときと 1 日に 1 回、出した所 (ノード) ごとの ETag で `If-None-Match` を付けて取る (CSV)
+ * - 観測点の表は起動したときと 1 日に 1 回、返したノードごとの ETag で `If-None-Match` を付けて取る (CSV)
  * - 壊れても他の情報源に響かない (このアダプターの中で例外を受け、状態に出すだけ)
  */
 
@@ -19,7 +19,7 @@ import type { SourceStatus } from "#lib/model.ts";
 import type { RtsStation } from "#lib/rts.ts";
 
 import type { RtsBoard } from "../rts-board.ts";
-import { sleep, StatusTracker, USER_AGENT } from "./retry.ts";
+import { refreshLoop, sleep, StatusTracker, USER_AGENT } from "./retry.ts";
 import type { Source } from "./types.ts";
 
 const TREM_RTS_URL = "https://api.lb.exptech.dev/api/v1/trem/sse/rts";
@@ -169,7 +169,7 @@ export function tremSource(board: RtsBoard, o: TremOptions = {}): Source {
         const m = parseStations(await res.text());
         if (m.size === 0) throw new Error("使える観測点がありません");
         const next = res.headers.get("etag");
-        // ETag は出したノードのものだけを、そのノードに送る
+        // ETag は返したノードのものだけを、そのノードに送る
         etags.clear();
         if (next) etags.set(u, next);
         board.setStations(m);
@@ -180,19 +180,6 @@ export function tremSource(board: RtsBoard, o: TremOptions = {}): Source {
       }
     }
     return false;
-  }
-
-  /** 1 日ごとに観測点の表を取り直す。取れなければ 10 分から倍々 (上限 6 時間) で試す */
-  async function stationLoop(signal: AbortSignal): Promise<void> {
-    let fail = 0;
-    while (!signal.aborted) {
-      const ok = await loadStations(signal);
-      fail = ok ? 0 : fail + 1;
-      const next = ok
-        ? (o.stationsEveryMs ?? 24 * 60 * 60_000)
-        : Math.min(6 * 60 * 60_000, 10 * 60_000 * 2 ** (fail - 1));
-      await wait(next, signal);
-    }
   }
 
   /** 1 回つないで、切れるまで読む。つながった時刻と、429 だったかを返す */
@@ -273,7 +260,13 @@ export function tremSource(board: RtsBoard, o: TremOptions = {}): Source {
     id: "trem",
     status: () => status.get(),
     async run(signal) {
-      void stationLoop(signal).catch((err: unknown) =>
+      // 1 日ごとに観測点の表を取り直す
+      void refreshLoop(
+        loadStations,
+        o.stationsEveryMs ?? 24 * 60 * 60_000,
+        wait,
+        signal,
+      ).catch((err: unknown) =>
         log(`[trem] 観測点の表の取得が止まりました: ${err}`),
       );
       let attempt = 0;

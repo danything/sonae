@@ -242,7 +242,7 @@ test("動かす理由が無ければ取らない。あれば tide_time.json だ�
     afterGap: true,
   });
 
-  // 304 と、中の時刻が同じ 200 は足さない。次の回は控えた頭を付ける
+  // 304 と、中の時刻が同じ 200 は足さない。次の回は控えたヘッダーを付ける
   now += 60_000;
   expect(await probe.step(signal)).toBeUndefined();
   expect(seen[1]?.headers["if-none-match"]).toBe('"a"');
@@ -308,7 +308,7 @@ test("1 分ごとに続けて取れた回は afterGap にならない", async ()
   expect(r?.fetchDelaySec).toBe(755);
 });
 
-test("失敗しても輪は止まらず、ログに出力して間隔を空ける", async () => {
+test("失敗しても取得は止まらず、ログに出力して間隔を空ける", async () => {
   const db = openDb(":memory:");
   const ctrl = new AbortController();
   const waits: number[] = [];

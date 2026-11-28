@@ -11,7 +11,7 @@
 
 import { randomToken } from "./random.ts";
 
-export interface OidcConfig {
+interface OidcConfig {
   issuer: string;
   clientId: string;
   clientSecret: string;
@@ -93,7 +93,7 @@ export async function challengeOf(verifier: string): Promise<string> {
   );
 }
 
-export interface Pending {
+interface Pending {
   state: string;
   nonce: string;
   verifier: string;
@@ -116,7 +116,7 @@ export function safeReturn(to: string | null): string {
   return to;
 }
 
-/** IdP のクライアントに登録しておく戻り先 (ashi と同じパス)。 */
+/** IdP のクライアントに登録しておく戻り先。 */
 export const redirectUri = (origin: string) =>
   new URL("/auth/callback", origin).toString();
 
@@ -224,7 +224,7 @@ async function publicKey(kid: string): Promise<CryptoKey> {
   return found;
 }
 
-export interface Claims {
+interface Claims {
   sub: string;
   name?: string;
   preferred_username?: string;

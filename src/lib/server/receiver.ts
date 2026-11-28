@@ -6,7 +6,7 @@
 import type { EventEmitter } from "node:events";
 
 import { SOURCE_LABEL } from "#lib/format.ts";
-import type { SourceStatus } from "#lib/model.ts";
+import type { SourceId, SourceStatus } from "#lib/model.ts";
 
 import { Broker } from "./broker.ts";
 import { db } from "./db.ts";
@@ -134,74 +134,65 @@ export function startReceiving(): void {
     geonetSource(ctx),
   ];
   a.off = [];
+  /** 情報源を起こすか、切ってあれば状態 `off` を並べてログに出す */
+  const add = (
+    s: Source | undefined,
+    id: SourceId,
+    reason: string,
+    log: string,
+  ) => {
+    if (s) {
+      a.sources.push(s);
+      return;
+    }
+    a.off.push({ id, state: "off", reason, since: new Date().toISOString() });
+    console.log(`[${id}] ${log}`);
+  };
+  const isOff = (name: string) =>
+    process.env[name]?.trim().toLowerCase() === "off";
   // 台湾の観測点の揺れ。受けたものは a.rts に入れるだけ (ctx の emit を渡さない。知らせに届かない)。
   // 非商用の条件のデータなので、`SONAE_TREM=off` で切れるようにしておく (README)
-  if (process.env.SONAE_TREM?.trim().toLowerCase() === "off") {
-    a.off.push({
-      id: "trem",
-      state: "off",
-      reason: "SONAE_TREM=off で切ってあります",
-      since: new Date().toISOString(),
-    });
-    console.log("[trem] SONAE_TREM=off なので、TREM の受信は切ってあります");
-  } else a.sources.push(tremSource(a.rts, { onStatus: ctx.onStatus }));
-  // 有志の観測点の揺れ (Wolfx SeisJS)。受けたものは a.seis に入れるだけ。帯域を食う (1 日 800MB ほど) ので
+  add(
+    isOff("SONAE_TREM")
+      ? undefined
+      : tremSource(a.rts, { onStatus: ctx.onStatus }),
+    "trem",
+    "SONAE_TREM=off で切ってあります",
+    "SONAE_TREM=off なので、TREM の受信は切ってあります",
+  );
+  // 有志の観測点の揺れ (Wolfx SeisJS)。受けたものは a.seis に入れるだけ。帯域を多く使う (1 日 800MB ほど) ので
   // `SONAE_SEISJS=off` で切れるようにしておく (docs/install.md)
-  if (process.env.SONAE_SEISJS?.trim().toLowerCase() === "off") {
-    a.off.push({
-      id: "seisjs",
-      state: "off",
-      reason: "SONAE_SEISJS=off で切ってあります",
-      since: new Date().toISOString(),
-    });
-    console.log(
-      "[seisjs] SONAE_SEISJS=off なので、SeisJS の受信は切ってあります",
-    );
-  } else a.sources.push(seisSource(a.seis, { onStatus: ctx.onStatus }));
+  add(
+    isOff("SONAE_SEISJS")
+      ? undefined
+      : seisSource(a.seis, { onStatus: ctx.onStatus }),
+    "seisjs",
+    "SONAE_SEISJS=off で切ってあります",
+    "SONAE_SEISJS=off なので、SeisJS の受信は切ってあります",
+  );
   // 台湾の中央氣象署は授権碼が要る。無ければ作らない (docs/cwa.md)
-  const cwa = cwaSource(ctx);
-  if (cwa) a.sources.push(cwa);
-  else {
-    a.off.push({
-      id: "cwa",
-      state: "off",
-      reason: "授権碼がありません",
-      since: new Date().toISOString(),
-    });
-    console.log(
-      "[cwa] 授権碼 (CWA_API_KEY) が無いので、中央氣象署の受信は切ってあります",
-    );
-  }
+  add(
+    cwaSource(ctx),
+    "cwa",
+    "授権碼がありません",
+    "授権碼 (CWA_API_KEY) が無いので、中央氣象署の受信は切ってあります",
+  );
   // 海しるの点の層 (海底地殻変動観測点・海域火山・海上保安部署等・潮汐推算の地点)。API のキーが要り、無ければ層を出さないだけ (docs/design.md の 2.11)。
   // 取ったものは表 layer_cache に置くだけで、知らせには届かない
-  const msil = msilSource(a.store.db, msilKey(), { onStatus: ctx.onStatus });
-  if (msil) a.sources.push(msil);
-  else {
-    a.off.push({
-      id: "msil",
-      state: "off",
-      reason: "API のキーがありません",
-      since: new Date().toISOString(),
-    });
-    console.log(
-      "[msil] 海しるの API のキー (MSIL_API_KEY) が無いので、海しるの層は出しません",
-    );
-  }
+  add(
+    msilSource(a.store.db, msilKey(), { onStatus: ctx.onStatus }),
+    "msil",
+    "API のキーがありません",
+    "海しるの API のキー (MSIL_API_KEY) が無いので、海しるの層は出しません",
+  );
   // YouTube のライブカメラのいまの配信を確かめる。API のキーが要り、無ければ地図の中で再生しないだけ (docs/design.md の 2.13)。
   // 確かめたものはメモリに置くだけで、知らせには届かない
-  const yt = youtubeSource(youtubeKey(), { onStatus: ctx.onStatus });
-  if (yt) a.sources.push(yt);
-  else {
-    a.off.push({
-      id: "youtube",
-      state: "off",
-      reason: "API のキーがありません",
-      since: new Date().toISOString(),
-    });
-    console.log(
-      "[youtube] YouTube Data API のキー (YOUTUBE_API_KEY) が無いので、ライブカメラは地図の中で再生せず、リンクだけを出します",
-    );
-  }
+  add(
+    youtubeSource(youtubeKey(), { onStatus: ctx.onStatus }),
+    "youtube",
+    "API のキーがありません",
+    "YouTube Data API のキー (YOUTUBE_API_KEY) が無いので、ライブカメラは地図の中で再生せず、リンクだけを出します",
+  );
   // 災害時の通行止め (国土交通省の通れるマップの GeoJSON)。URL は国土交通省 道路局のページから自動で見つけ、
   // `SONAE_ROAD_GEOJSON` に登録したものと合わせる (docs/design.md の 2.12)。`SONAE_ROAD_DISCOVER=off` で自動の発見を切る。
   // 取ったものは表 layer_cache に置くだけで、知らせには届かない
@@ -232,7 +223,7 @@ export function startReceiving(): void {
   }
   // 潮位観測情報の遅れを、津波・大きな地震・波浪警報の間だけ測る (docs/design.md)。情報源ではないので
   // 「受信の状態」には並べない。`SONAE_TIDE_PROBE=off` で切る
-  if (process.env.SONAE_TIDE_PROBE?.trim().toLowerCase() === "off")
+  if (isOff("SONAE_TIDE_PROBE"))
     console.log(
       "[tide-probe] SONAE_TIDE_PROBE=off なので、潮位観測情報の遅れは測りません",
     );
@@ -304,7 +295,7 @@ export function startReceiving(): void {
     a.stop = undefined;
   };
   // adapter-bun は SIGTERM で HTTP を止めたあと、この合図を出して、イベントループが空くのを待つ。
-  // 受信の輪を止めないと、いつまでも終わらない (k8s の入れ替えが遅れる)
+  // 受信のループを止めないと、プロセスが終わらない (k8s の入れ替えが遅れる)
   (process as EventEmitter).once("sveltekit:shutdown", () => a.stop?.());
   // 並べるのは実際に起こした情報源 (切ってあるもの (`a.off`) は上で別に出している)。
   // 手で書いた一覧だと、足した情報源が漏れる

@@ -1,13 +1,14 @@
 /**
- * キキクル (気象庁の大雨の危険度分布)。docs/map.md の「キキクル」。
- * 気象庁ホームページのキキクルの画面が読むタイルを、ブラウザから直接読む。公式の API ではなく、予告なく変わる。
+ * キキクル (気象庁の危険度分布。土砂・大雨・浸水・洪水)。docs/map.md の「キキクル」。
+ * 気象庁ホームページのキキクルの画面が読むタイルと川の線を、ブラウザから直接読む。公式の API ではなく、予告なく変わる。
  * 気象庁が判定した危険度の 1 枚を、色も値も変えずに重ねるだけで、sonae が危険度を判定し直すことはしない
  * (docs/design.md の 5 章)。DOM にも MapLibre にも触らない (試験できるように)
  */
 
+import { nextPoll, type NowcFrame, stampAge, stampIso } from "#lib/map/nowc.ts";
 import { RAIN_TILE_ZOOMS } from "#lib/map/rain.ts";
 
-export const RISK = "https://www.jma.go.jp/bosai/jmatile/data/risk";
+const RISK = "https://www.jma.go.jp/bosai/jmatile/data/risk";
 /** 時刻の表 (10 分ごと。新しい順。いまと過去 6 時間ほど) */
 export const RISK_TIMES_URL = `${RISK}/targetTimes.json`;
 /** 気象庁ホームページのキキクルの画面 (凡例と出典のリンク) */
@@ -83,12 +84,8 @@ export const RISKS: RiskKind[] = [
 export const riskOf = (id: string): RiskKind | undefined =>
   RISKS.find((r) => r.id === id);
 
-/** 1 枚のキキクル。時刻は UTC の `YYYYMMDDhhmmss` (表のまま)。member はタイルの URL の途中の名前 */
-export interface RiskFrame {
-  basetime: string;
-  validtime: string;
-  member: string;
-}
+/** 1 枚のキキクル。形は雷・竜巻と同じ (時刻は UTC の `YYYYMMDDhhmmss`、member はタイルの URL の途中の名前) */
+export type RiskFrame = NowcFrame;
 
 const STAMP = /^\d{14}$/;
 const MEMBER = /^[a-z0-9_]+$/;
@@ -124,42 +121,36 @@ export const riskTiles = (f: RiskFrame, element: RiskKind["element"]) =>
   `${RISK}/${f.basetime}/${f.member}/${f.validtime}/surf/${element}/{z}/{x}/{y}.png`;
 
 /** 判定の時刻 (ISO 8601。画面は `#lib/format.ts` の `jst` で出す) */
-export function riskIso(f: RiskFrame): string {
-  const t = f.validtime;
-  return `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}T${t.slice(8, 10)}:${t.slice(10, 12)}:${t.slice(12, 14)}Z`;
-}
+export const riskIso = (f: RiskFrame) => stampIso(f.validtime);
 
 /** 更新の間隔 (10 分ごと) */
-export const RISK_STEP_MS = 10 * 60_000;
+const RISK_STEP_MS = 10 * 60_000;
 /**
  * 判定の時刻から、その時刻の表が取れるまでの待ち。表はその時刻の約 10 分 10 秒後に書き換わり、配信の CDN が
  * 60 秒覚えるので、11 分 30 秒待てば取れる (2026-11-21 に確かめた)
  */
-export const RISK_PUBLISH_MS = 11.5 * 60_000;
+const RISK_PUBLISH_MS = 11.5 * 60_000;
 /** 次の時刻がまだ無かったとき・読めなかったときに、取り直すまでの間 */
 export const RISK_RETRY_MS = 60_000;
 /**
  * 判定の時刻からこれより経ったら古いとみなし、凡例にそう書く。ふだんでも表に載るまでに 10 分ほど掛かり、
  * 次の時刻が載る直前には 21 分 30 秒ほど前のものになる。そこから 2 回続けて更新が取れていない
  */
-export const RISK_STALE_MS = 40 * 60_000;
+const RISK_STALE_MS = 40 * 60_000;
 
-/**
- * 次に時刻の表を取るまでのミリ秒。いまの 1 枚の次の時刻が表に載る頃 (判定の時刻 + 10 分 + 11 分 30 秒) に取り、
- * もう過ぎていれば (遅れている・まだ取れていない) 1 分後に取り直す
- */
-export function nextRiskPoll(frame: RiskFrame | null, now: number): number {
-  if (!frame) return RISK_RETRY_MS;
-  const due = Date.parse(riskIso(frame)) + RISK_STEP_MS + RISK_PUBLISH_MS;
-  const wait = due - now;
-  return wait > 0
-    ? Math.min(wait, RISK_STEP_MS + RISK_PUBLISH_MS)
-    : RISK_RETRY_MS;
-}
+/** 次に時刻の表を取るまでのミリ秒 (判定の時刻 + 10 分 + 11 分 30 秒。`#lib/map/nowc.ts` の `nextPoll`) */
+export const nextRiskPoll = (frame: RiskFrame | null, now: number): number =>
+  nextPoll(
+    frame?.validtime ?? null,
+    now,
+    RISK_STEP_MS,
+    RISK_PUBLISH_MS,
+    RISK_RETRY_MS,
+  );
 
 /** 判定が古いか (更新が取れていない) */
 export const riskStale = (frame: RiskFrame, now: number) =>
-  now - Date.parse(riskIso(frame)) > RISK_STALE_MS;
+  stampAge(frame.validtime, now) > RISK_STALE_MS;
 
 /**
  * 凡例 (危険度の高いものから)。色はタイルの PNG のパレットのまま (2026-11-21 に読んだ)。気象庁の配色の指針の
@@ -213,7 +204,7 @@ export const RIVER_CASING_SEVERE = "#c4c4c4";
 export const SMALL_RIVER_CASING = "#b4b4b4";
 
 /** 地図に引く指定河川の区間 (段と名前)。線と、名前を置く 1 点 */
-export interface RiverSegment {
+interface RiverSegment {
   name: string;
   /** 段 (2〜5)。段の無い区間は描かない */
   level: 2 | 3 | 4 | 5;

@@ -4,7 +4,7 @@
  */
 
 /** 丸の大きさの段 ([M, 半径 px])。間は線で結ぶ。範囲の外は端の大きさ */
-export type RadiusStops = readonly (readonly [number, number])[];
+type RadiusStops = readonly (readonly [number, number])[];
 
 /** 国内の地震の丸 (M1 で 3 px、M5 で 7 px、M8 で 16 px) */
 export const HYPO_RADIUS: RadiusStops = [
