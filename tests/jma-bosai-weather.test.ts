@@ -687,6 +687,21 @@ describe("予備の訂正と気象庁 XML の重なり (store、監査の残り)
     expect(warningOf(store, w.id)?.headline).toBe("訂正した見出し");
   });
 
+  test("手元が気象庁 XML の訂正なら、中身の形が違っても予備の訂正では置き換えない", () => {
+    const { store } = memoryStore();
+    const w = wind();
+    const fix = { ...w, infoType: "訂正" as const };
+    store.ingest(warningIncoming("jma-weather", { ...fix, source: undefined }));
+    expect(
+      store.ingest(
+        warningIncoming(
+          "jma-bosai-weather",
+          { ...fix, title: "予備の題" },
+          "2",
+        ),
+      ),
+    ).toEqual([]);
+  });
   test("予備の訂正の訂正: 中身が違えば採り、同じなら採らない (警報・注意報)", () => {
     const { store } = memoryStore();
     const w = wind();

@@ -1,4 +1,9 @@
-/**
+// 手元も予備の訂正なら、中身が違う (訂正の訂正) ときだけ採る (毎分の受け直しで鳴らし直さない)。
+// 手元が気象庁 XML の訂正なら採らない (XML と予備では同じ中身でも題や持つ項目が違うので、比べない)
+fix &&
+  (!prevFix ||
+    (prev.source === "jma-bosai" &&
+      warningContent(prev) !== warningContent(w))); /**
  * 受けたものを DB に入れ、変わった姿を events に足す。情報源の中の重複は raw_messages の鍵で、
  * 情報源をまたいだ重複は merge.ts の新旧の判定で除く。
  */
@@ -289,8 +294,12 @@ export class Store {
               ? !(prevFix && !fix)
               : fix
             : // 予備: 訂正だけを採る (気象庁 XML が落ちている間に出た訂正を、XML が戻るまで捨てない)。
-              // 手元も訂正なら、中身が違う (訂正の訂正) ときだけ採る (毎分の受け直しで鳴らし直さない)
-              fix && (!prevFix || warningContent(prev) !== warningContent(w));
+              // 手元も予備の訂正なら、中身が違う (訂正の訂正) ときだけ採る (毎分の受け直しで鳴らし直さない)。
+              // 手元が気象庁 XML の訂正なら採らない (XML と予備では同じ中身でも題や持つ項目が違うので、比べない)
+              fix &&
+              (!prevFix ||
+                (prev.source === "jma-bosai" &&
+                  warningContent(prev) !== warningContent(w)));
         if (!take) return [];
       }
     }
@@ -364,7 +373,8 @@ export class Store {
         w.source === "jma-bosai" &&
         w.infoType === "訂正" &&
         prev?.infoType === "訂正" &&
-        infoContent(prev) === infoContent(w)
+        // 手元が気象庁 XML の訂正なら比べずに採らない (形が違う)。予備どうしは同じ作りなので中身で比べる
+        (prev.source !== "jma-bosai" || infoContent(prev) === infoContent(w))
       )
         return [];
       if (prev && w.infoType === "取消") {
