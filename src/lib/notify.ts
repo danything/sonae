@@ -313,7 +313,12 @@ function advisoryNotice(a: Advisory, event: SonaeEvent): Notice {
       : a.serialName
         ? `${a.title} (${a.serialName})`
         : a.title,
-    body: clip(a.cancelled ? "先ほどの情報は取り消されました。" : a.headline),
+    // Wolfx の予備 (見出しが無い) は、本文の最初の段落を電文の文のまま使う
+    body: clip(
+      a.cancelled
+        ? "先ほどの情報は取り消されました。"
+        : a.headline || (a.text.trim().split(/\n\s*\n/)[0] ?? "").trim(),
+    ),
     url: selectHref(NONE, "info", a.id),
     urgency: "normal",
     ttl: TTL.advisory,
