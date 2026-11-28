@@ -12,9 +12,8 @@ import { RAIN_TILE_ZOOMS } from "#lib/map/rain.ts";
 
 /** 枚の数。0 がいまの観測、1〜3 が 1・2・3 時間先の予測 */
 export const LOOP_SLOTS = [0, 1, 2, 3] as const;
-export type LoopSlot = (typeof LOOP_SLOTS)[number];
 /** 予測を何時間先まで見せるか */
-export const LOOP_HOURS = 3;
+const LOOP_HOURS = 3;
 
 /** 1 枚を見せる間 */
 export const LOOP_FRAME_MS = 2500;
@@ -60,7 +59,7 @@ export function nextSlot(step: number, ready: readonly boolean[]): number {
 }
 
 /** 出せる枚のうち、いちばん先のもの (無ければ -1) */
-export const lastSlot = (ready: readonly boolean[]) => ready.lastIndexOf(true);
+const lastSlot = (ready: readonly boolean[]) => ready.lastIndexOf(true);
 
 /** その枚を見せる間。最後の枚だけ少し長い */
 export const slotDelay = (step: number, ready: readonly boolean[]) =>

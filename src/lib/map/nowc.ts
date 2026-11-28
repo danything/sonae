@@ -170,19 +170,19 @@ export function stampIso(t: string): string {
 }
 
 /** 更新の間隔 (雷・竜巻・線状降水帯は 10 分ごと) */
-export const N3_STEP_MS = 10 * 60_000;
+const N3_STEP_MS = 10 * 60_000;
 /**
  * 解析の時刻から、その時刻の表が取れるまでの待ち。表は解析の時刻の数分後に書き換わり、配信の CDN が 60 秒覚えるので、
  * 余裕を見て 5 分待つ (キキクルと同じ形。取れていなければ 1 分ごとに取り直す)
  */
-export const N3_PUBLISH_MS = 5 * 60_000;
+const N3_PUBLISH_MS = 5 * 60_000;
 export const NOWC_RETRY_MS = 60_000;
 /** 解析の時刻からこれより経ったら古いとみなし、凡例にそう書く (2 回続けて更新が取れていない) */
 export const N3_STALE_MS = 35 * 60_000;
 /** 今後の雨の時刻の表を取り直す間 (予測は 30 分ごとに出る) */
 export const RASRF_POLL_MS = 10 * 60_000;
 /** 今後の雨の解析の時刻からこれより経ったら古いとみなす (2 回続けて新しい予測が取れていない) */
-export const RASRF_STALE_MS = 80 * 60_000;
+const RASRF_STALE_MS = 80 * 60_000;
 
 /** 次に N3 の時刻の表を取るまでのミリ秒。次の解析が表に載る頃に取り、もう過ぎていれば 1 分後 */
 export function nextN3Poll(frame: NowcFrame | null, now: number): number {

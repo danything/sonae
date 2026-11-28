@@ -151,9 +151,9 @@ const PLATES_ATTRIBUTION =
  */
 export const PLATE_COLOR = "rgba(255, 196, 150, 0.55)";
 /** 通行止め (災害) の線の色と、通れた道 (目安) の線の色 (docs/map.md の「災害時の通行止め」) */
-export const ROAD_CLOSED_COLOR = "#e60012";
-export const ROAD_SLOW_COLOR = "#ff9900";
-export const ROAD_FAST_COLOR = "#3cc8ff";
+const ROAD_CLOSED_COLOR = "#e60012";
+const ROAD_SLOW_COLOR = "#ff9900";
+const ROAD_FAST_COLOR = "#3cc8ff";
 /**
  * 通れた道 (目安) の線を隠すズーム。この値から上では描かず、押しても吹き出しを出さない。
  * 元の線は ETC2.0 の記録の点を直線でつないだもので、道路から数百 m ずれる所がある。寄せるとずれが道路と取り違えるほど
@@ -218,8 +218,8 @@ const GSI_AFM_ABOUT = "https://www.gsi.go.jp/bousaichiri/active_fault.html";
  * 確率論的地震動予測地図は 2024 年版 (`Y2024`。2026-11-21 に GetCapabilities で確かめた、いちばん新しいもの)、
  * 表層地盤は V4
  */
-export const JSHIS = "https://www.j-shis.bosai.go.jp";
-export const JSHIS_PSHM_VERSION = "Y2024";
+const JSHIS = "https://www.j-shis.bosai.go.jp";
+const JSHIS_PSHM_VERSION = "Y2024";
 /** 今後 30 年に震度 6 弱以上の揺れに見舞われる確率 (平均ケース・全ての地震・5 段の色) */
 export const JSHIS_PSHM_LAYER = `P-${JSHIS_PSHM_VERSION}-MAP-AVR-TTL_MTTL-T30_I55_PD`;
 /** 表層地盤の増幅率 (工学的基盤 Vs=400m/s から地表まで) */
@@ -230,12 +230,12 @@ const JSHIS_SSTRCT_WMS = `${JSHIS}/map/wms/sstrct/V4`;
  * J-SHIS の WMS の 1 枚の大きさ (px)。256px の 4 枚分を 1 枚で読み、リクエストを減らす。
  * J-SHIS から「連続した大量のリクエストは避けてほしい」と返事をもらった (2026-11-25。docs/map.md の「J-SHIS」)
  */
-export const JSHIS_TILE_SIZE = 512;
+const JSHIS_TILE_SIZE = 512;
 /**
  * J-SHIS の画像を読むいちばん大きいズーム。250m の格子なので、512px の 1 枚が約 38m/px になる 11 で足りる。
  * それより寄せたら、読み足さずに 11 の画像を引き伸ばす
  */
-export const JSHIS_FETCH_MAXZOOM = 11;
+const JSHIS_FETCH_MAXZOOM = 11;
 /**
  * WMS の GetMap を、MapLibre が埋める見ている範囲 (`{bbox-epsg-3857}`) で読む URL。WMS 1.3.0 の EPSG:3857 は
  * x・y の順 (経度の側から)。`size` px 四方の透かした PNG
@@ -247,13 +247,13 @@ const wmsLegend = (base: string, layer: string) =>
 const JSHIS_ATTRIBUTION = `<a href="${JSHIS}/" target="_blank" rel="noopener">J-SHIS (防災科研)</a>`;
 
 /** 選択肢の見出し。並びは `HAZARD_GROUPS` の順 */
-export type HazardGroup = "water" | "quake";
+type HazardGroup = "water" | "quake";
 export const HAZARD_GROUPS: { id: HazardGroup; label: string }[] = [
   { id: "water", label: "ハザードマップ (水害・土砂災害)" },
   { id: "quake", label: "地震の備え" },
 ];
 
-export interface Hazard {
+interface Hazard {
   id: Exclude<
     HazardId,
     | "none"
@@ -639,7 +639,7 @@ export const loopOpacity = (slot: number, shown: number) =>
   slot === shown ? RAIN_OPACITY : 0;
 
 /** キキクルを写真の上に重ねるときの不透明度 (雨雲と同じ。黄の「注意」も写真の上で見える) */
-export const RISK_OPACITY = 0.8;
+const RISK_OPACITY = 0.8;
 
 /**
  * キキクルを出すか。雨雲と同じく、地震を選んでいる間は隠す。キキクルの黄・赤・紫は震度の色とぶつかるため
@@ -888,7 +888,7 @@ const RASRF_ATTRIBUTION = `<a href="${RASRF_PAGE}" target="_blank" rel="noopener
 const SLMCS_ATTRIBUTION = `<a href="${NOWC_PAGE}" target="_blank" rel="noopener">気象庁 線状降水帯の雨域</a> を加工`;
 
 /** 雷・竜巻・今後の雨を写真の上に重ねるときの不透明度 (雨雲と同じ) */
-export const NOWC_OPACITY = 0.8;
+const NOWC_OPACITY = 0.8;
 
 /**
  * 雷・竜巻・今後の雨を出すか。雨雲と同じく、地震を選んでいる間は隠す。どれも気象庁の配色 (震度の色と同じ赤・橙・黄・紫) で
@@ -1037,7 +1037,7 @@ interface ShelterProps {
   remarks?: string | null;
   [k: string]: unknown;
 }
-export interface ShelterFeature {
+interface ShelterFeature {
   type: "Feature";
   geometry: { type: "Point"; coordinates: [number, number] };
   properties: {
@@ -1206,7 +1206,7 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "雨雲",
     note:
-      "地図の右下で「雨雲 (いま)」を選んだときだけ、気象庁の高解像度降水ナウキャストの、いまの降水強度 (mm/h) を重ねます。色は気象庁の配色で、凡例と、いつの観測か (5 分ごとに更新) を地図の右下に出します。15 分より古い雨雲しか取れていないときは、凡例にそう書きます。雨雲の 1 時間先までの予測は出さず、先の雨は「今後の雨 (予測)」で見ます。" +
+      "地図の右下で「雨雲 (いま)」を選んだときだけ、気象庁の高解像度降水ナウキャストの、いまの降水強度 (mm/h) を重ねます。色は気象庁の配色で、凡例と、いつの観測か (5 分ごとに更新) を地図の右下に出します。15 分より古い雨雲しか取れていないときは、凡例にそう書きます。雨雲の 1 時間先までの予測は出さず、先の雨は「雨雲 (いま→予測)」か「今後の雨 (予測)」で見ます。" +
       "選んでいる間は、色がぶつからないよう、ハザードマップと同じく気象警報・注意報の塗り・緊急地震速報の地域の塗り・通れた道 (目安) の線を隠し、特別警報と緊急地震速報は縁取りで残します。雨雲の色は震度の色と同じ色を使うので、地震を選んでいる間は雨雲を隠します",
   },
   {
@@ -1219,6 +1219,10 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "今後の雨 (予測)",
     note: "地図の右下で「今後の雨 (予測)」を選んだときだけ、気象庁の降水短時間予報の 1 時間の雨量の予測を重ねます。凡例に「◯時◯分までの予測」を大きく出し、その下に何時間先かを出し、‹ › で先の時刻へ動かせます (自動では動きません)。色は気象庁の配色のままで、sonae が先の雨を予想することはしません。雨雲と同じく、選んでいる間は気象警報・注意報の塗り・緊急地震速報の地域の塗り・通れた道 (目安) の線を隠し、地震を選んでいる間は今後の雨を隠します",
+  },
+  {
+    label: "雨雲 (いま→予測)",
+    note: "地図の右下で「雨雲 (いま→予測)」を選んだときだけ、雨雲のいまの観測と、今後の雨の 1・2・3 時間先の予測を、順に自動で見せ続けます。見せている枚が「いま」か「+1 時間」かと、観測か予測かを凡例の先頭に大きく出します。⏸ で止め、チップで枚を選べます。色は気象庁の配色のままで、枚の間を補うことはしません。雨雲と同じく、選んでいる間は気象警報・注意報の塗り・緊急地震速報の地域の塗り・通れた道 (目安) の線を隠し、地震を選んでいる間は隠します",
   },
   {
     label: "雷・竜巻",
@@ -1487,7 +1491,7 @@ export function foreignFeatures(quakes: ForeignQuake[], n = 50) {
 }
 
 /** 地図に置く火山の印 1 つ */
-export interface VolcanoMark {
+interface VolcanoMark {
   code: string;
   name: string;
   at: [number, number];

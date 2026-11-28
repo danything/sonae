@@ -20,7 +20,7 @@ export const RAIN_CREDIT = "気象庁 (高解像度降水ナウキャスト)";
  * (2026-11-20 に確かめた)。そのため段ごとに source を分け、間のズームは下の段を引き伸ばす
  */
 export const RAIN_TILE_ZOOMS = [4, 6, 8, 10] as const;
-export type RainTileZoom = (typeof RAIN_TILE_ZOOMS)[number];
+type RainTileZoom = (typeof RAIN_TILE_ZOOMS)[number];
 
 /**
  * 段ごとの層を出す地図のズーム。MapLibre の地図のズーム z は 256px のタイルの z + 1 を読むので、
@@ -74,16 +74,16 @@ export function rainIso(f: RainFrame): string {
 }
 
 /** 更新の間隔 (5 分ごとの観測) */
-export const RAIN_STEP_MS = 5 * 60_000;
+const RAIN_STEP_MS = 5 * 60_000;
 /**
  * 観測の時刻から、その時刻の表が取れるまでの待ち。表は観測の時刻の約 20 秒後に書き換わり、配信の CDN が
  * 60 秒覚えるので、90 秒待てば取れる (2026-11-20 に確かめた)
  */
-export const RAIN_PUBLISH_MS = 90_000;
+const RAIN_PUBLISH_MS = 90_000;
 /** 次の時刻がまだ無かったとき・読めなかったときに、取り直すまでの間 */
 export const RAIN_RETRY_MS = 60_000;
 /** 観測の時刻からこれより経ったら古いとみなし、凡例にそう書く (3 回続けて更新が取れていない) */
-export const RAIN_STALE_MS = 15 * 60_000;
+const RAIN_STALE_MS = 15 * 60_000;
 
 /**
  * 次に時刻の表を取るまでのミリ秒。いまの観測の次の時刻が出そろう頃 (観測の時刻 + 5 分 + 90 秒) に取り、

@@ -68,7 +68,7 @@ export const MSIL_SITE = "https://www.msil.go.jp/";
 export const MSIL_DISCLAIMER =
   "このサービスは、海しるAPIを利用して取得した情報をもとに作成しているが、サービスの内容は海上保安庁によって保証されたものではない";
 
-export const MARINE_KIND_LABEL: Record<MarineKind, string> = {
+const MARINE_KIND_LABEL: Record<MarineKind, string> = {
   gnssa: "海底地殻変動観測点 (GNSS-A)",
   volcano: "海域火山",
   office: "海上保安部署 (海上保安庁)",
@@ -86,7 +86,7 @@ export const TIDE_URL = "/api/tide";
  * 潮汐推算の吹き出しにいつも出す注意。推算の値で、いまの海面ではないことを先に言う (docs/design.md の 2.11)。
  * 「航海には潮汐表を」は、海しるの潮汐推算 API の説明の文に沿う
  */
-export const TIDE_NOTE =
+const TIDE_NOTE =
   "月と太陽の動きから計算した推算の潮位です。津波や高潮の観測ではなく、気圧や風による潮位の変化は入っていません。津波・高潮は気象庁の警報と潮位の観測で確かめてください。航海には海上保安庁の「潮汐表」を使ってください。";
 
 /** `/api/tide` の答え。1 日分の推算の潮位 (cm)。`stepSec` ごとに `tide` が並ぶ */
@@ -109,7 +109,7 @@ export interface TideError {
 }
 
 /** 満潮・干潮 (推算の値の山と谷)。`at` は時刻のミリ秒 */
-export interface TideTurn {
+interface TideTurn {
   kind: "high" | "low";
   at: number;
   cm: number;

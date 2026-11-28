@@ -19,8 +19,8 @@ import type {
 } from "#lib/model.ts";
 
 /** 気象庁の台風の図の色。赤は配色の指針の赤 (255,40,0)、黄は強風域の黄 */
-export const TYPHOON_RED = "#ff2800";
-export const TYPHOON_YELLOW = "#ffe600";
+const TYPHOON_RED = "#ff2800";
+const TYPHOON_YELLOW = "#ffe600";
 
 /**
  * 地図に描く台風 (台風ごとにいちばん新しい報)。取消・訓練・試験・消滅の報と、新しい報が 12 時間より来ていない台風は
@@ -226,7 +226,7 @@ export function envelope(rings: P[][]): P[][] {
 
 // ---- 地図の GeoJSON ----
 
-export type TyphoonLineKind =
+type TyphoonLineKind =
   "gale" | "storm" | "forecast" | "track" | "warning" | "past";
 
 // ---- これまでの経路 (docs/map.md の「台風」の「これまでの経路」) ----
@@ -243,10 +243,10 @@ export interface TrackPoint {
  * これまでの経路の点の間がこれより空いたら、sonae が報を受けていなかった抜けとみなし、線でつながない。
  * 台風解析・予報情報の実況は 3 時間ごと (近づくと 1 時間ごと) なので、6 時間を超えれば 1 通より多く欠けている
  */
-export const TRACK_GAP_MS = 6 * 3600_000;
+const TRACK_GAP_MS = 6 * 3600_000;
 
 /** これまでの経路の線の色 (気象庁の台風の図の、これまでの経路の青) */
-export const TYPHOON_PAST_COLOR = "#4a8cff";
+const TYPHOON_PAST_COLOR = "#4a8cff";
 
 /**
  * 1 つの台風の報 (同じ series) から、これまでの経路の点を作る。取消・訓練・試験の報と、中心の無い報は使わない。
@@ -426,7 +426,7 @@ export function dayHour(iso: string): string {
 }
 
 /** 吹き出しの 1 行 (海しるの点と同じ形) */
-export interface TyphoonPopupLine {
+interface TyphoonPopupLine {
   text: string;
   cls?: string;
 }
@@ -535,7 +535,7 @@ export function nearestTyphoonPoint<T extends { d2: number; index: number }>(
 export const TYPHOON_TRACK_URL = "/api/typhoon-track";
 
 /** 地図の source の出典 (気象庁の電文の値をそのまま描く) */
-export const TYPHOON_ATTRIBUTION = "気象庁 (台風解析・予報情報)";
+const TYPHOON_ATTRIBUTION = "気象庁 (台風解析・予報情報)";
 
 const empty = { type: "FeatureCollection", features: [] };
 /** 線 (`typhoon`) と点 (`typhoon-points`) の source */

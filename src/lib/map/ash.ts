@@ -16,7 +16,7 @@ export const ashDrawn = (v: Volcano | null | undefined): v is Volcano =>
   (v.code === "VFVO53" || v.code === "VFVO54" || v.code === "VFVO55");
 
 /** 範囲の見た目 (気象庁ホームページの降灰予報の地図の色・縁・透かし) */
-export interface AshStyle {
+interface AshStyle {
   /** 凡例の名前 (気象庁の地図の凡例のまま) */
   legend: string;
   fill: string;
@@ -32,7 +32,7 @@ export interface AshStyle {
  * 気象庁ホームページの降灰予報の地図 (`bosai/map.html` の降灰予報。2026-11-28 に読んだ) の色。
  * 降灰 (定時) と少量は灰色、やや多量は黄、多量は赤、小さな噴石の落下範囲は赤の縞
  */
-export const ASH_STYLES: Record<"70" | "71" | "72" | "73" | "75", AshStyle> = {
+const ASH_STYLES: Record<"70" | "71" | "72" | "73" | "75", AshStyle> = {
   "70": {
     legend: "降灰の範囲",
     fill: "#b0b0b4",
@@ -220,7 +220,7 @@ export const ashExpired = (v: Pick<Volcano, "validUntil">, now: number) =>
   v.validUntil !== undefined && Date.parse(v.validUntil) < now;
 
 /** 地図の source の出典 */
-export const ASH_ATTRIBUTION = "気象庁 (降灰予報)";
+const ASH_ATTRIBUTION = "気象庁 (降灰予報)";
 
 /** 小さな噴石の落下範囲の縞の画像 (白地に赤の斜めの縞。気象庁の地図と同じ形)。`map.addImage` に渡す */
 export function ashStripeImage(size = 10): {

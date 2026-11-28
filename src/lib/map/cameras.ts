@@ -97,7 +97,7 @@ export const frameAlt = (p: CameraPoint, frame: CameraFrame) =>
   `${p.volcano} ${p.camera} の監視カメラの画像 (${timeFmt.format(new Date(frame.takenAt))})`;
 
 /** 吹き出しの 1 行 (`#lib/map/marine.ts` の PopupLine と同じ形) */
-export interface CameraLine {
+interface CameraLine {
   text: string;
   cls?: string;
   href?: string;

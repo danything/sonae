@@ -6,7 +6,7 @@
  */
 
 /** `closed` は全面通行止め、`speed` は ETC2.0 の平均速度 (通れた道の目安) */
-export type RoadKind = "closed" | "speed";
+type RoadKind = "closed" | "speed";
 
 export interface RoadLine {
   kind: RoadKind;

@@ -11,7 +11,7 @@ export const LOCATE_PREF = "map.locate";
 export type GeoPermission = PermissionState | "unknown";
 
 /** 覚えた選択。null はまだ選んでいない (既定のオン) */
-export type LocateChoice = "on" | "off" | null;
+type LocateChoice = "on" | "off" | null;
 
 /**
  * 開いたとき (と、許可が変わったとき) にすること。
@@ -21,7 +21,7 @@ export type LocateChoice = "on" | "off" | null;
  * - forget: 許可が拒まれたので、オフを覚える (聞き直さない)
  * - none: オフを選んである
  */
-export type AutoLocate = "start" | "ask" | "wait" | "forget" | "none";
+type AutoLocate = "start" | "ask" | "wait" | "forget" | "none";
 
 export function autoLocate(
   choice: LocateChoice,

@@ -459,7 +459,8 @@
         });
         // 観測点の丸を押すと、観測点の名前・震度・場所・設置者の吹き出し。押せる範囲は丸より広い (`stationHit`)。
         // 上の層 (避難場所の印) を押したときはそちらだけ。震央の × と震度のラベルは吹き出しを持たないので、
-        // その下の丸を選ぶ。どれでもなければ海しるの点・線・震源の丸の順 (docs/map.md の「押せる所が重なったとき」)
+        // その下の丸を選ぶ。どれでもなければ、ライブカメラ・火山の監視カメラの印・海しるの点・台風の中心・線・震源の丸の順
+        // (docs/map.md の「押せる所が重なったとき」)
         created.on("click", (e) => {
           if (
             !created ||
@@ -470,10 +471,10 @@
             return;
           const s = stationHit(e.point, e.originalEvent);
           if (s) return openStation(s.properties, s.at);
-          // 火山の監視カメラ (観測点の丸の下、海しるの点の上に描いている)
-          // YouTube のライブカメラ (火山の監視カメラの上に描いている)
+          // YouTube のライブカメラ (観測点の丸の下、火山の監視カメラの上に描いている)
           const lc = iconHit("livecams", e.point, e.originalEvent);
           if (lc) return openLivecam(lc.properties.id, lc.at);
+          // 火山の監視カメラ (海しるの点の上に描いている)
           const cam = cameraHit(e.point, e.originalEvent);
           if (cam) return openCamera(cam.properties, cam.at);
           // 海しるの点 (観測点の丸の下に描いている)
@@ -501,8 +502,8 @@
             if (created) created.getCanvas().style.cursor = "";
           });
         }
-        // 塗った市町村等を押すと、出ている警報・注意報の吹き出し。上の層 (避難場所の印・観測点の丸・海しるの点・
-        // 台風の中心・通行止めと通れた道の線・震源の丸) を押したときはそちらだけ
+        // 塗った市町村等を押すと、出ている警報・注意報の吹き出し。上の層 (避難場所の印・観測点の丸・ライブカメラと
+        // 火山の監視カメラの印・海しるの点・台風の中心・通行止めと通れた道の線・震源の丸) を押したときはそちらだけ
         created.on("click", "warning-fill", (e) => {
           if (
             !created ||
@@ -1176,7 +1177,7 @@
   const quakeShown = $derived(quake !== undefined);
   /**
    * 地震か降灰予報の範囲を見ている間。どちらも面の色 (震度・降灰の量) を読むので、警報・注意報の塗りと、色の
-   * ぶつかる重ねる図 (雨雲・キキクル・雷・竜巻・今後の雨) を隠す (docs/map.md の「地震を選んでいる間」「降灰予報の範囲」)
+   * ぶつかる重ねる図 (雨雲・雨雲 (いま→予測)・キキクル・雷・竜巻・今後の雨) を隠す (docs/map.md の「地震を選んでいる間」「降灰予報の範囲」)
    */
   const focusShown = $derived(quakeShown || ashShown);
   /** 隠していることの一言の「何を選んでいる間か」とわけ */
@@ -1674,7 +1675,11 @@
         }
         return nextN3Poll(f, Date.now());
       },
-      () => {},
+      () => {
+        // 時刻の表そのものを読めない間も、描いている雨域が古くなったら消す
+        const shown = untrack(() => slmcsAt);
+        if (shown && Date.now() - Date.parse(shown) > N3_STALE_MS) clear();
+      },
     );
     return () => {
       aborter.abort();

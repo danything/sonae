@@ -13,10 +13,10 @@
 export interface Livecam {
   /** sonae の中の名前 (表の中で一意。英小文字・数字・`-`) */
   id: string;
-  /** 地図と吹き出しに出す名前 (「平塚海岸」) */
+  /** 地図と吹き出しに出す名前 (「元町港 (伊豆大島)」) */
   name: string;
-  /** 何を映すか (「海岸」「河川」「港」) */
-  kind: "海岸" | "河川" | "港";
+  /** 何を映すか (「河川」「港」) */
+  kind: "河川" | "港";
   /** 配信している機関 (出典に出す) */
   operator: string;
   /** YouTube のチャンネルの ID (`UC` で始まる 24 文字) */
@@ -181,7 +181,7 @@ export interface LivecamResponse {
   cams: Record<string, LivecamState>;
 }
 
-export interface LivecamState {
+interface LivecamState {
   /** いま配信中で、埋め込める動画。無ければ配信していない (か、見つからない) */
   videoId?: string;
   /** 最後に確かめた時刻 (ISO 8601) */
@@ -203,7 +203,7 @@ export function livecamFeatures() {
 export const livecamById = (id: unknown) => LIVECAMS.find((c) => c.id === id);
 
 /** 吹き出しの 1 行 (`#lib/map/cameras.ts` と同じ形) */
-export interface LivecamLine {
+interface LivecamLine {
   text: string;
   cls?: string;
   href?: string;
@@ -276,7 +276,7 @@ export function livecamFoot(
 export const YOUTUBE_TERMS = "https://www.youtube.com/t/terms";
 export const GOOGLE_PRIVACY = "https://policies.google.com/privacy";
 /** このサーバーのプライバシーポリシー (ログインの外) */
-export const PRIVACY_URL = "/privacy";
+const PRIVACY_URL = "/privacy";
 
 /**
  * 地図の印 (MapLibre の addImage に渡す。pixelRatio 2)。画面だけで呼ぶ。
