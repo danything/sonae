@@ -42,7 +42,7 @@ test("地図から住んでいる地域を変える: 登録が無ければ、端
   expect(c.note).toBe("東京都千代田区を住んでいる地域にしました");
 });
 
-test("地図から住んでいる地域を変える: 登録を読めなければ、端末にだけ覚えてそう知らせる", () => {
+test("地図から住んでいる地域を変える: 登録を読めなければ、端末にだけ保存してそう知らせる", () => {
   const d = planHomeSave(null, local, home);
   expect(d.publicKey).toBeNull();
   expect(d.prefs.home?.code).toBe("1310100");

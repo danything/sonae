@@ -155,8 +155,7 @@ function sectionOf(p: Record<string, unknown>): string | undefined {
   return (
     pair(str(p.始点), str(p.終点)) ??
     pair(str(p.始点住所), str(p.終点住所)) ??
-    [str(p.県名), str(p.市町村名)].filter(Boolean).join("") ??
-    undefined
+    ([str(p.県名), str(p.市町村名)].filter(Boolean).join("") || undefined)
   );
 }
 
@@ -187,7 +186,7 @@ export function roadLine(f: unknown, updated: string): RoadFeature | undefined {
     props = {
       kind: "closed",
       route: str(p.路線名) ?? str(p.道路種別),
-      section: sectionOf(p) || undefined,
+      section: sectionOf(p),
       rule: rule.replace(/全面通行止$/, "全面通行止め"),
       reason: str(p.規制理由),
       since: str(p.規制開始_日時),
@@ -312,7 +311,7 @@ export function roadResponse(db: Database, urls: string[]): RoadResponse {
   };
 }
 
-/** 地図に出す URL。環境変数で登録したものと、自動で見つけたもの (`/api/roads` と取得する輪で同じものを使う) */
+/** 地図に出す URL。環境変数で登録したものと、自動で見つけたもの (`/api/roads` と取得するループで同じものを使う) */
 export function activeRoadUrls(
   db: Database,
   manual: string[] = roadUrls().urls,
@@ -332,7 +331,7 @@ export interface RoadOptions {
   now?: () => number;
   log?: (m: string) => void;
   onStatus?: SourceContext["onStatus"];
-  /** 国土交通省 道路局のページから災害を自動で見つけるか (既定はしない。receiver が環境変数から渡す) */
+  /** 国土交通省 道路局のページから災害を自動で見つけるか (既定はしない。receiver.ts が環境変数から渡す) */
   discover?: boolean;
 }
 
@@ -437,7 +436,7 @@ export function roadSource(
           showDetail();
         }
         const urls = activeRoadUrls(db, manual, discover);
-        // 1 つずつ順に取る (同じ所へ並べて取得しない)
+        // 1 つずつ順に取る (同じホストへ並行して取得しない)
         for (const url of urls) {
           if (signal.aborted) break;
           try {

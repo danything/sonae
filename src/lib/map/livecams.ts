@@ -3,12 +3,15 @@
  * 国・自治体が自分の YouTube のチャンネルで常に流している、決まった場所のライブカメラだけを、手で表にする。
  *
  * 動画の ID は、配信をやり直すたびに替わる (2026-11 に数日おきに替わった)。そのため表には、チャンネルと、
- * いまの配信を題名で見分ける言葉 (`match`) を持ち、ID は目安 (`seed`) にとどめる。いま配信中の ID は、サーバーが
+ * いまの配信をタイトルで見分ける言葉 (`match`) を持ち、ID は目安 (`seed`) にとどめる。いま配信中の ID は、サーバーが
  * YouTube Data API で確かめる (`#lib/server/sources/youtube.ts`)。API のキーが無いサーバーでは、地図の中で
  * 再生せず、YouTube のチャンネルのページへのリンクだけを出す (終わった配信の録画を、いまの映像と取り違えないため)。
  *
  * ここは画面とサーバーの両方から読む。表と、URL の組み立てと、吹き出しの文
  */
+
+import { darkTileIcon } from "#lib/map/cameras.ts";
+import type { PopupLine } from "#lib/map/marine.ts";
 
 export interface Livecam {
   /** sonae の中の名前 (表の中で一意。英小文字・数字・`-`) */
@@ -21,7 +24,7 @@ export interface Livecam {
   operator: string;
   /** YouTube のチャンネルの ID (`UC` で始まる 24 文字) */
   channel: string;
-  /** いまの配信を見分ける、題名に含まれる言葉 */
+  /** いまの配信を見分ける、タイトルに含まれる言葉 */
   match: string;
   /** 表を作ったときの動画の ID (目安。替わっていればサーバーが探し直す) */
   seed: string;
@@ -202,20 +205,13 @@ export function livecamFeatures() {
 
 export const livecamById = (id: unknown) => LIVECAMS.find((c) => c.id === id);
 
-/** 吹き出しの 1 行 (`#lib/map/cameras.ts` と同じ形) */
-interface LivecamLine {
-  text: string;
-  cls?: string;
-  href?: string;
-}
-
 const timeFmt = new Intl.DateTimeFormat("ja-JP", {
   timeZone: "Asia/Tokyo",
   hour: "2-digit",
   minute: "2-digit",
 });
 
-export function livecamHead(c: Livecam): LivecamLine[] {
+export function livecamHead(c: Livecam): PopupLine[] {
   return [
     { text: c.name, cls: "bold" },
     { text: `${c.kind}のライブカメラ (YouTube・${c.operator})`, cls: "small" },
@@ -224,7 +220,7 @@ export function livecamHead(c: Livecam): LivecamLine[] {
 
 /**
  * プレーヤーの代わりに出す文。API のキーが無い・配信していない・読めない、のどれか。
- * `state` が undefined なら読めなかった
+ * `r` が undefined なら読めなかった。配信中なら undefined を返す
  */
 export function livecamStatusText(
   r: LivecamResponse | undefined,
@@ -246,8 +242,8 @@ export function livecamStatusText(
 export function livecamFoot(
   c: Livecam,
   videoId: string | undefined,
-): LivecamLine[] {
-  const lines: LivecamLine[] = [];
+): PopupLine[] {
+  const lines: PopupLine[] = [];
   const watch = videoId ? watchUrl(videoId) : channelStreamsUrl(c.channel);
   if (watch)
     lines.push({
@@ -282,27 +278,13 @@ const PRIVACY_URL = "/privacy";
  * 地図の印 (MapLibre の addImage に渡す。pixelRatio 2)。画面だけで呼ぶ。
  * 白い縁の暗い角丸の四角に、白い再生の三角。火山の監視カメラ (カメラの形) と同じ地で、中の形で見分ける
  */
-export function livecamIcon(): ImageData {
-  const s = 28;
-  const c = document.createElement("canvas");
-  c.width = s;
-  c.height = s;
-  const g = c.getContext("2d");
-  if (!g) return new ImageData(s, s);
-  g.lineJoin = "round";
-  g.beginPath();
-  g.roundRect(3, 3, 22, 22, 5);
-  g.fillStyle = "#2b2f36";
-  g.fill();
-  g.strokeStyle = "#ffffff";
-  g.lineWidth = 2.5;
-  g.stroke();
-  g.beginPath();
-  g.moveTo(11, 8.5);
-  g.lineTo(20, 14);
-  g.lineTo(11, 19.5);
-  g.closePath();
-  g.fillStyle = "#ffffff";
-  g.fill();
-  return g.getImageData(0, 0, s, s);
-}
+export const livecamIcon = (): ImageData =>
+  darkTileIcon((g) => {
+    g.beginPath();
+    g.moveTo(11, 8.5);
+    g.lineTo(20, 14);
+    g.lineTo(11, 19.5);
+    g.closePath();
+    g.fillStyle = "#ffffff";
+    g.fill();
+  });

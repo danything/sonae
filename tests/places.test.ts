@@ -33,7 +33,7 @@ test("外へ問い合わせるのは 2 文字から", () => {
   expect(shouldQuery("札幌")).toBe(true);
 });
 
-test("手元の市町村: 名前が同じ・頭が同じ・どこかに入るの順で、外枠の真ん中へ", () => {
+test("手元の市町村: 名前が同じ・先頭が同じ・どこかに入るの順で、外枠の真ん中へ", () => {
   const r = localPlaces("府中", cities, bounds);
   // 府中市は東京都と広島県にある (府中町も)
   expect(r.length).toBeGreaterThanOrEqual(2);

@@ -1,5 +1,6 @@
 /**
- * Wolfx Open API の気象庁の緊急地震速報 (jma_eew) と地震情報の一覧 (jma_eqlist、下) を読む。
+ * Wolfx Open API の気象庁の緊急地震速報 (jma_eew)・地震情報の一覧 (jma_eqlist)・南海トラフ地震臨時情報など
+ * (jma_special_eq)・津波の警報・注意報・予報 (jma_tsunami) を読む。
  *
  * 仕様: Wolfx Open API 利用ガイド (https://wolfx.jp/docs/open-api) の「気象庁 緊急地震速報 JSON API」の
  * 項目の一覧と公式の応答の例 (https://wolfx.jp/examples/jma_eew/)、WebSocket の説明 (https://wolfx.jp/docs/websocket)。
@@ -14,6 +15,7 @@ import {
   type ObservedIntensity,
   type QuakeKind,
   type QuakeReport,
+  type Status,
   type TsunamiArea,
 } from "#lib/model.ts";
 import { jstToIso } from "#lib/server/time.ts";
@@ -228,6 +230,23 @@ const SPECIAL_INFO_TYPE = {
   corrected: "訂正",
   cancelled: "取消",
 } as const;
+/** 報の `status` を発表・訂正・取消に。知らない値は「発表」 */
+const infoTypeOf = (v: unknown) =>
+  SPECIAL_INFO_TYPE[str(v) as keyof typeof SPECIAL_INFO_TYPE] ?? "発表";
+
+/** 訓練・試験の印が無いので、タイトルに「訓練」「試験」とあるものをそう扱う */
+const statusOfTitle = (title: string): Status =>
+  title.includes("訓練")
+    ? "training"
+    : title.includes("試験")
+      ? "test"
+      : "normal";
+
+/** 文字列の並び (`eventIds`)。文字列でないものは外す */
+const strings = (v: unknown): string[] =>
+  (Array.isArray(v) ? v : [])
+    .map(str)
+    .filter((s): s is string => s !== undefined);
 
 export interface WolfxAdvisory {
   /** 情報源の中での重複の除去の鍵。電文の種別・Wolfx の報告の ID・状態 */
@@ -241,7 +260,7 @@ export interface WolfxAdvisory {
  *
  * - お知らせの id は気象庁 XML と同じ `<種別>-<地震識別番号>` にし、XML と同じ報なら 1 つにまとめる (merge.ts)
  * - 見出し (Headline) は来ないので空にする。通知の本文は本文の最初の段落にする (notify.ts)
- * - 訓練・試験の印は無い。表題に「訓練」「試験」とあるものは、そう扱う (本番として知らせないため)。
+ * - 訓練・試験の印は無い。タイトルに「訓練」「試験」とあるものは、そう扱う (本番として知らせないため)。
  *   本文の語では決めない (本番の解説の文に「訓練」の語が出ても、知らせなくならないように)
  * - 補足 (`notice`。取消の説明など) は本文の後ろに、次の発表の予定 (`next`) はそのまま持つ。
  *   参考解説 (`appendices`) は気象庁 XML の Appendix と同じく読まない
@@ -254,13 +273,8 @@ export function parseWolfxSpecialEq(value: unknown): WolfxAdvisory[] {
     if (!isSpecialProduct(code)) continue;
     const reportedAt = str(r.time);
     if (!reportedAt || !Number.isFinite(Date.parse(reportedAt))) continue;
-    const infoType =
-      SPECIAL_INFO_TYPE[str(r.status) as keyof typeof SPECIAL_INFO_TYPE] ??
-      "発表";
-    const eventId =
-      (Array.isArray(r.eventIds) ? r.eventIds.map(str) : []).find(
-        (v): v is string => v !== undefined,
-      ) ?? reportedAt;
+    const infoType = infoTypeOf(r.status);
+    const eventId = strings(r.eventIds)[0] ?? reportedAt;
     const title = str(r.title) ?? str(r.kind) ?? code;
     const text = [str(r.text), str(r.notice)].filter(Boolean).join("\n\n");
     out.push({
@@ -274,11 +288,7 @@ export function parseWolfxSpecialEq(value: unknown): WolfxAdvisory[] {
           eventId,
           title,
           serialName: str(r.label),
-          status: title.includes("訓練")
-            ? "training"
-            : title.includes("試験")
-              ? "test"
-              : "normal",
+          status: statusOfTitle(title),
           infoType,
           reportedAt,
           headline: "",
@@ -331,8 +341,8 @@ export interface WolfxTsunami {
  * - 予報区の並びが空の発表は捨てる。Wolfx は気象庁の有効期限が過ぎると、同じ報の予報区を空にして送る (expired)。
  *   空でも安全を意味しないので、「終わった」として取り込まない
  * - 観測 (`observations`。VTSE51・52) と本文 (`text`・`comments`) は読まない (気象庁 XML で受ける)
- * - 訓練・試験の印は無い。表題に「訓練」「試験」とあるものは、そう扱う
- * - `report.status` の値の一覧は、文書の津波の節に無い (2026-11-28 に確かめた)。特別地震情報と同じ語 (`issued`・`corrected`・`cancelled`) と見て読み、
+ * - 訓練・試験の印は無い。タイトルに「訓練」「試験」とあるものは、そう扱う
+ * - `report.status` の値の一覧は、文書の津波の節に無い (2026-11-28 に確かめた)。`jma_special_eq` と同じ語 (`issued`・`corrected`・`cancelled`) と見て読み、
  *   知らない値は「発表」にする。知らない形の取消は予報区が空で届くので、上の決まりで捨てる (取消は P2P と気象庁 XML でも受ける)
  */
 export function parseWolfxTsunami(value: unknown): WolfxTsunami[] {
@@ -341,9 +351,7 @@ export function parseWolfxTsunami(value: unknown): WolfxTsunami[] {
   if (r.product !== "VTSE41") return [];
   const reportedAt = str(r.time);
   if (!reportedAt || !Number.isFinite(Date.parse(reportedAt))) return [];
-  const infoType =
-    SPECIAL_INFO_TYPE[str(r.status) as keyof typeof SPECIAL_INFO_TYPE] ??
-    "発表";
+  const infoType = infoTypeOf(r.status);
   const areas = (Array.isArray(o.areas) ? o.areas : [])
     .map(obj)
     .flatMap((a): TsunamiArea[] => {
@@ -372,9 +380,6 @@ export function parseWolfxTsunami(value: unknown): WolfxTsunami[] {
     });
   if (infoType !== "取消" && areas.length === 0) return [];
   const title = str(r.title) ?? "";
-  const eventIds = (Array.isArray(r.eventIds) ? r.eventIds : [])
-    .map(str)
-    .filter((v): v is string => v !== undefined);
   const digest = Bun.hash(JSON.stringify([infoType, areas])).toString(16);
   return [
     {
@@ -384,12 +389,8 @@ export function parseWolfxTsunami(value: unknown): WolfxTsunami[] {
         report: {
           code: "VTSE41",
           source: "wolfx",
-          eventIds,
-          status: title.includes("訓練")
-            ? "training"
-            : title.includes("試験")
-              ? "test"
-              : "normal",
+          eventIds: strings(r.eventIds),
+          status: statusOfTitle(title),
           infoType,
           reportedAt,
           areas: infoType === "取消" ? [] : areas,

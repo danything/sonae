@@ -166,7 +166,7 @@ describe("海外の地震をまとめる", () => {
   });
 });
 
-describe("決まった間隔で取りに行く輪", () => {
+describe("決まった間隔の取得", () => {
   test("最初に 1 日分、それから 1 時間分。304 は何もしない。間隔は 60 秒より短くしない", async () => {
     const { ctx, got } = context();
     const urls: string[] = [];

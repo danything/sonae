@@ -221,7 +221,7 @@ describe("VOICEVOX", () => {
     expect(v.isCached(21, OPENINGS.eewWarning)).toBe(true);
   });
 
-  test("声を替えると覚え、新しい声で決まった文をすぐ合成し直し、知らせる。前の声の決まった文は捨てられる", async () => {
+  test("声を替えると保存し、新しい声で決まった文をすぐ合成し直し、知らせる。前の声の決まった文は捨てられる", async () => {
     const e = fakeEngine();
     const saved: [number, string][] = [];
     const v = new Voicevox({
@@ -288,7 +288,7 @@ describe("VOICEVOX", () => {
     expect(sample.headers.get("x-voice")).toBe("52");
   });
 
-  test("覚えた声はつながって声の一覧を読むまで既定の声。読めたら知らせる。一覧から無くなったら既定の声", async () => {
+  test("保存した声は、つながって声の一覧を読むまで既定の声。読めたら知らせる。一覧から無くなったら既定の声", async () => {
     const e = fakeEngine();
     const heard: number[] = [];
     const v = new Voicevox({
@@ -355,7 +355,7 @@ describe("声を替える (PUT /api/speech)", () => {
 });
 
 describe("家の設定 (DB)", () => {
-  test("声を DB に覚え、読み直せる。読めない値は無いものとする", () => {
+  test("声を DB に保存し、読み直せる。読めない値は無いものとする", () => {
     const d = openDb(":memory:");
     const s = voiceStore(d);
     expect(s.load()).toBeUndefined();

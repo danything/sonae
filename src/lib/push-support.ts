@@ -28,7 +28,7 @@ export type PushBlock =
   | { kind: "ios" }
   /** 要る機能が無い */
   | { kind: "missing"; missing: string[] }
-  /** 登録はできたが、ブラウザが届かない宛先 (知らない配信サービス・`.invalid` など) を返した */
+  /** 登録はできたが、ブラウザが届かない宛先 (受け付けない配信サービス・`.invalid` など) を返した */
   | { kind: "endpoint"; host: string };
 
 /** 機能の有無から、Web Push を使えない訳 (使えそうなら null。宛先は登録してみるまで分からない) */

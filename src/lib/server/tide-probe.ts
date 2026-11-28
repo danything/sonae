@@ -23,7 +23,7 @@ export const TIDE_TIME_URL =
   "https://www.jma.go.jp/bosai/tidelevel/data/tide/tide_time.json";
 
 /** 動かす理由。津波の警報・注意報 (tsunami)・大きな地震の後 (quake)・波浪警報 (wave) */
-export type TideTrigger = "tsunami" | "quake" | "wave";
+type TideTrigger = "tsunami" | "quake" | "wave";
 
 /** 地震の後に測る時間 */
 export const QUAKE_WINDOW_MS = 2 * 60 * 60_000;
@@ -112,7 +112,7 @@ export function parseTideTime(text: string): number {
 }
 
 /** 1 回の更新の記録 (時刻は ISO 8601 の UTC、遅れは秒) */
-export interface TideRow {
+interface TideRow {
   fetchedAt: string;
   dataTime: string;
   lastModified: string | null;
@@ -127,7 +127,7 @@ export interface TideRow {
 const logLine = (r: TideRow) =>
   `tide-latency data=${r.dataTime} fetched=${r.fetchedAt} lastModified=${r.lastModified ?? "-"} fetchDelay=${r.fetchDelaySec}s modifiedDelay=${r.modifiedDelaySec === null ? "-" : `${r.modifiedDelaySec}s`} triggers=${r.triggers.join(",")} afterGap=${r.afterGap ? 1 : 0}`;
 
-export interface TideProbeOptions {
+interface TideProbeOptions {
   state(): ProbeState;
   fetch?: typeof fetch;
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>;

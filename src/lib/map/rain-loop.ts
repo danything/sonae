@@ -10,9 +10,9 @@
 import { hoursAhead, type NowcFrame } from "#lib/map/nowc.ts";
 import { RAIN_TILE_ZOOMS } from "#lib/map/rain.ts";
 
-/** 枚の数。0 がいまの観測、1〜3 が 1・2・3 時間先の予測 */
+/** 枚の並び。0 がいまの観測、1〜3 が 1・2・3 時間先の予測 */
 export const LOOP_SLOTS = [0, 1, 2, 3] as const;
-/** 予測を何時間先まで見せるか */
+/** 見せる予測の枚数 (予測は 1 時間ごとなので、ふつうは 3 時間先まで) */
 const LOOP_HOURS = 3;
 
 /** 1 枚を見せる間 */

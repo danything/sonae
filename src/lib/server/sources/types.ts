@@ -37,7 +37,7 @@ export interface TsunamiReport {
   infoType: "発表" | "訂正" | "取消";
   reportedAt: string;
   headline?: string;
-  /** 予報区の状態。VTSE52 には無い (undefined)。P2P の解除は空の並び */
+  /** 予報区の状態。VTSE52 には無い (undefined)。P2P の解除と Wolfx の取消は空の並び */
   areas?: TsunamiArea[];
   observations: TsunamiObservation[];
 }
@@ -76,7 +76,7 @@ export type LongPeriodReport = Omit<
 /** 情報源から受けたもの。body は原文 (Wolfx は原文を残さないので body が無い) */
 export interface Incoming {
   source: SourceId;
-  /** 情報源の中での重複の除去の鍵 (気象庁は Atom の id、P2P は id、Wolfx の緊急地震速報は EventID と報数 (取消は後ろに -cancel)、地震情報の一覧は eqlist-<番号>-<要約>) */
+  /** 情報源の中での重複の除去の鍵 (気象庁は Atom の id、P2P は id。Wolfx は種類ごとに wolfx-json.ts で作る) */
   key: string;
   code: string;
   body?: string;

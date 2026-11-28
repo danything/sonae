@@ -7,7 +7,7 @@
 /** 覚えるときの localStorage の名前 (`sonae.` は prefs.ts が足す) */
 export const LOCATE_PREF = "map.locate";
 
-/** 位置の許可の状態。`navigator.permissions.query` が無い・投げたときは "unknown" */
+/** 位置の許可の状態。`navigator.permissions.query` が無い・例外になったときは "unknown" */
 export type GeoPermission = PermissionState | "unknown";
 
 /** 覚えた選択。null はまだ選んでいない (既定のオン) */

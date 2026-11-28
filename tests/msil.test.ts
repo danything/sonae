@@ -131,7 +131,7 @@ describe("海しるの答えを読む", () => {
     expect(() => parseMsil(GNSSA, "{}")).toThrow();
   });
 
-  test("URL に鍵を入れない", () => {
+  test("URL にキーを入れない", () => {
     expect(msilUrl(GNSSA)).toBe(
       "https://api.msil.go.jp/seabed-crust-deformation-info/v2/MapServer/1/query?f=geojson&where=1%3D1&outFields=*",
     );
@@ -170,7 +170,7 @@ describe("海しるの情報源", () => {
     expect(msilSource(openDb(":memory:"), "  ")).toBeUndefined();
   });
 
-  test("鍵はヘッダーで送り、層を 1 つずつ取って置き、1 日待つ", async () => {
+  test("キーはヘッダーで送り、層を 1 つずつ取得して保存し、1 日待つ", async () => {
     const db = openDb(":memory:");
     const { f, calls } = fakeFetch(BODIES);
     const waits: number[] = [];
@@ -209,7 +209,7 @@ describe("海しるの情報源", () => {
     expect(source?.status().state).toBe("stopped");
   });
 
-  test("起動し直しても、前に取ってから 1 日たつまでは取りに行かない", async () => {
+  test("起動し直しても、前に取得してから 1 日たつまでは取得しない", async () => {
     const db = openDb(":memory:");
     const cache = new LayerCache(db);
     const fc = { type: "FeatureCollection", features: [] };
@@ -468,7 +468,7 @@ describe("潮汐推算の値", () => {
     ).toThrow();
   });
 
-  test("満潮と干潮は値の山と谷を拾うだけ。日の端は拾わない", () => {
+  test("満潮と干潮は値の山と谷。日の端は満潮・干潮にしない", () => {
     const turns = tideTurns(sineDay());
     expect(turns.map((t) => t.kind)).toEqual(["high", "low", "high", "low"]);
     expect(turns.map(tideTurnText)).toEqual([
@@ -479,7 +479,7 @@ describe("潮汐推算の値", () => {
     ]);
   });
 
-  test("同じ値が続く山は真ん中の時刻。小さな揺れは拾わない", () => {
+  test("同じ値が続く山は真ん中の時刻。小さな揺れは満潮・干潮にしない", () => {
     const d: TideDay = {
       code: "x",
       date: "2026-11-28",
@@ -513,14 +513,14 @@ describe("潮汐推算の値", () => {
     expect(tideDayLabel("2026-11-28")).toBe("11/28(土)");
   });
 
-  test("URL は地点のコードと日 (8 桁)。鍵は入れない", () => {
+  test("URL は地点のコードと日 (8 桁)。キーは入れない", () => {
     expect(tideUrl("0114", "2026-11-28")).toBe(
       "https://api.msil.go.jp/tide-prediction/v3/data?stationCode=0114&date=20261128",
     );
   });
 });
 
-describe("潮汐推算を取りに行く (/api/tide)", () => {
+describe("潮汐推算の取得 (/api/tide)", () => {
   function setup(now = Date.parse("2026-11-28T03:00:00Z")) {
     const db = openDb(":memory:");
     new LayerCache(db).put(cacheId("tide"), {
@@ -544,7 +544,7 @@ describe("潮汐推算を取りに行く (/api/tide)", () => {
     return { fetcher, calls, advance: (ms: number) => (t += ms) };
   }
 
-  test("一覧にある地点の今日の値を取り、同じ日は覚えたものを返す", async () => {
+  test("一覧にある地点の今日の値を取得し、同じ日はキャッシュを返す", async () => {
     const { fetcher, calls, advance } = setup();
     const d = await fetcher.today("0114");
     expect(d.date).toBe("2026-11-28");
@@ -560,7 +560,7 @@ describe("潮汐推算を取りに行く (/api/tide)", () => {
     expect(calls).toHaveLength(2);
   });
 
-  test("一覧に無い地点・形の違うコードは取りに行かない", async () => {
+  test("一覧に無い地点・形の違うコードは取得しない", async () => {
     const { fetcher, calls } = setup();
     for (const code of ["1234", "../x", ""]) {
       const err = await fetcher.today(code).catch((e: unknown) => e);
@@ -570,7 +570,7 @@ describe("潮汐推算を取りに行く (/api/tide)", () => {
     expect(calls).toHaveLength(0);
   });
 
-  test("10 分に 30 回より多くは取りに行かない", async () => {
+  test("10 分に 30 回より多くは取得しない", async () => {
     const db = openDb(":memory:");
     const features = Array.from({ length: TIDE_MAX_FETCHES + 1 }, (_, i) => ({
       type: "Feature",

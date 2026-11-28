@@ -120,7 +120,7 @@ class Alerter {
   private speaking = 0;
   /**
    * 読み上げている最中 (文と文の間に、無音で動かして割り込まない)。画面はこの間だけ「読み上げ中断」を出す。
-   * 最初の文の音を取りに行っている間も含む
+   * 最初の文の音を取得している間も含む
    */
   reading = $state(false);
 
@@ -240,7 +240,7 @@ class Alerter {
   }
 
   /**
-   * この家の声を替える (サーバーに保存し、全部の端末に伝わる)。保存できたら null、できなければわけ
+   * この家の声を替える (サーバーに保存し、全部の端末に伝わる)。保存できたら null、できなければ理由
    */
   async saveVoice(voice: number): Promise<string | null> {
     try {
@@ -274,7 +274,7 @@ class Alerter {
   }
 
   /**
-   * 受信が切れた・戻ったときの文の音を、前もって取っておく (切れている間はサーバーに取りに行けない)。
+   * 受信が切れた・戻ったときの文の音を、前もって取っておく (切れている間はサーバーから取得できない)。
    * 読み上げがオンで VOICEVOX が使えるときだけ。声が替わったら取り直す
    */
   private async keepConnectionVoice(): Promise<void> {
@@ -292,7 +292,7 @@ class Alerter {
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ text }),
         });
-        // 取りに行く間に声が替わったら、前の声の音は持たない
+        // 取得している間に声が替わったら、前の声の音は持たない
         if (!res.ok || res.headers.get("x-voice") !== String(voice)) continue;
         this.kept.set(key, await res.blob());
       } catch {
@@ -591,7 +591,7 @@ class Alerter {
     const { sound, speech } = this.settings;
     const reads = speech && this.canSpeak;
     const parts = reads ? (n ? readoutOfAll([n, ...also]) : [SAMPLE]) : [];
-    // 音を合わせて待つ間に、最初の文を取りに行っておく
+    // 音を合わせて待つ間に、最初の文の音を取得しておく
     const pending = parts.length > 0 ? this.fetchAll(parts) : undefined;
     this.rings++;
     // play はこの同期の中で呼ぶ (「試しに鳴らす」の操作の中で鳴らすため)
@@ -690,7 +690,7 @@ class Alerter {
     }
   }
 
-  /** 文ごとの音を取りに行く (同じ文は 1 回)。VOICEVOX が無ければ空 */
+  /** 文ごとの音を取得する (同じ文は 1 回)。VOICEVOX が無ければ空 */
   private fetchAll(parts: string[]): Map<string, Promise<Blob | null>> {
     const out = new Map<string, Promise<Blob | null>>();
     if (!this.voicevox) return out;

@@ -250,7 +250,7 @@ export function ashSources(): Record<string, unknown> {
 }
 
 /**
- * 塗りと縁の層。警報・注意報の塗りの上、台風の線・道路・地名・震源の丸の下に置く。塗りは種類ごとの透かしで、
+ * 塗りと縁の層。警報・注意報と震度の塗りの上、津波の線と特別警報の縁取りの下に置く。塗りは種類ごとの透かしで、
  * 重い種類を上に重ねる (`fill-sort-key`)。縁は写真の上で読めるよう、黒い細い縁の上に種類の色で引く
  */
 export function ashLayers(): Record<string, unknown>[] {

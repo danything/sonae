@@ -5,6 +5,8 @@
  * ここは画面とサーバーの両方から読む。線の properties の形と、吹き出しの中身を組む所
  */
 
+import type { PopupLine } from "#lib/map/marine.ts";
+
 /** `closed` は全面通行止め、`speed` は ETC2.0 の平均速度 (通れた道の目安) */
 type RoadKind = "closed" | "speed";
 
@@ -77,13 +79,6 @@ export const ROAD_LINKS: { text: string; href: string }[] = [
   },
   { text: "NEXCO 西日本 (アイハイウェイ)", href: "https://ihighway.jp/" },
 ];
-
-/** 吹き出しの 1 行 (`#lib/map/marine.ts` と同じ形) */
-export interface PopupLine {
-  text: string;
-  cls?: string;
-  href?: string;
-}
 
 /** ISO 8601 を日本の時刻の「2026/11/20 23:30」に */
 export function jstShort(iso: string): string {

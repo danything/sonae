@@ -2,7 +2,7 @@ import type { SonaeEvent } from "#lib/model.ts";
 
 type Listener = (e: SonaeEvent) => void;
 
-/** 受けて DB に入れたイベントを、開いている SSE に配る (1 プロセスの中だけ) */
+/** 受けて DB に入れたイベントを、購読しているもの (SSE・Web Push・Webhook・VOICEVOX) に配る (1 プロセスの中だけ) */
 export class Broker {
   private listeners = new Set<Listener>();
   subscribe(fn: Listener): () => void {

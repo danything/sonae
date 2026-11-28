@@ -11,13 +11,14 @@ import {
   WARNING_COLORS,
 } from "#lib/format.ts";
 import { ashLayers, ashSources } from "#lib/map/ash.ts";
+import { VOLCAM_PAGE } from "#lib/map/cameras.ts";
 import {
   FOREIGN_RADIUS,
   HYPO_RADIUS,
   radiusExpr,
 } from "#lib/map/epicenters.ts";
 import { livecamFeatures } from "#lib/map/livecams.ts";
-import { OFFICE_MINZOOM, TIDE_MINZOOM } from "#lib/map/marine.ts";
+import { MSIL_SITE, OFFICE_MINZOOM, TIDE_MINZOOM } from "#lib/map/marine.ts";
 import {
   JMATILE,
   N3_TILE_ZOOMS,
@@ -52,6 +53,7 @@ import {
   SMALL_RIVER_CALM_COLOR,
   SMALL_RIVER_CASING,
 } from "#lib/map/risk.ts";
+import { MLIT_ROAD_DISASTER } from "#lib/map/roads.ts";
 import {
   typhoonLineLayers,
   typhoonPointLayers,
@@ -107,19 +109,16 @@ const RTS_ATTRIBUTION =
 const SEIS_ATTRIBUTION =
   '<a href="https://seis.wolfx.jp/" target="_blank" rel="noopener">Wolfx Project (SeisJS)</a>・非公式';
 
-const ROADS_ATTRIBUTION =
-  '出典：<a href="https://www.mlit.go.jp/road/road_fr4_000201.html" target="_blank" rel="noopener">国土交通省「通れるマップ」</a>を加工して作成';
+const ROADS_ATTRIBUTION = `出典：<a href="${MLIT_ROAD_DISASTER}" target="_blank" rel="noopener">国土交通省「通れるマップ」</a>を加工して作成`;
 
-const MARINE_ATTRIBUTION =
-  '出典：<a href="https://www.msil.go.jp/" target="_blank" rel="noopener">海洋状況表示システム</a> (海底地殻変動観測点・海域火山DB・海上保安部署等・潮汐推算 を加工)';
+const MARINE_ATTRIBUTION = `出典：<a href="${MSIL_SITE}" target="_blank" rel="noopener">海洋状況表示システム</a> (海底地殻変動観測点・海域火山DB・海上保安部署等・潮汐推算 を加工)`;
 
 /** YouTube のライブカメラの出典 (全文は `#lib/notice.ts` の CREDITS) */
 const LIVECAMS_ATTRIBUTION =
   "ライブカメラ: 九州地方整備局・杉並区・東京都港湾局 (YouTube)";
 
 /** 火山の監視カメラの位置の出典 (全文は `#lib/notice.ts` の CREDITS) */
-const CAMERAS_ATTRIBUTION =
-  '出典：<a href="https://www.data.jma.go.jp/vois/data/obs/volcam/volcam.php" target="_blank" rel="noopener">気象庁ホームページ (監視カメラ画像)</a>';
+const CAMERAS_ATTRIBUTION = `出典：<a href="${VOLCAM_PAGE}" target="_blank" rel="noopener">気象庁ホームページ (監視カメラ画像)</a>`;
 
 const JMA_GIS_ATTRIBUTION =
   '<a href="https://www.data.jma.go.jp/developer/gis.html" target="_blank" rel="noopener">気象庁 予報区等 GIS データ</a> を加工';
@@ -179,10 +178,10 @@ const GSI_VECTOR_ATTRIBUTION = `<a href="https://github.com/gsi-cyberjapan/optim
 export const TEXT_FONT_CSS = '"Noto Sans JP", sans-serif';
 
 /**
- * 重ねる図 (重ねるラスタータイル)。選ぶのは 1 つだけ (色がぶつかるため)。
- * 雨雲 (気象庁の高解像度降水ナウキャスト。`#lib/map/rain.ts`)、今後の雨 (降水短時間予報)、雷・竜巻 (ナウキャスト)、キキクル (気象庁の土砂・大雨の危険度。`#lib/map/risk.ts`) と、
- * ハザードマップ (ハザードマップポータルサイトの水害と土砂災害) と、地震の備えの図 (地理院タイルの都市圏活断層図と、
- * 防災科研の J-SHIS の 2 つ)。どれも面を塗る図なので、いつも重ねると写真と警報・注意報の塗りが見づらい。選んだときだけ出す
+ * 重ねる図。選ぶのは 1 つだけ (色がぶつかるため)。雨雲 (`#lib/map/rain.ts`)・雨雲 (いま→予測) (`#lib/map/rain-loop.ts`)・
+ * 今後の雨と雷・竜巻 (`#lib/map/nowc.ts`)・キキクルの土砂・大雨・浸水・洪水 (`#lib/map/risk.ts`) と、ハザードマップ
+ * (ハザードマップポータルサイトの水害と土砂災害) と、地震の備えの図 (地理院タイルの都市圏活断層図と、防災科研の J-SHIS
+ * の 2 つ)。どれも面か線を危険の色で塗る図なので、いつも重ねると写真と警報・注意報の塗りが見づらい。選んだときだけ出す
  */
 export type HazardId =
   | "none"
@@ -564,7 +563,7 @@ export const HIDDEN_UNDER_HAZARD = [
   "warning-focus",
   "quake-fill",
   "eew-fill",
-  // 通れた道 (目安) の橙と青の細い線は、浸水想定などの色と重なる。通行止めの赤い線は残す
+  // 通れた道 (目安) の橙と水色の細い線は、浸水想定などの色と重なる。通行止めの赤い線は残す
   "road-speed",
   // 選んだ降灰予報の範囲の塗り。縁の線 (`ash-line`) は残す (震度の塗りを隠して数字のラベルを残すのと同じ)
   "ash-fill",
@@ -651,7 +650,7 @@ export const riskShown = (id: HazardId, quake: boolean) =>
 /** 洪水キキクルの中小河川の線の層 (段ごとの source に縁と線の 2 つ) */
 export const floodLayerIds = (n: number) =>
   [`riskflood-${n}-casing`, `riskflood-${n}`] as const;
-/** 洪水キキクルを選んだときに出す川の層 (中小河川の網・指定河川の地図・洪水予報の区間) */
+/** 洪水キキクルを選んだときに出す指定河川の層 (指定河川の地図・洪水予報の区間と、区間の名前) */
 export const RIVER_LAYERS = [
   "river-map-casing",
   "river-map",
@@ -1217,6 +1216,10 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
       "指定河川の洪水予報の中身は、一覧の「気象」の指定河川洪水予報で読めます。選んでいる間は雨雲と同じく、気象警報・注意報の塗り・緊急地震速報の地域の塗り・通れた道 (目安) の線を隠し、地震を選んでいる間はキキクルを隠します",
   },
   {
+    label: "雨雲 (いま→予測)",
+    note: "地図の右下で「雨雲 (いま→予測)」を選んだときだけ、雨雲のいまの観測と、今後の雨の 1・2・3 時間先の予測を順に自動で替えて見せます。凡例の先頭に、いま見せているのが観測か予測か (「いま」「+1 時間」など) と時刻を大きく出します。⏸ で止め、時刻のボタンでその枚を選べます。気象庁の 1 枚ずつを色も値も変えずに出すだけで、枚の間を補いません。隠す層は雨雲と同じで、地震を選んでいる間は隠します",
+  },
+  {
     label: "今後の雨 (予測)",
     note: "地図の右下で「今後の雨 (予測)」を選んだときだけ、気象庁の降水短時間予報の 1 時間の雨量の予測を重ねます。凡例に「◯時◯分までの予測」を大きく出し、その下に何時間先かを出し、‹ › で先の時刻へ動かせます (自動では動きません)。色は気象庁の配色のままで、sonae が先の雨を予想することはしません。雨雲と同じく、選んでいる間は気象警報・注意報の塗り・緊急地震速報の地域の塗り・通れた道 (目安) の線を隠し、地震を選んでいる間は今後の雨を隠します",
   },
@@ -1560,7 +1563,7 @@ export function volcanoMarks(
 
 /** 下地と、データの無い層。データ (色の式・点) は地図を作ったあとで差し込む */
 export function baseStyle(
-  /** スプライト (地理院の記号) を置いた所の頭。MapLibre は相対の URL を読まない */
+  /** スプライト (地理院の記号) を配るサーバーのオリジン。MapLibre は相対の URL を読まない */
   origin = "",
   hazard: HazardId = "none",
   /** 雨雲のいまの 1 枚。まだ時刻の表を読んでいなければ null (雨雲の層は出さない) */
@@ -1627,7 +1630,7 @@ export function baseStyle(
           },
         ]),
       ),
-      // キキクル。雨雲と同じく偶数のズームにしか無いので、段ごとに source を分ける。土砂と大雨は URL を替えて同じ source を使う
+      // キキクル。雨雲と同じく偶数のズームにしか無いので、段ごとに source を分ける。土砂・大雨・浸水は URL を替えて同じ source を使う
       ...Object.fromEntries(
         RISK_TILE_ZOOMS.map((n, i) => [
           `risk-${n}`,
@@ -1776,7 +1779,7 @@ export function baseStyle(
         data: { type: "FeatureCollection", features: [] },
         attribution: ROADS_ATTRIBUTION,
       },
-      // 海しるの点 (海底地殻変動観測点・海域火山)。画面が /api/marine から読んで差し込む (`#lib/map/marine.ts`)
+      // 海しるの点 (海底地殻変動観測点・海域火山・海上保安部署等・潮汐推算の地点)。画面が /api/marine から読んで差し込む (`#lib/map/marine.ts`)
       marine: {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },

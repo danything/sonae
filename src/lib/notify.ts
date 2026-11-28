@@ -7,6 +7,7 @@
 
 import {
   jst,
+  jstDate,
   kindText,
   magnitudeText,
   placeName,
@@ -841,10 +842,6 @@ export const ADVISORY_QUOTA = {
 export const advisoryQuotaTag = (n: Pick<Notice, "here">): string =>
   n.here ? ADVISORY_QUOTA.here : ADVISORY_QUOTA.home;
 
-/** 日本時間の暦日 (`2026-11-16`)。注意報の 1 日 1 回の区切り */
-export const jstDay = (t: number): string =>
-  new Date(t + 9 * 60 * 60_000).toISOString().slice(0, 10);
-
 export type DailyPlan =
   { send: false } | { send: true; renotify: boolean; day?: string };
 
@@ -865,7 +862,8 @@ export function decideDaily(
 ): DailyPlan {
   const p = decide(n, prefs, prev, digest, here);
   if (!p.send || !isAdvisoryOnly(n) || (prev && !p.renotify)) return p;
-  const day = jstDay(now);
+  // 日本時間の暦日で区切る
+  const day = jstDate(now);
   if (quota?.digest === day) return { send: false };
   return { ...p, day };
 }

@@ -13,10 +13,10 @@
  */
 export type MarineKind = "gnssa" | "volcano" | "office" | "tide";
 
-/** 点の properties。サーバーが海しるの属性から作る (画面は海しるの属性の名前を知らない) */
+/** 点の properties。サーバーが海しるの属性から作る (画面は海しるの属性の名前を使わない) */
 export interface MarinePoint {
   kind: MarineKind;
-  /** 観測点の名前・火山の名前 */
+  /** 観測点・火山・部署・地点の名前 */
   name: string;
   /** 海域火山: 位置を示す点の名前 (「三原新山」)。火山の名前と同じなら空 */
   point?: string;
@@ -116,8 +116,8 @@ interface TideTurn {
 }
 
 /**
- * 1 日の推算の値から満潮と干潮を拾う。値を計算し直さず、並んだ値の山と谷 (前後 90 分でいちばん高い・低い所) を
- * 読むだけ。同じ値が続く所は真ん中の時刻にする。日の端の値は、前後が分からないので拾わない
+ * 1 日の推算の値から満潮と干潮を取り出す。値を計算し直さず、並んだ値の山と谷 (前後 90 分でいちばん高い・低い所) を
+ * 読むだけ。同じ値が続く所は真ん中の時刻にする。日の端の値は、前後が分からないので満潮・干潮にしない
  */
 export function tideTurns(d: TideDay, windowMin = 90): TideTurn[] {
   const v = d.tide;
@@ -182,7 +182,7 @@ export function tidePolyline(
 
 const nf = new Intl.NumberFormat("ja-JP");
 
-/** 吹き出しの 1 行 */
+/** 吹き出しの 1 行 (地図の吹き出しはどれもこの形。`roads.ts`・`cameras.ts`・`livecams.ts`・`typhoon.ts` も使う) */
 export interface PopupLine {
   text: string;
   /** 太字・小さく・控えた字・とても小さく (QuakeMap の吹き出しの class と同じ) */
@@ -191,8 +191,8 @@ export interface PopupLine {
 }
 
 /**
- * 押した点の吹き出しの中身 (上から)。名前・種類・水深か標高・設置機関や位置の出どころ・海上保安庁のページ・出典。
- * 文は DOM で組み、HTML として読まない
+ * 押した点の吹き出しの中身 (上から)。名前・種類・点ごとの中身 (水深か標高・設置機関や位置の出どころ、部署の所在地と
+ * 電話番号、潮汐推算の注意)・海上保安庁のページ・出典。文は DOM で組み、HTML として読まない
  */
 export function marinePopup(p: MarinePoint): PopupLine[] {
   const lines: PopupLine[] = [{ text: p.name, cls: "bold" }];

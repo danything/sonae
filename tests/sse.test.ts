@@ -53,7 +53,7 @@ test("埋め直し → 生の配信。番号で重複を除き、ping と状況�
   expect(broker.size).toBe(0);
 });
 
-test("埋め直しで投げたら、購読を残さずに閉じる", async () => {
+test("埋め直しで例外が出たら、購読を残さずに閉じる", async () => {
   const broker = new Broker();
   const res = sseStream({
     latestSeq: () => 0,
@@ -68,7 +68,7 @@ test("埋め直しで投げたら、購読を残さずに閉じる", async () =>
   expect(broker.size).toBe(0);
 });
 
-test("始める前に切れていたら、購読も ping の輪も残さずに閉じる", async () => {
+test("始める前に切れていたら、購読も ping のタイマーも残さずに閉じる", async () => {
   const broker = new Broker();
   const ac = new AbortController();
   ac.abort();
@@ -90,7 +90,7 @@ test("始める前に切れていたら、購読も ping の輪も残さずに�
   expect(pings).toBe(0);
 });
 
-test("最初の状況を送る間に切れたら、ping の輪を張らない", async () => {
+test("最初の状況を送る間に切れたら、ping のタイマーを始めない", async () => {
   const broker = new Broker();
   const ac = new AbortController();
   let statuses = 0;
@@ -160,7 +160,7 @@ test("上限ちょうどなら、resync は送らずに全部埋め直す", asyn
   ac.abort();
 });
 
-test("イベントのほかの知らせ (読み上げの声) を、つないだときと替わったときに送り、閉じたらやめる", async () => {
+test("イベントのほかの配信 (読み上げの声) を、つないだときと替わったときに送り、閉じたらやめる", async () => {
   const ac = new AbortController();
   const listeners = new Set<(id: number) => void>();
   const frame = (id: number) =>

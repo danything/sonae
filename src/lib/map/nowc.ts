@@ -25,8 +25,9 @@ export const N3_TILE_ZOOMS = [4, 6, 8] as const;
 export const RASRF_TILE_ZOOMS = [4, 6, 8, 10] as const;
 
 /**
- * 段ごとの層を出す地図のズーム。雨雲と同じく、タイルのズーム n の段は地図のズーム n − 1 から n + 1 の手前まで。
- * 最初の段は引いた側を、最後の段は寄せた側を切らない (最後の段を引き伸ばす)
+ * 段ごとの層を出す地図のズーム (雨雲・キキクル・雷と竜巻・今後の雨で同じ)。MapLibre の地図のズーム z は 256px の
+ * タイルの z + 1 を読むので、タイルのズーム n の段は地図のズーム n − 1 から n + 1 の手前まで (n − 1 で引き伸ばさずに
+ * ちょうど合う)。最初の段は引いた側を、最後の段は寄せた側を切らない (最後の段を引き伸ばす)
  */
 export function stepLayerZoom(
   n: number,
@@ -169,11 +170,32 @@ export function stampIso(t: string): string {
   return `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}T${t.slice(8, 10)}:${t.slice(10, 12)}:${t.slice(12, 14)}Z`;
 }
 
+/** 表の時刻 (`YYYYMMDDhhmmss`) から `now` までのミリ秒 */
+export const stampAge = (t: string, now: number) =>
+  now - Date.parse(stampIso(t));
+
+/**
+ * 次に時刻の表を取るまでのミリ秒 (雨雲・キキクル・雷と竜巻で同じ決め方)。いまの 1 枚の時刻 `t` の次の時刻が表に
+ * 載る頃 (`t` + `step` + `publish`) に取り、もう過ぎていれば (遅れている・まだ取れていない) `retry` 後に取り直す。
+ * まだ 1 枚も読めていなければ (`t` が null) `retry` 後
+ */
+export function nextPoll(
+  t: string | null,
+  now: number,
+  step: number,
+  publish: number,
+  retry: number,
+): number {
+  if (t === null) return retry;
+  const wait = step + publish - stampAge(t, now);
+  return wait > 0 ? Math.min(wait, step + publish) : retry;
+}
+
 /** 更新の間隔 (雷・竜巻・線状降水帯は 10 分ごと) */
 const N3_STEP_MS = 10 * 60_000;
 /**
  * 解析の時刻から、その時刻の表が取れるまでの待ち。表は解析の時刻の数分後に書き換わり、配信の CDN が 60 秒覚えるので、
- * 余裕を見て 5 分待つ (キキクルと同じ形。取れていなければ 1 分ごとに取り直す)
+ * 余裕を見て 5 分待つ
  */
 const N3_PUBLISH_MS = 5 * 60_000;
 export const NOWC_RETRY_MS = 60_000;
@@ -184,19 +206,20 @@ export const RASRF_POLL_MS = 10 * 60_000;
 /** 今後の雨の解析の時刻からこれより経ったら古いとみなす (2 回続けて新しい予測が取れていない) */
 const RASRF_STALE_MS = 80 * 60_000;
 
-/** 次に N3 の時刻の表を取るまでのミリ秒。次の解析が表に載る頃に取り、もう過ぎていれば 1 分後 */
-export function nextN3Poll(frame: NowcFrame | null, now: number): number {
-  if (!frame) return NOWC_RETRY_MS;
-  const due =
-    Date.parse(stampIso(frame.validtime)) + N3_STEP_MS + N3_PUBLISH_MS;
-  const wait = due - now;
-  return wait > 0 ? Math.min(wait, N3_STEP_MS + N3_PUBLISH_MS) : NOWC_RETRY_MS;
-}
+/** 次に N3 の時刻の表を取るまでのミリ秒 (`nextPoll`) */
+export const nextN3Poll = (frame: NowcFrame | null, now: number): number =>
+  nextPoll(
+    frame?.validtime ?? null,
+    now,
+    N3_STEP_MS,
+    N3_PUBLISH_MS,
+    NOWC_RETRY_MS,
+  );
 
 export const nowcStale = (frame: NowcFrame, now: number) =>
-  now - Date.parse(stampIso(frame.validtime)) > N3_STALE_MS;
+  stampAge(frame.validtime, now) > N3_STALE_MS;
 export const rasrfStale = (frame: NowcFrame, now: number) =>
-  now - Date.parse(stampIso(frame.basetime)) > RASRF_STALE_MS;
+  stampAge(frame.basetime, now) > RASRF_STALE_MS;
 
 /**
  * 予測の何時間先か (basetime から validtime まで、0.5 時間刻み)。2026-11-21 の表はどの basetime も 1 時間ごとの

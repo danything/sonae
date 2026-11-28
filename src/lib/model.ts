@@ -407,7 +407,7 @@ export const VOLCANO_LABEL: Record<VolcanoCode, string> = {
  * 決まった時刻や噴火のたびに出て数の多い種別 (噴火に関する火山観測報・降灰予報 (定時)・推定噴煙流向報)。
  * 一覧には火山と種別ごとにいちばん新しい報だけを並べる (桜島は降灰予報 (定時) が 3 時間ごと、観測報は噴火ごとに出る)
  */
-export const isRoutineVolcano = (v: Pick<Volcano, "code">) =>
+const isRoutineVolcano = (v: Pick<Volcano, "code">) =>
   v.code === "VFVO52" || v.code === "VFVO53" || v.code === "VFVO60";
 
 /**

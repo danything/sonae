@@ -27,7 +27,7 @@ describe("開いているときの音と読み上げの設定", () => {
       sound: false,
       speech: false,
     });
-    // 声は端末に持たない (この家で 1 つ。サーバー)。前に覚えた voice は読まない
+    // 声は端末に持たない (この家で 1 つ。サーバー)。前に保存した voice は読まない
     expect(
       parseAlertSettings('{"sound":true,"speech":true,"voice":52}'),
     ).toEqual({ sound: true, speech: true });
@@ -187,7 +187,7 @@ describe("開いているときの OS の通知", () => {
     expect(notifyOn(off, "unsupported")).toBe(false);
   });
 
-  test("スイッチの値を覚える。読めない値は既定のまま", () => {
+  test("スイッチの値を保存する。読めない値は既定のまま", () => {
     expect(parseAlertSettings('{"notify":false}')).toEqual({
       sound: false,
       speech: false,

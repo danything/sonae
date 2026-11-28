@@ -32,7 +32,7 @@ const SSE_HEADERS = {
   connection: "keep-alive",
 };
 
-export interface SseOptions {
+interface SseOptions {
   /** 埋め直し。上限を超えたと分かるよう、`limit` より 1 件多く返してよい */
   backlog(limit: number): SonaeEvent[];
   /** いまの最後の番号 (`resync` の `id:` にして、張り直しをそこから始める) */

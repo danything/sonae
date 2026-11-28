@@ -3,7 +3,13 @@ import type { Handle, ServerInit } from "@sveltejs/kit/hooks";
 
 import { enabled } from "#lib/server/oidc.ts";
 import { startReceiving, startVoice } from "#lib/server/receiver.ts";
-import { COOKIE, find, SESSION_TTL } from "#lib/server/session.ts";
+import { plain } from "#lib/server/request.ts";
+import {
+  COOKIE,
+  cookieOptions,
+  find,
+  SESSION_TTL,
+} from "#lib/server/session.ts";
 import { publicUrlBroken } from "#lib/server/site.ts";
 import {
   checkTrusted,
@@ -91,7 +97,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   const { pathname, search } = event.url;
   if (PUBLIC.has(pathname)) return resolve(event);
 
-  // 信頼するネットワークの中から、知っている名前で来た人は、ログインなしで通す (`#lib/server/trust.ts`)
+  // 信頼するネットワークの中から、ログインなしで開いてよい名前で来た人は、ログインなしで通す (`#lib/server/trust.ts`)
   const trust = trustConfig();
   let outside: Extract<TrustResult, { ok: false }> | undefined;
   if (trustEnabled(trust)) {
@@ -103,10 +109,7 @@ export const handle: Handle = async ({ event, resolve }) => {
     if (r.ok) {
       // ログインなしで通すので、ほかのサイトから送らせた書き込みはここで断る (Cookie の SameSite が効かないため)
       if (crossSiteWrite(event.request, event.url.origin))
-        return new Response("ほかのサイトからの書き込みは受けません", {
-          status: 403,
-          headers: { "content-type": "text/plain; charset=utf-8" },
-        });
+        return plain(403, "ほかのサイトからの書き込みは受けません");
       event.locals.user = { ...TRUSTED_USER };
       return pass({ event, resolve });
     }
@@ -121,34 +124,25 @@ export const handle: Handle = async ({ event, resolve }) => {
     }
     // 理由を出す (相手のアドレスを相手に返すだけ。本人が何を足せばよいか分かるように)
     if (outside)
-      return new Response(
+      return plain(
+        403,
         outside.reason === "host"
           ? `信頼するネットワークの中からでも、この名前ではログインなしで開けません。この名前で開くなら ALLOWED_HOSTS に足してください (docs/install.md)`
           : `信頼するネットワーク (TRUSTED_NETWORKS) の中からでないと開けません (接続元: ${outside.address || "不明"})`,
-        {
-          status: 403,
-          headers: { "content-type": "text/plain; charset=utf-8" },
-        },
       );
-    return new Response("ログインの設定 (OIDC) がまだです", {
-      status: 503,
-      headers: { "content-type": "text/plain; charset=utf-8" },
-    });
+    return plain(503, "ログインの設定 (OIDC) がまだです");
   }
 
   const session = find(event.cookies.get(COOKIE));
   if (session) {
     event.locals.user = { subject: session.subject, name: session.name };
     // 使うたびに延ばす (延ばしたときだけ Cookie を書き直す)
-    if (session.extended) {
-      event.cookies.set(COOKIE, session.id, {
-        path: "/",
-        httpOnly: true,
-        sameSite: "lax",
-        secure: event.url.protocol === "https:",
-        maxAge: SESSION_TTL,
-      });
-    }
+    if (session.extended)
+      event.cookies.set(
+        COOKIE,
+        session.id,
+        cookieOptions(event.url, SESSION_TTL),
+      );
     return pass({ event, resolve });
   }
 

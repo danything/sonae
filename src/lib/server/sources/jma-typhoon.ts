@@ -1,7 +1,7 @@
 /**
- * 台風の電文の、予報と確率の読み方 (docs/design.md の 2.8)。読み方の部品は jma-xml.ts と同じ。
+ * 台風の電文の、実況・予報・確率の読み方 (docs/design.md の 2.8)。読み方の部品は jma-xml.ts と同じ。
  *
- * - 台風解析・予報情報 (VPTW60〜65) の実況の暴風域・強風域と、予報 (予報円・暴風警戒域・強さ)
+ * - 台風解析・予報情報 (VPTW60〜65) の実況 (中心・強さ・暴風域・強風域) と、予報 (予報円・暴風警戒域・強さ)
  * - 台風の暴風域に入る確率 (VPTA50〜55)
  *
  * 仕様: 技術資料 (https://xml.kishou.go.jp/tec_material.html) の解説資料「台風解析・予報情報電文（新形式）」と
@@ -14,15 +14,11 @@ import type {
   Status,
   TyphoonCircle,
   TyphoonForecast,
+  TyphoonNow,
   TyphoonProbability,
 } from "#lib/model.ts";
 
-import { attr, child, children, text, textAt, type V } from "./jma-xml.ts";
-
-const num = (v: string | undefined) => {
-  const n = v === undefined || v.trim() === "" ? Number.NaN : Number(v);
-  return Number.isFinite(n) ? n : undefined;
-};
+import { attr, child, children, num, text, textAt, type V } from "./jma-xml.ts";
 
 /** 「+29.2+127.1/」の緯度・経度 */
 function latLon(v: V): { lat: number; lon: number } | undefined {
@@ -60,6 +56,10 @@ function readAxes(circle: V): CircleAxis[] | undefined {
 const properties = (info: V) =>
   children(child(info, "Item"), "Kind").map((k) => child(k, "Property"));
 
+/** Property の並びのうち、最初に `name` の部品 (`CenterPart` など) を持つものの部品 */
+const partOf = (props: V[], name: string) =>
+  props.map((p) => child(p, name)).find((x) => x !== undefined);
+
 /** 風の Property の `WarningAreaPart` (暴風域・強風域・暴風警戒域) */
 const warningArea = (props: V[], type: string) =>
   props
@@ -69,26 +69,68 @@ const warningArea = (props: V[], type: string) =>
 const windMs = (props: V[], type: string) =>
   num(
     text(
-      children(
-        props.map((p) => child(p, "WindPart")).find((x) => x !== undefined),
-        "jmx_eb:WindSpeed",
-      ).find((w) => attr(w, "type") === type && attr(w, "unit") === "m/s"),
+      children(partOf(props, "WindPart"), "jmx_eb:WindSpeed").find(
+        (w) => attr(w, "type") === type && attr(w, "unit") === "m/s",
+      ),
     ),
   );
 
-/** 実況の暴風域と強風域。中心は実況の中心 */
-export function readNowAreas(
-  info: V,
-  center: { lat?: number; lon?: number },
-): { storm?: TyphoonCircle; gale?: TyphoonCircle } {
-  if (center.lat === undefined || center.lon === undefined) return {};
-  const { lat, lon } = center;
-  const props = properties(info);
+/** 中心の移動の速さ (km/h。電文の説明の文があればそれを) */
+const speedOf = (center: V) => {
+  const speed = children(center, "jmx_eb:Speed").find(
+    (s) => attr(s, "unit") === "km/h",
+  );
+  return attr(speed, "description") ?? text(speed);
+};
+
+/** 台風解析・予報情報の `MeteorologicalInfos[@type="台風情報"]` の MeteorologicalInfo の並び */
+const typhoonInfos = (body: V) =>
+  children(
+    children(body, "MeteorologicalInfos").find(
+      (m) => attr(m, "type") === "台風情報",
+    ),
+    "MeteorologicalInfo",
+  );
+
+/** 台風解析・予報情報の、いちばん初めの「実況」 */
+export function readTyphoonNow(body: V): TyphoonNow | undefined {
+  const infos = typhoonInfos(body);
+  const now =
+    infos.find((i) => attr(child(i, "DateTime"), "type") === "実況") ??
+    infos[0];
+  if (!now) return undefined;
+  // 実況の時刻 (経路の点の時刻。docs/map.md の「台風」の「これまでの経路」)。推定などの報には無い
+  const dt = child(now, "DateTime");
+  const time = attr(dt, "type") === "実況" ? text(dt) : undefined;
+  const props = properties(now);
+  const name = partOf(props, "TyphoonNamePart");
+  const cls = partOf(props, "ClassPart");
+  const center = partOf(props, "CenterPart");
+  const pos = degrees(children(center, "jmx_eb:Coordinate"));
+  // 実況の暴風域と強風域。中心は実況の中心
   const circle = (type: string): TyphoonCircle | undefined => {
     const axes = readAxes(child(warningArea(props, type), "jmx_eb:Circle"));
-    return axes ? { lat, lon, axes } : undefined;
+    return pos && axes ? { ...pos, axes } : undefined;
   };
-  return { storm: circle("暴風域"), gale: circle("強風域") };
+  return {
+    ...(time ? { time } : {}),
+    number: textAt(name, "Number"),
+    name: textAt(name, "Name"),
+    nameKana: textAt(name, "NameKana"),
+    remark: textAt(name, "Remark"),
+    className: textAt(cls, "jmx_eb:TyphoonClass"),
+    areaClass: textAt(cls, "jmx_eb:AreaClass"),
+    intensityClass: textAt(cls, "jmx_eb:IntensityClass"),
+    lat: pos?.lat,
+    lon: pos?.lon,
+    location: textAt(center, "Location"),
+    direction: textAt(center, "jmx_eb:Direction"),
+    speed: speedOf(center),
+    pressureHpa: num(textAt(center, "jmx_eb:Pressure")),
+    maxWindMs: windMs(props, "最大風速"),
+    maxGustMs: windMs(props, "最大瞬間風速"),
+    ...(pos ? { storm: circle("暴風域"), gale: circle("強風域") } : {}),
+  };
 }
 
 /** 「予報 (全角の空白) ２４時間後」の 24 (全角の数字も読む。全角の空白は \s に入る) */
@@ -105,34 +147,21 @@ function forecastHours(label: string): number | undefined {
  * 予報円の無い予報は持たない
  */
 export function readForecasts(body: V): TyphoonForecast[] {
-  const infos = children(
-    children(body, "MeteorologicalInfos").find(
-      (m) => attr(m, "type") === "台風情報",
-    ),
-    "MeteorologicalInfo",
-  );
   const out: TyphoonForecast[] = [];
-  for (const info of infos) {
+  for (const info of typhoonInfos(body)) {
     const dt = child(info, "DateTime");
     const hours = forecastHours(attr(dt, "type") ?? "");
     const time = text(dt)?.trim();
     if (hours === undefined || !time) continue;
     const props = properties(info);
-    const center = props
-      .map((p) => child(p, "CenterPart"))
-      .find((x) => x !== undefined);
-    const cls = props
-      .map((p) => child(p, "ClassPart"))
-      .find((x) => x !== undefined);
+    const center = partOf(props, "CenterPart");
+    const cls = partOf(props, "ClassPart");
     const prob = children(center, "ProbabilityCircle").find(
       (c) => attr(c, "type") === "予報円",
     );
     const at = degrees(children(prob, "jmx_eb:BasePoint"));
     const axes = readAxes(prob);
     if (!at || !axes) continue;
-    const speed = children(center, "jmx_eb:Speed").find(
-      (s) => attr(s, "unit") === "km/h",
-    );
     out.push({
       hours,
       time,
@@ -145,7 +174,7 @@ export function readForecasts(body: V): TyphoonForecast[] {
       intensityClass: textAt(cls, "jmx_eb:IntensityClass"),
       location: textAt(center, "Location"),
       direction: textAt(center, "jmx_eb:Direction"),
-      speed: attr(speed, "description") ?? text(speed),
+      speed: speedOf(center),
       pressureHpa: num(textAt(center, "jmx_eb:Pressure")),
       maxWindMs: windMs(props, "最大風速"),
       maxGustMs: windMs(props, "最大瞬間風速"),
@@ -173,9 +202,7 @@ export function readTyphoonProbability(
   const infos = child(body, "MeteorologicalInfos");
   const list = children(infos, "MeteorologicalInfo");
   const nameInfo = list.find((i) => attr(i, "type") === "台風呼称");
-  const namePart = properties(nameInfo)
-    .map((p) => child(p, "TyphoonNamePart"))
-    .find((x) => x !== undefined);
+  const namePart = partOf(properties(nameInfo), "TyphoonNamePart");
 
   const areas: TyphoonProbability["areas"] = {};
   const entry = (item: V) => {

@@ -98,7 +98,7 @@ test("震度のラベル: 名前しか無いものはコードを引き、大き
   expect(labels.map((l) => l.int)).toEqual(["4", "6-"]);
 });
 
-test("層はいつも全部出す。淡色地図の下地は無い", () => {
+test("重ねる図と、ハザードマップを重ねている間だけ出す層のほかは、いつも出す。淡色地図の下地は無い", () => {
   const style = baseStyle() as {
     sources: Record<string, unknown>;
     layers: { id: string; layout?: { visibility?: string } }[];
@@ -146,7 +146,7 @@ test("下地: 引いたときは Blue Marble、ズーム 9 から地理院の写
   expect(bm?.tiles).toEqual([BLUE_MARBLE_TILES]);
   expect(bm?.maxzoom).toBe(8);
   expect(bm?.attribution).toContain("NASA Earth Observatory");
-  // 写真の 8 以下 (世界衛星モザイク) は灰色の三角が焼き込まれているので読まない
+  // 写真の 8 以下 (世界衛星モザイク) は画像に灰色の三角が入っているので読まない
   expect(PHOTO_MIN_ZOOM).toBe(9);
   expect(photo?.minzoom).toBe(PHOTO_MIN_ZOOM);
   const ids = style.layers.map((l) => l.id);

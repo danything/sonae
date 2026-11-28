@@ -1,5 +1,5 @@
 /**
- * 張り直しの間隔と、WebSocket を張り続ける輪。P2P・Wolfx・EMSC・SeisJS で同じものを使う。
+ * 張り直しの間隔と、WebSocket を張り続けるループ。P2P・Wolfx・EMSC・SeisJS で同じものを使う。
  *
  * - 指数のバックオフに揺らぎを足す (既定は 1 秒から倍々、上限 30 秒、full jitter。EMSC は自分の間隔を渡す)
  * - 60 秒つながっていたら間隔を戻す
@@ -70,6 +70,27 @@ export class StatusTracker {
   }
 }
 
+/**
+ * `load` を `everyMs` ごとに呼ぶ (観測点の表を 1 日ごとに取り直すなど)。false が返ったら、
+ * 10 分から倍々 (上限 6 時間) の間隔で呼び直す
+ */
+export async function refreshLoop(
+  load: (signal: AbortSignal) => Promise<boolean>,
+  everyMs: number,
+  wait: (ms: number, signal: AbortSignal) => Promise<void>,
+  signal: AbortSignal,
+): Promise<void> {
+  let fail = 0;
+  while (!signal.aborted) {
+    const ok = await load(signal);
+    fail = ok ? 0 : fail + 1;
+    await wait(
+      ok ? everyMs : Math.min(6 * 60 * 60_000, 10 * 60_000 * 2 ** (fail - 1)),
+      signal,
+    );
+  }
+}
+
 /** WebSocket の必要なところだけ (テストで差し替える) */
 export interface SocketLike {
   send(data: string): void;
@@ -101,7 +122,7 @@ export interface SocketLoopOptions {
   backoff?: Backoff;
   /**
    * 何も来なければ切れたとみなす時間。null で見ない (heartbeat の無い P2P。切れたことは close で知る)。
-   * つながるまでは、どちらでも 30 秒で諦める
+   * つながるまでは、どちらでも 30 秒で打ち切る
    */
   idleMs?: number | null;
   stableMs?: number;

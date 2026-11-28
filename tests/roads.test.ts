@@ -162,7 +162,7 @@ describe("URL の登録", () => {
   });
 });
 
-describe("取りに行く輪", () => {
+describe("決まった間隔の取得", () => {
   test("登録が無ければ作らない", () => {
     expect(roadSource(openDb(":memory:"), [])).toBeUndefined();
   });

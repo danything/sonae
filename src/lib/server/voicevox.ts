@@ -3,7 +3,7 @@
  *
  * - 声はこの家で 1 つ (サーバーの DB に持つ。`settings.ts`)。選んでいなければ既定の声 (剣崎雌雄、`DEFAULT_SPEAKER`)。
  * - 事象を受けたら、読み上げの原稿 (`#lib/readout.ts`) の変わる文を、選んである声 1 つで合成して持つ。
- *   画面は原稿を自分で作り、文ごとに `POST /api/speech` で音を取りに来る。
+ *   画面は原稿を自分で作り、文ごとに `POST /api/speech` で音をリクエストする。
  * - 冒頭の決まった文は、起動したとき・つながり直したとき・声を替えたときに、選んである声で合成しておく。
  * - 合成した音はメモリに (声, 文) の組で持つ。選んである声の決まった文は捨てず、ほかは古いものから上限まで捨てる。
  * - 合成は 1 つずつ順にリクエストする (エンジンは CPU で 1 つずつ合成する)。事象の文を、声の下ごしらえより先にする。
@@ -32,6 +32,7 @@ import {
 } from "#lib/voices.ts";
 
 import { type Reading, READINGS } from "./readings.ts";
+import { plain } from "./request.ts";
 import { voiceStore } from "./settings.ts";
 
 /** 選んである声の置き場 (DB の `settings`。`settings.ts`) */
@@ -41,7 +42,7 @@ export interface VoiceStore {
   save(id: number, by: string): void;
 }
 
-export interface VoicevoxOptions {
+interface VoicevoxOptions {
   /** エンジンの URL (`http://voicevox:50021`) */
   url: string;
   fetch?: typeof fetch;
@@ -192,7 +193,7 @@ export class Voicevox {
     const n = noticeOf(e, this.now());
     if (!n) return;
     const parts = readoutOf(n);
-    // 気象警報・注意報は住んでいる地域で文が変わるので、市町村等ごとの文も通す (合成は取りに来たときだけ)
+    // 気象警報・注意報は住んでいる地域で文が変わるので、市町村等ごとの文も通す (合成は画面がリクエストしたときだけ)
     for (const p of readoutCandidates(n)) this.allow(p);
     if (!this.available) return;
     const speaker = this.speaker;
@@ -524,12 +525,6 @@ export async function serveSpeech(
     return new Response(`合成できませんでした: ${err}`, { status: 502 });
   }
 }
-
-const plain = (status: number, text: string) =>
-  new Response(text, {
-    status,
-    headers: { "content-type": "text/plain; charset=utf-8" },
-  });
 
 /**
  * この家の声を替える (`PUT /api/speech`。本文は `{ voice }`)。替えたら選べる声と読む声 (`SpeechInfo`) を返す。

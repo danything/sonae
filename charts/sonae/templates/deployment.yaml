@@ -130,8 +130,6 @@ spec:
                   name: {{ .Values.secrets.name }}
                   key: {{ .Values.secrets.keys.cwaApiKey }}
                   optional: true
-            {{- end }}
-            {{- if .Values.secrets.name }}
             # 海しる (海上保安庁の海洋状況表示システム) の API のキー。Secret に無ければ環境変数が入らず、海しるの点の層だけを
             # 出さずに普通に動く (optional)。docs/design.md の 2.11
             - name: MSIL_API_KEY
@@ -140,8 +138,6 @@ spec:
                   name: {{ .Values.secrets.name }}
                   key: {{ .Values.secrets.keys.msilApiKey }}
                   optional: true
-            {{- end }}
-            {{- if .Values.secrets.name }}
             # YouTube Data API のキー。Secret に無ければ環境変数が入らず、YouTube のライブカメラを地図の中で再生せず、
             # リンクだけを出して普通に動く (optional)。docs/design.md の 2.13
             - name: YOUTUBE_API_KEY

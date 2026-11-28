@@ -7,6 +7,7 @@ import {
   planAlerts,
   quotaJson,
 } from "#lib/alert.ts";
+import { jstDate } from "#lib/format.ts";
 import {
   areaLevel,
   type SonaeEvent,
@@ -16,7 +17,6 @@ import {
 import {
   ADVISORY_QUOTA,
   isAdvisoryOnly,
-  jstDay,
   matches,
   noticeFor,
   noticeOf,
@@ -213,7 +213,7 @@ describe("気象警報・注意報の通知", () => {
       log.mark(
         "e1",
         ADVISORY_QUOTA.home,
-        { level: 0, digest: jstDay(now) },
+        { level: 0, digest: jstDate(now) },
         now,
       );
       const base = noticeOf(e, now);
