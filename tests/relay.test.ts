@@ -1178,3 +1178,28 @@ test("gzip を受けない要求に開いて返すときも、開いた後の大
   );
   expect(gz.status).toBe(200);
 });
+
+test("置き換えられた ETag が続けて 3 回来たら、配信元が前の版に戻したとみなして、いまの版にする", async () => {
+  let etag = '"A"';
+  const up = upstream(
+    (c) =>
+      new Response(`part ${c.headers.range} ${etag}`, {
+        status: 206,
+        headers: { "content-range": "bytes 0-9/100", etag },
+      }),
+  );
+  const r = new Relay({ sources: SRC, fetch: up.fetch });
+  const get = (range: string) => r.handle("r", "a.pmtiles", none, h({ range }));
+  await get("bytes=0-9");
+  etag = '"B"';
+  await get("bytes=10-19");
+  etag = '"A"';
+  await get("bytes=20-29");
+  await get("bytes=30-39");
+  expect((await r.stats()).entries).toBe(1);
+  // 3 回目で A をいまの版にし、B の範囲を捨てる
+  await get("bytes=40-49");
+  expect((await r.stats()).entries).toBe(1);
+  await get("bytes=50-59");
+  expect((await r.stats()).entries).toBe(2);
+});

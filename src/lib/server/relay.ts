@@ -85,6 +85,8 @@ const MAX_RANGE_BYTES = 4 * 1024 * 1024;
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 /** 置き換えられた ETag を、ファイルごとにいくつまで覚えるか (CDN の節で ETag が行き来しても、覚えた範囲を毎回捨てない) */
 const RETIRED_ETAGS = 4;
+/** 置き換えられた ETag が、いまの版を挟まずに続けてこの回数来たら、配信元が前の版に戻したとみなす */
+const ROLLBACK_AFTER = 3;
 /** 配信元が返らないときに諦めるまで */
 const UPSTREAM_TIMEOUT_MS = 15_000;
 /** 断られたときに待つ秒数の既定と上限 */
@@ -264,6 +266,8 @@ export class Relay {
   private readonly fileEtags = new Map<string, string>();
   /** Range の源で、ファイルごとに置き換えられた ETag (新しいものから `RETIRED_ETAGS` まで) */
   private readonly retiredEtags = new Map<string, string[]>();
+  /** Range の源で、ファイルごとに、置き換えられた ETag が続けて来た数 (前の版に戻したかを見る) */
+  private readonly rollbacks = new Map<string, { etag: string; n: number }>();
   /** 失敗した鍵と、取り直してよくなる時刻 (落ちている間に、要求のたびに配信元へ行かない) */
   private readonly failedUntil = new Map<string, number>();
 
@@ -707,17 +711,26 @@ export class Relay {
     if (source.range && e.etag) {
       // 置き換えられた版の範囲 (CDN の節で ETag が行き来する・差し替えの前に出た遅い応答) は、ブラウザへは返すが
       // 覚えず、いまの版の範囲も捨てない (行き来のたびに覚えた範囲を全部捨てて、配信元へ取りに行き直さない)
-      const retired = this.retiredEtags.get(url) ?? [];
-      if (retired.includes(e.etag)) return;
+      // ただし同じ置き換えられた ETag が、いまの版を挟まずに続けて `ROLLBACK_AFTER` 回来たら、配信元が前の版に
+      // 戻した (ロールバック) とみなして、いまの版にする (戻した版をずっと覚えられなくならないように)
+      let retired = this.retiredEtags.get(url) ?? [];
+      if (retired.includes(e.etag)) {
+        const r = this.rollbacks.get(url);
+        const n = r?.etag === e.etag ? r.n + 1 : 1;
+        if (n < ROLLBACK_AFTER) {
+          this.rollbacks.set(url, { etag: e.etag, n });
+          return;
+        }
+        retired = retired.filter((t) => t !== e.etag);
+      }
+      this.rollbacks.delete(url);
       // ファイルが差し替わったら、前の版の範囲を混ぜて返さない (PMTiles は ETag が揃わないと読み直す)
       const before = this.fileEtags.get(url);
       if (before !== undefined && before !== e.etag) {
-        this.retiredEtags.set(
-          url,
-          [before, ...retired].slice(0, RETIRED_ETAGS),
-        );
+        retired = [before, ...retired].slice(0, RETIRED_ETAGS);
         await this.store.deletePrefix(`${url}|`);
       }
+      this.retiredEtags.set(url, retired);
       this.fileEtags.set(url, e.etag);
     }
     const priority =
