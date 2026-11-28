@@ -8,7 +8,13 @@
  */
 
 /** 中継の源の名前 (`#lib/server/relay.ts` の `RELAY_SOURCES` の鍵と同じ) */
-export type RelaySourceId = "jmatile";
+export type RelaySourceId =
+  | "jmatile"
+  | "gsi"
+  | "gsi-vector"
+  | "disaportal"
+  | "disaportal-legend"
+  | "gibs";
 
 /** 中継の道の頭 */
 export const RELAY_PATH = "/relay";

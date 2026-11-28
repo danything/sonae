@@ -36,8 +36,8 @@ export interface RelaySource {
   minTtl?: number;
   /** 覚えるか (既定は覚える)。覚えない源はブラウザにも覚えさせない */
   store?: boolean;
-  /** `Range: bytes=a-b` を通すか (PMTiles) */
-  range?: boolean;
+  /** `Range: bytes=a-b` を通すか (PMTiles)。`"required"` は Range の無い要求を断る (ファイルが大きく、まるごと取らせない) */
+  range?: boolean | "required";
   /** 同時に配信元へ取りに行く数 (既定 6) */
   concurrency?: number;
 }
@@ -68,6 +68,8 @@ const PASS_HEADERS = [
 const MAX_ENTRY_BYTES = 4 * 1024 * 1024;
 /** Range で 1 回に取ってよい大きさ */
 const MAX_RANGE_BYTES = 4 * 1024 * 1024;
+/** 1 つの応答の大きさの上限。Content-Length がこれより大きければ読まずに断る */
+const MAX_BODY_BYTES = 16 * 1024 * 1024;
 /** 配信元が返らないときに諦めるまで */
 const UPSTREAM_TIMEOUT_MS = 15_000;
 /** 断られたときに待つ秒数の既定と上限 */
@@ -123,6 +125,40 @@ function safePath(path: string): boolean {
   if (path.length === 0 || path.length > 512) return false;
   if (/[\\%?#\s]/.test(path)) return false;
   return path.split("/").every((s) => s !== "" && s !== "." && s !== "..");
+}
+
+/**
+ * 本体を `max` バイトまで読む。Content-Length がそれより大きいか、読んでいる途中で超えたら、読むのをやめて null
+ */
+export async function readCapped(
+  res: Response,
+  max: number,
+): Promise<Uint8Array | null> {
+  if (Number(res.headers.get("content-length") ?? 0) > max) {
+    void res.body?.cancel();
+    return null;
+  }
+  if (!res.body) return new Uint8Array(0);
+  const reader = res.body.getReader();
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      void reader.cancel();
+      return null;
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.byteLength;
+  }
+  return out;
 }
 
 /** 小さなセマフォ (源ごとに同時に取りに行く数を絞る) */
@@ -217,7 +253,8 @@ export class Relay {
       if (b < a || b - a + 1 > MAX_RANGE_BYTES)
         return noStore(416, "Range が大きすぎます");
       range = `bytes=${a}-${b}`;
-    }
+    } else if (source.range === "required")
+      return noStore(416, "Range が要ります");
 
     const url = `${source.upstream}${path}${query ? `?${query}` : ""}`;
     const store = source.store !== false;
@@ -345,7 +382,12 @@ export class Relay {
       console.warn(`[relay] ${sourceId}: 配信元が ${res.status} を返しました`);
       throw new Error(`upstream ${res.status}`);
     }
-    const body = new Uint8Array(await res.arrayBuffer());
+    // 大きすぎるものは断る (中継するのはタイルや表で、ふつうは数百 KB まで)。Content-Length が無くても、読みながら数えて切る
+    const body = await readCapped(res, MAX_BODY_BYTES);
+    if (!body) {
+      console.warn(`[relay] ${sourceId}: 配信元の応答が大きすぎます`);
+      throw new Error("too large");
+    }
     const out: Record<string, string> = {};
     for (const h of PASS_HEADERS) {
       const v = res.headers.get(h);
@@ -488,6 +530,40 @@ export const RELAY_SOURCES = {
     ),
     ttl: 60,
     minTtl: 30,
+  },
+  // 地理院タイル: 写真・活断層図・指定緊急避難場所と指定避難所 (docs/map.md)。max-age は無い。
+  // 一覧は「リアルタイムに読み込んで利用する場合」は出典だけで申請が要らないとする。見る人の要求のたびに取り、
+  // 覚えるのは期限の 1 日までなので、その使い方に収まると読んだ (docs/design.md の 2.14)
+  gsi: {
+    upstream: "https://cyberjapandata.gsi.go.jp/xyz/",
+    path: /^(?:seamlessphoto\/\d{1,2}\/\d{1,6}\/\d{1,6}\.jpg|afm\/\d{1,2}\/\d{1,6}\/\d{1,6}\.png|(?:skhb0[1-8]|sih|sfh)\/10\/\d{1,4}\/\d{1,4}\.geojson)$/,
+    ttl: 86_400,
+  },
+  // 地理院地図Vector の PMTiles (約 16.9GB の 1 ファイル)。範囲で読むだけにし、まるごとは取らせない
+  "gsi-vector": {
+    upstream: "https://cyberjapandata.gsi.go.jp/xyz/",
+    path: /^optimal_bvmap-v1\/optimal_bvmap-v1\.pmtiles$/,
+    ttl: 86_400,
+    range: "required",
+  },
+  // 重ねるハザードマップのタイル (max-age 3 日) と、公式の凡例の画像。オープンデータは「URL からリアルタイムに
+  // 読み込み」アプリで使ってよいとする
+  disaportal: {
+    upstream: "https://disaportaldata.gsi.go.jp/raster/",
+    path: /^[0-9a-z_]{1,64}\/\d{1,2}\/\d{1,6}\/\d{1,6}\.png$/,
+    ttl: 86_400,
+  },
+  "disaportal-legend": {
+    upstream: "https://disaportal.gsi.go.jp/hazardmap/copyright/img/",
+    path: /^[0-9a-z_]{1,64}\.png$/,
+    ttl: 86_400,
+  },
+  // NASA GIBS の Blue Marble (陰影つき。max-age 3 日)。引いたときの下地
+  gibs: {
+    upstream:
+      "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief/default/GoogleMapsCompatible_Level8/",
+    path: /^\d\/\d{1,3}\/\d{1,3}\.jpeg$/,
+    ttl: 86_400,
   },
 } satisfies Record<string, RelaySource>;
 

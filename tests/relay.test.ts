@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import {
   maxAgeOf,
+  readCapped,
   Relay,
   RELAY_SOURCES,
   type RelaySource,
@@ -370,6 +371,26 @@ test("上限を超えたら、長く使っていないものから捨てる", as
   expect(up.calls).toHaveLength(4);
 });
 
+test("本体は上限まで読み、Content-Length が無くても途中で切る", async () => {
+  const stream = (n: number) =>
+    new Response(
+      new ReadableStream({
+        start(c) {
+          for (let i = 0; i < n; i++) c.enqueue(new Uint8Array(10));
+          c.close();
+        },
+      }),
+    );
+  expect((await readCapped(stream(3), 30))?.byteLength).toBe(30);
+  expect(await readCapped(stream(4), 30)).toBeNull();
+  expect(
+    await readCapped(
+      new Response("x", { headers: { "content-length": "99" } }),
+      30,
+    ),
+  ).toBeNull();
+});
+
 test("見出しの読み方", () => {
   expect(maxAgeOf("public, max-age=259200")).toBe(259200);
   expect(maxAgeOf("no-store")).toBe(0);
@@ -377,6 +398,34 @@ test("見出しの読み方", () => {
   expect(retryAfterSeconds("30", 0)).toBe(30);
   expect(retryAfterSeconds(null, 0)).toBe(60);
   expect(retryAfterSeconds("99999", 0)).toBe(600);
+});
+
+test("地理院・ハザードマップ・GIBS の道", () => {
+  const ok = (s: keyof typeof RELAY_SOURCES, p: string) =>
+    RELAY_SOURCES[s].path.test(p);
+  expect(ok("gsi", "seamlessphoto/14/14540/6451.jpg")).toBe(true);
+  expect(ok("gsi", "afm/14/14540/6451.png")).toBe(true);
+  expect(ok("gsi", "skhb04/10/908/403.geojson")).toBe(true);
+  expect(ok("gsi", "sfh/10/908/403.geojson")).toBe(true);
+  expect(ok("gsi", "std/10/908/403.png")).toBe(false);
+  expect(ok("gsi", "optimal_bvmap-v1/optimal_bvmap-v1.pmtiles")).toBe(false);
+  expect(ok("gsi-vector", "optimal_bvmap-v1/optimal_bvmap-v1.pmtiles")).toBe(
+    true,
+  );
+  expect(ok("disaportal", "01_flood_l2_shinsuishin_data/10/908/403.png")).toBe(
+    true,
+  );
+  expect(ok("disaportal-legend", "shinsui_legend3.png")).toBe(true);
+  expect(ok("gibs", "5/12/28.jpeg")).toBe(true);
+  expect(ok("gibs", "9/12/28.jpeg")).toBe(true);
+});
+
+test("PMTiles は Range の無い要求を断る (まるごと取らせない)", async () => {
+  const up = upstream(() => png());
+  const r = new Relay({ sources: RELAY_SOURCES, fetch: up.fetch });
+  const p = "optimal_bvmap-v1/optimal_bvmap-v1.pmtiles";
+  expect((await r.handle("gsi-vector", p, none, h())).status).toBe(416);
+  expect(up.calls).toHaveLength(0);
 });
 
 test("気象庁のタイルの道", () => {

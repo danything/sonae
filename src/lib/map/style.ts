@@ -71,8 +71,10 @@ import type {
   WarningLevel,
 } from "#lib/model.ts";
 import { intensityRank, TSUNAMI_ORDER, volcanoTop } from "#lib/model.ts";
+import { relayBase } from "#lib/relay.ts";
 
-const GSI = "https://cyberjapandata.gsi.go.jp/xyz";
+/** 地理院タイル (`https://cyberjapandata.gsi.go.jp/xyz`) を、サーバーの中継 (docs/design.md の 2.14) を通して読む頭 */
+export const GSI = relayBase("gsi");
 const TILES = "https://maps.gsi.go.jp/development/ichiran.html";
 
 /**
@@ -93,10 +95,10 @@ const PHOTO_ATTRIBUTION = [
 
 /**
  * 引いたとき (ズーム 8 まで) の下地。NASA GIBS の Blue Marble (2004 年 8 月、陰影つき)。
- * 海は暗い紺で、地理院の写真 (9 から) の黒い海とつながる。GIBS は 8 までなので、9 からは引き伸ばす
+ * 海は暗い紺で、地理院の写真 (9 から) の黒い海とつながる。GIBS は 8 までなので、9 からは引き伸ばす。
+ * GIBS の `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief/default/GoogleMapsCompatible_Level8/` を中継で読む
  */
-export const BLUE_MARBLE_TILES =
-  "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpeg";
+export const BLUE_MARBLE_TILES = `${relayBase("gibs")}/{z}/{y}/{x}.jpeg`;
 const GIBS = "https://nasa-gibs.github.io/gibs-api-docs/";
 /** Blue Marble の出典。NASA Earth Observatory の頼み (「NASA Earth Observatory」と書く) と、GIBS の謝辞の文 */
 const BLUE_MARBLE_ATTRIBUTION = `Blue Marble: NASA Earth Observatory | <a href="${GIBS}" target="_blank" rel="noopener">NASA GIBS</a>`;
@@ -170,8 +172,7 @@ export const CAMERA_MINZOOM = 7;
  * 地理院地図Vector (国土地理院最適化ベクトルタイル) の PMTiles。試験公開で URL が変わりうる (docs/map.md)。
  * 前の `{z}/{x}/{y}.pbf` の配信は 2023 年のデータで止まっているので、PMTiles の 1 ファイルを範囲で読む
  */
-const GSI_VECTOR_URL =
-  "https://cyberjapandata.gsi.go.jp/xyz/optimal_bvmap-v1/optimal_bvmap-v1.pmtiles";
+const GSI_VECTOR_URL = `${relayBase("gsi-vector")}/optimal_bvmap-v1/optimal_bvmap-v1.pmtiles`;
 const GSI_VECTOR_ATTRIBUTION = `<a href="https://github.com/gsi-cyberjapan/optimal_bvmap" target="_blank" rel="noopener">国土地理院最適化ベクトルタイル</a> を加工`;
 
 /** 地図の字と印に使う端末の字体 (字体のファイルは外から読まない。tools/gsi/build.ts と同じ) */
@@ -204,8 +205,9 @@ export type HazardId =
   | "faults"
   | "quake-prob"
   | "ground-amp";
-const DISAPORTAL = "https://disaportaldata.gsi.go.jp/raster";
-const LEGEND = "https://disaportal.gsi.go.jp/hazardmap/copyright/img";
+/** 重ねるハザードマップのタイル (`https://disaportaldata.gsi.go.jp/raster`) と凡例の画像 (`https://disaportal.gsi.go.jp/hazardmap/copyright/img`) を中継で読む頭 */
+const DISAPORTAL = relayBase("disaportal");
+const LEGEND = relayBase("disaportal-legend");
 const DISAPORTAL_OPENDATA =
   "https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html";
 const HAZARD_ATTRIBUTION = `<a href="${DISAPORTAL_OPENDATA}" target="_blank" rel="noopener">ハザードマップポータルサイト</a>`;
