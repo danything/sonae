@@ -153,6 +153,8 @@ export class Store {
         // ので、P2P だけの津波はいまは必ず normal になる (docs/design.md の 2.2)
         const suffix =
           item.report.status === "normal" ? "" : `-${item.report.status}`;
+        // 地震の番号が無い津波は `p2p-<報告の時刻>`。頭の `p2p-` は受けた所を表さない (Wolfx から受けても同じ形。
+        // 前からの id と同じにしておくため変えない。docs/design.md の 2.2)
         const id =
           prev?.id ??
           (item.report.eventIds[0]
