@@ -244,9 +244,23 @@ export class Store {
       if (d === 0) {
         const xmlOverBosai =
           prev.source === "jma-bosai" && w.source === undefined;
+        // 予備の訂正は、手元の報が訂正でなければ採る (気象庁 XML が落ちている間に出た訂正を、XML が戻るまで捨てない)
+        const bosaiCorrection =
+          w.source === "jma-bosai" &&
+          w.infoType === "訂正" &&
+          prev.infoType !== "訂正";
         const bosaiOverXml =
-          prev.source === undefined && w.source === "jma-bosai";
-        if (bosaiOverXml || (w.infoType !== "訂正" && !xmlOverBosai)) return [];
+          prev.source === undefined &&
+          w.source === "jma-bosai" &&
+          !bosaiCorrection;
+        // 予備の同じ訂正を毎回受け直しても、鳴らし直さない
+        const bosaiAgain = w.source === "jma-bosai" && prev.infoType === "訂正";
+        if (
+          bosaiOverXml ||
+          bosaiAgain ||
+          (w.infoType !== "訂正" && !xmlOverBosai)
+        )
+          return [];
       }
     }
     const next: WeatherWarning = { ...w, updatedAt: now };
@@ -275,10 +289,12 @@ export class Store {
     w: Omit<WeatherInfo, "updatedAt" | "cancelled">,
     now: string,
   ): SonaeEvent[] {
-    // 気象庁ホームページの JSON (予備) から受けた報は、同じ報 (同じ id) を受けていれば採らない
-    // (気象庁 XML の報を置き換えない)。予備の後に気象庁 XML の同じ報が来たら、下の upsert で置き換わる
+    // 気象庁ホームページの JSON (予備) から受けた発表は、同じ報 (同じ id) を受けていれば採らない
+    // (気象庁 XML の報を置き換えない)。予備の後に気象庁 XML の同じ報が来たら、下の upsert で置き換わる。
+    // 予備の訂正・取消は下で、一連の情報のいちばん新しい報と比べる
     if (
       w.source === "jma-bosai" &&
+      w.infoType === "発表" &&
       this.db
         .query<{ n: number }, [string]>(
           "SELECT 1 AS n FROM weather_infos WHERE id = ?",
@@ -299,6 +315,14 @@ export class Store {
         )
         .get(w.series);
       const prev = row ? (JSON.parse(row.data) as WeatherInfo) : undefined;
+      // 予備の訂正は、同じか新しい訂正を受けていれば採らない (気象庁 XML の訂正を置き換えず、予備の同じ訂正で鳴らし直さない)
+      if (
+        w.source === "jma-bosai" &&
+        w.infoType === "訂正" &&
+        prev?.infoType === "訂正" &&
+        ms(prev.reportedAt) >= ms(w.reportedAt)
+      )
+        return [];
       if (prev && w.infoType === "取消") {
         if (prev.cancelled) return [];
         next = { ...prev, cancelled: true, updatedAt: now };

@@ -7,6 +7,7 @@
  *   読み直すときは手元の本文を使う (変わっていない一覧を取り直さない)
  * - 圧縮は fetch の既定 (`Accept-Encoding: gzip, deflate, br, zstd`) に任せる。警報の全国の一覧は 1.3MB あるが、
  *   運ぶのは圧縮した 48KB ほど (2026-11-28 に確かめた)
+ * - 本体は開いた後で `MAX_BODY_BYTES` (8MB) までしか読まない (形が変わって大きくなっても、メモリを食い尽くさない)
  */
 
 import { USER_AGENT } from "./retry.ts";
@@ -63,7 +64,7 @@ export class BosaiFetcher {
       throw new BosaiHttpError(url, res.status);
     }
     return {
-      text: await res.text(),
+      text: await readText(res, url),
       validators: {
         etag: res.headers.get("etag") ?? undefined,
         modified: res.headers.get("last-modified") ?? undefined,
@@ -88,4 +89,29 @@ export function retryable(err: unknown): boolean {
   if (err instanceof BosaiHttpError)
     return err.status >= 500 || err.status === 408 || err.status === 429;
   return true;
+}
+
+/** 本体を読む上限 (開いた後の大きさ)。いちばん大きい警報の全国の一覧が 1.3MB */
+export const MAX_BODY_BYTES = 8 * 1024 * 1024;
+
+/** 本体を上限まで読む。超えたら読むのをやめて例外 (取り直さない失敗) */
+async function readText(res: Response, url: string): Promise<string> {
+  const reader = res.body?.getReader();
+  if (!reader) return "";
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_BODY_BYTES) {
+      void reader.cancel();
+      // 取り直しても同じなので、404 と同じく諦める側 (取り直さない失敗) にする
+      const err = new BosaiHttpError(url, 413);
+      err.message = `${url} の本体が ${MAX_BODY_BYTES / 1024 / 1024}MB を超えました`;
+      throw err;
+    }
+    parts.push(value);
+  }
+  return new TextDecoder().decode(Buffer.concat(parts));
 }
