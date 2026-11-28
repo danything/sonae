@@ -25,6 +25,22 @@
     WARNING_COLORS,
   } from "#lib/format.ts";
   import { isLite } from "#lib/lite.ts";
+  import {
+    CAMERA_EMPTY,
+    CAMERA_FAILED,
+    CAMERA_MIN_WIDTH,
+    CAMERA_REFRESH_MS,
+    cameraFoot,
+    type CameraFrame,
+    cameraHead,
+    cameraIcon,
+    cameraPage,
+    type CameraPoint,
+    CAMERAS_URL,
+    frameAlt,
+    frameCaption,
+    latestFrame,
+  } from "#lib/map/cameras.ts";
   import { type Box, edgePadding } from "#lib/map/edges.ts";
   import {
     type EpicenterHit,
@@ -376,7 +392,9 @@
         });
         for (const [id, img] of Object.entries(marineIcons()))
           created.addImage(id, img, { pixelRatio: 2 });
+        created.addImage("camera", cameraIcon(), { pixelRatio: 2 });
         void loadMarine(created);
+        void loadCameras(created);
         void loadRoads(created);
         for (const l of anno as { id: string }[])
           if (!created.getLayer(l.id)) created.addLayer(l as never, "shelters");
@@ -410,6 +428,9 @@
             return;
           const s = stationHit(e.point, e.originalEvent);
           if (s) return openStation(s.properties, s.at);
+          // 火山の監視カメラ (観測点の丸の下、海しるの点の上に描いている)
+          const cam = cameraHit(e.point, e.originalEvent);
+          if (cam) return openCamera(cam.properties, cam.at);
           // 海しるの点 (観測点の丸の下に描いている)
           const mk = marineHit(e.point, e.originalEvent);
           if (mk) return openMarine(mk.properties, mk.at);
@@ -444,6 +465,7 @@
             created.queryRenderedFeatures(e.point, { layers: ["shelters"] })
               .length > 0 ||
             stationHit(e.point, e.originalEvent) ||
+            cameraHit(e.point, e.originalEvent) ||
             marineHit(e.point, e.originalEvent) ||
             typhoonHit(e.point, e.originalEvent) ||
             roadHit(e.point, e.originalEvent) ||
@@ -502,6 +524,7 @@
     });
     return () => {
       disposed = true;
+      clearInterval(cameraTimer);
       paintedSig = "";
       stationSig = "";
       warningSig = "";
@@ -1609,6 +1632,7 @@
         warningPopup,
         stationPopup,
         marinePopupEl,
+        cameraPopupEl,
         roadPopupEl,
       ].some((p) => p?.isOpen());
       if (!open) return;
@@ -1836,6 +1860,7 @@
   const POINTER_LAYERS = [
     "shelters",
     "intensity-stations",
+    "cameras",
     "marine",
     "typhoon-center",
     "road-closed",
@@ -1898,6 +1923,7 @@
     warningPopup?.remove();
     stationPopup?.remove();
     marinePopupEl?.remove();
+    cameraPopupEl?.remove();
     typhoonPopupEl?.remove();
     roadPopupEl?.remove();
   }
@@ -2058,6 +2084,139 @@
       .setLngLat(at)
       .setDOMContent(box)
       .addTo(map);
+  }
+
+  // ---- 火山の監視カメラ (docs/map.md の「火山の監視カメラ」) ----
+  /** カメラの位置の表 (気象庁の地図の GeoJSON から作ったもの) を 1 度だけ読む */
+  async function loadCameras(m: MapLibreMap): Promise<void> {
+    try {
+      const r = await fetch(CAMERAS_URL);
+      if (!r.ok) return;
+      const body = (await r.json()) as unknown;
+      if (map === m) setData(m, "cameras", body);
+    } catch {
+      // 読めなくても地図はそのまま (印を出さないだけ)
+    }
+  }
+
+  /** 押した所のカメラの印。海しるの点と同じく、押せる範囲は印より広い (指 22px・マウス 12px) */
+  function cameraHit(
+    pt: { x: number; y: number },
+    ev: MouseEvent | TouchEvent | undefined,
+  ): { properties: CameraPoint; at: [number, number] } | undefined {
+    const m = map;
+    if (!m?.getLayer("cameras")) return undefined;
+    const kind = (ev as PointerEvent | undefined)?.pointerType;
+    const r =
+      kind === "touch" ||
+      (!kind &&
+        typeof matchMedia === "function" &&
+        matchMedia("(pointer: coarse)").matches)
+        ? 22
+        : 12;
+    let best:
+      { properties: CameraPoint; at: [number, number]; d2: number } | undefined;
+    for (const f of m.queryRenderedFeatures(
+      [
+        [pt.x - r, pt.y - r],
+        [pt.x + r, pt.y + r],
+      ],
+      { layers: ["cameras"] },
+    )) {
+      if (f.geometry.type !== "Point") continue;
+      const at = f.geometry.coordinates as [number, number];
+      const p = m.project(at);
+      const d2 = (p.x - pt.x) ** 2 + (p.y - pt.y) ** 2;
+      if (d2 <= r * r && (!best || d2 < best.d2))
+        best = { properties: f.properties as CameraPoint, at, d2 };
+    }
+    return best;
+  }
+
+  /**
+   * カメラの吹き出し。開くと、ブラウザが気象庁のカメラのページを読んでいちばん新しい画像の名前を拾い、その画像を
+   * 気象庁から直接読む (sonae のサーバーは通さない)。開いている間は 10 分ごとに読み直し、閉じたらやめる。
+   * 画面が隠れている間は読み直さない
+   */
+  let cameraPopupEl: Popup | undefined;
+  let cameraTimer: ReturnType<typeof setInterval> | undefined;
+  function openCamera(p: CameraPoint, at: [number, number]): void {
+    if (!map || !PopupClass) return;
+    const page = cameraPage(p.vc);
+    if (!page) return;
+    const line = (l: { text: string; cls?: string; href?: string }) => {
+      const el = document.createElement("p");
+      if (l.cls) el.className = l.cls;
+      if (l.href) {
+        const a = document.createElement("a");
+        a.href = l.href;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = l.text;
+        el.append(a);
+      } else el.textContent = l.text;
+      return el;
+    };
+    const box = document.createElement("div");
+    box.className = "station-pop camera-pop";
+    box.dataset.testid = "camera-pop";
+    for (const l of cameraHead(p)) box.append(line(l));
+    const frameBox = document.createElement("div");
+    frameBox.className = "camera-frame";
+    const img = document.createElement("img");
+    img.decoding = "async";
+    img.hidden = true;
+    const caption = line({ text: "画像を読んでいます", cls: "small muted" });
+    frameBox.append(img);
+    box.append(frameBox, caption);
+    for (const l of cameraFoot(p)) box.append(line(l));
+    let shown: CameraFrame | undefined;
+    const fail = (text: string) => {
+      img.hidden = true;
+      img.removeAttribute("src");
+      frameBox.dataset.state = "empty";
+      caption.textContent = text;
+    };
+    img.onload = () => {
+      // 無い名前にも、気象庁は 200 で小さな画像を返す
+      if (img.naturalWidth < CAMERA_MIN_WIDTH) return fail(CAMERA_EMPTY);
+      img.hidden = false;
+      frameBox.dataset.state = "shown";
+    };
+    img.onerror = () => fail(CAMERA_FAILED);
+    const load = async () => {
+      try {
+        const r = await fetch(page);
+        if (!r.ok) throw new Error(String(r.status));
+        const frame = latestFrame(await r.text());
+        if (cameraPopupEl !== popup) return;
+        if (!frame) return fail(CAMERA_EMPTY);
+        caption.textContent = frameCaption(frame, Date.now());
+        if (shown?.url === frame.url) return;
+        shown = frame;
+        img.alt = frameAlt(p, frame);
+        img.src = frame.url;
+      } catch {
+        if (cameraPopupEl === popup && !shown) fail(CAMERA_FAILED);
+      }
+    };
+    closePopups();
+    clearInterval(cameraTimer);
+    const popup = new PopupClass(popupOptions())
+      .setLngLat(at)
+      .setDOMContent(box)
+      .addTo(map);
+    cameraPopupEl = popup;
+    popup.on("close", () => {
+      if (cameraPopupEl !== popup) return;
+      clearInterval(cameraTimer);
+      cameraTimer = undefined;
+      cameraPopupEl = undefined;
+    });
+    void load();
+    cameraTimer = setInterval(() => {
+      if (!document.hidden) void load();
+    }, CAMERA_REFRESH_MS);
   }
 
   // ---- 台風の中心 (docs/map.md の「台風」) ----
@@ -3357,6 +3516,29 @@
   .map :global(.warning-pop p:last-child),
   .map :global(.station-pop p:last-child) {
     margin-bottom: 0;
+  }
+  /* 火山の監視カメラの画像。読み終わるまで 16:9 の場所を取っておき、吹き出しの大きさが跳ねないようにする。
+     動きは付けない (画像が替わるのは 10 分に 1 回) */
+  .map :global(.camera-pop) {
+    width: min(16rem, 70vw);
+  }
+  .map :global(.camera-frame) {
+    aspect-ratio: 16 / 9;
+    margin: 0 0 var(--so-space-1);
+    overflow: hidden;
+    border-radius: var(--so-radius);
+    background: var(--so-hover-soft);
+  }
+  .map :global(.camera-frame[data-state="shown"]) {
+    aspect-ratio: auto;
+  }
+  .map :global(.camera-frame[data-state="empty"]) {
+    display: none;
+  }
+  .map :global(.camera-frame img) {
+    display: block;
+    width: 100%;
+    height: auto;
   }
   /* 震度 1 の白い地も面の上で見えるよう、地図の震度のラベルと同じ細い縁を付ける */
   .map :global(.station-pop .level-label) {

@@ -1,6 +1,7 @@
 /**
  * 画面に出す注意文と出典 (docs/design.md の 5 章「法と表示」)。文言を変えるときは設計書も直す
  */
+import { VOLCAM_PAGE } from "#lib/map/cameras.ts";
 import { MSIL_DISCLAIMER, MSIL_SITE } from "#lib/map/marine.ts";
 import { NOWC_PAGE, RASRF_PAGE } from "#lib/map/nowc.ts";
 import { RAIN_PAGE } from "#lib/map/rain.ts";
@@ -90,6 +91,14 @@ export const CREDITS: Credit[] = [
         href: "https://www.jma.go.jp/bosai/",
       },
       "）を加工して作成",
+    ],
+  },
+  {
+    label: "火山の監視カメラ",
+    parts: [
+      "出典：気象庁ホームページ（",
+      { text: VOLCAM_PAGE, href: VOLCAM_PAGE },
+      "）。気象庁「監視カメラ画像」のカメラの位置を加工して作成 (地図の印)。画像は、印を押したときにブラウザから気象庁ホームページへ直接読みに行き、そのまま出します。sonae は画像を保存も配布もしません。火山の防災は、気象庁の噴火警報などの情報と、地元の自治体のお知らせや指示に従ってください",
     ],
   },
   {
