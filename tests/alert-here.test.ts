@@ -216,6 +216,28 @@ describe("開いているときは、現在地の気象も知らせる", () => {
     ]);
   });
 
+  test("線状降水帯 (気象防災速報) も、現在地の一次細分区域に出たら知らせる", () => {
+    const lines = weatherInfo("82_01_01_260324_VPBS50.xml", "VPBS50");
+    const e = weatherEvent(lines);
+    const at = Date.parse(lines.reportedAt) + 60_000;
+    // 船橋市は千葉県北西部。住んでいる地域 (千代田区) には出ていない
+    const hereOnly = planAlerts(
+      e,
+      at,
+      prefs({ home: homeAt("1310100") }),
+      new Map(),
+      homeAt("1220400"),
+    );
+    expect(hereOnly.map((p) => p.notice.title)).toEqual([
+      "気象防災速報 (線状降水帯発生) 現在地の千葉県船橋市",
+    ]);
+    const n = hereOnly[0]?.notice;
+    expect(n ? readoutOf(n).slice(0, 2) : []).toEqual([
+      "気象防災速報です。",
+      HERE,
+    ]);
+  });
+
   test("前のスイッチ「現在地の気象も知らせる」は読まない (現在地はいつも使う)", () => {
     expect("here" in parseAlertSettings('{"here":false}')).toBe(false);
   });

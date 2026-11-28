@@ -462,7 +462,7 @@ describe("記録的短時間大雨情報・竜巻注意情報の通知", () => {
     expect(noticeFor(base, prefs({ home: home() }))).toBeNull();
   });
 
-  test("竜巻注意情報は有効期限を過ぎたら知らせない。洪水予報・熱中症・台風・府県気象防災速報は知らせない", () => {
+  test("竜巻注意情報は有効期限を過ぎたら知らせない。洪水予報・熱中症・台風は知らせない (府県気象防災速報の線状降水帯・短時間大雪は知らせる。snow.test.ts)", () => {
     const tornado = weatherInfo("19_08_03_250630_VPHW50.xml", "VPHW50");
     const at = Date.parse("2015-07-17T09:30:00+09:00");
     expect(noticeOf(weatherEvent(tornado), at)).not.toBeNull();
@@ -473,7 +473,6 @@ describe("記録的短時間大雨情報・竜巻注意情報の通知", () => {
       ["16_09_01_260312_VXKOii.xml", "VXKO53"], // 指定河川洪水予報
       ["57_03_01_240401_VPFT50.xml", "VPFT50"], // 熱中症警戒アラート
       ["10_04_07_170916_VPTW60.xml", "VPTW60"], // 台風解析・予報情報
-      ["82_01_01_260324_VPBS50.xml", "VPBS50"], // 府県気象防災速報 (線状降水帯)
     ] as const) {
       const i = weatherInfo(file, code);
       // 古すぎて外れたのではないことを、出てすぐの時刻で確かめる

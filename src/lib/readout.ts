@@ -21,6 +21,7 @@ import {
   type Eew,
   intensityLabel,
   intensityRank,
+  isNotifiedBosai,
   type ObservedIntensity,
   type Quake,
   type Tsunami,
@@ -52,6 +53,7 @@ export const OPENINGS = {
   weatherAdvisory: "気象の注意報です。",
   recordRain: "記録的短時間大雨情報です。",
   tornado: "竜巻注意情報です。",
+  bosai: "気象防災速報です。",
 } as const;
 
 /**
@@ -321,12 +323,13 @@ function warningParts(n: Notice, w: WeatherWarning): string[] {
 }
 
 /**
- * 記録的短時間大雨情報・竜巻注意情報。決まった文と、気象庁の見出しのまま。
+ * 記録的短時間大雨情報・竜巻注意情報・府県気象防災速報 (線状降水帯・短時間大雪)。決まった文と、気象庁の見出しのまま。
  * 現在地の通知 (`here`) は、決まった文の後に現在地と言う
  */
 function weatherInfoParts(i: WeatherInfo, here: boolean): string[] {
   const headline = [...(here ? [HERE] : []), ...sentences(clean(i.headline))];
   if (i.kind === "rain") return [OPENINGS.recordRain, ...headline];
+  if (isNotifiedBosai(i)) return [OPENINGS.bosai, ...headline];
   if (i.kind === "tornado") {
     const until = clockText(i.validUntil);
     // 有効期限は電文の値 (見出しに無ければ足す)
