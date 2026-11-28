@@ -123,10 +123,16 @@ interface Health {
   probing: boolean;
 }
 
-/** 環境変数の数 (正の数でなければ既定) */
+/** 環境変数の数 (正の数でなければ既定。書いてあるのに読めないときは、そう知らせる) */
 function envNumber(name: string, fallback: number): number {
-  const v = Number(process.env[name]);
-  return Number.isFinite(v) && v > 0 ? v : fallback;
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const v = Number(raw);
+  if (Number.isFinite(v) && v > 0) return v;
+  console.warn(
+    `[relay] ${name} は正の数ではないので、既定の ${fallback} を使います`,
+  );
+  return fallback;
 }
 
 /** `Cache-Control` の max-age (秒)。no-store・no-cache は 0 とみなす。書いていなければ undefined */
@@ -218,6 +224,8 @@ const noStore = (status: number, text: string, extra: HeadersInit = {}) =>
     headers: {
       "content-type": "text/plain; charset=utf-8",
       "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": RELAY_CSP,
       ...extra,
     },
   });
@@ -401,7 +409,7 @@ export class Relay {
     let range: string | undefined;
     const rawRange = reqHeaders.get("range");
     if (rawRange !== null) {
-      const m = /^bytes=(\d+)-(\d+)$/.exec(rawRange.trim());
+      const m = /^bytes=(\d{1,15})-(\d{1,15})$/.exec(rawRange.trim());
       if (!source.range || !m) return noStore(416, "Range は受けません");
       const [a, b] = [Number(m[1]), Number(m[2])];
       if (b < a || b - a + 1 > MAX_RANGE_BYTES)
@@ -425,7 +433,9 @@ export class Relay {
       return this.respond(cached, reqHeaders, "stale", store);
     };
 
-    const failed = this.failedUntil.get(key) ?? 0;
+    // 覚えない源 (打った文字を運ぶ地名検索) は、失敗した鍵も残さない (源ごとの回路と Retry-After だけで控える)
+    const failed = store ? (this.failedUntil.get(key) ?? 0) : 0;
+    if (failed > 0 && failed <= now) this.failedUntil.delete(key);
     if (failed > now)
       return (
         stale(now) ??
@@ -452,9 +462,17 @@ export class Relay {
       h.probing = probe = true;
     }
     if (!p) {
-      p = this.gate(sourceId, source).run(() =>
-        this.fetchUpstream(sourceId, source, url, range, cached),
-      );
+      p = this.gate(sourceId, source).run(() => {
+        // 枠を待っている間に断られた (Retry-After) か回路が開いたなら、取りに行かない
+        // (地図は 20〜40 枚を一度に読むので、待っていた分を控えの間に配信元へ流さない)
+        const t = this.now();
+        const hold = this.holdUntil(sourceId);
+        if (hold > t) throw new Blocked(Math.ceil((hold - t) / 1000));
+        const hh = this.health.get(sourceId);
+        if (!probe && hh && hh.opens > 0)
+          throw new Blocked(Math.ceil(FAILED_WAIT_MS / 1000));
+        return this.fetchUpstream(sourceId, source, url, range, cached);
+      });
       if (store) {
         this.inflight.set(key, p);
         void p.finally(() => this.inflight.delete(key)).catch(() => {});
@@ -467,7 +485,7 @@ export class Relay {
       // 配信元の不調でない失敗 (大きすぎる) で試しが終わったときも、次の要求で試せるようにする
       if (probe && h) h.probing = false;
       const t = this.now();
-      if (!(e instanceof Blocked)) this.markFailed(key, t);
+      if (!(e instanceof Blocked) && store) this.markFailed(key, t);
       const old = stale(t);
       if (old) return old;
       if (e instanceof Blocked)
@@ -538,7 +556,9 @@ export class Relay {
       void res.body?.cancel();
       throw new Blocked(s);
     }
-    if (res.status >= 500) {
+    // 5xx と、断る 4xx (401・403・451。CDN や WAF が断るときの形) は、配信元の不調として数える。
+    // 覚えた古いものは消さずに返し、断られている間は要求のたびに配信元へ行かない
+    if (res.status >= 500 || [401, 403, 451].includes(res.status)) {
       void res.body?.cancel();
       console.warn(`[relay] ${sourceId}: 配信元が ${res.status} を返しました`);
       this.markDown(sourceId);

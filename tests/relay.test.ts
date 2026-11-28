@@ -809,3 +809,124 @@ test("取った時刻の見出しが読めない古いものは、時刻を出�
   expect(relayStale(res)).toEqual({});
   expect(relayStale(new Response("x"))).toBeUndefined();
 });
+
+test("枠を待っていた要求は、その間に断られた (429) なら配信元へ行かない", async () => {
+  let release: () => void = () => {};
+  const first = new Promise<void>((r) => (release = r));
+  const up = upstream(async (_, n) => {
+    if (n === 1) {
+      await first;
+      return new Response("busy", {
+        status: 429,
+        headers: { "retry-after": "600" },
+      });
+    }
+    return png();
+  });
+  const r = new Relay({
+    sources: { t: { ...SRC.t, concurrency: 1 } },
+    fetch: up.fetch,
+  });
+  const all = Array.from({ length: 10 }, (_, i) =>
+    r.handle("t", `w/${i}.png`, none, h()),
+  );
+  release();
+  const res = await Promise.all(all);
+  expect(up.calls).toHaveLength(1);
+  for (const x of res) {
+    expect(x.status).toBe(503);
+    expect(x.headers.get("x-relay")).toBe("busy");
+  }
+});
+
+test("枠を待っていた要求は、その間に回路が開いたなら配信元へ行かない", async () => {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((r) => (release = r));
+  const up = upstream(async () => {
+    await gate;
+    return new Response("err", { status: 500 });
+  });
+  const r = new Relay({
+    sources: { t: { ...SRC.t, concurrency: 3 } },
+    fetch: up.fetch,
+  });
+  const all = Array.from({ length: 12 }, (_, i) =>
+    r.handle("t", `x/${i}.png`, none, h()),
+  );
+  release();
+  await Promise.all(all);
+  expect(up.calls).toHaveLength(3);
+});
+
+test("403 (断られた) は配信元の不調に数え、覚えた古いものを消さずに返す", async () => {
+  let refuse = false;
+  const up = upstream(() =>
+    refuse
+      ? new Response("<html>denied</html>", {
+          status: 403,
+          headers: { "content-type": "text/html" },
+        })
+      : png("old", { "cache-control": "max-age=60" }),
+  );
+  const c = clock();
+  const r = new Relay({ sources: SRC, fetch: up.fetch, now: c.now });
+  await r.handle("t", "y/1.png", none, h());
+  refuse = true;
+  c.add(61_000);
+  const a = await r.handle("t", "y/1.png", none, h());
+  expect(a.status).toBe(200);
+  expect(a.headers.get("x-relay")).toBe("stale");
+  expect(await a.text()).toBe("old");
+  expect(stat(r, "t")?.state).toBe("failing");
+  // 15 秒は取り直しに行かず、その後も古いものは残っている
+  await r.handle("t", "y/1.png", none, h());
+  expect(up.calls).toHaveLength(2);
+  c.add(16_000);
+  const b = await r.handle("t", "y/1.png", none, h());
+  expect(await b.text()).toBe("old");
+  expect((await r.stats()).entries).toBe(1);
+  // 覚えたものが無ければ 502 で、配信元の HTML は返さない
+  const d = await r.handle("t", "y/2.png", none, h());
+  expect(d.status).toBe(502);
+  expect(d.headers.get("content-type")).toContain("text/plain");
+});
+
+test("断るときの応答にも nosniff と CSP を付ける", async () => {
+  const r = new Relay({ sources: SRC, fetch: upstream(() => png()).fetch });
+  for (const res of [
+    await r.handle("nope", "a/1.png", none, h()),
+    await r.handle("t", "../x", none, h()),
+  ]) {
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("content-security-policy")).toBe(
+      "default-src 'none'; sandbox",
+    );
+  }
+});
+
+test("桁の多すぎる Range は断り、配信元へは行かない", async () => {
+  const up = upstream(() => png());
+  const r = new Relay({ sources: SRC, fetch: up.fetch });
+  const big = "9".repeat(400);
+  const a = await r.handle(
+    "r",
+    "a.pmtiles",
+    none,
+    h({ range: `bytes=${big}-${big}` }),
+  );
+  expect(a.status).toBe(416);
+  expect(up.calls).toHaveLength(0);
+});
+
+test("覚えない源は、失敗した要求の文字も残さない", async () => {
+  const up = upstream(() => new Response("err", { status: 500 }));
+  const r = new Relay({ sources: SRC, fetch: up.fetch });
+  const q = new URLSearchParams({ q: "東京都千代田区" });
+  expect((await r.handle("q", "find", q, h())).status).toBe(502);
+  const keys = [
+    ...(
+      r as unknown as { failedUntil: Map<string, number> }
+    ).failedUntil.keys(),
+  ];
+  expect(keys.some((k) => k.includes("q="))).toBe(false);
+});
