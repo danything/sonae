@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import type {
+  Advisory,
   Eew,
   LongPeriod,
   Quake,
@@ -14,6 +15,7 @@ import type { Incoming } from "#lib/server/sources/types.ts";
 import {
   parseWolfx,
   parseWolfxEqlist,
+  parseWolfxSpecialEq,
 } from "#lib/server/sources/wolfx-json.ts";
 
 import { prefs } from "./events.ts";
@@ -462,6 +464,75 @@ test("お知らせは番号ごとに 1 つ", () => {
       .map((a) => a.code)
       .sort(),
   ).toEqual(["VYSE50", "VZSE40"]);
+});
+
+describe("南海トラフ地震臨時情報などの Wolfx の予備 (jma_special_eq)", () => {
+  const special = (): Incoming[] =>
+    parseWolfxSpecialEq(json("wolfx/made-special-eq.json")).map(
+      ({ key, item }) => ({
+        source: "wolfx",
+        key,
+        code: "jma_special_eq",
+        items: [item],
+      }),
+    );
+  const vyse50 = () => {
+    const m = special()[0];
+    if (!m) throw new Error("VYSE50 が無い");
+    return m;
+  };
+  const at = Date.parse("2020-05-12T07:21:00Z");
+
+  test("Wolfx が先なら Wolfx の報を出し、気象庁 XML の同じ報が来たら置き換える。鳴らし直さない", () => {
+    const { store } = memoryStore();
+    const [w] = store.ingest(vyse50());
+    const a = dataOf<Advisory>(w);
+    expect(a).toMatchObject({
+      id: "VYSE50-20200512162000",
+      source: "wolfx",
+      serialName: "調査中",
+      headline: "",
+    });
+    const first = w && noticeOf(w, at);
+    if (!first) throw new Error("通知が無い");
+    // 見出しが無いので、本文の最初の段落を電文の文のまま使う
+    expect(first.body).toContain("関連性についての調査を開始しました");
+    expect(first.body).not.toContain("身の安全を守る行動");
+
+    const [x] = store.ingest(jma("74_01_01_200512_VYSE50.xml"));
+    const b = dataOf<Advisory>(x);
+    expect(b.source).toBeUndefined();
+    expect(b.headline).toContain("調査を開始しました");
+    expect(store.advisories()).toHaveLength(1);
+    const next = x && noticeOf(x, at);
+    if (!next) throw new Error("通知が無い");
+    expect(next.tag).toBe(first.tag);
+    // 中身が変わったので置き換えに行くが、同じ報なので鳴らし直さない
+    const sent = { level: first.level, digest: contentOf(first) };
+    expect(decide(next, prefs(), sent, contentOf(next))).toEqual({
+      send: true,
+      renotify: false,
+    });
+
+    // XML の後に Wolfx の同じ報が来ても置き換えない
+    expect(store.ingest({ ...vyse50(), key: "again" })).toEqual([]);
+  });
+
+  test("気象庁 XML が先なら、Wolfx の同じ報は捨てる", () => {
+    const { store } = memoryStore();
+    store.ingest(jma("74_01_01_200512_VYSE50.xml"));
+    expect(store.ingest(vyse50())).toEqual([]);
+    expect(store.advisories()[0]?.source).toBeUndefined();
+  });
+
+  test("定例の解説 (VYSE52) は一覧に出すが知らせない", () => {
+    const { store } = memoryStore();
+    const [, m] = special();
+    if (!m) throw new Error("VYSE52 が無い");
+    const [e] = store.ingest(m);
+    expect(dataOf<Advisory>(e).code).toBe("VYSE52");
+    expect(e && noticeOf(e, Date.parse("2020-05-11T08:01:00Z"))).toBeNull();
+  });
 });
 
 test("events は通し番号で、Last-Event-ID より後を古い順に返す", () => {

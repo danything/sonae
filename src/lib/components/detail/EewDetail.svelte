@@ -87,7 +87,7 @@
           <p class="small">
             {sourceLine}
             {#if e.assumed}
-              <span class="tag">仮定震源 (震源と M は目安)</span>
+              <span class="tag">仮定震源 (震源は目安。M と深さは不明)</span>
             {/if}
           </p>
         {/if}
@@ -120,7 +120,7 @@
   <dl class="facts">
     <dt>震源</dt>
     <dd>
-      {placeName(e.hypocenter)}{e.assumed ? " (仮定震源。震源と M は目安)" : ""}
+      {placeName(e.hypocenter)}{e.assumed ? " (仮定震源。震源は目安)" : ""}
     </dd>
     <dt>M</dt>
     <dd>{magnitudeText(e)}</dd>

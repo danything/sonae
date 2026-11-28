@@ -4,6 +4,7 @@ import { parseP2p } from "#lib/server/sources/p2p-json.ts";
 import {
   parseWolfx,
   parseWolfxEqlist,
+  parseWolfxSpecialEq,
   wolfxShindo,
 } from "#lib/server/sources/wolfx-json.ts";
 
@@ -107,6 +108,20 @@ describe("P2P地震情報 (仕様書の例)", () => {
     expect(JSON.stringify(item.report)).not.toContain("scale");
   });
 
+  test("556 の仮定震源要素は M と深さを持たない", () => {
+    const v = json("p2p/spec-556.json");
+    const earthquake = {
+      ...(v.earthquake as Record<string, unknown>),
+      condition: "仮定震源要素",
+    };
+    const [item] = parseP2p({ ...v, earthquake });
+    if (item?.type !== "eew") throw new Error("eew ではない");
+    expect(item.report.assumed).toBe(true);
+    expect(item.report.magnitude).toBeUndefined();
+    expect(item.report.hypocenter?.depthKm).toBeUndefined();
+    expect(item.report.hypocenter?.name).toBe("宗谷地方北部");
+  });
+
   test("556 の test は試験として扱う", () => {
     const [item] = parseP2p({ ...json("p2p/spec-556.json"), test: true });
     expect(item?.type === "eew" && item.report.status).toBe("test");
@@ -181,6 +196,40 @@ describe("Wolfx (作った JSON)", () => {
     if (m.type !== "eew") throw new Error("eew ではない");
     expect(m.report.warnAreas).toEqual([]);
     expect(m.report.areas).toEqual(["宗谷地方北部"]);
+  });
+
+  test("レベル法は仮定震源とし、M (0) と深さ (10 km) を持たない", () => {
+    const m = parseWolfx({
+      ...json("wolfx/made-forecast.json"),
+      CodeType: "最大予測震度のみの緊急地震速報",
+      Hypocenter: "九州地方",
+      Magnitude: 0,
+      Magunitude: 0,
+      Depth: 10,
+      isAssumption: false,
+    });
+    if (m.type !== "eew") throw new Error("eew ではない");
+    expect(m.report.assumed).toBe(true);
+    expect(m.report.magnitude).toBeUndefined();
+    expect(m.report.hypocenter).toMatchObject({ name: "九州地方" });
+    expect(m.report.hypocenter?.depthKm).toBeUndefined();
+  });
+
+  test("仮定震源要素の M (1.0) と深さ (10 km) は持たない。M が 0 (値が無い) のときも", () => {
+    const base = json("wolfx/made-forecast.json");
+    for (const over of [
+      { isAssumption: true, Magnitude: 1.0, Magunitude: 1.0 },
+      { Magnitude: 0, Magunitude: 0 },
+    ]) {
+      const m = parseWolfx({ ...base, ...over });
+      if (m.type !== "eew") throw new Error("eew ではない");
+      expect(m.report.magnitude).toBeUndefined();
+      expect(m.report.hypocenter?.depthKm).toBeUndefined();
+    }
+    // ふつうの速報は M と深さを持つ
+    const m = parseWolfx(base);
+    expect(m.type === "eew" && m.report.magnitude).toBe(5.3);
+    expect(m.type === "eew" && m.report.hypocenter?.depthKm).toBe(10);
   });
 
   test("訓練と取消", () => {
@@ -266,5 +315,53 @@ describe("Wolfx の地震情報の一覧 (作った JSON)", () => {
     expect(
       parseWolfxEqlist({ type: "jma_eqlist", No1: { Title: "震度速報" } }, AT),
     ).toEqual([]);
+  });
+});
+
+describe("Wolfx の南海トラフ地震臨時情報など (作った JSON)", () => {
+  test("種別ごとの報をお知らせにする。id は気象庁 XML と同じ形。ほかの種別は捨てる", () => {
+    const got = parseWolfxSpecialEq(json("wolfx/made-special-eq.json"));
+    expect(got.map((g) => g.item.advisory.id)).toEqual([
+      "VYSE50-20200512162000",
+      "VYSE52-20200511170000",
+    ]);
+    expect(got[0]?.item.advisory).toMatchObject({
+      code: "VYSE50",
+      source: "wolfx",
+      title: "南海トラフ地震臨時情報（調査中）",
+      serialName: "調査中",
+      status: "normal",
+      infoType: "発表",
+      reportedAt: "2020-05-12T07:20:00.000Z",
+      headline: "",
+    });
+    expect(got[1]?.item.advisory).toMatchObject({
+      serialName: "定例解説",
+      next: "次の定例の発表は●月●日の予定です。",
+    });
+    // 参考解説 (appendices) は読まない
+    expect(JSON.stringify(got)).not.toContain("（参考）");
+  });
+
+  test("訂正・取消と、表題に訓練とある報", () => {
+    const v = json("wolfx/made-special-eq.json");
+    const [r] = v.reports as Record<string, unknown>[];
+    const one = (over: Record<string, unknown>) =>
+      parseWolfxSpecialEq({ reports: [{ ...r, ...over }] })[0];
+    const cancelled = one({
+      status: "cancelled",
+      notice: "先ほどの情報を取り消します。",
+    });
+    expect(cancelled?.item.advisory.infoType).toBe("取消");
+    expect(cancelled?.item.advisory.text).toEndWith(
+      "先ほどの情報を取り消します。",
+    );
+    expect(cancelled?.key).not.toBe(one({})?.key);
+    expect(one({ status: "corrected" })?.item.advisory.infoType).toBe("訂正");
+    expect(
+      one({ title: "南海トラフ地震臨時情報（訓練）" })?.item.advisory.status,
+    ).toBe("training");
+    // 時刻の読めない報は捨てる
+    expect(one({ time: null })).toBeUndefined();
   });
 });

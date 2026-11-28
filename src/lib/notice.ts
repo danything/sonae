@@ -266,6 +266,13 @@ export const CREDITS: Credit[] = [
     parts: ["Wolfx Project"],
   },
   {
+    // 中身は気象庁の情報なので、Wolfx の規約の五条で気象庁の条件 (出典と、加工したこと) に従う
+    label: "南海トラフ地震臨時情報など (気象庁 XML の予備)",
+    parts: [
+      "Wolfx Project が中継した気象庁の情報。気象庁「防災情報XML」の南海トラフ地震臨時情報・南海トラフ地震関連解説情報・北海道・三陸沖後発地震注意情報を加工して作成。気象庁 XML の同じ報が届いたら、そちらに置き換えます",
+    ],
+  },
+  {
     label: "海外の地震",
     parts: [
       "Earthquake data courtesy of the U.S. Geological Survey・EMSC-CSEM SeismicPortal, ",
@@ -301,7 +308,7 @@ export const CREDITS: Credit[] = [
     parts: [
       {
         text: "Wolfx Project (SeisJS)",
-        href: "https://wolfx.jp/docs/seisjs-api/",
+        href: "https://seis.wolfx.jp/",
       },
       "。SeisJS に参加している有志の観測点が計算した、いまの揺れ (計測震度) を地図の点の色で出しています。気象庁や各国の機関の発表ではない非公式の値で、遅れたり誤ったりすることがあります。公式の発表を優先してください。sonae はこの値を地図に出すだけで、一覧・音・読み上げ・通知では知らせません",
     ],

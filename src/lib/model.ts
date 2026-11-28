@@ -86,7 +86,7 @@ export interface Eew {
   final: boolean;
   cancelled: boolean;
   status: Status;
-  /** 仮定震源要素 (PLUM 法・レベル法)。震源と M は目安にすぎない */
+  /** 仮定震源要素 (PLUM 法・レベル法)。震源は目安にすぎず、M と深さは持たない (仮の決まった値のため) */
   assumed: boolean;
   originTime?: string;
   hypocenter?: Hypocenter;
@@ -337,7 +337,7 @@ export interface Advisory {
     /** 気象庁の国際津波関連情報 (北西太平洋) */
     | "WEPA40";
   /** 気象庁の防災情報 XML 以外から来たとき、その情報源 */
-  source?: "ptwc" | "jma-bosai";
+  source?: "ptwc" | "jma-bosai" | "wolfx";
   /** 元の電報のページ (英文など) */
   url?: string;
   /** 地震回数 (VXSE60)。期間ごとの回数と、そのうち震度 1 以上の回数 */
