@@ -10,6 +10,7 @@ import {
   volcanoKindText,
   WARNING_COLORS,
 } from "#lib/format.ts";
+import { ashLayers, ashSources } from "#lib/map/ash.ts";
 import {
   FOREIGN_RADIUS,
   HYPO_RADIUS,
@@ -548,6 +549,9 @@ export const HIDDEN_UNDER_HAZARD = [
   "eew-fill",
   // 通れた道 (目安) の橙と青の細い線は、浸水想定などの色と重なる。通行止めの赤い線は残す
   "road-speed",
+  // 選んだ降灰予報の範囲の塗り。縁の線 (`ash-line`) は残す (震度の塗りを隠して数字のラベルを残すのと同じ)
+  "ash-fill",
+  "ash-stripe",
 ] as const;
 /** ハザードマップを重ねている間だけ出す層 (いま出ている特別警報の市町村等の縁取り) */
 export const SHOWN_UNDER_HAZARD = [
@@ -916,6 +920,10 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "火山",
     note: "噴火警戒レベル 2 以上の火山と、選んだ情報の火山の三角。中の数字はレベルです。レベルが分からない火山は灰色の三角で、右に種類の名前 (噴火速報は「噴火速報」) を出します",
+  },
+  {
+    label: "降灰予報の範囲",
+    note: "一覧で降灰予報を選んだときだけ、気象庁の予報の範囲を気象庁の地図と同じ色で塗ります。灰色は降灰 (少量)、黄はやや多量、赤は多量、白地に赤の縞は小さな噴石の落下範囲です。いつの予想かは右下に出し、‹ › で時刻の区切りを動かせます。定時の降灰予報は噴火した場合の予想で、いま降っている所ではありません。選んでいる間は、色がぶつかる警報・注意報の塗りを隠します",
   },
   {
     label: "海底地殻変動観測点・海域火山 (海しる)",
@@ -1518,6 +1526,8 @@ export function baseStyle(
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
       },
+      // 選んだ降灰予報の範囲 (`#lib/map/ash.ts`)
+      ...ashSources(),
       // 台風の予報円・暴風警戒域と中心 (`#lib/map/typhoon.ts`)
       ...typhoonSources(),
     },
@@ -1686,6 +1696,8 @@ export function baseStyle(
         layout: { "line-join": "round" },
         paint: { "line-color": TRANSPARENT, "line-width": 3 },
       },
+      // 選んだ降灰予報の範囲 (`#lib/map/ash.ts`)。警報・注意報と震度の塗りの上、津波の線と特別警報の縁取りの下
+      ...ashLayers(),
       {
         id: "tsunami",
         type: "line",
