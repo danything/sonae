@@ -45,9 +45,12 @@ const DISAPORTAL =
 const JSHIS_SITE = "https://www.j-shis.bosai.go.jp/";
 const BOSAI_WARNING_PAGE = "https://www.jma.go.jp/bosai/warning/";
 const BOSAI_INFORMATION_PAGE = "https://www.jma.go.jp/bosai/information/";
+const BOSAI_TSUNAMI_PAGE =
+  "https://www.jma.go.jp/bosai/map.html#contents=tsunami";
+const BOSAI_VOLCANO_PAGE = "https://www.jma.go.jp/bosai/volcano/";
 
-/** 気象庁ホームページの JSON (気象 XML の予備) から受けた警報・注意報と気象防災速報の、詳しい内容に添える文 */
-export const BOSAI_WEATHER_NOTE =
+/** 気象庁ホームページの JSON (気象 XML・地震火山 XML の予備) から受けた報の、詳しい内容に添える文 */
+export const BOSAI_NOTE =
   "気象庁 XML が取れなかった間に、気象庁ホームページの JSON から受けた情報です (気象庁 XML の予備)。気象庁 XML の同じ報が届いたら、そちらに置き換えます。";
 const JSHIS_Z_RULES =
   "https://www.j-shis.bosai.go.jp/map/JSHIS2/data/DOC/DataFileRule/Z-RULES.pdf";
@@ -303,6 +306,17 @@ export const CREDITS: Credit[] = [
       "・",
       { text: BOSAI_INFORMATION_PAGE, href: BOSAI_INFORMATION_PAGE },
       "）。気象庁 XML (気象) が取れない間だけ、気象庁ホームページの「気象警報・注意報」「気象情報」の JSON を加工して作成 (種類のコードに、電文と同じ種類の名前を当てています)。気象庁 XML の同じ報が届いたら、そちらに置き換えます",
+    ],
+  },
+  {
+    // 地震火山の XML のフィードが取れない間だけ取る (docs/design.md の 2.1 の「予備の源」)
+    label: "津波と噴火警報・噴火速報 (気象庁 XML の予備)",
+    parts: [
+      "出典：気象庁ホームページ（",
+      { text: BOSAI_TSUNAMI_PAGE, href: BOSAI_TSUNAMI_PAGE },
+      "・",
+      { text: BOSAI_VOLCANO_PAGE, href: BOSAI_VOLCANO_PAGE },
+      "）。気象庁 XML (地震火山) が取れない間だけ、気象庁ホームページの「津波警報・注意報・予報」「噴火警報・予報」「噴火速報」の JSON を加工して作成 (電文の形に組み直して読んでいます)。気象庁 XML の同じ報が届いたら、そちらに置き換えます",
     ],
   },
   {

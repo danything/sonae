@@ -222,7 +222,8 @@ const highest = (t: Pick<Tsunami, "areas">) =>
 /**
  * 津波。VTSE41・VTSE51 の予報区の並びは、その時点の全部なので置き換える。観測は付け足す
  * (同じ観測点は新しいほうで置き換える)。P2P の 552 と Wolfx の jma_tsunami は、気象庁の XML が来るまでのつなぎ。
- * 統合の順位は気象庁 XML → P2P → Wolfx (docs/design.md の 2.2)。XML の予報区を受けた後の P2P・Wolfx は捨てる
+ * 統合の順位は気象庁 XML → P2P → Wolfx (docs/design.md の 2.2)。XML の予報区を受けた後の P2P・Wolfx は捨てる。
+ * 気象庁ホームページの JSON (`jma-bosai`。地震火山 XML の予備) は電文そのものなので、気象庁 XML と同じに扱う
  */
 export function mergeTsunami(
   prev: Tsunami | undefined,
@@ -230,13 +231,14 @@ export function mergeTsunami(
   id: string,
   now: string,
 ): Tsunami | null {
-  if (prev && r.source !== "jma" && !prev.provisional) return null;
+  const official = r.source === "jma" || r.source === "jma-bosai";
+  if (prev && !official && !prev.provisional) return null;
   // Wolfx は P2P の予備。前と同じか古い報は捨てる (同じ時刻なら P2P か先に受けたものを残す)。
   // Wolfx は気象庁の有効期限が過ぎると同じ報の予報区を空にして送り直すので、同じ報の送り直しも採らない
   if (prev && r.source === "wolfx" && ms(r.reportedAt) <= ms(prev.issuedAt))
     return null;
   // 古い報は捨てる。ただし P2P・Wolfx のつなぎの上には、気象庁の XML を時刻に関わらず重ねる
-  const replacesP2p = prev?.provisional === true && r.source === "jma";
+  const replacesP2p = prev?.provisional === true && official;
   if (
     prev &&
     !replacesP2p &&
@@ -286,7 +288,7 @@ export function mergeTsunami(
   }
   const areas = r.areas ?? base.areas;
   // 気象庁の予報区の並びを受けたら、P2P・Wolfx のつなぎは終わり
-  const jmaAreas = r.source === "jma" && r.areas !== undefined;
+  const jmaAreas = official && r.areas !== undefined;
   const next: Tsunami = {
     ...base,
     eventIds: union(base.eventIds, r.eventIds),

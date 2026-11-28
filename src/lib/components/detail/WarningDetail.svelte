@@ -5,7 +5,7 @@
     WARNING_PHENOMENON,
     type WarningOutlook,
   } from "#lib/model.ts";
-  import { BOSAI_WEATHER_NOTE } from "#lib/notice.ts";
+  import { BOSAI_NOTE } from "#lib/notice.ts";
 
   import WarningLevel from "../WarningLevel.svelte";
   import OutlookSection from "./OutlookSection.svelte";
@@ -36,7 +36,7 @@
   </header>
 
   {#if o.bosai}
-    <p class="small">{BOSAI_WEATHER_NOTE}</p>
+    <p class="small">{BOSAI_NOTE}</p>
   {/if}
 
   <section>

@@ -112,6 +112,8 @@ export const SOURCE_LABEL: Record<SourceId, string> = {
   cwa: "中央氣象署 (台湾)",
   ptwc: "PTWC (米国 太平洋津波警報センター)",
   "jma-bosai": "気象庁ホームページ (国際津波)",
+  "jma-bosai-eqvol":
+    "気象庁ホームページ (津波と噴火警報・噴火速報。地震火山 XML の予備)",
   "jma-bosai-weather":
     "気象庁ホームページ (警報・注意報と気象防災速報。気象 XML の予備)",
   trem: "ExpTech TREM (台湾の観測点の揺れ・非公式)",
@@ -202,6 +204,7 @@ const LIST_SOURCES: ReadonlySet<SourceId> = new Set<SourceId>([
   "cwa",
   "ptwc",
   "jma-bosai",
+  "jma-bosai-eqvol",
   "jma-bosai-weather",
 ]);
 /** 起こしてすぐの「接続中」は数えない長さ */

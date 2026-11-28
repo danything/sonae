@@ -3,6 +3,7 @@
 
   import { jst } from "#lib/format.ts";
   import { isTsunamiActive, type Tsunami, TSUNAMI_ORDER } from "#lib/model.ts";
+  import { BOSAI_NOTE } from "#lib/notice.ts";
 
   import Grade from "../Grade.svelte";
   import TsunamiSummary from "../TsunamiSummary.svelte";
@@ -24,6 +25,10 @@
     <TsunamiSummary tsunami={t} />
   {:else}
     <p class="small muted">この津波予報は終わりました。</p>
+  {/if}
+  {#if t.sources.includes("jma-bosai") && !t.sources.includes("jma")}
+    <!-- 地震火山 XML が取れない間に、気象庁ホームページの JSON (予備) から受けた津波 (docs/design.md の 2.1) -->
+    <p class="small">{BOSAI_NOTE}</p>
   {/if}
   {#if t.headline}
     <p class="small pre-line">{t.headline}</p>
