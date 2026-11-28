@@ -106,7 +106,7 @@ test("層はいつも全部出す。淡色地図の下地は無い", () => {
   // 重ねる図 (ハザードマップ・雨雲・キキクル) の層と、ハザードマップを重ねている間だけ出す層のほかは、いつも出す
   const underHazard: string[] = [...SHOWN_UNDER_HAZARD];
   for (const l of style.layers)
-    if (!/^(hazard|rain|rainloop|risk|nowc|rasrf)-/.test(l.id))
+    if (!/^(hazard|rain|rainloop|risk|riskflood|river|nowc|rasrf)-|^river$/.test(l.id))
       expect(l.layout?.visibility ?? "visible").toBe(
         underHazard.includes(l.id) ? "none" : "visible",
       );

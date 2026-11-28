@@ -37,10 +37,17 @@ import {
 import {
   RISK_ATTRIBUTION,
   RISK_TILE_ZOOMS,
+  RIVER_CALM_COLOR,
+  RIVER_CASING,
+  RIVER_CASING_SEVERE,
+  RIVER_LEVEL_COLORS,
+  RIVER_MAP_MINZOOM,
   type RiskFrame,
   riskOf,
   RISKS,
   riskTiles,
+  SMALL_RIVER_CALM_COLOR,
+  SMALL_RIVER_CASING,
 } from "#lib/map/risk.ts";
 import {
   typhoonLineLayers,
@@ -179,6 +186,8 @@ export type HazardId =
   | "tornado"
   | "risk-land"
   | "risk-heavyrain"
+  | "risk-inund"
+  | "risk-flood"
   | "flood"
   | "flood-duration"
   | "flood-collapse"
@@ -248,6 +257,8 @@ export interface Hazard {
     | "tornado"
     | "risk-land"
     | "risk-heavyrain"
+    | "risk-inund"
+    | "risk-flood"
   >;
   /** 選択肢の見出し */
   group: HazardGroup;
@@ -627,14 +638,220 @@ export const RISK_OPACITY = 0.8;
 export const riskShown = (id: HazardId, quake: boolean) =>
   riskOf(id) !== undefined && !quake;
 
-/** キキクルの層ごとに出すかどうか。時刻の表をまだ読めていない (`ready` でない) 間は出さない */
+/** 洪水キキクルの中小河川の線の層 (段ごとの source に縁と線の 2 つ) */
+export const floodLayerIds = (n: number) =>
+  [`riskflood-${n}-casing`, `riskflood-${n}`] as const;
+/** 洪水キキクルを選んだときに出す川の層 (中小河川の網・指定河川の地図・洪水予報の区間) */
+export const RIVER_LAYERS = [
+  "river-map-casing",
+  "river-map",
+  "river-casing",
+  "river-line",
+  "river-label",
+] as const;
+
+/**
+ * キキクルの層ごとに出すかどうか。時刻の表をまだ読めていない (`ready` でない) 間は出さない。
+ * 格子のもの (土砂・大雨・浸水) は `risk-<ズーム>`、洪水は川の線の層 (docs/map.md の「キキクル」)
+ */
 export function riskVisibility(
   id: HazardId,
   quake: boolean,
   ready: boolean,
 ): Record<string, boolean> {
   const on = ready && riskShown(id, quake);
-  return Object.fromEntries(RISK_TILE_ZOOMS.map((n) => [`risk-${n}`, on]));
+  const river = riskOf(id)?.draw === "river";
+  return {
+    ...Object.fromEntries(
+      RISK_TILE_ZOOMS.map((n) => [`risk-${n}`, on && !river]),
+    ),
+    ...Object.fromEntries(
+      RISK_TILE_ZOOMS.flatMap((n) => floodLayerIds(n).map((l) => [l, on && river])),
+    ),
+    ...Object.fromEntries(RIVER_LAYERS.map((l) => [l, on && river])),
+  };
+}
+
+/** 洪水キキクルの時刻の表を読む前に、出さない層に持たせる仮の URL */
+const PLACEHOLDER_FLOOD = `${JMATILE}/risk/19700101000000/none/19700101000000/surf/flood/{z}/{x}/{y}.pbf`;
+
+/** 指定河川の段の色 (段の無いものは水色) */
+const riverColor = (calm: string, offset: number): Expr => [
+  "match",
+  ["get", "level"],
+  2 - offset,
+  RIVER_LEVEL_COLORS[2],
+  3 - offset,
+  RIVER_LEVEL_COLORS[3],
+  4 - offset,
+  RIVER_LEVEL_COLORS[4],
+  5 - offset,
+  RIVER_LEVEL_COLORS[5],
+  calm,
+];
+/**
+ * 指定河川の線の太さ。気象庁の画面は 256px のタイルのズーム L で L − 2 px (地図のズーム z では z − 1)。
+ * 縁は線より 2 px 太く引く
+ */
+const riverWidth = (extra: number): Expr => [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  4,
+  3 + extra,
+  14,
+  13 + extra,
+];
+/** 中小河川の線の太さ。気象庁の画面は L が 10 から L − 7 px、それより引くと 2 px (地図のズーム z では 9 から z − 6) */
+const smallRiverWidth = (extra: number): Expr => [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  9,
+  2 + extra,
+  10,
+  4 + extra,
+  14,
+  8 + extra,
+];
+
+/**
+ * 中小河川の段ごとの層を出す地図のズーム。MapLibre のベクトルタイルは 512px の扱いで、地図のズーム z では z のタイルを読む
+ * (256px のタイルの雨雲とは 1 段ずれる)。そのため、タイルのズーム n の段は地図のズーム n から n + 2 の手前まで。いちばん
+ * 引いた段 (4) より引くと線は出ない (気象庁の画面も 256px のズーム 4、地図のズームで 3 からなので、ほぼ同じ)
+ */
+export function floodLayerZoom(n: number): { minzoom?: number; maxzoom?: number } {
+  const last = n === RISK_TILE_ZOOMS.at(-1);
+  return { minzoom: n, ...(last ? {} : { maxzoom: n + 2 }) };
+}
+
+/**
+ * 洪水キキクルの川の層。下から、中小河川の危険度 (段ごとの source)・指定河川の地図 (水色)・洪水予報の区間 (段の色)・
+ * 区間の名前。気象庁の画面の重ね順 (zIndex 302・402・601) と同じ。気象庁の画面にある中小河川の網 (水色の PNG。zIndex 101) は、
+ * 写真の上では細かい線が一面に広がって危険度の色が読みにくいので描かない (docs/map.md の「キキクル」)
+ */
+function riverLayers(on: Record<string, boolean>): Record<string, unknown>[] {
+  const vis = (id: string) => ({ visibility: on[id] ? "visible" : "none" });
+  return [
+    ...RISK_TILE_ZOOMS.flatMap((n) => {
+      const [casing, line] = floodLayerIds(n);
+      const zoom = floodLayerZoom(n);
+      return [
+        {
+          id: casing,
+          type: "line",
+          source: `riskflood-${n}`,
+          "source-layer": "flood",
+          ...zoom,
+          paint: {
+            "line-color": SMALL_RIVER_CASING,
+            // 灰色の縁は、気象庁の画面と同じく地図のズーム 7 (L 8) から
+            "line-opacity": ["step", ["zoom"], 0, RIVER_MAP_MINZOOM, 1],
+            "line-width": smallRiverWidth(2),
+          },
+          layout: { ...vis(casing), "line-cap": "butt", "line-join": "round" },
+        },
+        {
+          id: line,
+          type: "line",
+          source: `riskflood-${n}`,
+          "source-layer": "flood",
+          ...zoom,
+          paint: {
+            "line-color": riverColor(SMALL_RIVER_CALM_COLOR, 1),
+            "line-width": smallRiverWidth(0),
+          },
+          layout: { ...vis(line), "line-cap": "butt", "line-join": "round" },
+        },
+      ];
+    }),
+    {
+      id: "river-map-casing",
+      type: "line",
+      source: "river-map",
+      minzoom: RIVER_MAP_MINZOOM,
+      paint: { "line-color": RIVER_CASING, "line-width": riverWidth(2) },
+      layout: { ...vis("river-map-casing"), "line-join": "round" },
+    },
+    {
+      id: "river-map",
+      type: "line",
+      source: "river-map",
+      minzoom: RIVER_MAP_MINZOOM,
+      paint: { "line-color": RIVER_CALM_COLOR, "line-width": riverWidth(0) },
+      layout: { ...vis("river-map"), "line-join": "round" },
+    },
+    {
+      id: "river-casing",
+      type: "line",
+      source: "river",
+      filter: ["!=", ["geometry-type"], "Point"],
+      paint: {
+        "line-color": [
+          "case",
+          ["==", ["get", "level"], 5],
+          RIVER_CASING_SEVERE,
+          RIVER_CASING,
+        ],
+        "line-width": riverWidth(2),
+      },
+      layout: { ...vis("river-casing"), "line-join": "round" },
+    },
+    {
+      id: "river-line",
+      type: "line",
+      source: "river",
+      filter: ["!=", ["geometry-type"], "Point"],
+      paint: {
+        "line-color": riverColor(RIVER_CALM_COLOR, 0),
+        "line-width": riverWidth(0),
+      },
+      layout: { ...vis("river-line"), "line-join": "round" },
+    },
+    {
+      // 区間の名前と段は、気象庁の画面と同じく地図のズーム 7 (L 8) から。字は段の色の縁 (注意は黄の字に暗い縁)
+      id: "river-label",
+      type: "symbol",
+      source: "river",
+      minzoom: RIVER_MAP_MINZOOM,
+      filter: ["==", ["geometry-type"], "Point"],
+      layout: {
+        ...vis("river-label"),
+        // 色だけに頼らないよう、名前に段の言葉 (凡例と同じ) を添える (docs/design.md の 6.2)
+        "text-field": [
+          "concat",
+          ["get", "name"],
+          " (",
+          ["match", ["get", "level"], 2, "注意", 3, "警戒", 4, "危険", 5, "災害切迫", ""],
+          ")",
+        ],
+        "text-font": ["Noto Sans JP", "sans-serif"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 10, 13, 14, 21],
+        // 区間は数えるほどなので、地名と重なっても出す (気象庁の画面も必ず出す)
+        "text-allow-overlap": true,
+      },
+      paint: {
+        "text-color": [
+          "case",
+          ["==", ["get", "level"], 2],
+          RIVER_LEVEL_COLORS[2],
+          "#ffffff",
+        ],
+        "text-halo-color": [
+          "match",
+          ["get", "level"],
+          3,
+          RIVER_LEVEL_COLORS[3],
+          4,
+          RIVER_LEVEL_COLORS[4],
+          5,
+          RIVER_LEVEL_COLORS[5],
+          RIVER_CASING,
+        ],
+        "text-halo-width": 2,
+      },
+    },
+  ];
 }
 
 /** 時刻の表を読む前に、出さない層に持たせる仮の URL (MapLibre は出さない層の source を読まない) */
@@ -956,9 +1173,9 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "キキクル",
     note:
-      "地図の右下で「キキクル」の土砂か大雨を選んだときだけ、気象庁のキキクル (危険度分布) を重ねます。土砂は土砂災害の、大雨は低地の浸水と中小河川の氾濫の危険度で、気象庁が雨の実況と予測から判定したものです。" +
+      "地図の右下で「キキクル」の土砂・大雨・浸水・洪水のどれかを選んだときだけ、気象庁のキキクル (危険度分布) を重ねます。土砂は土砂災害の、大雨は低地の浸水と中小河川の氾濫を重ねた、浸水は低地の浸水の危険度で、気象庁が雨の実況と予測から判定したものです。洪水は格子を塗らず、川の線を危険度の色で引きます (中小河川は灰色の縁の細い線、国や都道府県が洪水予報をする指定河川は黒い縁の太い線と区間の名前。水色の線は「今後の情報等に留意」)。" +
       "色は気象庁の配色のままで、黒は災害切迫 (警戒レベル 5 相当)、紫は危険 (4 相当)、赤は警戒 (3 相当)、黄は注意 (2 相当) です。いちばん低い「今後の情報等に留意」は塗りません。凡例と、いつの判定か (10 分ごとに更新) を地図の右下に出し、40 分より古いものしか取れていないときは凡例にそう書きます。" +
-      "大きな川の氾濫は、一覧の「気象」の指定河川洪水予報を見てください。選んでいる間は雨雲と同じく、気象警報・注意報の塗り・緊急地震速報の地域の塗り・通れた道 (目安) の線を隠し、地震を選んでいる間はキキクルを隠します",
+      "指定河川の洪水予報の中身は、一覧の「気象」の指定河川洪水予報で読めます。選んでいる間は雨雲と同じく、気象警報・注意報の塗り・緊急地震速報の地域の塗り・通れた道 (目安) の線を隠し、地震を選んでいる間はキキクルを隠します",
   },
   {
     label: "今後の雨 (予測)",
@@ -1312,6 +1529,7 @@ export function baseStyle(
   const overlay = overlayVisibility(hazard);
   const rainOn = rainVisibility(hazard, false, rain !== null);
   const riskOn = riskVisibility(hazard, false, risk !== null);
+  const gridRisk = riskOf(hazard);
   // 時刻が分かるまでは、出さない層に仮の URL を持たせる (MapLibre は出さない層の source を読まない)
   const rainUrl = rainTiles(
     rain ?? { basetime: "19700101000000", validtime: "19700101000000" },
@@ -1322,7 +1540,7 @@ export function baseStyle(
       validtime: "19700101000000",
       member: "none",
     },
-    riskOf(hazard)?.element ?? "land",
+    gridRisk?.draw === "grid" ? gridRisk.element : "land",
   );
   const vis = (id: string) => ({
     visibility: overlay[id] === false ? "none" : "visible",
@@ -1380,6 +1598,29 @@ export function baseStyle(
           },
         ]),
       ),
+      // 洪水キキクル (選んだときだけ)。中小河川の危険度はベクトルタイルで、偶数のズームにしか無いので段ごとに source を分ける。
+      // URL は時刻の表を読んでから差し替える
+      ...Object.fromEntries(
+        RISK_TILE_ZOOMS.map((n) => [
+          `riskflood-${n}`,
+          {
+            type: "vector",
+            tiles: [PLACEHOLDER_FLOOD],
+            minzoom: n,
+            maxzoom: n,
+          },
+        ]),
+      ),
+      // 指定河川の地図 (水色の線。変わらない)。洪水を選んだときに画面が URL を入れる
+      "river-map": {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      },
+      // 洪水予報の出ている指定河川の区間 (段のあるもの)。画面が時刻ごとに読んで差し込む (`#lib/map/risk.ts` の `riverFeatures`)
+      river: {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      },
       // 雷・竜巻 (選んだときだけ)。偶数のズームの 4〜8 にしか無いので、段ごとに source を分ける。URL は時刻の表を読んでから差し替える
       ...Object.fromEntries(
         N3_TILE_ZOOMS.map((n, i) => [
@@ -1587,6 +1828,9 @@ export function baseStyle(
         },
         layout: { visibility: riskOn[`risk-${n}`] ? "visible" : "none" },
       })),
+      // 洪水キキクル (選んだときだけ。キキクルと同じ所)。気象庁の画面と同じ重ね方で、下から中小河川の危険度・
+      // 指定河川の地図・洪水予報の区間・区間の名前。色・縁・太さは気象庁の画面の設定のまま (docs/map.md の「キキクル」)
+      ...riverLayers(riskOn),
       // 雷・竜巻と今後の雨 (選んだときだけ。雨雲と同じ所・同じ出し方)。出し入れは画面が時刻の表を読んでから決める
       ...N3_TILE_ZOOMS.map((n) => ({
         id: `nowc-${n}`,

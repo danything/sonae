@@ -23,11 +23,16 @@ export const RISK_CREDIT = "気象庁 (キキクル)";
  */
 export const RISK_TILE_ZOOMS = RAIN_TILE_ZOOMS;
 
-/** 選べるキキクル。気象庁の 2026 年 5 月からの体系の土砂・大雨。浸水と洪水は大雨にまとまる (docs/map.md) */
+/**
+ * 選べるキキクル。気象庁のキキクルの画面と同じ 4 つ (土砂・大雨・浸水・洪水) を同じ順に並べる (docs/map.md の
+ * 「キキクル」)。土砂・大雨・浸水は格子を塗るタイル、洪水は川の線 (中小河川のベクトルタイルと、指定河川の GeoJSON)
+ */
 export interface RiskKind {
-  id: "risk-land" | "risk-heavyrain";
-  /** タイルの要素の名前 (時刻の表の `elements`) */
-  element: "land" | "rain_mesh";
+  id: "risk-land" | "risk-heavyrain" | "risk-inund" | "risk-flood";
+  /** 時刻の表の `elements` の名前。格子のものはタイルの要素の名前と同じ */
+  element: "land" | "rain_mesh" | "inund" | "flood";
+  /** 格子を塗るタイル (`grid`) か、川の線 (`river`) か */
+  draw: "grid" | "river";
   /** 選択肢の名前 (見出し「キキクル」の下) */
   label: string;
   /** 凡例の上に出す名前 */
@@ -40,6 +45,7 @@ export const RISKS: RiskKind[] = [
   {
     id: "risk-land",
     element: "land",
+    draw: "grid",
     label: "土砂",
     title: "土砂キキクル (土砂災害の危険度)",
     about:
@@ -48,10 +54,29 @@ export const RISKS: RiskKind[] = [
   {
     id: "risk-heavyrain",
     element: "rain_mesh",
+    draw: "grid",
     label: "大雨 (浸水・洪水)",
     title: "大雨キキクル (浸水・洪水の危険度)",
     about:
-      "低地の浸水と中小河川の氾濫の危険度を、気象庁が浸水キキクルと洪水キキクルを重ねて判定したものです。大きな川の氾濫は、一覧の「気象」の指定河川洪水予報を見てください。",
+      "低地の浸水と中小河川の氾濫の危険度を、気象庁が浸水キキクルと洪水キキクルを重ねて判定したものです。大きな川の氾濫は「洪水 (川)」か、一覧の「気象」の指定河川洪水予報を見てください。",
+  },
+  {
+    id: "risk-inund",
+    element: "inund",
+    draw: "grid",
+    label: "浸水",
+    title: "浸水キキクル (浸水害の危険度)",
+    about:
+      "短い時間の強い雨で低い土地が水につかる危険度を、実況と 1 時間先までの雨の予測から気象庁が判定したものです。",
+  },
+  {
+    id: "risk-flood",
+    element: "flood",
+    draw: "river",
+    label: "洪水 (川)",
+    title: "洪水キキクル (川の氾濫の危険度)",
+    about:
+      "細い線 (灰色の縁) は中小河川の氾濫の危険度、太い線 (黒い縁) は洪水予報の出ている大きな川 (指定河川) の区間です。気象庁の判定のまま引いています。",
   },
 ];
 
@@ -147,3 +172,127 @@ export const RISK_LEGEND: { color: string; label: string; level: string }[] = [
   { color: "rgb(255 40 0)", label: "警戒", level: "レベル 3 相当" },
   { color: "rgb(242 231 0)", label: "注意", level: "レベル 2 相当" },
 ];
+
+// ---- 洪水キキクルの川の線 (docs/map.md の「キキクル」の「洪水 (川)」) ----
+// 描き方 (色・縁・太さ・ズーム) は、気象庁のキキクルの画面の設定 (`risk/table/risk.properties__*.xml` の
+// element `flood`。2026-11-28 に読んだ) に合わせる。気象庁が判定した段をそのまま色にし、段を作り直さない
+
+/** 川の地図 (変わらないもの) */
+const RISK_MAP = "https://www.jma.go.jp/bosai/jmatile/data/map/none/none/none/surf";
+/** 指定河川 (国と都道府県が洪水予報をする川、340 の区間) の線。gzip で 290KB ほど。いまの段は持たない */
+export const RIVER_MAP_URL = `${RISK_MAP}/designated_river/data.geojson`;
+/** 指定河川の地図・灰色の縁・区間の名前を出す地図のズーム (気象庁の画面の 8 は 256px のタイルのズームで、MapLibre の地図のズームでは 7) */
+export const RIVER_MAP_MINZOOM = 7;
+
+/** 中小河川の危険度のベクトルタイル (層 `flood`)。偶数のズームの 4〜10 だけを読む (気象庁の画面も `zoomUse="even"`) */
+export const floodTiles = (f: RiskFrame) =>
+  `${RISK}/${f.basetime}/${f.member}/${f.validtime}/surf/flood/{z}/{x}/{y}.pbf`;
+/** 洪水予報の出ている指定河川の区間 (段のあるものだけ。出ていなければ空の FeatureCollection) */
+export const designatedRiverUrl = (f: RiskFrame) =>
+  `${RISK}/${f.basetime}/${f.member}/${f.validtime}/surf/designated_river/data.geojson`;
+
+/**
+ * 段の色 (気象庁の画面の設定のまま)。指定河川の段 (`level`) は 2〜5 (氾濫注意情報〜氾濫特別警報。警戒レベル 2〜5
+ * 相当)、中小河川の段は 1〜4 (注意〜災害切迫。警戒レベル 2〜5 相当)。どちらも段の無いものは水色 (今後の情報等に留意)。
+ * 色は配色の指針の表 1-1 と同じで、格子のキキクル (`RISK_LEGEND`) とそろう
+ */
+export const RIVER_LEVEL_COLORS = {
+  5: "#0c000c",
+  4: "#aa00aa",
+  3: "#ff2800",
+  2: "#f2e700",
+} as const;
+/** 指定河川の段の無い区間と川の地図の色 */
+export const RIVER_CALM_COLOR = "#80ffff";
+/** 中小河川の段の無い線の色 */
+export const SMALL_RIVER_CALM_COLOR = "#3cffff";
+/** 指定河川の縁 (災害切迫だけ明るい灰色。黒の線を写真の上で見分けるため) と、中小河川の縁 */
+export const RIVER_CASING = "#333333";
+export const RIVER_CASING_SEVERE = "#c4c4c4";
+export const SMALL_RIVER_CASING = "#b4b4b4";
+
+/** 地図に引く指定河川の区間 (段と名前)。線と、名前を置く 1 点 */
+export interface RiverSegment {
+  name: string;
+  /** 段 (2〜5)。段の無い区間は描かない */
+  level: 2 | 3 | 4 | 5;
+  lines: [number, number][][];
+  label: [number, number];
+}
+
+const lonLat = (p: unknown): [number, number] | null =>
+  Array.isArray(p) &&
+  typeof p[0] === "number" &&
+  typeof p[1] === "number" &&
+  Number.isFinite(p[0]) &&
+  Number.isFinite(p[1])
+    ? [p[0], p[1]]
+    : null;
+
+/**
+ * 気象庁の `designated_river` の GeoJSON から、段 (2〜5) のある区間を取り出す。読めない地物は捨てる。
+ * 名前は `fcstAreaNameJP` (「最上川下流」)、置き場は `labelLat`・`labelLon` (無ければいちばん長い線の真ん中の点)
+ */
+export function riverSegments(raw: unknown): RiverSegment[] {
+  const features = (raw as { features?: unknown } | null)?.features;
+  if (!Array.isArray(features)) return [];
+  const out: RiverSegment[] = [];
+  for (const f of features as unknown[]) {
+    if (typeof f !== "object" || f === null) continue;
+    const { properties, geometry } = f as Record<string, unknown>;
+    const p = (properties ?? {}) as Record<string, unknown>;
+    const level = p.level;
+    if (level !== 2 && level !== 3 && level !== 4 && level !== 5) continue;
+    const g = (geometry ?? {}) as { type?: unknown; coordinates?: unknown };
+    const parts =
+      g.type === "LineString"
+        ? [g.coordinates]
+        : g.type === "MultiLineString" && Array.isArray(g.coordinates)
+          ? g.coordinates
+          : [];
+    const lines = (parts as unknown[])
+      .map((l) =>
+        Array.isArray(l)
+          ? l.map(lonLat).filter((q): q is [number, number] => q !== null)
+          : [],
+      )
+      .filter((l) => l.length >= 2);
+    if (lines.length === 0) continue;
+    const given =
+      typeof p.labelLon === "number" && typeof p.labelLat === "number"
+        ? lonLat([p.labelLon, p.labelLat])
+        : null;
+    const longest = lines.reduce((a, b) => (b.length > a.length ? b : a));
+    const label = given ?? longest[Math.floor(longest.length / 2)];
+    if (!label) continue;
+    out.push({
+      name: typeof p.fcstAreaNameJP === "string" ? p.fcstAreaNameJP : "",
+      level,
+      lines,
+      label,
+    });
+  }
+  return out;
+}
+
+/** 指定河川の区間を、地図の GeoJSON (線と名前の点) にする */
+export function riverFeatures(segments: RiverSegment[]): {
+  type: "FeatureCollection";
+  features: unknown[];
+} {
+  return {
+    type: "FeatureCollection",
+    features: segments.flatMap((s) => [
+      {
+        type: "Feature",
+        properties: { level: s.level, name: s.name },
+        geometry: { type: "MultiLineString", coordinates: s.lines },
+      },
+      {
+        type: "Feature",
+        properties: { level: s.level, name: s.name },
+        geometry: { type: "Point", coordinates: s.label },
+      },
+    ]),
+  };
+}
