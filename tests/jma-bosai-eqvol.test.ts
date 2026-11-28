@@ -451,3 +451,92 @@ test("火山の一覧は古い順に並べる", () => {
   );
   expect(items.map((i) => i.eventId)).toEqual(["1", "2"]);
 });
+
+describe("読めない・取れないときは、黙って落とさず受信の状態に出す", () => {
+  /** 主が一度も取れていない (1 日前までの報を取る) 形で、`rounds` 回まわす */
+  async function run(reply: (url: string, n: number) => Response, rounds = 1) {
+    const { ctx, got } = sourceContext();
+    const urls: string[] = [];
+    const states: SourceStatus[] = [];
+    let n = 0;
+    const controller = new AbortController();
+    const source = bosaiEqvolSource(ctx, {
+      primary: () => ({ ...base, state: "retrying", lastSeenAt: undefined }),
+      now: () => Date.parse("2026-11-28T09:20:00Z"),
+      fetch: (async (url: string) => {
+        urls.push(url);
+        return reply(url, n);
+      }) as unknown as typeof fetch,
+      sleep: async () => {
+        states.push(source.status());
+        if (++n >= rounds) controller.abort();
+      },
+      log: () => {},
+    });
+    await source.run(controller.signal);
+    return { got, urls, states };
+  }
+  const LIST = JSON.stringify([
+    { eventId: "508", reportDatetime: "2026-11-28T17:00:00+09:00" },
+  ]);
+
+  test("本文を読めなければ、原文を残し、一覧に載っている間は状態を再接続中にして訳を出す", async () => {
+    const r = await run((url) => {
+      if (url === BOSAI_VOLCANO_WARNING) return new Response(LIST);
+      if (url === bosaiVolcanoWarning("508"))
+        return new Response('{"reportDatetime":"2026-11-28T17:00:00+09:00"}');
+      return new Response("[]");
+    }, 2);
+    expect(r.got).toHaveLength(1);
+    for (const s of r.states) {
+      expect(s.state).toBe("retrying");
+      expect(s.lastError).toContain("読めませんでした");
+    }
+  });
+
+  test("火山の一覧の項目の形が違えば、黙って捨てずに状態に出す", async () => {
+    const r = await run((url) =>
+      url === BOSAI_VOLCANO_ERUPTION
+        ? new Response(JSON.stringify([{ id: "x", rdt: "2026-11-28" }]))
+        : new Response("[]"),
+    );
+    expect(r.states[0]?.state).toBe("retrying");
+    expect(r.states[0]?.lastError).toContain("1 項目を読めませんでした");
+  });
+
+  test("本文が 404 でもすぐには諦めず、5 回目で諦めて状態に出す", async () => {
+    const r = await run((url) => {
+      if (url === BOSAI_VOLCANO_WARNING) return new Response(LIST);
+      if (url === bosaiVolcanoWarning("508"))
+        return new Response("not found", { status: 404 });
+      return new Response("[]");
+    }, 7);
+    expect(r.urls.filter((u) => u === bosaiVolcanoWarning("508"))).toHaveLength(
+      5,
+    );
+    expect(r.states[3]?.state).toBe("connected");
+    expect(r.states[4]?.state).toBe("retrying");
+    expect(r.states[6]?.lastError).toContain("本文を取れません");
+  });
+
+  test("火山の本文が一覧より古ければ (前の報が残っていれば)、渡さずに次の回に取り直す", async () => {
+    const r = await run((url, n) => {
+      if (url === BOSAI_VOLCANO_WARNING) return new Response(LIST);
+      if (url === bosaiVolcanoWarning("508"))
+        return new Response(
+          n === 0
+            ? VOLCANO_508
+            : VOLCANO_508.replaceAll(
+                "2021-03-08T14:00:00+09:00",
+                "2026-11-28T17:00:00+09:00",
+              ),
+        );
+      return new Response("[]");
+    }, 2);
+    expect(r.urls.filter((u) => u === bosaiVolcanoWarning("508"))).toHaveLength(
+      2,
+    );
+    expect(r.got).toHaveLength(1);
+    expect(r.got[0]?.error).toBeUndefined();
+  });
+});

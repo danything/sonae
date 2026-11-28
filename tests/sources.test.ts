@@ -605,3 +605,47 @@ describe("つなぎ方 (受信の状態に出す)", () => {
     });
   });
 });
+
+test("長期フィードの回で電文を取り残したら、高頻度フィードが取れても、10 分後に長期フィードを読み直して取る", async () => {
+  const { setSystemTime } = await import("bun:test");
+  const { ctx } = context();
+  const long = fixture("jma/made-feed.xml");
+  // 高頻度フィードには電文が無い (長期フィードにしか載っていない)
+  const short = long.replace(/<entry>[\s\S]*?<\/entry>/g, "");
+  let t = Date.parse("2026-11-28T00:00:00Z");
+  setSystemTime(new Date(t));
+  let longReads = 0;
+  let vxse53 = 0;
+  const fakeFetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.endsWith("eqvol_l.xml")) {
+      longReads++;
+      return new Response(long);
+    }
+    if (url.endsWith("eqvol.xml")) return new Response(short);
+    if (/_VXSE53_/.test(url) && ++vxse53 === 1)
+      return new Response("busy", { status: 503 });
+    return new Response(EMPTY_REPORT);
+  }) as typeof fetch;
+  const ac = new AbortController();
+  let rounds = 0;
+  const src = jmaSource(ctx, {
+    feedUrl: "https://example.invalid/eqvol.xml",
+    longFeedUrl: "https://example.invalid/eqvol_l.xml",
+    fetch: fakeFetch,
+    log: () => {},
+    sleep: async () => {
+      t += 60_000;
+      setSystemTime(new Date(t));
+      if (++rounds >= 15) ac.abort();
+    },
+  });
+  try {
+    await src.run(ac.signal);
+  } finally {
+    setSystemTime();
+  }
+  // 0 分に読んで取り残し、10 分を過ぎた回に読み直して取る。取れた後は読まない
+  expect(vxse53).toBe(2);
+  expect(longReads).toBe(2);
+});
