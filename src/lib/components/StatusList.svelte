@@ -6,17 +6,31 @@
     transportText,
   } from "#lib/format.ts";
   import type { SourceStatus } from "#lib/model.ts";
+  import {
+    RELAY_LABEL,
+    RELAY_VIA,
+    relayInTrouble,
+    relayStateText,
+  } from "#lib/relay-view.ts";
+  import type { RelayStatus } from "#lib/relay.ts";
 
   /**
    * **受信の状態** (押せない並び)。画面への配信 (SSE) と、情報源ごとの受信。「出典と注意」の窓の「受信の状態」に
    * いつも出し、受信に問題があるときだけ出る注意の印 (広い形はヘッダー、スマホの形は dock の右端) を押してもメニューに出す。
    * ふつうの状態 (受信中) と設定で切ってあるもの (オフ) は控えた字、つながっていないものだけ注意の色の字にする
-   * (状態の色は状態だけ)。名前の下に、つなぎ方 (「WebSocket」「SSE」「1 分ごとに取得」) を小さく添える
+   * (状態の色は状態だけ)。名前の下に、つなぎ方 (「WebSocket」「SSE」「1 分ごとに取得」) を小さく添える。
+   * その後に、地図のタイルなどの中継の源 (docs/design.md の 2.14) を、まだ誰も読んでいないものを除いて並べる。
+   * 配信元から取れていないものは、受信の問題と同じく注意の色の字にする
    */
   let {
     connected,
     statuses,
-  }: { connected: boolean; statuses: SourceStatus[] } = $props();
+    relay,
+  }: {
+    connected: boolean;
+    statuses: SourceStatus[];
+    relay: RelayStatus[];
+  } = $props();
 </script>
 
 <dl class="side-list status" data-testid="status">
@@ -43,6 +57,17 @@
   {:else}
     <div class="side-item static">
       <dt class="muted">受信を開始していません</dt>
+    </div>
+  {/each}
+  {#each relay.filter((r) => r.state !== "idle") as r (r.id)}
+    <div class="side-item static" data-testid="relay-status">
+      <dt>
+        {RELAY_LABEL[r.id] ?? r.id}
+        <span class="via">{RELAY_VIA}</span>
+      </dt>
+      <dd class="side-sub num" class:bad={relayInTrouble(r)}>
+        {relayStateText(r)}
+      </dd>
     </div>
   {/each}
 </dl>

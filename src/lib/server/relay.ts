@@ -438,6 +438,7 @@ export class Relay {
     const busy = (retry: number) =>
       stale(now) ??
       noStore(503, "配信元が混んでいるので、待っています", {
+        [RELAY_HEADER]: "busy",
         "retry-after": String(retry),
       });
     if (held > now) return busy(Math.ceil((held - now) / 1000));
@@ -471,6 +472,7 @@ export class Relay {
       if (old) return old;
       if (e instanceof Blocked)
         return noStore(503, "配信元が混んでいるので、待っています", {
+          [RELAY_HEADER]: "busy",
           "retry-after": String(e.seconds),
         });
       return noStore(502, "配信元から取れませんでした");

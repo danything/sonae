@@ -26,6 +26,7 @@ import {
   collapseRoutineVolcanoes,
   latestPerVolcano,
 } from "./model.ts";
+import type { RelayStatus } from "./relay.ts";
 import {
   RTS_STALE_MS,
   type RtsFrame,
@@ -51,6 +52,8 @@ export interface Snapshot {
   /** いまの早期注意情報 (府県予報区と種別ごと。知らせず、住んでいる地域の警報級の可能性に使う) */
   outlooks: WarningOutlook[];
   statuses: SourceStatus[];
+  /** 中継の源ごとの、配信元との様子 (docs/design.md の 2.14) */
+  relay: RelayStatus[];
 }
 
 type Keyed = { id: string } | { eventId: string };
@@ -90,6 +93,7 @@ class Live {
   weatherInfos = $state<WeatherInfo[]>([]);
   outlooks = $state<WarningOutlook[]>([]);
   statuses = $state<SourceStatus[]>([]);
+  relay = $state<RelayStatus[]>([]);
   /**
    * 台湾の観測点 (TREM-RTS) の位置と、いまの揺れ (docs/design.md の 2.9)。地図の点の色だけに使い、
    * 一覧にも知らせ (音・読み上げ・通知) にも使わない。揺れは `RTS_STALE_MS` 届かなければ消す
@@ -127,6 +131,7 @@ class Live {
     this.weatherInfos = s.weatherInfos;
     this.outlooks = s.outlooks;
     this.statuses = s.statuses;
+    this.relay = s.relay;
     this.seeded = true;
   }
 
@@ -147,6 +152,7 @@ class Live {
       weatherInfos: this.weatherInfos,
       outlooks: this.outlooks,
       statuses: this.statuses,
+      relay: this.relay,
     };
   }
 
@@ -336,6 +342,11 @@ class Live {
       es.addEventListener("status", (m) => {
         seen();
         this.statuses = JSON.parse((m as MessageEvent).data) as SourceStatus[];
+      });
+      // 中継の源ごとの様子 (変わったときと 30 秒ごと。docs/design.md の 2.14)
+      es.addEventListener("relay", (m) => {
+        seen();
+        this.relay = JSON.parse((m as MessageEvent).data) as RelayStatus[];
       });
       // この家の読み上げの声 (つないだときと、どこかの端末で替えたとき。docs/design.md の 2.4)
       es.addEventListener("voice", (m) => {

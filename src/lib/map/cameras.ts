@@ -99,8 +99,20 @@ const timeFmt = new Intl.DateTimeFormat("ja-JP", {
 });
 
 /** 「11/28 12:10 の画像」。古ければ、更新が止まっているかもしれないと足す */
-export function frameCaption(frame: CameraFrame, now: number): string {
+export function frameCaption(
+  frame: CameraFrame,
+  now: number,
+  stale?: { fetchedAt?: number },
+): string {
   const at = timeFmt.format(new Date(frame.takenAt));
+  // 気象庁から新しいページを取れず、サーバーが覚えていた古いページを返したとき (docs/design.md の 2.14)。
+  // 画像の時刻は出せるが、それより新しい画像があるかは分からない
+  if (stale)
+    return `${at} の画像。気象庁から新しい画像を取れていないため、いまの様子ではないことがあります${
+      stale.fetchedAt === undefined
+        ? ""
+        : ` (${timeFmt.format(new Date(stale.fetchedAt))} に取ったページから)`
+    }`;
   return now - Date.parse(frame.takenAt) > CAMERA_STALE_MS
     ? `${at} の画像 (それより後の画像がありません。点検などで止まっていることがあります)`
     : `${at} の画像`;

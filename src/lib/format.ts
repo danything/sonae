@@ -190,6 +190,49 @@ export const sourceInTrouble = (s: SourceStatus) =>
   (s.state !== "connected" && s.state !== "off" && s.state !== "standby") ||
   (s.id === "roads" && s.state !== "off" && !!s.roads?.problem);
 
+/** 一覧に行を出す情報源 (地図だけの源 (観測点の揺れ・海しる・通行止め・YouTube) は入れない) */
+const LIST_SOURCES: ReadonlySet<SourceId> = new Set<SourceId>([
+  "jma",
+  "jma-weather",
+  "p2p",
+  "wolfx",
+  "usgs",
+  "emsc",
+  "geonet",
+  "cwa",
+  "ptwc",
+  "jma-bosai",
+  "jma-bosai-weather",
+]);
+/** 起こしてすぐの「接続中」は数えない長さ */
+const CONNECTING_GRACE_MS = 60_000;
+
+/**
+ * 一覧の先頭に出す、受けられていない情報源の 1 行 (docs/ui.md の「一覧」)。古い情報を今の情報と取り違えないよう、
+ * どの源をいつから受けられていないか (最後に受けた・確かめた時刻) を書く。問題が無ければ undefined。
+ * 「気象庁 防災情報 XML (11/28 10:04 から)・P2P地震情報 (11/28 10:05 から)」
+ */
+export function receiveGapText(
+  statuses: SourceStatus[],
+  now: number,
+): string | undefined {
+  const gaps = statuses.filter((s) => {
+    if (!LIST_SOURCES.has(s.id)) return false;
+    if (s.state === "retrying" || s.state === "stopped") return true;
+    return (
+      s.state === "connecting" &&
+      now - (Date.parse(s.since) || now) >= CONNECTING_GRACE_MS
+    );
+  });
+  if (gaps.length === 0) return undefined;
+  return gaps
+    .map((s) => {
+      const at = s.lastSeenAt ?? s.since;
+      return `${SOURCE_LABEL[s.id] ?? s.id}${at ? ` (${jst(at)} から)` : ""}`;
+    })
+    .join("・");
+}
+
 /** M の書き方 (「M3.5」)。M が無ければ電文の文のまま、それも無ければ「—」 */
 export function magnitudeText(
   q: Pick<Quake, "magnitude" | "magnitudeText">,

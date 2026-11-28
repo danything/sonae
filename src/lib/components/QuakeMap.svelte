@@ -289,6 +289,12 @@
   import type { Place } from "#lib/places.ts";
   import { readPref, writePref } from "#lib/prefs.ts";
   import { homeAt, saveHome, trackHere } from "#lib/push-client.ts";
+  import { relayIdOf, relayInTrouble, relayNote } from "#lib/relay-view.ts";
+  import {
+    type RelaySourceId,
+    relayStale,
+    type RelayStatus,
+  } from "#lib/relay.ts";
   import { rtsFeatures, type RtsFrame, type RtsStation } from "#lib/rts.ts";
 
   /**
@@ -318,6 +324,7 @@
     aboutHref = "/?about=1",
     found = null,
     selected = false,
+    relay = [],
     onstations,
     onpick,
   }: {
@@ -366,6 +373,8 @@
     found?: { place: Place; n: number } | null;
     /** 隅の出典を押したときに開く「出典と注意」の窓のリンク */
     aboutHref?: string;
+    /** 中継の源ごとの、配信元との様子 (取れていない源を読んでいる層があれば、地図に注を出す。docs/design.md の 2.14) */
+    relay?: RelayStatus[];
     /** 詳しい内容を開いているか (閉じたら、開く前の地図の位置へ戻す。`#lib/map/restore.ts`) */
     selected?: boolean;
   } = $props();
@@ -469,6 +478,10 @@
         void loadRoads(created);
         for (const l of anno as { id: string }[])
           if (!created.getLayer(l.id)) created.addLayer(l as never, "shelters");
+        // 描き終えるたびに、いま見えている層がどの中継の源を読んでいるかを数え直す (取れていない源の注を出すため)
+        created.on("idle", () => {
+          if (created) scanRelay(created);
+        });
         created.on("moveend", () => {
           void loadShelters();
           // GRUS 画像の範囲を映しているときは、隅の出典に足す
@@ -1251,6 +1264,44 @@
    */
   let boxHeight = $state(0);
   const NOTE_MIN_HEIGHT = 420;
+  // ---- 中継の源が取れていないときの注 (docs/design.md の 2.14 の「失敗したとき」・docs/map.md の「配信元から取れないとき」) ----
+  /** いま見えている層が読んでいる中継の源 */
+  let relayUsed = $state<ReadonlySet<RelaySourceId>>(new Set());
+  function scanRelay(m: MapLibreMap): void {
+    const z = m.getZoom();
+    const ids = new Set<RelaySourceId>();
+    for (const id of m.getLayersOrder()) {
+      const l = m.getLayer(id) as
+        { source?: string; isHidden?: (zoom: number) => boolean } | undefined;
+      if (!l?.source || l.isHidden?.(z)) continue;
+      const s = m.getSource(l.source) as
+        { tiles?: string[]; url?: string } | undefined;
+      for (const u of [...(s?.tiles ?? []), s?.url ?? ""]) {
+        const r = relayIdOf(u);
+        if (r) ids.add(r);
+      }
+      // 避難場所は画面が地理院のタイルを読んで GeoJSON の source に入れている
+      if (id === "shelters") ids.add("gsi");
+    }
+    // 重ねるハザードマップを出していれば、公式の凡例の画像も読んでいる
+    if (ids.has("disaportal")) ids.add("disaportal-legend");
+    if (
+      ids.size !== relayUsed.size ||
+      [...ids].some((id) => !relayUsed.has(id))
+    )
+      relayUsed = ids;
+  }
+  /** 見えている層の源のうち、配信元から取れていないものの注 (1 つ 1 文) */
+  const relayNotes = $derived(
+    relay
+      .filter((s) => relayUsed.has(s.id) && relayInTrouble(s))
+      .map((s) => ({ id: s.id, text: relayNote(s) ?? "" })),
+  );
+  /** 気象庁のタイルと時刻の表が取れていないか (時刻の凡例の「◯分ごとに更新」を出さない) */
+  const jmaTrouble = $derived(
+    relay.some((s) => s.id === "jmatile" && relayInTrouble(s)),
+  );
+
   // ---- 雨雲 (気象庁の高解像度降水ナウキャストのいま。docs/map.md の「雨雲」) ----
   // 時刻の表をサーバーの中継 (`#lib/relay.ts`) から取り、いまの 1 枚のタイルに差し替える。取るのは雨雲を出している間だけで、
   // 画面が見えていない間 (裏のタブ・閉じた画面) と地震を選んでいる間 (雨雲を隠す) は止める
@@ -2648,7 +2699,7 @@
         const frame = latestFrame(await r.text());
         if (cameraPopupEl !== popup) return;
         if (!frame) return fail(CAMERA_EMPTY);
-        caption.textContent = frameCaption(frame, Date.now());
+        caption.textContent = frameCaption(frame, Date.now(), relayStale(r));
         if (shown?.url === frame.url) return;
         shown = frame;
         img.alt = frameAlt(p, frame);
@@ -3335,6 +3386,20 @@
           <Icon icon={locating === "on" ? LocateFixed : Locate} />
         </button>
       </div>
+      {#if relayNotes.length > 0}
+        <!--
+          見えている層の配信元から、新しいものを取れていないとき。サーバーが覚えていた古いものを出していることと、
+          いつまでに取ったものかを書く (古いものをいまのものと取り違えないため。docs/design.md の 5 章)。低い地図でも出す
+        -->
+        <div class="map-note tiny relay-note" data-testid="relay-note">
+          {#each relayNotes as n (n.id)}
+            <p>
+              <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
+              {n.text}
+            </p>
+          {/each}
+        </div>
+      {/if}
       {#if chosenHazard}
         <!-- 公式の凡例 (ハザードマップポータルサイトと J-SHIS の画像)。活断層は凡例の代わりに国土地理院の説明へのリンク -->
         <figure class="legend" data-testid="hazard-legend">
@@ -3409,7 +3474,9 @@
                   <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
                   {jst(rainIso(rainFrame))} の観測です。新しい雨雲を読めていないため、いまの雨ではありません
                 {:else}
-                  {jst(rainIso(rainFrame))} の観測 (5 分ごとに更新)
+                  {jst(rainIso(rainFrame))} の観測 ({jmaTrouble
+                    ? "新しいものを取れていません"
+                    : "5 分ごとに更新"})
                 {/if}
               </p>
             {:else if rainFailed}
@@ -3466,7 +3533,9 @@
                   <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
                   {jst(riskIso(riskFrame))} の危険度です。新しいキキクルを読めていないため、いまの危険度ではありません
                 {:else}
-                  {jst(riskIso(riskFrame))} の危険度 (10 分ごとに更新)
+                  {jst(riskIso(riskFrame))} の危険度 ({jmaTrouble
+                    ? "新しいものを取れていません"
+                    : "10 分ごとに更新"})
                 {/if}
               </p>
             {:else if riskFailed}
@@ -3538,7 +3607,9 @@
                   <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
                   {jst(stampIso(nowcFrame.validtime))} の解析です。新しい解析を読めていないため、いまのものではありません
                 {:else}
-                  {jst(stampIso(nowcFrame.validtime))} の解析 (10 分ごとに更新)
+                  {jst(stampIso(nowcFrame.validtime))} の解析 ({jmaTrouble
+                    ? "新しいものを取れていません"
+                    : "10 分ごとに更新"})
                 {/if}
               </p>
             {:else if nowcFailed}
@@ -3698,7 +3769,9 @@
               {/each}
             </ul>
             <p class="tiny muted">
-              いまは気象庁の観測 (5 分ごとに更新)、+1 時間からは気象庁の予測{loopFrames[0]
+              いまは気象庁の観測 ({jmaTrouble
+                ? "新しいものを取れていません"
+                : "5 分ごとに更新"})、+1 時間からは気象庁の予測{loopFrames[0]
                 ? ` (${jst(stampIso(loopFrames[0].basetime))} の解析)`
                 : ""}です。出典:
               <a href={RAIN_PAGE} target="_blank" rel="noopener"
@@ -3873,7 +3946,9 @@
                 {:else}
                   気象庁の解析です ({snowOld
                     ? "新しい解析を読めていないため、いまのものではありません"
-                    : "1 時間ごとに更新"})。› で 6
+                    : jmaTrouble
+                      ? "新しいものを取れていません"
+                      : "1 時間ごとに更新"})。› で 6
                   時間先までの予測を見られます。
                 {/if}
               </p>
@@ -4383,10 +4458,21 @@
     opacity: 1;
   }
   /* 古い雨雲・読めないときの印。字は本文の色のまま、アイコンだけ注意の色 (denpa の 6 章「通知」) */
-  .rain-time .warn-mark {
+  .rain-time .warn-mark,
+  .relay-note .warn-mark {
     display: inline-flex;
     vertical-align: -0.125em;
     color: var(--so-warn-text);
+  }
+  /* 取れていない源の注。1 つ 1 文で、段落の間を少し空ける */
+  .relay-note {
+    display: flex;
+    flex-direction: column;
+    gap: var(--so-space-1);
+    pointer-events: auto;
+  }
+  .relay-note p {
+    margin: 0;
   }
   /* 避難場所と気象警報・注意報の吹き出し (MapLibre が DOM に置くので :global)。メニューと同じ面 */
   .map :global(.maplibregl-popup-content) {
