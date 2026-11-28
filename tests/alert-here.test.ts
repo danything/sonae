@@ -253,6 +253,7 @@ describe("開いているときは、現在地の気象も知らせる", () => {
           at,
           prefs({ home: homeAt("1220400") }),
           new Map(),
+          null,
         )[0]?.notice.title,
     );
     expect(titles[0]).toContain("(線状降水帯発生)");
