@@ -71,9 +71,10 @@ export class BosaiFetcher {
     };
   }
 
-  /** 次からこの控えを付けて取る */
+  /** 次からこの控えを付けて取る。控えが無い応答なら前の控えを捨てる (古い控えで 304 をもらい、変わった本文を読み損ねない) */
   remember(url: string, v: BosaiValidators): void {
     if (v.etag || v.modified) this.validators.set(url, v);
+    else this.validators.delete(url);
   }
 
   /** 控えを捨てる (次は本体を取り直す) */
