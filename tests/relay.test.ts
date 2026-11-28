@@ -186,19 +186,80 @@ test("配信元が落ちていて覚えたものも無ければ 502 (覚えな�
   expect(r.stats().entries).toBe(0);
 });
 
-test("404 は短く覚え、500 は覚えない", async () => {
+test("404 は短く覚え、500 は覚えないが、15 秒は取り直しに行かない", async () => {
   const up = upstream((c) =>
     c.url.endsWith("/1.png")
       ? new Response("no", { status: 404 })
       : new Response("err", { status: 500 }),
   );
-  const r = new Relay({ sources: SRC, fetch: up.fetch });
+  const c = clock();
+  const r = new Relay({ sources: SRC, fetch: up.fetch, now: c.now });
   expect((await r.handle("t", "c/1.png", none, h())).status).toBe(404);
   expect((await r.handle("t", "c/1.png", none, h())).status).toBe(404);
   expect(up.calls).toHaveLength(1);
   expect((await r.handle("t", "c/2.png", none, h())).status).toBe(502);
-  expect((await r.handle("t", "c/2.png", none, h())).status).toBe(502);
+  // 落ちている間は、要求のたびに配信元へ行かない
+  const again = await r.handle("t", "c/2.png", none, h());
+  expect(again.status).toBe(502);
+  expect(again.headers.get("retry-after")).toBe("15");
+  expect(up.calls).toHaveLength(2);
+  c.add(16_000);
+  await r.handle("t", "c/2.png", none, h());
   expect(up.calls).toHaveLength(3);
+  expect(r.stats().entries).toBe(1);
+});
+
+test("壊れた gzip は、gzip を受けない要求に 502 で返す", async () => {
+  const up = upstream(
+    () =>
+      new Response("not gzip", {
+        headers: {
+          "content-type": "application/json",
+          "content-encoding": "gzip",
+        },
+      }),
+  );
+  const r = new Relay({
+    sources: { t: { ...SRC.t, path: /^x\.json$/ } },
+    fetch: up.fetch,
+  });
+  expect((await r.handle("t", "x.json", none, h())).status).toBe(502);
+});
+
+test("弱い ETag も If-None-Match で同じものとみなす", async () => {
+  const up = upstream(() =>
+    png("w", { etag: 'W/"abc"', "cache-control": "max-age=60" }),
+  );
+  const r = new Relay({ sources: SRC, fetch: up.fetch });
+  await r.handle("t", "a/9.png", none, h());
+  const b = await r.handle(
+    "t",
+    "a/9.png",
+    none,
+    h({ "if-none-match": '"abc"' }),
+  );
+  expect(b.status).toBe(304);
+});
+
+test("同時に取りに行く数は、源ごとに上限を超えない", async () => {
+  let running = 0;
+  let peak = 0;
+  const up = upstream(async () => {
+    running++;
+    peak = Math.max(peak, running);
+    await new Promise((r) => setTimeout(r, 5));
+    running--;
+    return png();
+  });
+  const r = new Relay({
+    sources: { t: { ...SRC.t, concurrency: 2 } },
+    fetch: up.fetch,
+  });
+  await Promise.all(
+    Array.from({ length: 9 }, (_, i) => r.handle("t", `a/${i}.png`, none, h())),
+  );
+  expect(peak).toBe(2);
+  expect(up.calls).toHaveLength(9);
 });
 
 test("表に無い源・道・問い合わせは断り、配信元へは行かない", async () => {

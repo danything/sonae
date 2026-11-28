@@ -12,8 +12,8 @@
  * - 源ごとに同時に取りに行く数を絞る
  * - User-Agent に sonae と分かる名前を付ける。Cookie・Referer・使う人の IP は送らない
  *
- * 失敗したとき: 古くても覚えたものがあれば返す (`x-relay: stale`)。無ければ 502 (配信元が落ちた・返らない) か
- * 503 (`Retry-After` つき。配信元に断られて待っている間)。どちらも覚えず、ブラウザにも覚えさせない。
+ * 失敗したとき: 古くても覚えたものがあれば返す (`x-relay: stale`)。無ければ 502 (配信元が落ちた・返らない。同じものは 15 秒
+ * 取りに行かない) か 503 (`Retry-After` つき。配信元に断られて待っている間)。どちらも覚えず、ブラウザにも覚えさせない。
  *
  * 中身は変えない (色も値も。docs/design.md の 5 章)。配信元が gzip で返したものは gzip のまま覚えて返す。
  * 覚えるのはプロセスのメモリだけで、上限 (`SONAE_RELAY_CACHE_MB`) を超えたら長く使っていないものから捨てる。
@@ -75,6 +75,8 @@ const COOLDOWN_DEFAULT_S = 60;
 const COOLDOWN_MAX_S = 600;
 /** 404・410 を覚える期限の上限 (海の上の避難場所のタイルなど、無いものを何度も聞かない) */
 const MISSING_TTL_S = 300;
+/** 落ちた・返らない・5xx のあと、同じものを取り直すまで待つ長さ */
+const FAILED_WAIT_MS = 15_000;
 /** 期限が切れた後も、配信元が落ちていれば返してよい長さ */
 const STALE_FOR_MS = 24 * 3600_000;
 
@@ -94,7 +96,7 @@ function envNumber(name: string, fallback: number): number {
   return Number.isFinite(v) && v > 0 ? v : fallback;
 }
 
-/** `Cache-Control` の max-age (秒)。no-store・no-cache・private は 0 とみなす。書いていなければ undefined */
+/** `Cache-Control` の max-age (秒)。no-store・no-cache は 0 とみなす。書いていなければ undefined */
 export function maxAgeOf(cc: string | null): number | undefined {
   if (!cc) return undefined;
   const v = cc.toLowerCase();
@@ -129,14 +131,16 @@ class Gate {
   private readonly waiting: (() => void)[] = [];
   constructor(private readonly limit: number) {}
   async run<T>(f: () => Promise<T>): Promise<T> {
+    // 空きが無ければ待つ。終わった人は、待っている人に自分の枠をそのまま渡す (数え直す間に横から入られない)
     if (this.running >= this.limit)
       await new Promise<void>((r) => this.waiting.push(r));
-    this.running++;
+    else this.running++;
     try {
       return await f();
     } finally {
-      this.running--;
-      this.waiting.shift()?.();
+      const next = this.waiting.shift();
+      if (next) next();
+      else this.running--;
     }
   }
 }
@@ -165,8 +169,10 @@ export class Relay {
   /** 源ごとの、断られて待つ終わり (ミリ秒) */
   private readonly blockedUntil = new Map<string, number>();
   private readonly gates = new Map<string, Gate>();
-  /** Range の源で、ファイルごとに最後に見た ETag (変わったら、そのファイルの覚えた分を捨てる) */
+  /** Range の源で、ファイルごとに最後に見た ETag (変わったら、そのファイルの覚えた分を捨てる)。Range の源のファイルの数だけで、小さい */
   private readonly fileEtags = new Map<string, string>();
+  /** 失敗した鍵と、取り直してよくなる時刻 (落ちている間に、要求のたびに配信元へ行かない) */
+  private readonly failedUntil = new Map<string, number>();
 
   constructor(o: RelayOptions) {
     this.sources = o.sources;
@@ -224,6 +230,15 @@ export class Relay {
       return this.respond(cached, reqHeaders, "hit", store);
     }
 
+    const failed = this.failedUntil.get(key) ?? 0;
+    if (failed > now) {
+      if (cached && cached.staleUntil > now)
+        return this.respond(cached, reqHeaders, "stale", store);
+      return noStore(502, "配信元から取れませんでした", {
+        "retry-after": String(Math.ceil((failed - now) / 1000)),
+      });
+    }
+
     const blocked = this.blockedUntil.get(sourceId) ?? 0;
     if (blocked > now) {
       if (cached && cached.staleUntil > now)
@@ -245,10 +260,12 @@ export class Relay {
     }
     try {
       const entry = await p;
+      this.failedUntil.delete(key);
       if (store) this.put(key, entry, url, source);
       return this.respond(entry, reqHeaders, "miss", store);
     } catch (e) {
       const t = this.now();
+      if (!(e instanceof Blocked)) this.markFailed(key, t);
       if (cached && cached.staleUntil > t)
         return this.respond(cached, reqHeaders, "stale", store);
       if (e instanceof Blocked)
@@ -257,6 +274,12 @@ export class Relay {
         });
       return noStore(502, "配信元から取れませんでした");
     }
+  }
+
+  /** 落ちた・返らない・5xx のあと、その鍵は FAILED_WAIT_MS の間は取りに行かない */
+  private markFailed(key: string, now: number): void {
+    if (this.failedUntil.size > 1000) this.failedUntil.clear();
+    this.failedUntil.set(key, now + FAILED_WAIT_MS);
   }
 
   private gate(id: string, source: RelaySource): Gate {
@@ -411,7 +434,11 @@ export class Relay {
     if (e.headers["content-encoding"] === "gzip") {
       headers.set("vary", "accept-encoding");
       if (!/\bgzip\b/.test(reqHeaders.get("accept-encoding") ?? "")) {
-        body = Bun.gunzipSync(e.body as Uint8Array<ArrayBuffer>);
+        try {
+          body = Bun.gunzipSync(e.body as Uint8Array<ArrayBuffer>);
+        } catch {
+          return noStore(502, "配信元の gzip を開けませんでした");
+        }
         headers.delete("content-encoding");
       }
     }
@@ -420,7 +447,7 @@ export class Relay {
       e.status === 200 &&
       e.etag !== undefined &&
       inm !== null &&
-      inm.split(",").some((t) => t.trim() === e.etag)
+      inm.split(",").some((t) => weak(t) === weak(e.etag ?? ""))
     ) {
       headers.delete("content-encoding");
       return new Response(null, { status: 304, headers });
@@ -431,6 +458,9 @@ export class Relay {
     });
   }
 }
+
+/** 弱い ETag (`W/"…"`) も同じものとして比べる (If-None-Match は弱い比較) */
+const weak = (t: string) => t.trim().replace(/^W\//, "");
 
 /** 配信元に断られて待っている間 */
 class Blocked extends Error {
