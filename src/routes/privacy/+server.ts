@@ -30,11 +30,15 @@ const HTML = `<!doctype html>
 <li>ログインした人の名前と、ログインの印 (Cookie)。</li>
 <li>通知の設定 (住んでいる地域・知らせる範囲)。Web Push や Webhook で知らせるための、ブラウザの購読の情報と送り先の URL。</li>
 <li>端末の位置は、地図に描くだけで、このサーバーには送りません。</li>
-<li>地図のタイルや場所の検索は、このサーバーが代わりに配信元 (気象庁・国土地理院など) から取ります。配信元には端末の IP や Cookie は届きません。場所の検索で打った文字は、国土地理院へ問い合わせるために通すだけで、覚えず、記録にも残しません。</li>
-<li>地図の「地震の備え」の図 (J-SHIS) を選んだときと、ライブカメラを再生するときだけは、端末のブラウザが配信元 (防災科学技術研究所の J-SHIS・YouTube) へ直接つなぎます。</li>
-<li>このサーバーの前段 (CDN など) の設定によっては、ページに解析のスクリプトが差し込まれ、端末のブラウザがその会社へつなぐことがあります。sonae のものではなく、サーバーを立てた人の設定しだいです。たとえば sonae の作者の家のサーバー (s.doany.io) では、Cloudflare の設定で Cloudflare Web Analytics のビーコン (static.cloudflareinsights.com) が差し込まれます。</li>
 </ul>
 <p>これらは知らせを届けるためだけに使い、ほかの人や会社には渡しません。</p>
+
+<h2>外へつなぐもの</h2>
+<ul>
+<li>地図のタイルや場所の検索は、このサーバーが代わりに配信元 (気象庁・国土地理院など) から取ります。配信元には端末の IP や Cookie は届きません。場所の検索で打った文字は、国土地理院へ問い合わせるために通すだけで、覚えず、記録にも残しません。</li>
+<li>地図の「地震の備え」の図 (J-SHIS) を選んだときと、ライブカメラを再生するときだけは、端末のブラウザが配信元 (防災科学技術研究所の J-SHIS・YouTube) へ直接つなぎます。</li>
+<li>このサーバーの前段に CDN などを置くと、端末とこのサーバーの間の通信はその会社を通ります。前段の設定によっては、ページに解析のスクリプトが差し込まれ、端末のブラウザがその会社へつなぐこともあります。どちらも sonae のものではなく、サーバーを立てた人の設定しだいです。たとえば sonae の作者の家のサーバー (s.doany.io) は Cloudflare を通り、Cloudflare の設定で Cloudflare Web Analytics のビーコン (static.cloudflareinsights.com) が差し込まれます。その扱いは Cloudflare のプライバシーポリシーに従います: <a href="https://www.cloudflare.com/privacypolicy/">https://www.cloudflare.com/privacypolicy/</a></li>
+</ul>
 
 <h2>YouTube API Services</h2>
 <p>sonae は、地図のライブカメラ (国や自治体の YouTube のライブ配信) を出すために、YouTube API Services を使っています。</p>
