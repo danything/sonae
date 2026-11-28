@@ -600,6 +600,7 @@ test("続けて 3 回取れなければ、その源へはしばらく取りに�
   const d = await r.handle("t", "c/4.png", none, h());
   expect(d.status).toBe(503);
   expect(d.headers.get("retry-after")).toBe("15");
+  expect(d.headers.get("x-relay")).toBe("busy");
   expect(up.calls).toHaveLength(3);
   const s = stat(r, "t");
   expect(s?.state).toBe("blocked");

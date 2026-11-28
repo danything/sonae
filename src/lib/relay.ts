@@ -42,7 +42,7 @@ export interface RelayStatus {
 }
 
 /**
- * 中継の応答の見出し。`x-relay` は覚えたものか (`hit`・`miss`・`stale`)、`x-relay-fetched-at` は、返したものを
+ * 中継の応答の見出し。`x-relay` は覚えたものか (`hit`・`miss`・`stale`。配信元が混んでいて待っている間の 503 は `busy`)、`x-relay-fetched-at` は、返したものを
  * 配信元から最後に取れた時刻 (ISO 8601)。`stale` のとき、画面は「◯時◯分に取ったもの」と出す
  */
 export const RELAY_HEADER = "x-relay";

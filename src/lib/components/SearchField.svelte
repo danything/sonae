@@ -7,6 +7,7 @@
     parseGsi,
     type Place,
   } from "#lib/places.ts";
+  import { RELAY_HEADER } from "#lib/relay.ts";
 
   /** 市町村の表と外枠 (要るとき 1 度だけ読む。欄が 2 つあっても同じもの) */
   let tables:
@@ -29,12 +30,12 @@
   /** 住所検索の答えは、同じ文字ならもう一度は問い合わせない (このタブの間だけ持つ) */
   const remoteCache = new Map<string, Place[]>();
 
-  /** 住所検索の失敗。中継の 503 は、国土地理院が混んでいて待っている間 (docs/design.md の 2.14) */
+  /** 住所検索の失敗。`busy` は、中継が国土地理院が混んでいて待っている間 (`x-relay: busy`。docs/design.md の 2.14) */
   class SearchFailed extends Error {
-    readonly status: number;
-    constructor(status: number) {
-      super(String(status));
-      this.status = status;
+    readonly busy: boolean;
+    constructor(busy: boolean) {
+      super(busy ? "busy" : "failed");
+      this.busy = busy;
     }
   }
 
@@ -53,7 +54,8 @@
       signal,
       referrerPolicy: "no-referrer",
     });
-    if (!res.ok) throw new SearchFailed(res.status);
+    if (!res.ok)
+      throw new SearchFailed(res.headers.get(RELAY_HEADER) === "busy");
     const places = parseGsi(await res.json());
     // 持ちすぎない (古いものから捨てる)
     if (remoteCache.size >= 50) {
@@ -153,7 +155,7 @@
       .catch((err: unknown) => {
         if (c.signal.aborted) return;
         remoteState =
-          err instanceof SearchFailed && err.status === 503 ? "busy" : "failed";
+          err instanceof SearchFailed && err.busy ? "busy" : "failed";
       });
   }
 
