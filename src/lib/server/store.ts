@@ -229,7 +229,9 @@ export class Store {
 
   /**
    * 気象警報・注意報。府県予報区と種別ごとの状態を、新しい報で置き換える。前の報より古い報
-   * (長期フィードで後から読んだもの) は捨てる。同じ時刻の報は訂正なら置き換える
+   * (長期フィードで後から読んだもの) は捨てる。同じ時刻の報は訂正なら置き換える。
+   * 気象庁ホームページの JSON (予備、`source: "jma-bosai"`) から受けた報は、同じ時刻の気象庁 XML の報で
+   * 置き換え、気象庁 XML の報を同じ時刻の予備の報では置き換えない (docs/design.md の 2.8)
    */
   private applyWarning(
     w: Omit<WeatherWarning, "updatedAt">,
@@ -238,7 +240,14 @@ export class Store {
     const prev = this.warning(w.id);
     if (prev) {
       const d = ms(w.reportedAt) - ms(prev.reportedAt);
-      if (d < 0 || (d === 0 && w.infoType !== "訂正")) return [];
+      if (d < 0) return [];
+      if (d === 0) {
+        const xmlOverBosai =
+          prev.source === "jma-bosai" && w.source === undefined;
+        const bosaiOverXml =
+          prev.source === undefined && w.source === "jma-bosai";
+        if (bosaiOverXml || (w.infoType !== "訂正" && !xmlOverBosai)) return [];
+      }
     }
     const next: WeatherWarning = { ...w, updatedAt: now };
     this.db
@@ -266,6 +275,17 @@ export class Store {
     w: Omit<WeatherInfo, "updatedAt" | "cancelled">,
     now: string,
   ): SonaeEvent[] {
+    // 気象庁ホームページの JSON (予備) から受けた報は、同じ報 (同じ id) を受けていれば採らない
+    // (気象庁 XML の報を置き換えない)。予備の後に気象庁 XML の同じ報が来たら、下の upsert で置き換わる
+    if (
+      w.source === "jma-bosai" &&
+      this.db
+        .query<{ n: number }, [string]>(
+          "SELECT 1 AS n FROM weather_infos WHERE id = ?",
+        )
+        .get(w.id)
+    )
+      return [];
     let next: WeatherInfo = {
       ...w,
       cancelled: w.infoType === "取消",

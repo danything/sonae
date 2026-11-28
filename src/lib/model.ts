@@ -17,6 +17,8 @@ export type SourceId =
   | ForeignSource
   | "ptwc"
   | "jma-bosai"
+  /** 気象庁ホームページの警報・注意報と気象防災速報の JSON。気象 XML (`jma-weather`) が取れない間だけ取る予備 (docs/design.md の 2.8) */
+  | "jma-bosai-weather"
   | "trem"
   | "seisjs"
   | "msil"
@@ -785,6 +787,11 @@ export interface WeatherWarning {
   areas: WarningArea[];
   /** この報で解除された市町村等と、解除された種類 */
   released: WarningArea[];
+  /**
+   * 受けた所。無ければ気象庁 XML。`jma-bosai` は、気象 XML が取れない間に気象庁ホームページの JSON から
+   * 受けたもの (docs/design.md の 2.8 の「予備」)。気象庁 XML の同じ報が届いたら置き換わる
+   */
+  source?: "jma-bosai";
   updatedAt: string;
 }
 
@@ -814,6 +821,8 @@ export interface OfficeWarnings {
   }[];
   /** 種別 (現象) ごとの見出し (電文の Headline/Text) */
   headlines: { code: WarningCode; text: string; reportedAt: string }[];
+  /** 出ているもののどれかを、気象庁ホームページの JSON (予備) から受けた */
+  bosai?: boolean;
 }
 
 /** 府県予報区ごとにまとめる。出ているものがある府県予報区だけを、段の高い順・新しい順に並べる */
@@ -830,6 +839,7 @@ export function warningsByOffice(ws: WeatherWarning[]): OfficeWarnings[] {
     };
     if (Date.parse(w.reportedAt) > Date.parse(o.reportedAt))
       o.reportedAt = w.reportedAt;
+    if (w.areas.length > 0 && w.source === "jma-bosai") o.bosai = true;
     if (w.areas.length > 0 && w.headline)
       o.headlines.push({
         code: w.code,
@@ -1163,6 +1173,8 @@ export interface WeatherInfo {
    * 水位を持つようにした変更 (#359) より前に受けた報には無い
    */
   stations?: RiverStation[];
+  /** 受けた所。無ければ気象庁 XML。`jma-bosai` は気象庁ホームページの JSON (予備。`WeatherWarning` の `source` と同じ) */
+  source?: "jma-bosai";
   cancelled: boolean;
   updatedAt: string;
 }
@@ -1301,8 +1313,10 @@ export type SonaeEvent =
 export interface SourceStatus {
   id: SourceId;
   /** `off` は設定で受信を切ってあるもの (中央氣象署の授権碼が無いなど)。問題ではないので注意の印は出さない */
-  state: "connecting" | "connected" | "retrying" | "stopped" | "off";
-  /** 切ってある訳 (`off` のときだけ。「授権碼がありません」) */
+  /** `standby` は、主の源が取れている間は取得しない予備 (気象庁ホームページの気象の JSON)。問題ではない */
+  state:
+    "connecting" | "connected" | "retrying" | "stopped" | "off" | "standby";
+  /** 切ってある訳と、待っている訳 (`off`・`standby` のときだけ。「授権碼がありません」) */
   reason?: string;
   /** 最後に何かを受けた時刻 (heartbeat や 304 も含む) */
   lastSeenAt?: string;

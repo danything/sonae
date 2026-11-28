@@ -16,6 +16,7 @@ import { publicOrigin } from "./site.ts";
 import { cwaSource } from "./sources/cwa.ts";
 import { emscSource } from "./sources/emsc.ts";
 import { geonetSource } from "./sources/geonet.ts";
+import { bosaiWeatherSource } from "./sources/jma-bosai-weather.ts";
 import { bosaiTsunamiSource } from "./sources/jma-bosai.ts";
 import { jmaSource, jmaWeatherSource } from "./sources/jma.ts";
 import { msilKey, msilSource } from "./sources/msil.ts";
@@ -122,9 +123,12 @@ export function startReceiving(): void {
       console.log(`[${s.id}] ${s.state}${why}`);
     },
   };
+  const weather = jmaWeatherSource(ctx);
   a.sources = [
     jmaSource(ctx),
-    jmaWeatherSource(ctx),
+    weather,
+    // 気象 XML が取れない間だけ、気象庁ホームページの JSON を取る予備 (docs/design.md の 2.8)
+    bosaiWeatherSource(ctx, { primary: () => weather.status() }),
     p2pSource(ctx),
     wolfxSource(ctx),
     usgsSource(ctx),

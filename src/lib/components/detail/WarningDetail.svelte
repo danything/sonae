@@ -5,6 +5,7 @@
     WARNING_PHENOMENON,
     type WarningOutlook,
   } from "#lib/model.ts";
+  import { BOSAI_WEATHER_NOTE } from "#lib/notice.ts";
 
   import WarningLevel from "../WarningLevel.svelte";
   import OutlookSection from "./OutlookSection.svelte";
@@ -33,6 +34,10 @@
     <h1 id="detail-title">{o.office.name}の警報・注意報</h1>
     <p class="small muted">{jstFull(o.reportedAt)} 更新</p>
   </header>
+
+  {#if o.bosai}
+    <p class="small">{BOSAI_WEATHER_NOTE}</p>
+  {/if}
 
   <section>
     <h2>出ている警報・注意報</h2>
