@@ -61,6 +61,14 @@ export function parseWolfx(value: unknown): WolfxMessage {
   const issueStatus = STATUS[str(obj(o.Issue).Status) ?? ""] ?? "normal";
   const name = str(o.Hypocenter);
   const depth = num(o.Depth);
+  // Magunitude は古い綴りで、同じ値 (いずれ無くなる)
+  const magnitude = num(o.Magnitude) ?? num(o.Magunitude);
+  // レベル法 (最大予測震度だけの速報) は震源が地方の名前だけで、M は 0、深さは 10 km の仮の値。
+  // 仮定震源要素は M が 1.0、深さが 10 km の決まった値。M が 0 なのは値が無いときの互換の値
+  // (Wolfx の文書、2026-11-15)。どれも実際の値ではないので、M と深さを持たない
+  const level = str(o.CodeType)?.includes("最大予測震度のみ") === true;
+  const assumed = o.isAssumption === true || level;
+  const placeholder = assumed || magnitude === 0;
   const report: EewReport = {
     source: "wolfx",
     eventId,
@@ -70,18 +78,20 @@ export function parseWolfx(value: unknown): WolfxMessage {
     final: o.isFinal === true,
     cancelled: o.isCancel === true,
     status: o.isTraining === true ? "training" : issueStatus,
-    assumed: o.isAssumption === true,
+    assumed,
     originTime: jstToIso(o.OriginTime),
     hypocenter: name
       ? {
           name,
           lat: num(o.Latitude),
           lon: num(o.Longitude),
-          depthKm: depth !== undefined && depth >= 0 ? depth : undefined,
+          depthKm:
+            !placeholder && depth !== undefined && depth >= 0
+              ? depth
+              : undefined,
         }
       : undefined,
-    // Magunitude は古い綴りで、同じ値 (いずれ無くなる)
-    magnitude: num(o.Magnitude) ?? num(o.Magunitude),
+    magnitude: placeholder ? undefined : magnitude,
     warnAreas: names(o.WarnArea, isWarningArea),
     // 予報の地域も含めた全部 (名前だけ。Shindo1/2 は読まない)。通知の「住んでいる地域と現在地」の判定に使う
     areas: names(o.WarnArea, () => true),
