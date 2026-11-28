@@ -85,7 +85,7 @@ export interface Eew {
   final: boolean;
   cancelled: boolean;
   status: Status;
-  /** 仮定震源要素 (PLUM 法・レベル法)。震源と M は目安にすぎない */
+  /** 仮定震源要素 (PLUM 法・レベル法)。震源は目安にすぎず、M と深さは持たない (仮の決まった値のため) */
   assumed: boolean;
   originTime?: string;
   hypocenter?: Hypocenter;
