@@ -4,6 +4,7 @@ import { parseP2p } from "#lib/server/sources/p2p-json.ts";
 import {
   parseWolfx,
   parseWolfxEqlist,
+  parseWolfxSpecialEq,
   wolfxShindo,
 } from "#lib/server/sources/wolfx-json.ts";
 
@@ -314,5 +315,53 @@ describe("Wolfx の地震情報の一覧 (作った JSON)", () => {
     expect(
       parseWolfxEqlist({ type: "jma_eqlist", No1: { Title: "震度速報" } }, AT),
     ).toEqual([]);
+  });
+});
+
+describe("Wolfx の南海トラフ地震臨時情報など (作った JSON)", () => {
+  test("種別ごとの報をお知らせにする。id は気象庁 XML と同じ形。ほかの種別は捨てる", () => {
+    const got = parseWolfxSpecialEq(json("wolfx/made-special-eq.json"));
+    expect(got.map((g) => g.item.advisory.id)).toEqual([
+      "VYSE50-20200512162000",
+      "VYSE52-20200511170000",
+    ]);
+    expect(got[0]?.item.advisory).toMatchObject({
+      code: "VYSE50",
+      source: "wolfx",
+      title: "南海トラフ地震臨時情報（調査中）",
+      serialName: "調査中",
+      status: "normal",
+      infoType: "発表",
+      reportedAt: "2020-05-12T07:20:00.000Z",
+      headline: "",
+    });
+    expect(got[1]?.item.advisory).toMatchObject({
+      serialName: "定例解説",
+      next: "次の定例の発表は●月●日の予定です。",
+    });
+    // 参考解説 (appendices) は読まない
+    expect(JSON.stringify(got)).not.toContain("（参考）");
+  });
+
+  test("訂正・取消と、表題に訓練とある報", () => {
+    const v = json("wolfx/made-special-eq.json");
+    const [r] = v.reports as Record<string, unknown>[];
+    const one = (over: Record<string, unknown>) =>
+      parseWolfxSpecialEq({ reports: [{ ...r, ...over }] })[0];
+    const cancelled = one({
+      status: "cancelled",
+      notice: "先ほどの情報を取り消します。",
+    });
+    expect(cancelled?.item.advisory.infoType).toBe("取消");
+    expect(cancelled?.item.advisory.text).toEndWith(
+      "先ほどの情報を取り消します。",
+    );
+    expect(cancelled?.key).not.toBe(one({})?.key);
+    expect(one({ status: "corrected" })?.item.advisory.infoType).toBe("訂正");
+    expect(
+      one({ title: "南海トラフ地震臨時情報（訓練）" })?.item.advisory.status,
+    ).toBe("training");
+    // 時刻の読めない報は捨てる
+    expect(one({ time: null })).toBeUndefined();
   });
 });

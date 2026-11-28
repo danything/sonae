@@ -408,6 +408,7 @@ describe("Wolfx", () => {
     const src = wolfxSource(ctx, {
       log: () => {},
       eqlistPollMs: 50,
+      queryGapMs: 0,
       connect: () => {
         const s = new FakeSocket();
         sockets.push(s);
@@ -445,6 +446,42 @@ describe("Wolfx", () => {
     await run;
   });
 
+  test("問い合わせは間を空けて送り、南海トラフ地震臨時情報などはまだ受けていない報だけを渡す", async () => {
+    const { ctx, got } = context();
+    const ac = new AbortController();
+    let socket: FakeSocket | undefined;
+    const src = wolfxSource(ctx, {
+      log: () => {},
+      queryGapMs: 30,
+      connect: () => {
+        socket = new FakeSocket();
+        queueMicrotask(() => socket?.fire("open"));
+        return socket;
+      },
+    });
+    const run = src.run(ac.signal);
+    await tick(5);
+    // 続けて送ると Wolfx は最初の 1 つにしか答えないので、2 つ目は間を空ける
+    expect(socket?.sent).toEqual(["query_jmaeqlist"]);
+    await tick(40);
+    expect(socket?.sent).toEqual(["query_jmaeqlist", "query_jmaspecialeq"]);
+    const special = fixture("wolfx/made-special-eq.json");
+    socket?.fire("message", { data: special });
+    expect(got.map((m) => m.code)).toEqual([
+      "jma_special_eq",
+      "jma_special_eq",
+    ]);
+    expect(got[0]?.items[0]).toMatchObject({
+      type: "advisory",
+      advisory: { code: "VYSE50", source: "wolfx" },
+    });
+    // 同じ報がまた来ても渡さない
+    socket?.fire("message", { data: special });
+    expect(got).toHaveLength(2);
+    ac.abort();
+    await run;
+  });
+
   test("閉じかけの接続で問い合わせが投げても落ちず、次の問い合わせを続ける", async () => {
     const { ctx } = context();
     const ac = new AbortController();
@@ -454,6 +491,7 @@ describe("Wolfx", () => {
     const src = wolfxSource(ctx, {
       log: (m) => logs.push(m),
       eqlistPollMs: 20,
+      queryGapMs: 0,
       connect: () => {
         const s = new FakeSocket();
         s.send = () => {

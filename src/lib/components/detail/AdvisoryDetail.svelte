@@ -37,6 +37,13 @@
     </p>
   {/if}
 
+  {#if a.source === "wolfx"}
+    <p class="small">
+      Wolfx Project が中継した気象庁の情報です (気象庁 XML の予備)。気象庁 XML
+      の同じ報が届いたら、そちらに置き換えます。
+    </p>
+  {/if}
+
   {#if a.headline}
     <p class="small pre-line">{a.headline}</p>
   {/if}

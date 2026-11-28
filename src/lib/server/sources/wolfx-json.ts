@@ -18,7 +18,7 @@ import {
 import { jstToIso } from "#lib/server/time.ts";
 
 import { STATUS } from "./jma-xml.ts";
-import type { EewReport, QuakeIncoming } from "./types.ts";
+import type { EewReport, Normalized, QuakeIncoming } from "./types.ts";
 
 type Json = Record<string, unknown>;
 const obj = (v: unknown): Json =>
@@ -211,6 +211,80 @@ export function parseWolfxEqlist(
     out.push({
       key: `eqlist-${eventId ?? originTime}-${digest}`,
       item: { type: "quake", eventId, status: "normal", report },
+    });
+  }
+  return out;
+}
+
+/** 南海トラフ・北海道・三陸沖の情報の電文の種別 (`jma_special_eq` の `reports[].product`) */
+const SPECIAL_PRODUCTS = ["VYSE50", "VYSE51", "VYSE52", "VYSE60"] as const;
+type SpecialProduct = (typeof SPECIAL_PRODUCTS)[number];
+const isSpecialProduct = (v: unknown): v is SpecialProduct =>
+  (SPECIAL_PRODUCTS as readonly unknown[]).includes(v);
+
+const SPECIAL_INFO_TYPE = {
+  issued: "発表",
+  corrected: "訂正",
+  cancelled: "取消",
+} as const;
+
+export interface WolfxAdvisory {
+  /** 情報源の中での重複の除去の鍵。電文の種別・Wolfx の報告の ID・状態 */
+  key: string;
+  item: Extract<Normalized, { type: "advisory" }>;
+}
+
+/**
+ * 南海トラフ地震臨時情報など (jma_special_eq) を読む。気象庁 XML の VYSE50・51・52・60 の予備
+ * (docs/design.md の 2.2 の「お知らせ」)。電文の種別ごとに、いちばん新しい報だけが来る。
+ *
+ * - お知らせの id は気象庁 XML と同じ `<種別>-<地震識別番号>` にし、XML と同じ報なら 1 つにまとめる (merge.ts)
+ * - 見出し (Headline) は来ないので空にする。通知の本文は本文の最初の段落にする (notify.ts)
+ * - 訓練・試験の印は無い。表題に「訓練」「試験」とあるものは、そう扱う (本番として知らせないため)。
+ *   本文の語では決めない (本番の解説の文に「訓練」の語が出ても、知らせなくならないように)
+ * - 補足 (`notice`。取消の説明など) は本文の後ろに、次の発表の予定 (`next`) はそのまま持つ。
+ *   参考解説 (`appendices`) は気象庁 XML の Appendix と同じく読まない
+ */
+export function parseWolfxSpecialEq(value: unknown): WolfxAdvisory[] {
+  const o = obj(value);
+  const out: WolfxAdvisory[] = [];
+  for (const r of (Array.isArray(o.reports) ? o.reports : []).map(obj)) {
+    const code = r.product;
+    if (!isSpecialProduct(code)) continue;
+    const reportedAt = str(r.time);
+    if (!reportedAt || !Number.isFinite(Date.parse(reportedAt))) continue;
+    const infoType =
+      SPECIAL_INFO_TYPE[str(r.status) as keyof typeof SPECIAL_INFO_TYPE] ??
+      "発表";
+    const eventId =
+      (Array.isArray(r.eventIds) ? r.eventIds.map(str) : []).find(
+        (v): v is string => v !== undefined,
+      ) ?? reportedAt;
+    const title = str(r.title) ?? str(r.kind) ?? code;
+    const text = [str(r.text), str(r.notice)].filter(Boolean).join("\n\n");
+    out.push({
+      key: `special-${code}-${str(r.id) ?? reportedAt}-${infoType}`,
+      item: {
+        type: "advisory",
+        advisory: {
+          id: `${code}-${eventId}`,
+          code,
+          source: "wolfx",
+          eventId,
+          title,
+          serialName: str(r.label),
+          status: title.includes("訓練")
+            ? "training"
+            : title.includes("試験")
+              ? "test"
+              : "normal",
+          infoType,
+          reportedAt,
+          headline: "",
+          text,
+          next: str(r.next),
+        },
+      },
     });
   }
   return out;
