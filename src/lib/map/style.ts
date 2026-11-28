@@ -16,6 +16,7 @@ import {
   HYPO_RADIUS,
   radiusExpr,
 } from "#lib/map/epicenters.ts";
+import { OFFICE_MINZOOM, TIDE_MINZOOM } from "#lib/map/marine.ts";
 import {
   JMATILE,
   N3_TILE_ZOOMS,
@@ -102,7 +103,7 @@ const ROADS_ATTRIBUTION =
   '出典：<a href="https://www.mlit.go.jp/road/road_fr4_000201.html" target="_blank" rel="noopener">国土交通省「通れるマップ」</a>を加工して作成';
 
 const MARINE_ATTRIBUTION =
-  '出典：<a href="https://www.msil.go.jp/" target="_blank" rel="noopener">海洋状況表示システム</a> (海底地殻変動観測点・海域火山DB を加工)';
+  '出典：<a href="https://www.msil.go.jp/" target="_blank" rel="noopener">海洋状況表示システム</a> (海底地殻変動観測点・海域火山DB・海上保安部署等・潮汐推算 を加工)';
 
 /** 火山の監視カメラの位置の出典 (全文は `#lib/notice.ts` の CREDITS) */
 const CAMERAS_ATTRIBUTION =
@@ -928,6 +929,10 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   {
     label: "海底地殻変動観測点・海域火山 (海しる)",
     note: "海上保安庁の海しるから取った点です。水色のひし形は海底地殻変動観測点 (GNSS-A。海底の動きを測る所)、黒い縁の白い三角の輪郭は海域火山データベースの火山です。押すと、名前と設置水深・標高などが出ます。サーバーが 1 日 1 回取り直します。海しるの API のキーが無いサーバーでは出ません。三角の輪郭は火山の警戒の段とは関係がありません (噴火警報・予報の火山は、色で塗った三角です)",
+  },
+  {
+    label: "海上保安部署・潮汐推算の地点 (海しる)",
+    note: `白い縁の紺の丸に「海」は海上保安部署等 (ズーム ${OFFICE_MINZOOM} から)、黒い縁の白い丸に「潮」は潮汐推算の地点 (ズーム ${TIDE_MINZOOM} から) です。海上保安部署を押すと所在地と電話番号が、潮汐推算の地点を押すと今日の推算の潮位 (満潮・干潮の時刻と高さ、1 日の図) が出ます。推算の潮位は月と太陽の動きから計算した値で、津波や高潮の観測ではありません。海しるの API のキーが無いサーバーでは出ません`,
   },
   {
     label: "火山の監視カメラ",
@@ -1892,12 +1897,40 @@ export function baseStyle(
       },
       // 台風の実況の中心と予報円の中心 (押すと吹き出し)。通行止めの線の上、海しるの点の下
       ...typhoonPointLayers(),
+      // 海しるの海上保安部署等 (白い縁の紺の丸に「海」) と潮汐推算の地点 (黒い縁の白い丸に「潮」)。いつも出し、押すと
+      // 吹き出し。港ごとに詰まって並ぶので、寄せたときだけ出す (`OFFICE_MINZOOM`・`TIDE_MINZOOM`)。海しるのほかの点の下
+      ...(
+        [
+          ["marine-office", "office", OFFICE_MINZOOM],
+          ["marine-tide", "tide", TIDE_MINZOOM],
+        ] as const
+      ).map(([id, kind, minzoom]): Record<string, unknown> => ({
+        id,
+        type: "symbol",
+        source: "marine",
+        minzoom,
+        filter: ["==", ["get", "kind"], kind],
+        layout: {
+          "icon-image": id,
+          "icon-allow-overlap": true,
+          "icon-size": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            minzoom,
+            0.85,
+            12,
+            1,
+          ],
+        },
+      })),
       // 海しるの点 (海底地殻変動観測点は水色のひし形、海域火山は黒い縁の白い三角の輪郭)。いつも出し、押すと吹き出し。
       // 震源の丸と観測点の揺れの上 (小さな点なので、大きく透けた丸の下に隠れないように)。観測点ごとの震度の丸の下
       {
         id: "marine",
         type: "symbol",
         source: "marine",
+        filter: ["in", ["get", "kind"], ["literal", ["gnssa", "volcano"]]],
         layout: {
           "icon-image": [
             "match",
