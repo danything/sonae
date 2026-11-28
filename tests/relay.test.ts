@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import { relayStale } from "#lib/relay.ts";
 import type { RelayEntry, RelayStore } from "#lib/server/relay-store.ts";
@@ -970,7 +970,6 @@ test("上限の内でも、返せなくなったものは 1 分に 1 回掃く",
   expect((await r.stats()).entries).toBe(50);
   // 404 は 5 分だけ覚える。過ぎた後に何かを覚えると、掃かれる
   c.add(6 * 60_000);
-  await r.handle("t", "z/x.png", none, h()).catch(() => {});
   await r.handle("t", "z/99.png", none, h());
   expect((await r.stats()).entries).toBe(1);
 });
@@ -995,4 +994,212 @@ test("同じホストの源 (地理院タイルと地理院地図Vector) は、�
     "same.test",
     "other.test",
   ]);
+});
+
+test("Range の源で ETag が行き来しても、置き換えられた版は覚えず、いまの版の範囲を毎回捨てない", async () => {
+  let etag = '"A"';
+  const up = upstream(
+    (c) =>
+      new Response(`part ${c.headers.range} ${etag}`, {
+        status: 206,
+        headers: { "content-range": "bytes 0-9/100", etag },
+      }),
+  );
+  const r = new Relay({ sources: SRC, fetch: up.fetch });
+  const get = (range: string) => r.handle("r", "a.pmtiles", none, h({ range }));
+  await get("bytes=0-9");
+  etag = '"B"';
+  await get("bytes=10-19");
+  // 遅れて着いた前の版 (A) は返すが覚えず、B の範囲も捨てない
+  etag = '"A"';
+  const old = await get("bytes=20-29");
+  expect(await old.text()).toContain('"A"');
+  expect((await r.stats()).entries).toBe(1);
+  etag = '"B"';
+  await get("bytes=30-39");
+  expect((await r.stats()).entries).toBe(2);
+  // B の範囲は覚えたまま (配信元へは行かない)
+  const calls = up.calls.length;
+  await get("bytes=10-19");
+  expect(up.calls).toHaveLength(calls);
+});
+
+test("同じホストの源が断られたら、もう片方の源の様子にも控えの始まりを出す", async () => {
+  const up = upstream(
+    () =>
+      new Response("busy", {
+        status: 429,
+        headers: { "retry-after": "120" },
+      }),
+  );
+  const c = clock();
+  const sources = {
+    a: { ...SRC.t, upstream: "https://same.test/a/" },
+    b: { ...SRC.t, upstream: "https://same.test/b/" },
+  };
+  const r = new Relay({ sources, fetch: up.fetch, now: c.now });
+  await r.handle("a", "x/1.png", none, h());
+  const b = stat(r, "b");
+  expect(b?.state).toBe("blocked");
+  expect(b?.since).toBe(new Date(c.now()).toISOString());
+});
+
+test("同じホストの枠は、そのホストの源のうち小さいほうの数になる", async () => {
+  let running = 0;
+  let peak = 0;
+  const up = upstream(async () => {
+    running++;
+    peak = Math.max(peak, running);
+    await new Promise((res) => setTimeout(res, 5));
+    running--;
+    return png();
+  });
+  const sources = {
+    a: { ...SRC.t, upstream: "https://same.test/a/", concurrency: 5 },
+    b: { ...SRC.t, upstream: "https://same.test/b/", concurrency: 2 },
+  };
+  const r = new Relay({ sources, fetch: up.fetch });
+  await Promise.all(
+    Array.from({ length: 8 }, (_, i) => r.handle("a", `x/${i}.png`, none, h())),
+  );
+  expect(peak).toBe(2);
+});
+
+test("控えは、同じホストのほかの源が受けた短い Retry-After で縮めない", async () => {
+  const releases: (() => void)[] = [];
+  const up = upstream(async (c) => {
+    await new Promise<void>((res) => releases.push(res));
+    return new Response("busy", {
+      status: 429,
+      headers: { "retry-after": c.url.includes("/a/") ? "120" : "5" },
+    });
+  });
+  const c = clock();
+  const sources = {
+    a: { ...SRC.t, upstream: "https://same.test/a/" },
+    b: { ...SRC.t, upstream: "https://same.test/b/" },
+  };
+  const r = new Relay({ sources, fetch: up.fetch, now: c.now });
+  const pa = r.handle("a", "x/1.png", none, h());
+  const pb = r.handle("b", "x/1.png", none, h());
+  while (releases.length < 2) await Promise.resolve();
+  releases[0]?.();
+  await pa;
+  releases[1]?.();
+  await pb;
+  c.add(10_000);
+  const again = await r.handle("b", "x/2.png", none, h());
+  expect(again.headers.get("x-relay")).toBe("busy");
+  expect(up.calls).toHaveLength(2);
+});
+
+describe("見る人の取り消し", () => {
+  /** 枠を 1 本にし、1 本目 (`hold/0.png`) を離すまで返さない配信元 */
+  function setup() {
+    let release: () => void = () => {};
+    const held = new Promise<void>((res) => (release = res));
+    const up = upstream(async (c) => {
+      if (c.url.includes("/hold/")) await held;
+      return png("ok", { "cache-control": "max-age=60" });
+    });
+    const r = new Relay({
+      sources: { t: { ...SRC.t, concurrency: 1 } },
+      fetch: up.fetch,
+    });
+    const first = r.handle("t", "hold/0.png", none, h());
+    return { r, up, first, release };
+  }
+
+  test("1 人が取り消しても、同じものを待つほかの人は取れる", async () => {
+    const { r, up, first, release } = setup();
+    const ac = new AbortController();
+    const a = r.handle("t", "w/1.png", none, h(), ac.signal);
+    const b = r.handle("t", "w/1.png", none, h(), new AbortController().signal);
+    ac.abort();
+    release();
+    await first;
+    expect((await b).status).toBe(200);
+    await a;
+    expect(up.calls.map((x) => new URL(x.url).pathname)).toEqual([
+      "/data/hold/0.png",
+      "/data/w/1.png",
+    ]);
+  });
+
+  test("待っていた人が全員取り消したら、枠を待っている取りに行きはやめ、回路にも数えない", async () => {
+    const { r, up, first, release } = setup();
+    const ac = new AbortController();
+    const a = r.handle("t", "w/2.png", none, h(), ac.signal);
+    ac.abort();
+    release();
+    await first;
+    expect((await a).status).toBe(503);
+    expect(up.calls).toHaveLength(1);
+    expect(stat(r, "t")?.state).toBe("ok");
+    // 次に来た要求は取りに行く
+    expect((await r.handle("t", "w/2.png", none, h())).status).toBe(200);
+  });
+
+  test("取りに行き始めた後に取り消しても、止めずに覚える", async () => {
+    const { r, first, release } = setup();
+    const ac = new AbortController();
+    const a = r.handle("t", "hold/0.png", none, h(), ac.signal);
+    ac.abort();
+    release();
+    await first;
+    await a;
+    expect((await r.stats()).entries).toBe(1);
+  });
+});
+
+test("読む上限 (4MB) を超える応答は覚えられないので、読まずに 502 にする", async () => {
+  const up = upstream(() => new Response(new Uint8Array(4 * 1024 * 1024 + 1)));
+  const r = new Relay({ sources: SRC, fetch: up.fetch });
+  expect((await r.handle("t", "big/1.png", none, h())).status).toBe(502);
+});
+
+test("gzip を受けない要求に開いて返すときも、開いた後の大きさは 4MB まで", async () => {
+  const { gzipSync } = await import("node:zlib");
+  const bomb = gzipSync(new Uint8Array(5 * 1024 * 1024));
+  const up = upstream(
+    () =>
+      new Response(bomb, {
+        headers: { "content-type": "image/png", "content-encoding": "gzip" },
+      }),
+  );
+  const r = new Relay({ sources: SRC, fetch: up.fetch });
+  const plain = await r.handle("t", "gz/1.png", none, h());
+  expect(plain.status).toBe(502);
+  const gz = await r.handle(
+    "t",
+    "gz/1.png",
+    none,
+    h({ "accept-encoding": "gzip" }),
+  );
+  expect(gz.status).toBe(200);
+});
+
+test("置き換えられた ETag が続けて 3 回来たら、配信元が前の版に戻したとみなして、いまの版にする", async () => {
+  let etag = '"A"';
+  const up = upstream(
+    (c) =>
+      new Response(`part ${c.headers.range} ${etag}`, {
+        status: 206,
+        headers: { "content-range": "bytes 0-9/100", etag },
+      }),
+  );
+  const r = new Relay({ sources: SRC, fetch: up.fetch });
+  const get = (range: string) => r.handle("r", "a.pmtiles", none, h({ range }));
+  await get("bytes=0-9");
+  etag = '"B"';
+  await get("bytes=10-19");
+  etag = '"A"';
+  await get("bytes=20-29");
+  await get("bytes=30-39");
+  expect((await r.stats()).entries).toBe(1);
+  // 3 回目で A をいまの版にし、B の範囲を捨てる
+  await get("bytes=40-49");
+  expect((await r.stats()).entries).toBe(1);
+  await get("bytes=50-59");
+  expect((await r.stats()).entries).toBe(2);
 });

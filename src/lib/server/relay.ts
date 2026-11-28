@@ -8,8 +8,9 @@
  * - 期限は配信元の `Cache-Control: max-age` (無ければ源ごとの既定) で、源ごとの下限と全体の上限で挟む。
  *   期限が切れたら `If-None-Match`・`If-Modified-Since` を付けて取り直す (変わっていなければ 304 で本体を運ばない)
  * - 先読みはしない。見る人がいないときは何も取らない (要求が来たときだけ取る)
- * - 配信元が 429・503 を返したら、`Retry-After` (無ければ 60 秒、上限 10 分) の間はその源へ取りに行かない
- * - 源ごとに同時に取りに行く数を絞る
+ * - 配信元が 429・503 を返したら、`Retry-After` (無ければ 60 秒、上限 10 分) の間はそのホストへ取りに行かない
+ * - 配信元のホストごとに同時に取りに行く数を絞る (同じホストの源は枠と控えを分け合う)
+ * - 見る人が要求を取り消し、同じものを待つ人がいなくなったら、枠を待っている取りに行きはやめる
  * - User-Agent に sonae と分かる名前を付ける。Cookie・Referer・使う人の IP は送らない
  *
  * 失敗したとき: 古くても覚えたものがあれば、源ごとに決めた長さ (`staleFor`) まで返す (`x-relay: stale` と、取った時刻の
@@ -22,6 +23,8 @@
  * を超えたら、災害時に要る層を後に回して、長く使っていないものから捨てる。起動し直すと空になる。
  * 地名検索のように覚えない源 (`store: false`) は、覚えず、ログにも中身を出さない。
  */
+
+import { gunzipSync } from "node:zlib";
 
 import {
   RELAY_FETCHED_HEADER,
@@ -75,8 +78,15 @@ const PASS_HEADERS = [
 
 /** Range で 1 回に取ってよい大きさ */
 const MAX_RANGE_BYTES = 4 * 1024 * 1024;
-/** 1 つの応答の大きさの上限。Content-Length がこれより大きければ読まずに断る */
-const MAX_BODY_BYTES = 16 * 1024 * 1024;
+/**
+ * 1 つの応答の大きさの上限 (覚える上限と同じ。これより大きいものは覚えられないので、読まずに 502 にする)。
+ * Content-Length がこれより大きければ読まずに断る。gzip を受けない要求に開いて返すときも、開いた後でこれまで
+ */
+const MAX_BODY_BYTES = 4 * 1024 * 1024;
+/** 置き換えられた ETag を、ファイルごとにいくつまで覚えるか (CDN の節で ETag が行き来しても、覚えた範囲を毎回捨てない) */
+const RETIRED_ETAGS = 4;
+/** 置き換えられた ETag が、いまの版を挟まずに続けてこの回数来たら、配信元が前の版に戻したとみなす */
+const ROLLBACK_AFTER = 3;
 /** 配信元が返らないときに諦めるまで */
 const UPSTREAM_TIMEOUT_MS = 15_000;
 /** 断られたときに待つ秒数の既定と上限 */
@@ -198,7 +208,7 @@ export async function readCapped(
   return out;
 }
 
-/** 小さなセマフォ (源ごとに同時に取りに行く数を絞る) */
+/** 小さなセマフォ (配信元のホストごとに同時に取りに行く数を絞る) */
 class Gate {
   private running = 0;
   private readonly waiting: (() => void)[] = [];
@@ -237,9 +247,15 @@ export class Relay {
   private readonly maxTtl: number;
   private readonly store: RelayStore;
   /** 取りに行っている最中のもの (同じ鍵の要求をまとめる) */
-  private readonly inflight = new Map<string, Promise<RelayEntry>>();
+  private readonly inflight = new Map<string, Flight>();
   /** 配信元のホストごとの、断られたので待つ終わり (ミリ秒)。同じホストの源 (地理院タイルと地理院地図Vector) は一緒に控える */
   private readonly blockedUntil = new Map<string, number>();
+  /** 配信元のホストごとの、いまの控えの始まり (同じホストのほかの源の様子にも「いつから」を出す) */
+  private readonly blockedSince = new Map<string, number>();
+  /** 源の名前から配信元のホストへ (先に作る) */
+  private readonly hosts = new Map<string, string>();
+  /** ホストごとの、同時に取りに行く数 (そのホストの源のうち、いちばん小さいもの) */
+  private readonly hostLimits = new Map<string, number>();
   private readonly health = new Map<string, Health>();
   /** 源の様子が変わったときに呼ぶもの (SSE の `event: relay`) */
   private readonly listeners = new Set<() => void>();
@@ -248,6 +264,10 @@ export class Relay {
   private readonly gates = new Map<string, Gate>();
   /** Range の源で、ファイルごとに最後に見た ETag (変わったら、そのファイルの覚えた分を捨てる)。Range の源のファイルの数だけで、小さい */
   private readonly fileEtags = new Map<string, string>();
+  /** Range の源で、ファイルごとに置き換えられた ETag (新しいものから `RETIRED_ETAGS` まで) */
+  private readonly retiredEtags = new Map<string, string[]>();
+  /** Range の源で、ファイルごとに、置き換えられた ETag が続けて来た数 (前の版に戻したかを見る) */
+  private readonly rollbacks = new Map<string, { etag: string; n: number }>();
   /** 失敗した鍵と、取り直してよくなる時刻 (落ちている間に、要求のたびに配信元へ行かない) */
   private readonly failedUntil = new Map<string, number>();
 
@@ -258,6 +278,14 @@ export class Relay {
     this.maxTtl = o.maxTtl ?? 86_400;
     this.store =
       o.store ?? new MemoryRelayStore(o.maxBytes ?? 64 * 1024 * 1024, this.now);
+    for (const [id, s] of Object.entries(this.sources)) {
+      const host = new URL(s.upstream).host;
+      this.hosts.set(id, host);
+      this.hostLimits.set(
+        host,
+        Math.min(this.hostLimits.get(host) ?? Infinity, s.concurrency ?? 6),
+      );
+    }
   }
 
   /** いま覚えている量 (バイト・数)。試験と見積もり用 */
@@ -282,7 +310,13 @@ export class Relay {
               : "idle";
       const trouble = state === "blocked" || state === "failing";
       const s: RelayStatus = { id: id as RelaySourceId, state };
-      if (trouble && h?.since !== undefined) s.since = iso(h.since);
+      // 同じホストのほかの源が断られて控えているときは、その源は自分では失敗していないので、控えの始まりを使う
+      const since =
+        h?.since ??
+        (state === "blocked"
+          ? this.blockedSince.get(this.hostOf(id))
+          : undefined);
+      if (trouble && since !== undefined) s.since = iso(since);
       if (h?.lastOkAt !== undefined) s.lastOkAt = iso(h.lastOkAt);
       if (state === "blocked") s.retryAt = iso(blocked);
       if (trouble && h?.staleAt !== undefined) s.staleAt = iso(h.staleAt);
@@ -351,12 +385,13 @@ export class Relay {
   private markBlocked(id: string, until: number): void {
     // 同じホストのほかの源が受けた長い控えを、短い Retry-After で縮めない
     const host = this.hostOf(id);
-    this.blockedUntil.set(
-      host,
-      Math.max(until, this.blockedUntil.get(host) ?? 0),
-    );
+    const now = this.now();
+    const prev = this.blockedUntil.get(host) ?? 0;
+    // 控えが切れた後の新しい控えなら、始まりを付け直す
+    if (prev <= now) this.blockedSince.set(host, now);
+    this.blockedUntil.set(host, Math.max(until, prev));
     const h = this.healthOf(id);
-    h.since ??= this.now();
+    h.since ??= now;
     h.probing = false;
     this.changed();
   }
@@ -396,6 +431,8 @@ export class Relay {
     path: string,
     search: URLSearchParams,
     reqHeaders: Headers,
+    /** 見る人の要求の取り消し (地図を動かして要らなくなったタイルなど) */
+    signal?: AbortSignal,
   ): Promise<Response> {
     const source = Object.hasOwn(this.sources, sourceId)
       ? this.sources[sourceId]
@@ -458,16 +495,26 @@ export class Relay {
       });
     if (held > now) return busy(Math.ceil((held - now) / 1000));
 
-    let p = store ? this.inflight.get(key) : undefined;
+    if (signal?.aborted) return cancelled();
+    let flight = store ? this.inflight.get(key) : undefined;
     // 回路を開いた後は、1 本だけ試す。試している間に来たほかの要求は取りに行かない (同じものの要求は、試している 1 本を待つ)
     const h = this.health.get(sourceId);
     let probe = false;
-    if (!p && h && h.opens > 0) {
+    if (!flight && h && h.opens > 0) {
       if (h.probing) return busy(Math.ceil(FAILED_WAIT_MS / 1000));
       h.probing = probe = true;
     }
-    if (!p) {
-      p = this.gate(sourceId, source).run(() => {
+    if (!flight) {
+      const f: Flight = {
+        promise: Promise.resolve(undefined as unknown as RelayEntry),
+        waiters: 0,
+        started: false,
+        cancelled: false,
+      };
+      f.promise = this.gate(sourceId).run(() => {
+        // 枠を待っている間に、待っていた人が全員取り消したなら、取りに行かない
+        if (f.cancelled) throw new Cancelled();
+        f.started = true;
         // 枠を待っている間に断られた (Retry-After) か回路が開いたなら、取りに行かない
         // (地図は 20〜40 枚を一度に読むので、待っていた分を控えの間に配信元へ流さない)
         const t = this.now();
@@ -478,17 +525,29 @@ export class Relay {
           throw new Blocked(Math.ceil(FAILED_WAIT_MS / 1000));
         return this.fetchUpstream(sourceId, source, url, range, cached);
       });
+      flight = f;
       if (store) {
-        this.inflight.set(key, p);
-        void p.finally(() => this.inflight.delete(key)).catch(() => {});
+        this.inflight.set(key, f);
+        void f.promise.finally(() => this.inflight.delete(key)).catch(() => {});
       }
     }
+    // 見る人が取り消したら、待つ人から外す。待つ人がいなくなり、まだ枠を待っている (取りに行き始めていない) なら、
+    // 取りに行くのをやめる。始まった後は止めずに覚えさせる (取り消した人も、ほかの人のために覚えた後で答える)
+    const fl = flight;
+    fl.waiters++;
+    // 全員が取り消した後、まだ枠を待っている間に同じものの要求が来たら、取りに行くのに戻す
+    if (!fl.started) fl.cancelled = false;
+    const onAbort = () => {
+      if (--fl.waiters === 0 && !fl.started) fl.cancelled = true;
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
     let entry: RelayEntry;
     try {
-      entry = await p;
+      entry = await fl.promise;
     } catch (e) {
-      // 配信元の不調でない失敗 (大きすぎる) で試しが終わったときも、次の要求で試せるようにする
+      // 配信元の不調でない失敗 (大きすぎる・取り消した) で試しが終わったときも、次の要求で試せるようにする
       if (probe && h) h.probing = false;
+      if (e instanceof Cancelled) return cancelled();
       const t = this.now();
       if (!(e instanceof Blocked) && store) this.markFailed(key, t);
       const old = stale(t);
@@ -499,6 +558,8 @@ export class Relay {
           "retry-after": String(e.seconds),
         });
       return noStore(502, "配信元から取れませんでした");
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
     }
     this.failedUntil.delete(key);
     if (store) await this.put(key, entry, url, source, path);
@@ -511,22 +572,17 @@ export class Relay {
     this.failedUntil.set(key, now + FAILED_WAIT_MS);
   }
 
-  /** 配信元のホスト (同時に取りに行く数の枠と、断られたときの控えはホストごと) */
+  /** 配信元のホスト (同時に取りに行く数の枠と、断られたときの控えはホストごと)。表はコンストラクタで作る */
   private hostOf(id: string): string {
-    const s = Object.hasOwn(this.sources, id) ? this.sources[id] : undefined;
-    return s ? new URL(s.upstream).host : id;
+    return this.hosts.get(id) ?? id;
   }
 
   /** 同時に取りに行く数の枠。同じホストの源は 1 つの枠を分け合う (枠の大きさは、そのホストの源のうちいちばん小さいもの) */
-  private gate(id: string, source: RelaySource): Gate {
+  private gate(id: string): Gate {
     const host = this.hostOf(id);
     let g = this.gates.get(host);
     if (!g) {
-      let limit = source.concurrency ?? 6;
-      for (const [other, s] of Object.entries(this.sources))
-        if (this.hostOf(other) === host)
-          limit = Math.min(limit, s.concurrency ?? 6);
-      g = new Gate(limit);
+      g = new Gate(this.hostLimits.get(host) ?? 6);
       this.gates.set(host, g);
     }
     return g;
@@ -653,10 +709,28 @@ export class Relay {
     if (e.freshUntil <= this.now() && e.status !== 200 && e.status !== 206)
       return this.store.delete(key);
     if (source.range && e.etag) {
+      // 置き換えられた版の範囲 (CDN の節で ETag が行き来する・差し替えの前に出た遅い応答) は、ブラウザへは返すが
+      // 覚えず、いまの版の範囲も捨てない (行き来のたびに覚えた範囲を全部捨てて、配信元へ取りに行き直さない)
+      // ただし同じ置き換えられた ETag が、いまの版を挟まずに続けて `ROLLBACK_AFTER` 回来たら、配信元が前の版に
+      // 戻した (ロールバック) とみなして、いまの版にする (戻した版をずっと覚えられなくならないように)
+      let retired = this.retiredEtags.get(url) ?? [];
+      if (retired.includes(e.etag)) {
+        const r = this.rollbacks.get(url);
+        const n = r?.etag === e.etag ? r.n + 1 : 1;
+        if (n < ROLLBACK_AFTER) {
+          this.rollbacks.set(url, { etag: e.etag, n });
+          return;
+        }
+        retired = retired.filter((t) => t !== e.etag);
+      }
+      this.rollbacks.delete(url);
       // ファイルが差し替わったら、前の版の範囲を混ぜて返さない (PMTiles は ETag が揃わないと読み直す)
       const before = this.fileEtags.get(url);
-      if (before !== undefined && before !== e.etag)
+      if (before !== undefined && before !== e.etag) {
+        retired = [before, ...retired].slice(0, RETIRED_ETAGS);
         await this.store.deletePrefix(`${url}|`);
+      }
+      this.retiredEtags.set(url, retired);
       this.fileEtags.set(url, e.etag);
     }
     const priority =
@@ -693,7 +767,8 @@ export class Relay {
       headers.set("vary", "accept-encoding");
       if (!/\bgzip\b/.test(reqHeaders.get("accept-encoding") ?? "")) {
         try {
-          body = Bun.gunzipSync(e.body as Uint8Array<ArrayBuffer>);
+          // 開いた後の大きさも上限まで (小さな gzip が大きく膨らむものを、要求のたびに開かない)
+          body = gunzipSync(e.body, { maxOutputLength: MAX_BODY_BYTES });
         } catch {
           return noStore(502, "配信元の gzip を開けませんでした");
         }
@@ -726,6 +801,24 @@ class Blocked extends Error {
     super("blocked");
   }
 }
+
+/** 待っていた人が全員取り消したので、取りに行かなかった (配信元の不調ではない) */
+class Cancelled extends Error {
+  constructor() {
+    super("cancelled");
+  }
+}
+
+/** 取りに行っている最中のもの。待っている人の数と、取りに行き始めたか・取り消したか */
+interface Flight {
+  promise: Promise<RelayEntry>;
+  waiters: number;
+  started: boolean;
+  cancelled: boolean;
+}
+
+/** 取り消した要求への応答 (受け取る人はいないが、何かは返す) */
+const cancelled = () => noStore(503, "要求が取り消されました");
 
 // ---- 源の表 ----
 
