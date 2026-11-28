@@ -332,6 +332,8 @@ export interface WolfxTsunami {
  *   空でも安全を意味しないので、「終わった」として取り込まない
  * - 観測 (`observations`。VTSE51・52) と本文 (`text`・`comments`) は読まない (気象庁 XML で受ける)
  * - 訓練・試験の印は無い。表題に「訓練」「試験」とあるものは、そう扱う
+ * - `report.status` の値の一覧は、文書の津波の節に無い (2026-11-28 に確かめた)。特別地震情報と同じ語 (`issued`・`corrected`・`cancelled`) と見て読み、
+ *   知らない値は「発表」にする。知らない形の取消は予報区が空で届くので、上の決まりで捨てる (取消は P2P と気象庁 XML でも受ける)
  */
 export function parseWolfxTsunami(value: unknown): WolfxTsunami[] {
   const o = obj(value);
