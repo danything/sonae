@@ -57,12 +57,20 @@
     readLocate,
   } from "#lib/map/locate.ts";
   import {
+    MARINE_LAYERS,
     MARINE_URL,
     marineIcons,
     type MarinePoint,
     marinePopup,
     type MarineResponse,
     nearestMarine,
+    TIDE_URL,
+    type TideDay,
+    tideDayLabel,
+    type TideError,
+    tidePolyline,
+    tideTurns,
+    tideTurnText,
   } from "#lib/map/marine.ts";
   import {
     forecastFrames,
@@ -1897,6 +1905,8 @@
     "intensity-stations",
     "cameras",
     "marine",
+    "marine-office",
+    "marine-tide",
     "typhoon-center",
     "road-closed",
     "road-speed",
@@ -2065,7 +2075,9 @@
     ev: MouseEvent | TouchEvent | undefined,
   ): { properties: MarinePoint; at: [number, number] } | undefined {
     const m = map;
-    if (!m?.getLayer("marine")) return undefined;
+    // 海上保安部署等と潮汐推算の地点は、寄せたときだけ描く別の層 (`marine-office`・`marine-tide`)
+    const layers = MARINE_LAYERS.filter((id) => m?.getLayer(id));
+    if (!m || layers.length === 0) return undefined;
     const kind = (ev as PointerEvent | undefined)?.pointerType;
     const r =
       kind === "touch" ||
@@ -2080,7 +2092,7 @@
           [pt.x - r, pt.y - r],
           [pt.x + r, pt.y + r],
         ],
-        { layers: ["marine"] },
+        { layers },
       )
       .flatMap((f) => {
         if (f.geometry.type !== "Point") return [];
@@ -2115,10 +2127,105 @@
       box.append(el);
     }
     closePopups();
-    marinePopupEl = new PopupClass(popupOptions())
+    const popup = new PopupClass(popupOptions())
       .setLngLat(at)
       .setDOMContent(box)
       .addTo(map);
+    marinePopupEl = popup;
+    if (p.kind === "tide" && p.code) {
+      box.classList.add("tide-pop");
+      // 種類の行の下に、今日の推算の潮位を読んでから足す
+      const body = document.createElement("div");
+      body.className = "tide-body";
+      const wait = document.createElement("p");
+      wait.className = "small muted";
+      wait.textContent = "推算の潮位を読んでいます";
+      body.append(wait);
+      box.children[1]?.after(body);
+      void loadTide(p.code, body, () => marinePopupEl === popup);
+    }
+  }
+
+  /**
+   * 潮汐推算の地点の、今日の推算の潮位を `/api/tide` から読み、満潮・干潮と 1 日の図を吹き出しに書く。
+   * 図は値の高さを図の中で合わせるだけで、値は変えない。いまの時刻に縦の線を引く (開いた時刻のまま。動かさない)
+   */
+  async function loadTide(
+    code: string,
+    body: HTMLElement,
+    alive: () => boolean,
+  ): Promise<void> {
+    const say = (text: string) => {
+      const el = document.createElement("p");
+      el.className = "small muted";
+      el.textContent = text;
+      body.replaceChildren(el);
+    };
+    let day: TideDay;
+    try {
+      const r = await fetch(
+        `${TIDE_URL}?${new URLSearchParams({ station: code })}`,
+      );
+      const j = (await r.json()) as TideDay | TideError;
+      if (!alive()) return;
+      if ("error" in j) return say(j.error);
+      day = j;
+    } catch {
+      if (alive()) say("推算の潮位を読めませんでした");
+      return;
+    }
+    const W = 240;
+    const H = 56;
+    const line = tidePolyline(day, W, H);
+    const title = document.createElement("p");
+    title.className = "small bold";
+    title.textContent = `${tideDayLabel(day.date)} の推算の潮位 (cm)`;
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("class", "tide-chart");
+    svg.setAttribute("role", "img");
+    svg.setAttribute(
+      "aria-label",
+      `推算の潮位の 1 日の図。いちばん高い ${line.max} cm、いちばん低い ${line.min} cm`,
+    );
+    const pl = document.createElementNS(ns, "polyline");
+    pl.setAttribute("points", line.points);
+    pl.setAttribute("class", "tide-line");
+    svg.append(pl);
+    const t0 = Date.parse(day.start);
+    const span = (day.tide.length - 1) * day.stepSec * 1000;
+    const now = Date.now();
+    if (span > 0 && now >= t0 && now <= t0 + span) {
+      const x = ((now - t0) / span) * W;
+      const nl = document.createElementNS(ns, "line");
+      nl.setAttribute("x1", x.toFixed(1));
+      nl.setAttribute("x2", x.toFixed(1));
+      nl.setAttribute("y1", "0");
+      nl.setAttribute("y2", String(H));
+      nl.setAttribute("class", "tide-now");
+      svg.append(nl);
+    }
+    const axis = document.createElement("p");
+    axis.className = "tide-axis tiny muted";
+    for (const t of ["0時", "6時", "12時", "18時", "24時"]) {
+      const s = document.createElement("span");
+      s.textContent = t;
+      axis.append(s);
+    }
+    const turns = document.createElement("p");
+    turns.className = "small tide-turns";
+    // 満潮・干潮ごとに折り返さない塊にし、塊の間で折り返す
+    const list = tideTurns(day).map(tideTurnText);
+    if (list.length === 0)
+      turns.textContent = "この日は満潮・干潮を拾えませんでした";
+    for (const text of list) {
+      const s = document.createElement("span");
+      s.textContent = text;
+      turns.append(s);
+    }
+    body.replaceChildren(title, svg, axis, turns);
   }
 
   // ---- 火山の監視カメラ (docs/map.md の「火山の監視カメラ」) ----
@@ -3565,6 +3672,40 @@
   }
   /* 火山の監視カメラの画像。読み終わるまで 16:9 の場所を取っておき、吹き出しの大きさが跳ねないようにする。
      動きは付けない (画像が替わるのは 10 分に 1 回) */
+  /* 潮汐推算の吹き出しの 1 日の図。線は本文の色、いまの時刻は主の色の細い線。動きは付けない */
+  .map :global(.tide-pop) {
+    width: min(16rem, 70vw);
+  }
+  .map :global(.tide-chart) {
+    display: block;
+    width: 100%;
+    height: 3.5rem;
+    margin: var(--so-space-1) 0 0;
+    overflow: visible;
+  }
+  .map :global(.tide-line) {
+    fill: none;
+    stroke: var(--so-fg);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+  }
+  .map :global(.tide-now) {
+    stroke: var(--so-primary-text);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+  }
+  .map :global(.tide-axis) {
+    display: flex;
+    justify-content: space-between;
+  }
+  .map :global(.tide-turns) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--so-space-3);
+  }
+  .map :global(.tide-turns span) {
+    white-space: nowrap;
+  }
   .map :global(.camera-pop) {
     width: min(16rem, 70vw);
   }
