@@ -29,7 +29,7 @@ export interface RelaySource {
   /** 通してよい道 (頭の `/relay/<源>/` の後ろ) */
   path: RegExp;
   /** 通してよい問い合わせ (`?` の後ろ)。整えた問い合わせ (`""` は無し) か、断るなら null。無ければ問い合わせは断る */
-  query?: (q: URLSearchParams) => string | null;
+  query?: (q: URLSearchParams, path: string) => string | null;
   /** 配信元が max-age を書かないときの期限 (秒) */
   ttl: number;
   /** 期限の下限 (秒)。配信元の max-age がこれより短くても、これより早くは取り直さない */
@@ -75,6 +75,8 @@ const UPSTREAM_TIMEOUT_MS = 15_000;
 /** 断られたときに待つ秒数の既定と上限 */
 const COOLDOWN_DEFAULT_S = 60;
 const COOLDOWN_MAX_S = 600;
+/** 中継の応答に付ける CSP。何も読まず、何も動かさない */
+const RELAY_CSP = "default-src 'none'; sandbox";
 /** 404・410 を覚える期限の上限 (海の上の避難場所のタイルなど、無いものを何度も聞かない) */
 const MISSING_TTL_S = 300;
 /** 落ちた・返らない・5xx のあと、同じものを取り直すまで待つ長さ */
@@ -238,7 +240,7 @@ export class Relay {
       return noStore(400, "中継しない道です");
     let query = "";
     if (source.query) {
-      const q = source.query(search);
+      const q = source.query(search, path);
       if (q === null) return noStore(400, "中継しない問い合わせです");
       query = q;
     } else if ([...search.keys()].length > 0)
@@ -464,6 +466,10 @@ export class Relay {
     const now = this.now();
     const headers = new Headers(e.headers);
     headers.set("x-relay", how);
+    // 配信元の中身を sonae と同じオリジンで返すので、HTML (火山カメラのページ) が開かれても script を動かさず、
+    // 型を推し量らせない (どの源でも、画面は fetch か <img> で読むだけなので困らない)
+    headers.set("x-content-type-options", "nosniff");
+    headers.set("content-security-policy", RELAY_CSP);
     // ブラウザには、サーバーが覚えている残りの間だけ覚えさせる。古いものを返したときと、覚えない源では覚えさせない
     const left = Math.floor((e.freshUntil - now) / 1000);
     headers.set(
@@ -557,6 +563,34 @@ export const RELAY_SOURCES = {
     upstream: "https://disaportal.gsi.go.jp/hazardmap/copyright/img/",
     path: /^[0-9a-z_]{1,64}\.png$/,
     ttl: 86_400,
+  },
+  // 気象庁ホームページの火山の監視カメラ。カメラのページ (`volcam.php?VC=<5 桁>`。いちばん新しい画像の名前を読む) と、
+  // 撮った時刻の名前の画像。どちらも max-age 600 (docs/map.md の「火山の監視カメラ」)
+  volcam: {
+    upstream: "https://www.data.jma.go.jp/vois/data/obs/",
+    path: /^(?:volcam\/volcam\.php|camera\/\d{3}_[0-9A-Fa-f]{8}\/\d{14}\.jpg)$/,
+    query: (q, path) => {
+      const keys = [...q.keys()];
+      if (!path.endsWith(".php")) return keys.length === 0 ? "" : null;
+      const vc = q.get("VC") ?? "";
+      return keys.length === 1 && /^\d{5}$/.test(vc) ? `VC=${vc}` : null;
+    },
+    ttl: 600,
+  },
+  // 国土地理院の地名検索 API (住所検索)。打った文字を運ぶので、覚えず (`store: false`)、ブラウザにも覚えさせない。
+  // 通すのは `q` (100 文字まで) だけ。中継はどの要求もログに道や問い合わせを出さない (docs/map.md の「場所の検索」)
+  "gsi-search": {
+    upstream: "https://msearch.gsi.go.jp/address-search/",
+    path: /^AddressSearch$/,
+    query: (q) => {
+      const v = q.get("q") ?? "";
+      return [...q.keys()].length === 1 && v.length > 0 && v.length <= 100
+        ? `q=${encodeURIComponent(v)}`
+        : null;
+    },
+    ttl: 0,
+    store: false,
+    concurrency: 2,
   },
   // NASA GIBS の Blue Marble (陰影つき。max-age 3 日)。引いたときの下地
   gibs: {

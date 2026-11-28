@@ -6,6 +6,7 @@ import {
   cameraFoot,
   cameraHead,
   cameraPage,
+  cameraPageRelay,
   type CameraPoint,
   frameAlt,
   frameCaption,
@@ -36,7 +37,7 @@ file_array[1]="../camera/315_820081B0/20261128120801.jpg";
 
 test("ページからいちばん新しい画像の URL と時刻を読む", () => {
   expect(latestFrame(PAGE)).toEqual({
-    url: "https://www.data.jma.go.jp/vois/data/obs/camera/315_820081B0/20261128121001.jpg",
+    url: "/relay/volcam/camera/315_820081B0/20261128121001.jpg",
     takenAt: "2026-11-28T12:10:01+09:00",
   });
 });
@@ -71,6 +72,10 @@ test("カメラのページは 5 桁の番号のときだけ", () => {
   );
   expect(cameraPage("315")).toBeUndefined();
   expect(cameraPage("31501&x=1")).toBeUndefined();
+  expect(cameraPageRelay("31501")).toBe(
+    "/relay/volcam/volcam/volcam.php?VC=31501",
+  );
+  expect(cameraPageRelay("31501&x=1")).toBeUndefined();
 });
 
 test("画像の時刻: 古ければ止まっているかもしれないと書く", () => {
