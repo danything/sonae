@@ -28,12 +28,12 @@ bun "$DIR/zip.ts" "$(ls "$SRC"/*_AreaInformationCity_weather_GIS.zip)" "$WORK/ci
 bun "$DIR/zip.ts" "$(ls "$SRC"/*_AreaForecastLocalE_GIS.zip)" "$WORK/quake" area
 
 # 属性 (dbf) は UTF-8。コードの無い面 (北方領土・境界の決まっていない土地) は除く。
-# 簡略化は、細分区域 (quake-areas) と同じくらいの大きさ (gzip で 300KB ほど) に収まる 600m
+# 簡略化は 300m (docs/map.md の「区域の簡略化」。600m では海沿いの町が面から外れ、現在地の市町村等を取り違えた)
 $MAPSHAPER -i "$WORK/city/area.shp" encoding=utf8 \
   -filter 'regioncode != ""' \
   -rename-fields code=regioncode \
   -filter-fields code,name \
-  -simplify interval=600 weighted keep-shapes \
+  -simplify interval=300 weighted keep-shapes \
   -clean \
   -o "$OUT/warning-areas.geojson" format=geojson precision=0.001 force
 
