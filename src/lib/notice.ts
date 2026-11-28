@@ -2,6 +2,7 @@
  * 画面に出す注意文と出典 (docs/design.md の 5 章「法と表示」)。文言を変えるときは設計書も直す
  */
 import { VOLCAM_PAGE } from "#lib/map/cameras.ts";
+import { GOOGLE_PRIVACY, YOUTUBE_TERMS } from "#lib/map/livecams.ts";
 import { MSIL_DISCLAIMER, MSIL_SITE } from "#lib/map/marine.ts";
 import { NOWC_PAGE, RASRF_PAGE } from "#lib/map/nowc.ts";
 import { RAIN_PAGE } from "#lib/map/rain.ts";
@@ -99,6 +100,16 @@ export const CREDITS: Credit[] = [
       "出典：気象庁ホームページ（",
       { text: VOLCAM_PAGE, href: VOLCAM_PAGE },
       "）。気象庁「監視カメラ画像」のカメラの位置を加工して作成 (地図の印)。画像は、印を押したときにブラウザから気象庁ホームページへ直接読みに行き、そのまま出します。sonae は画像を保存も配布もしません。火山の防災は、気象庁の噴火警報などの情報と、地元の自治体のお知らせや指示に従ってください",
+    ],
+  },
+  {
+    label: "YouTube のライブカメラ",
+    parts: [
+      "出典： 国土交通省九州地方整備局 Youtube・杉並区河川ライブカメラ Youtube・東京都港湾局提供 (伊豆・小笠原諸島港湾ライブカメラ)。印を押したときに、ブラウザが YouTube の埋め込みのプレーヤー (プライバシー強化モード) を読み、配信元のライブ配信をそのまま再生します。sonae は映像を保存も配布もしません。見る人は YouTube の利用規約（",
+      { text: YOUTUBE_TERMS, href: YOUTUBE_TERMS },
+      "）に従います。プレーヤーを読むと、YouTube (Google) が Cookie などで情報を集めることがあります（Google のプライバシーポリシー: ",
+      { text: GOOGLE_PRIVACY, href: GOOGLE_PRIVACY },
+      "）。参考の映像で、遅れたり止まったりします",
     ],
   },
   {

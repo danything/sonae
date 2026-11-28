@@ -28,6 +28,7 @@ import { tremSource } from "./sources/trem.ts";
 import type { Incoming, Source, SourceContext } from "./sources/types.ts";
 import { usgsSource } from "./sources/usgs.ts";
 import { wolfxSource } from "./sources/wolfx.ts";
+import { youtubeKey, youtubeSource } from "./sources/youtube.ts";
 import { Store } from "./store.ts";
 import { QUAKE_WINDOW_MS, TideProbe } from "./tide-probe.ts";
 import { type Voicevox, voicevoxFromEnv } from "./voicevox.ts";
@@ -184,6 +185,21 @@ export function startReceiving(): void {
     });
     console.log(
       "[msil] 海しるの API のキー (MSIL_API_KEY) が無いので、海しるの層は出しません",
+    );
+  }
+  // YouTube のライブカメラのいまの配信を確かめる。API のキーが要り、無ければ地図の中で再生しないだけ (docs/design.md の 2.13)。
+  // 確かめたものはメモリに置くだけで、知らせには届かない
+  const yt = youtubeSource(youtubeKey(), { onStatus: ctx.onStatus });
+  if (yt) a.sources.push(yt);
+  else {
+    a.off.push({
+      id: "youtube",
+      state: "off",
+      reason: "API のキーがありません",
+      since: new Date().toISOString(),
+    });
+    console.log(
+      "[youtube] YouTube Data API のキー (YOUTUBE_API_KEY) が無いので、ライブカメラは地図の中で再生せず、リンクだけを出します",
     );
   }
   // 災害時の通行止め (国土交通省の通れるマップの GeoJSON)。URL は国土交通省 道路局のページから自動で見つけ、

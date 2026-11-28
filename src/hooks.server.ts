@@ -79,6 +79,8 @@ const PUBLIC = new Set([
   "/service-worker.js",
   "/manifest.webmanifest",
   "/manifest-light.webmanifest",
+  // プライバシーポリシー (YouTube API Services の決まりで、誰でも読める所に置く。docs/design.md の 2.13)
+  "/privacy",
 ]);
 
 /**
