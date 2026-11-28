@@ -2,16 +2,16 @@
  * 場所の検索 (ヘッダーの検索の欄の「場所の候補」。docs/map.md の「場所の検索」)。DOM にも MapLibre にも触らない。
  *
  * - 市町村は手元のデータ (`static/areas/cities.json` と、市町村等の外枠の表 `offices.json`) から探す。外へは問い合わせない
- * - 住所・地名は国土地理院の住所検索 (地理院地図が使っているもの) に、ブラウザから直接問い合わせる。
- *   送るのは打った文字だけで、sonae のサーバーは通さない (残さない)
+ * - 住所・地名は国土地理院の住所検索 (地理院地図が使っているもの) に、sonae のサーバーの中継 (`#lib/relay.ts`) を通して
+ *   問い合わせる。送るのは打った文字だけ。サーバーは打った文字を覚えず、ログにも出さない (docs/map.md の「人の情報の扱い」)
  */
 
 import { type Cities, prefectureOf } from "./home.ts";
 import type { OfficeTable } from "./map/style.ts";
+import { relayBase } from "./relay.ts";
 
-/** 国土地理院の住所検索。CORS は `*` (2026-11-15 に確かめた) */
-const GSI_ADDRESS_SEARCH =
-  "https://msearch.gsi.go.jp/address-search/AddressSearch";
+/** 国土地理院の住所検索 (`https://msearch.gsi.go.jp/address-search/AddressSearch`) を中継で読む */
+const GSI_ADDRESS_SEARCH = `${relayBase("gsi-search")}/AddressSearch`;
 
 /** 外へ問い合わせるのは、この文字数から (1 文字では候補が多すぎて役に立たない) */
 const REMOTE_MIN_CHARS = 2;

@@ -445,6 +445,27 @@ test("火山カメラはページ (5 桁の VC だけ) と、撮った時刻の�
   expect(up.calls).toHaveLength(2);
 });
 
+test("地名検索は q だけを通し、覚えない", async () => {
+  const up = upstream(
+    () =>
+      new Response("[]", { headers: { "content-type": "application/json" } }),
+  );
+  const r = new Relay({ sources: RELAY_SOURCES, fetch: up.fetch });
+  const q = (s: string) => new URLSearchParams(s);
+  const a = await r.handle("gsi-search", "AddressSearch", q("q=厚木市"), h());
+  expect(a.status).toBe(200);
+  expect(a.headers.get("cache-control")).toBe("no-store");
+  expect(up.calls.at(0)?.url).toBe(
+    `https://msearch.gsi.go.jp/address-search/AddressSearch?q=${encodeURIComponent("厚木市")}`,
+  );
+  expect(r.stats().entries).toBe(0);
+  for (const s of ["", "q=", "q=a&x=1", `q=${"あ".repeat(101)}`])
+    expect(
+      (await r.handle("gsi-search", "AddressSearch", q(s), h())).status,
+    ).toBe(400);
+  expect(up.calls).toHaveLength(1);
+});
+
 test("PMTiles は Range の無い要求を断る (まるごと取らせない)", async () => {
   const up = upstream(() => png());
   const r = new Relay({ sources: RELAY_SOURCES, fetch: up.fetch });

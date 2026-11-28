@@ -74,9 +74,9 @@ const MAX_BODY_BYTES = 16 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 15_000;
 /** 断られたときに待つ秒数の既定と上限 */
 const COOLDOWN_DEFAULT_S = 60;
+const COOLDOWN_MAX_S = 600;
 /** 中継の応答に付ける CSP。何も読まず、何も動かさない */
 const RELAY_CSP = "default-src 'none'; sandbox";
-const COOLDOWN_MAX_S = 600;
 /** 404・410 を覚える期限の上限 (海の上の避難場所のタイルなど、無いものを何度も聞かない) */
 const MISSING_TTL_S = 300;
 /** 落ちた・返らない・5xx のあと、同じものを取り直すまで待つ長さ */
@@ -576,6 +576,21 @@ export const RELAY_SOURCES = {
       return keys.length === 1 && /^\d{5}$/.test(vc) ? `VC=${vc}` : null;
     },
     ttl: 600,
+  },
+  // 国土地理院の地名検索 API (住所検索)。打った文字を運ぶので、覚えず (`store: false`)、ブラウザにも覚えさせない。
+  // 通すのは `q` (100 文字まで) だけ。中継はどの要求もログに道や問い合わせを出さない (docs/map.md の「場所の検索」)
+  "gsi-search": {
+    upstream: "https://msearch.gsi.go.jp/address-search/",
+    path: /^AddressSearch$/,
+    query: (q) => {
+      const v = q.get("q") ?? "";
+      return [...q.keys()].length === 1 && v.length > 0 && v.length <= 100
+        ? `q=${encodeURIComponent(v)}`
+        : null;
+    },
+    ttl: 0,
+    store: false,
+    concurrency: 2,
   },
   // NASA GIBS の Blue Marble (陰影つき。max-age 3 日)。引いたときの下地
   gibs: {

@@ -30,8 +30,8 @@
   const remoteCache = new Map<string, Place[]>();
 
   /**
-   * 国土地理院の住所検索に、ブラウザから直接問い合わせる。送るのは打った文字だけ
-   * (Referer も付けず、Cookie も送らない)。sonae のサーバーは通さない
+   * 国土地理院の住所検索に、sonae のサーバーの中継を通して問い合わせる。送るのは打った文字だけ。
+   * サーバーは打った文字を覚えず、ログにも出さず、国土地理院へは Cookie・Referer・端末の IP を送らない
    */
   async function searchGsi(
     query: string,
@@ -42,7 +42,6 @@
     if (hit) return hit;
     const res = await fetch(gsiSearchUrl(key), {
       signal,
-      credentials: "omit",
       referrerPolicy: "no-referrer",
     });
     if (!res.ok) throw new Error(`${res.status}`);
