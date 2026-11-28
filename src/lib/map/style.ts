@@ -96,7 +96,7 @@ const RTS_ATTRIBUTION =
 
 /** 有志の観測点の揺れ (Wolfx SeisJS) の出典。Wolfx から返事をもらった書き方 (全文は `#lib/notice.ts` の CREDITS) */
 const SEIS_ATTRIBUTION =
-  '<a href="https://wolfx.jp/docs/seisjs-api/" target="_blank" rel="noopener">Wolfx Project (SeisJS)</a>・非公式';
+  '<a href="https://seis.wolfx.jp/" target="_blank" rel="noopener">Wolfx Project (SeisJS)</a>・非公式';
 
 const ROADS_ATTRIBUTION =
   '出典：<a href="https://www.mlit.go.jp/road/road_fr4_000201.html" target="_blank" rel="noopener">国土交通省「通れるマップ」</a>を加工して作成';
@@ -904,7 +904,7 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
   },
   {
     label: "有志の観測点の揺れ (非公式)",
-    note: "Wolfx Project の SeisJS に参加している有志の観測点 (いまは中国と台湾の数か所)。値は観測点が計算した計測震度で、0.5 以上なら震度の色で塗り、それ未満は灰色の点です。気象庁や各国の機関の発表ではない非公式の値で、地図に出すだけです。一覧・音・読み上げ・通知では知らせません",
+    note: "Wolfx Project の SeisJS に参加している有志の観測点。数と場所は参加する人しだいで変わり、日本に 1 か所も無いこともあります。値は観測点が計算した計測震度で、0.5 以上なら震度の色で塗り、それ未満は灰色の点です。気象庁や各国の機関の発表ではない非公式の値で、地図に出すだけです。一覧・音・読み上げ・通知では知らせません",
   },
   {
     label: "海外の地震",
