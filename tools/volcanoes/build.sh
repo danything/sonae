@@ -9,7 +9,7 @@
 # 利用規約 (公共データ利用規約 第 1.0 版)。コードは気象庁防災情報 XML のコード表「火山名」(PointVolcano) と同じ。
 #
 # 出力: 火山名のコード → [経度, 緯度, 名前]。いまは 117 か所 (気象庁の言う活火山の数 111 より
-# 一覧の項目が多い)。年に何度も変わらない。
+# 一覧の項目が多い)。年に何度も変わらない。.github/workflows/map-data.yml が 1 日 1 回流す。
 set -eu
 OUT=$(dirname "$0")/../../static/areas/volcano-points.json
 bun -e '

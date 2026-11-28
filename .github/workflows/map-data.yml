@@ -1,0 +1,153 @@
+name: Map data
+
+# 気象庁ホームページの一覧から作る火山の表 (活火山の位置・火山の監視カメラ) を 1 日 1 回作り直し、変わっていたら PR を出す
+# (docs/map.md の「表を作り直す」)。変わった項目が少なければ、試験を通してから自分でマージし、イメージを組み直す。
+# 一覧の形が変わって作れなくなったら、issue を立てて知らせる。区域の GIS データは作り直しに手が要るので、ここではなく
+# 5ym/repo-config の pin-watch で更新に気づく (docs/map.md の「GIS データの更新に気づく」)
+on:
+  schedule:
+    # 06:23 (日本時間)。気象庁へは 1 日に一覧を 2 つ読むだけ
+    - cron: "23 21 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: map-data
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  statuses: write
+  issues: write
+  # 自分でマージしたあとに docker-publish.yml を手で回す (GITHUB_TOKEN のマージは push の workflow を起こさない)
+  actions: write
+
+env:
+  BRANCH: update-map-data
+  ISSUE_TITLE: "火山の表を作り直せない (map-data)"
+  # これより多く変わったら、自分でマージせずに持ち主に見てもらう
+  MAX_AUTO_CHANGES: "5"
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - name: Build the tables
+        id: build
+        run: |
+          set -eu
+          mkdir -p "$RUNNER_TEMP/before"
+          cp static/areas/volcano-points.json static/cameras/volcano-cameras.json "$RUNNER_TEMP/before/"
+          # カメラの表は活火山の位置の表で火山の名前を引くので、この順に作る
+          sh tools/volcanoes/build.sh
+          sh tools/cameras/build.sh
+
+      - name: Compare
+        id: diff
+        run: |
+          set -eu
+          if git diff --quiet -- static; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          bun tools/map-data/diff.ts "$RUNNER_TEMP/before/volcano-points.json" "$RUNNER_TEMP/before/volcano-cameras.json" > "$RUNNER_TEMP/diff.md"
+          cat "$RUNNER_TEMP/diff.md"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "changes=$(sed -n 's/^changes=//p' "$RUNNER_TEMP/diff.md")" >> "$GITHUB_OUTPUT"
+
+      # PR を GITHUB_TOKEN で作ると check.yml が走らないので、同じ試験をここで回す
+      - name: Test
+        id: test
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          bun i --frozen-lockfile
+          bun run lint
+          bun run check
+          bun test tests
+          bun run build
+
+      - name: Open the PR
+        id: open
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANGES: ${{ steps.diff.outputs.changes }}
+        run: |
+          set -eu
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add static/areas/volcano-points.json static/cameras/volcano-cameras.json
+          git commit -m "chore: 気象庁の一覧から火山の表を作り直す"
+          git push --force origin "$BRANCH"
+          title="chore: 気象庁の一覧から火山の表を作り直す"
+          {
+            echo "気象庁ホームページの一覧 (活火山の一覧 \`volcano_list.json\` と、監視カメラの地図の \`camicon.geojson\`) から、表を作り直しました。"
+            echo
+            sed '/^changes=/d' "$RUNNER_TEMP/diff.md"
+            echo
+            if [ "$CHANGES" -ge 1 ] && [ "$CHANGES" -le "$MAX_AUTO_CHANGES" ]; then
+              echo "変わった項目は ${CHANGES} で、${MAX_AUTO_CHANGES} 以下なので、試験を通してから自分でマージします。"
+            elif [ "$CHANGES" -eq 0 ]; then
+              echo "ファイルは変わりましたが、足された・消えた・名前か位置が変わった項目はありません (約 100 m 未満の位置の違いか、出力の形の違い)。自分でマージしません。差を見てからマージしてください。"
+            else
+              echo "変わった項目が ${CHANGES} あり、${MAX_AUTO_CHANGES} を超えるので、自分でマージしません。一覧の形が変わっていないか、地図で確かめてからマージしてください。"
+            fi
+            echo
+            echo "lint・check・\`bun test tests\`・build は、この PR を作った run で通しました: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          } > "$RUNNER_TEMP/body.md"
+          gh pr create --base main --head "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md" \
+            || gh pr edit "$BRANCH" --title "$title" --body-file "$RUNNER_TEMP/body.md"
+          for context in check build; do
+            gh api "repos/${GITHUB_REPOSITORY}/statuses/$(git rev-parse HEAD)" \
+              -f state=success \
+              -f context="$context" \
+              -f description="map-data: tested in this run" \
+              -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          done
+          if [ "$CHANGES" -ge 1 ] && [ "$CHANGES" -le "$MAX_AUTO_CHANGES" ]; then
+            gh pr merge "$BRANCH" --squash --delete-branch
+            gh workflow run docker-publish.yml --ref main
+          else
+            gh pr edit "$BRANCH" --add-assignee "$GITHUB_REPOSITORY_OWNER" || true
+          fi
+
+      # 作れなかったら issue で知らせる (同じ題の issue が開いていれば、コメントを足す)
+      - name: Report a failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD: ${{ steps.build.outcome }}
+          COMPARE: ${{ steps.diff.outcome }}
+          TEST: ${{ steps.test.outcome }}
+          OPEN: ${{ steps.open.outcome }}
+        run: |
+          set -eu
+          run="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          # どの step で落ちたか。作る (build.sh) で落ちたなら一覧の形が変わったことが多い。試験・PR・マージで落ちたなら別の原因
+          body="火山の表の作り直しが失敗しました: ${run}
+          step ごとの結果: 作る ${BUILD}・比べる ${COMPARE}・試験 ${TEST}・PR とマージ ${OPEN}
+          作るで落ちて一覧の形が変わっていたら、tools/volcanoes/build.sh・tools/cameras/build.sh を直してください (docs/map.md の「火山の表を作り直す」)。"
+          n=$(gh issue list --state open --search "in:title \"$ISSUE_TITLE\"" --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body "$body"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body "$body"
+          fi
+
+      # 作れるようになったら、開いている issue を閉じる
+      - name: Close the failure issue
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          n=$(gh issue list --state open --search "in:title \"$ISSUE_TITLE\"" --json number --jq '.[0].number // empty')
+          if [ -n "$n" ]; then
+            gh issue close "$n" --comment "作り直せるようになりました: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          fi

@@ -12,7 +12,7 @@
 # カメラのページ (volcam.php?VC=<番号>) から読む (`#lib/map/cameras.ts`)。
 #
 # 出力: GeoJSON の FeatureCollection。properties は vc (カメラの 5 桁の番号。頭の 3 桁は火山のコード)・
-# volcano (火山の名前)・camera (カメラの名前)。2026-11-28 は 49 火山の 95 台。カメラが増えたり減ったりしたら作り直す。
+# volcano (火山の名前)・camera (カメラの名前)。2026-11-28 は 49 火山の 95 台。.github/workflows/map-data.yml が 1 日 1 回流す。
 set -eu
 DIR=$(dirname "$0")/../../static
 mkdir -p "$DIR/cameras"

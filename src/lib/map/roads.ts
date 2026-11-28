@@ -53,9 +53,11 @@ export const ROADS_URL = "/api/roads";
 /** 画面が読み直す間隔 (サーバーは 30 分ごとに取る) */
 export const ROADS_REFRESH_MS = 10 * 60_000;
 
-/** 通れるマップの一覧 (国土交通省 道路局の災害情報) */
-export const MLIT_ROAD_DISASTER =
-  "https://www.mlit.go.jp/road/road_fr4_000201.html";
+/**
+ * 通れるマップへの入口 (国土交通省 道路局のトップページ)。いま対応している災害のバナーが並び、災害ごとのページから
+ * 通れるマップへ行ける (docs/design.md の 2.12。災害ごとの対応状況のページは災害が替わると古くなる)
+ */
+export const MLIT_ROAD_DISASTER = "https://www.mlit.go.jp/road/index.html";
 
 /**
  * 入れない (有料・転載禁止の) 道路交通の情報。リンクだけを置く (docs/design.md の 2.12)
