@@ -6,7 +6,7 @@
       "name": "sonae",
       "devDependencies": {
         "@block65/webcrypto-web-push": "^2.0.0",
-        "@iconify-json/lucide": "^1.2.160",
+        "@iconify-json/lucide": "^1.2.161",
         "@maplibre/maplibre-gl-style-spec": "^27.0.0",
         "@sveltejs/adapter-bun": "^1.0.3",
         "@sveltejs/kit": "^3.4.1",
@@ -36,7 +36,7 @@
 
     "@emnapi/wasi-threads": ["@emnapi/wasi-threads@2.2.0", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-JP7OYH38Q7+pyTAe14raZHLQIK7BDKbdwji+Xi3pcd/6QkJYQH3SX4wu6EplGrGJWRepoNzedfm0G3B9Z4e9Rw=="],
 
-    "@iconify-json/lucide": ["@iconify-json/lucide@1.2.160", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-811QWUxsgfjFZewGJG45+TG62TNaeGMhsQr6XGiheTJpoe9Dc/vY2RHPLjOE1EuZ6vt70060MBkqz0whJG9I3w=="],
+    "@iconify-json/lucide": ["@iconify-json/lucide@1.2.161", "", { "dependencies": { "@iconify/types": "*" } }, "sha512-vqnIm6PfUnSnfD1boZSS74iJbYOL+ckFczHNIGFKUQTIynz7E4RH8szrehBPjGIUe1SioCaXsRNgnamDeSAmDg=="],
 
     "@iconify/types": ["@iconify/types@2.0.0", "", {}, "sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg=="],
 
