@@ -262,9 +262,12 @@ export function livecamFoot(
       cls: "small muted",
     },
     {
-      text: `${c.credit} (${c.operator} の YouTube のライブ配信)。再生は YouTube のプレーヤー (プライバシー強化モード) で、YouTube の利用規約に従います`,
+      text: `${c.credit} (${c.operator} の YouTube のライブ配信)。再生は YouTube のプレーヤー (プライバシー強化モード) です。見ると、YouTube の利用規約と、このサーバーのプライバシーポリシーに同意したことになります`,
       cls: "tiny muted",
     },
+    // YouTube API Services の Developer Policies III.A.1・III.A.2 (docs/design.md の 1 章「YouTube のライブカメラ」)
+    { text: "YouTube 利用規約", cls: "tiny", href: YOUTUBE_TERMS },
+    { text: "プライバシーポリシー", cls: "tiny", href: PRIVACY_URL },
   );
   return lines;
 }
@@ -272,6 +275,8 @@ export function livecamFoot(
 /** YouTube の利用規約と Google のプライバシーポリシー (出典と注意・プライバシーのページ) */
 export const YOUTUBE_TERMS = "https://www.youtube.com/t/terms";
 export const GOOGLE_PRIVACY = "https://policies.google.com/privacy";
+/** このサーバーのプライバシーポリシー (ログインの外) */
+export const PRIVACY_URL = "/privacy";
 
 /**
  * 地図の印 (MapLibre の addImage に渡す。pixelRatio 2)。画面だけで呼ぶ。

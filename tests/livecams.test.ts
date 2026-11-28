@@ -88,6 +88,11 @@ test("吹き出しの文: キーが無い・配信していない・読めない
   const text = on.map((l) => l.text).join("\n");
   expect(text).toContain("東京都港湾局提供");
   expect(text).toContain("この映像に頼らず");
+  // YouTube 利用規約とプライバシーポリシーへのリンク (Developer Policies III.A.1・III.A.2)
+  const hrefs = on.map((l) => l.href);
+  expect(hrefs).toContain("https://www.youtube.com/t/terms");
+  expect(hrefs).toContain("/privacy");
+  expect(text).toContain("同意したことになります");
 });
 
 const live = (id: string, over: Partial<YtVideo> = {}): YtVideo => ({
