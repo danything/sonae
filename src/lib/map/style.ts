@@ -95,9 +95,9 @@ const PHOTO_ATTRIBUTION = [
 
 /**
  * 引いたとき (ズーム 8 まで) の下地。NASA GIBS の Blue Marble (2004 年 8 月、陰影つき)。
- * 海は暗い紺で、地理院の写真 (9 から) の黒い海とつながる。GIBS は 8 までなので、9 からは引き伸ばす
+ * 海は暗い紺で、地理院の写真 (9 から) の黒い海とつながる。GIBS は 8 までなので、9 からは引き伸ばす。
+ * GIBS の `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief/default/GoogleMapsCompatible_Level8/` を中継で読む
  */
-/** GIBS の `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/BlueMarble_ShadedRelief/default/GoogleMapsCompatible_Level8/` を中継で読む */
 export const BLUE_MARBLE_TILES = `${relayBase("gibs")}/{z}/{y}/{x}.jpeg`;
 const GIBS = "https://nasa-gibs.github.io/gibs-api-docs/";
 /** Blue Marble の出典。NASA Earth Observatory の頼み (「NASA Earth Observatory」と書く) と、GIBS の謝辞の文 */

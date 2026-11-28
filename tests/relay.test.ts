@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import {
   maxAgeOf,
+  readCapped,
   Relay,
   RELAY_SOURCES,
   type RelaySource,
@@ -368,6 +369,26 @@ test("上限を超えたら、長く使っていないものから捨てる", as
   expect(up.calls).toHaveLength(3);
   await r.handle("t", "a/2.png", none, h());
   expect(up.calls).toHaveLength(4);
+});
+
+test("本体は上限まで読み、Content-Length が無くても途中で切る", async () => {
+  const stream = (n: number) =>
+    new Response(
+      new ReadableStream({
+        start(c) {
+          for (let i = 0; i < n; i++) c.enqueue(new Uint8Array(10));
+          c.close();
+        },
+      }),
+    );
+  expect((await readCapped(stream(3), 30))?.byteLength).toBe(30);
+  expect(await readCapped(stream(4), 30)).toBeNull();
+  expect(
+    await readCapped(
+      new Response("x", { headers: { "content-length": "99" } }),
+      30,
+    ),
+  ).toBeNull();
 });
 
 test("見出しの読み方", () => {

@@ -127,6 +127,40 @@ function safePath(path: string): boolean {
   return path.split("/").every((s) => s !== "" && s !== "." && s !== "..");
 }
 
+/**
+ * 本体を `max` バイトまで読む。Content-Length がそれより大きいか、読んでいる途中で超えたら、読むのをやめて null
+ */
+export async function readCapped(
+  res: Response,
+  max: number,
+): Promise<Uint8Array | null> {
+  if (Number(res.headers.get("content-length") ?? 0) > max) {
+    void res.body?.cancel();
+    return null;
+  }
+  if (!res.body) return new Uint8Array(0);
+  const reader = res.body.getReader();
+  const parts: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      void reader.cancel();
+      return null;
+    }
+    parts.push(value);
+  }
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.byteLength;
+  }
+  return out;
+}
+
 /** 小さなセマフォ (源ごとに同時に取りに行く数を絞る) */
 class Gate {
   private running = 0;
@@ -348,13 +382,12 @@ export class Relay {
       console.warn(`[relay] ${sourceId}: 配信元が ${res.status} を返しました`);
       throw new Error(`upstream ${res.status}`);
     }
-    // 大きすぎるものは読まずに断る (中継するのはタイルや表で、ふつうは数百 KB まで)
-    if (Number(res.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) {
-      void res.body?.cancel();
+    // 大きすぎるものは断る (中継するのはタイルや表で、ふつうは数百 KB まで)。Content-Length が無くても、読みながら数えて切る
+    const body = await readCapped(res, MAX_BODY_BYTES);
+    if (!body) {
       console.warn(`[relay] ${sourceId}: 配信元の応答が大きすぎます`);
       throw new Error("too large");
     }
-    const body = new Uint8Array(await res.arrayBuffer());
     const out: Record<string, string> = {};
     for (const h of PASS_HEADERS) {
       const v = res.headers.get(h);
