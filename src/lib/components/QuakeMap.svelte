@@ -1342,11 +1342,16 @@
     })();
     return () => aborter.abort();
   });
-  // 指定河川の地図 (水色の線。変わらない) は、洪水を選んだときに 1 度だけ読む
+  // 指定河川の地図 (水色の線。変わらない) は、洪水を選んだときに 1 度だけ読む。読めなかったとき (オフラインなど) に
+  // 選び直せば読み直せるよう、洪水を外したら読み直す印を戻す (2 度目はブラウザのキャッシュから読む)
   let riverMapLoaded = false;
   $effect(() => {
-    if (!map || riverMapLoaded || chosenRisk?.draw !== "river" || !riskOn)
+    if (!map) return;
+    if (chosenRisk?.draw !== "river" || !riskOn) {
+      riverMapLoaded = false;
       return;
+    }
+    if (riverMapLoaded || !map.getSource("river-map")) return;
     riverMapLoaded = true;
     setData(map, "river-map", RIVER_MAP_URL);
   });
