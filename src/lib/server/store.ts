@@ -599,6 +599,17 @@ export class Store {
    * 定時 (VFVO53) は火山ごとに 3 時間おきに出て 1 通 20 KB ほどあるので、同じ series のいちばん新しい報だけを残す
    */
   private putAsh(v: Volcano, series: string, ash: AshWindow[]): void {
+    // 定時の古い報があとから届いたとき (取りこぼしの取り直しなど) は置かない
+    if (
+      v.code === "VFVO53" &&
+      this.db
+        .query(
+          `SELECT 1 FROM volcano_ash WHERE series = ? AND id <> ?
+             AND datetime(reported_at) > datetime(?)`,
+        )
+        .get(series, v.id, v.reportedAt) !== null
+    )
+      return;
     this.db
       .query(
         `INSERT INTO volcano_ash (id, series, reported_at, data) VALUES (?, ?, ?, ?)

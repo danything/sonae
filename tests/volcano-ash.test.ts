@@ -137,6 +137,23 @@ describe("保存", () => {
     expect(first).not.toBe(second);
     expect(store.volcanoAsh(first)).toBeUndefined();
     expect(store.volcanoAsh(second)?.windows).toHaveLength(6);
+    // 古い報があとから届いても、新しい報の範囲だけを残す
+    const early = body
+      .replaceAll("2021-05-17T14:00:00+09:00", "2021-05-17T11:00:00+09:00")
+      .replace(
+        /<DateTime>[^<]+<\/DateTime>/,
+        "<DateTime>2021-05-17T02:00:00Z</DateTime>",
+      );
+    const [c] = store.ingest({
+      ...jmaIncoming(TEIJI),
+      key: "early",
+      body: early,
+      items: parseJmaXml(early, "VFVO53"),
+    });
+    const third = (c?.data as Volcano | undefined)?.id ?? "";
+    expect(third).not.toBe(second);
+    expect(store.volcanoAsh(third)).toBeUndefined();
+    expect(store.volcanoAsh(second)?.windows).toHaveLength(6);
   });
 
   test("古い範囲は原文と同じ 30 日で捨てる", () => {
