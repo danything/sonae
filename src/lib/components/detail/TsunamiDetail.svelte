@@ -26,8 +26,11 @@
   {:else}
     <p class="small muted">この津波予報は終わりました。</p>
   {/if}
-  {#if t.sources.includes("jma-bosai") && !t.sources.includes("jma")}
-    <!-- 地震火山 XML が取れない間に、気象庁ホームページの JSON (予備) から受けた津波 (docs/design.md の 2.1) -->
+  {#if (t.areasSource ?? (t.sources.includes("jma") ? "jma" : t.sources.at(-1))) === "jma-bosai"}
+    <!--
+      いまの予報区の並びを、地震火山 XML が取れない間に気象庁ホームページの JSON (予備) から受けた津波 (docs/design.md の 2.1)。
+      前の報を XML で受けていても、いまの状態が予備から来ていれば出す
+    -->
     <p class="small">{BOSAI_NOTE}</p>
   {/if}
   {#if t.headline}

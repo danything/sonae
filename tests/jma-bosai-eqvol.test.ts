@@ -266,6 +266,7 @@ describe("合わせ方", () => {
     const next = mergeTsunami(first, n.report, "t1", now);
     expect(next?.provisional).toBe(false);
     expect(next?.sources).toEqual(["p2p", "jma-bosai"]);
+    expect(next?.areasSource).toBe("jma-bosai");
     // bosai の後の P2P は捨てる
     expect(mergeTsunami(next ?? undefined, p2p, "t1", now)).toBeNull();
   });
@@ -632,4 +633,28 @@ test("1 つの一覧が続けて取れなくても、ほかの一覧は 1 分ご
   // 0・1・3・7 分目 (間は 1・2・4 分)
   expect(asked.get(BOSAI_VOLCANO_ERUPTION)).toBe(4);
   expect(last).toBe("retrying");
+});
+
+test("前の報を気象庁 XML で受けていても、いまの予報区を予備から受けたら、そう分かる (詳しい内容の注記)", () => {
+  const [n] = parseBosaiTsunami(TSUNAMI, "VTSE41");
+  if (n?.type !== "tsunami") throw new Error("津波ではありません");
+  const now = "2026-11-06T10:55:00.000Z";
+  const xml: TsunamiReport = {
+    ...n.report,
+    source: "jma",
+    reportedAt: "2026-11-06T19:50:00+09:00",
+  };
+  const first = mergeTsunami(undefined, xml, "t1", now);
+  expect(first?.areasSource).toBe("jma");
+  const next = mergeTsunami(first ?? undefined, n.report, "t1", now);
+  expect(next?.sources).toEqual(["jma", "jma-bosai"]);
+  expect(next?.areasSource).toBe("jma-bosai");
+  // 同じ報を気象庁 XML で受け直したら、XML に戻る
+  const back = mergeTsunami(
+    next ?? undefined,
+    { ...n.report, source: "jma" },
+    "t1",
+    now,
+  );
+  expect(back?.areasSource).toBe("jma");
 });
