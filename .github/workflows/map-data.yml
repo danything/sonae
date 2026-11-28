@@ -38,6 +38,7 @@ jobs:
           bun-version-file: .bun-version
 
       - name: Build the tables
+        id: build
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/before"
@@ -61,6 +62,7 @@ jobs:
 
       # PR を GITHUB_TOKEN で作ると check.yml が走らないので、同じ試験をここで回す
       - name: Test
+        id: test
         if: steps.diff.outputs.changed == 'true'
         run: |
           bun i --frozen-lockfile
@@ -70,6 +72,7 @@ jobs:
           bun run build
 
       - name: Open the PR
+        id: open
         if: steps.diff.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -88,8 +91,10 @@ jobs:
             echo
             sed '/^changes=/d' "$RUNNER_TEMP/diff.md"
             echo
-            if [ "$CHANGES" -le "$MAX_AUTO_CHANGES" ]; then
+            if [ "$CHANGES" -ge 1 ] && [ "$CHANGES" -le "$MAX_AUTO_CHANGES" ]; then
               echo "変わった項目は ${CHANGES} で、${MAX_AUTO_CHANGES} 以下なので、試験を通してから自分でマージします。"
+            elif [ "$CHANGES" -eq 0 ]; then
+              echo "ファイルは変わりましたが、足された・消えた・名前か位置が変わった項目はありません (約 100 m 未満の位置の違いか、出力の形の違い)。自分でマージしません。差を見てからマージしてください。"
             else
               echo "変わった項目が ${CHANGES} あり、${MAX_AUTO_CHANGES} を超えるので、自分でマージしません。一覧の形が変わっていないか、地図で確かめてからマージしてください。"
             fi
@@ -105,7 +110,7 @@ jobs:
               -f description="map-data: tested in this run" \
               -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           done
-          if [ "$CHANGES" -le "$MAX_AUTO_CHANGES" ]; then
+          if [ "$CHANGES" -ge 1 ] && [ "$CHANGES" -le "$MAX_AUTO_CHANGES" ]; then
             gh pr merge "$BRANCH" --squash --delete-branch
             gh workflow run docker-publish.yml --ref main
           else
@@ -117,11 +122,17 @@ jobs:
         if: failure()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BUILD: ${{ steps.build.outcome }}
+          COMPARE: ${{ steps.diff.outcome }}
+          TEST: ${{ steps.test.outcome }}
+          OPEN: ${{ steps.open.outcome }}
         run: |
           set -eu
           run="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          body="火山の表を気象庁の一覧から作り直せませんでした: ${run}
-          一覧の形が変わったときは、tools/volcanoes/build.sh・tools/cameras/build.sh を直してください (docs/map.md の「表を作り直す」)。"
+          # どの step で落ちたか。作る (build.sh) で落ちたなら一覧の形が変わったことが多い。試験・PR・マージで落ちたなら別の原因
+          body="火山の表の作り直しが失敗しました: ${run}
+          step ごとの結果: 作る ${BUILD}・比べる ${COMPARE}・試験 ${TEST}・PR とマージ ${OPEN}
+          作るで落ちて一覧の形が変わっていたら、tools/volcanoes/build.sh・tools/cameras/build.sh を直してください (docs/map.md の「火山の表を作り直す」)。"
           n=$(gh issue list --state open --search "in:title \"$ISSUE_TITLE\"" --json number --jq '.[0].number // empty')
           if [ -n "$n" ]; then
             gh issue comment "$n" --body "$body"

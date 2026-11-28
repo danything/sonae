@@ -4,7 +4,8 @@
  *
  *   bun tools/map-data/diff.ts <前の volcano-points.json> <前の volcano-cameras.json>
  *
- * 標準出力に本文を、最後の行に `changes=<数>` を出す。数は、足された・消えた・名前か位置が変わった項目の合計
+ * 標準出力に本文を、最後の行に `changes=<数>` を出す。数は、足された・消えた・名前か位置が変わった項目の合計。
+ * ファイルは変わったのに数が 0 (約 100 m 未満の位置の違い・出力の形の違い) なら、workflow は自分でマージしない
  */
 type Points = Record<string, [number, number, string?]>;
 interface Cameras {
@@ -54,8 +55,17 @@ function compare<T>(
 }
 
 const pointsMap = (p: Points) => new Map(Object.entries(p));
-const camerasMap = (c: Cameras) =>
-  new Map(c.features.map((f) => [f.properties.vc, f] as const));
+/** カメラの番号が欠けたり重なったりしていたら止める (1 つにまとまると、変わった数を少なく数え、自動のマージを誤らせる) */
+function camerasMap(c: Cameras) {
+  const m = new Map<string, Cameras["features"][number]>();
+  for (const f of c.features) {
+    const vc = f.properties?.vc;
+    if (!vc) throw new Error(`番号の無いカメラ: ${JSON.stringify(f)}`);
+    if (m.has(vc)) throw new Error(`同じ番号のカメラが 2 つある: ${vc}`);
+    m.set(vc, f);
+  }
+  return m;
+}
 
 const points = compare(
   "活火山の位置 (static/areas/volcano-points.json)",

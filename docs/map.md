@@ -117,8 +117,8 @@ sonae の画面には気象庁の GIS データの出典を出す。
 
 - 毎朝 6:23 (日本時間) に `tools/volcanoes/build.sh`・`tools/cameras/build.sh` を流す。気象庁へは一覧を 2 つ読むだけ (User-Agent は `sonae (+https://github.com/danything/sonae)`)
 - 表が変わったら、PR (`update-map-data`) を出す。本文には、足された・消えた・名前か位置が変わった項目を並べる (`tools/map-data/diff.ts`)
-- 変わった項目が 5 以下なら、同じ run で lint・check・試験・build を通してから自分でマージし、イメージを組み直す (`docker-publish.yml` を回す)。GITHUB_TOKEN で作った PR には check.yml が走らないので、`check`・`build` の結果は同じ run で通したものを貼る (イメージの更新の PR と同じ形)。5 を超えたら、マージせずに持ち主に割り当てる。一覧の形が変わって、中身を取り違えていないかを地図で見てからマージする
-- 一覧の形が変わって作れなくなったら、issue「火山の表を作り直せない (map-data)」を立てる (開いていればコメントを足す)。作れるようになったら、その issue を閉じる
+- 変わった項目が 1〜5 なら、同じ run で lint・check・試験・build を通してから自分でマージし、イメージを組み直す (`docker-publish.yml` を回す)。GITHUB_TOKEN で作った PR には check.yml が走らないので、`check`・`build` の結果は同じ run で通したものを貼る (イメージの更新の PR と同じ形)。5 を超えたときと、ファイルは変わったのに数える項目が 0 のとき (約 100 m 未満の位置の違い・出力の形の違い) は、マージせずに持ち主に割り当てる。一覧の形が変わって、中身を取り違えていないかを地図で見てからマージする
+- 一覧の形が変わって作れなくなったら (試験・マージで落ちたときも)、issue「火山の表を作り直せない (map-data)」を立て、どの step で落ちたかを書く (開いていればコメントを足す)。カメラの番号が欠けたり重なったりしていても落とす (数え落としで自動のマージを誤らないため)。作れるようになったら、その issue を閉じる
 - **区域の GIS データは、この形にしない。** zip を取り、間隔を測って簡略化を決め、`cities.json` との合い方を確かめる手間が要るので、上の pin-watch で更新に気づき、人が作り直す
 
 プレート境界の線 `static/plates/pb2002-boundaries.geojson` (約 110KB・gzip 約 30KB。241 本) は `tools/plates/build.sh` で作る。
