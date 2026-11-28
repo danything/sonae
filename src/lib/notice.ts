@@ -8,6 +8,7 @@ import { NOWC_PAGE, RASRF_PAGE } from "#lib/map/nowc.ts";
 import { RAIN_PAGE } from "#lib/map/rain.ts";
 import { RISK_PAGE } from "#lib/map/risk.ts";
 import { MLIT_ROAD_DISASTER, ROAD_LINKS } from "#lib/map/roads.ts";
+import { SNOW_PAGE } from "#lib/map/snow.ts";
 
 export const NOTICE =
   "このアプリは気象庁の公式のものではありません。情報は遅れたり欠けたりすることがあります。身の安全に関わる判断は、気象庁・自治体・テレビやラジオの公式の情報を優先してください。";
@@ -126,6 +127,14 @@ export const CREDITS: Credit[] = [
       "出典：気象庁ホームページ（",
       { text: RASRF_PAGE, href: RASRF_PAGE },
       "）。気象庁「降水短時間予報」(今後の雨) の 1 時間降水量を加工して作成 (透かして地図に重ねて表示)。地図の右下で「今後の雨 (予測)」か「雨雲 (いま→予測)」(3 時間先まで) を選んだときに、気象庁の予測を色も値も変えずに重ねます。sonae が先の雨を予想することはしません。タイルは、sonae のサーバーが気象庁ホームページから取って中継します (色も値も変えません)",
+    ],
+  },
+  {
+    label: "今後の雪",
+    parts: [
+      "出典：気象庁ホームページ（",
+      { text: SNOW_PAGE, href: SNOW_PAGE },
+      "）。気象庁「今後の雪（降雪短時間予報）」を加工して作成 (積雪の深さと 12 時間の降雪量。透かして地図に重ねて表示)。地図の右下で選んだときに、気象庁の解析と 6 時間先までの予測を色も値も変えずに重ねます。sonae が先の雪を予想することはしません。気象庁は冬の間だけ配信します。タイルは、sonae のサーバーが気象庁ホームページから取って中継します (色も値も変えません)",
     ],
   },
   {

@@ -103,11 +103,11 @@ test("重ねる図と、ハザードマップを重ねている間だけ出す�
     sources: Record<string, unknown>;
     layers: { id: string; layout?: { visibility?: string } }[];
   };
-  // 重ねる図 (ハザードマップ・雨雲・キキクル) の層と、ハザードマップを重ねている間だけ出す層のほかは、いつも出す
+  // 重ねる図 (ハザードマップ・雨雲・キキクル・今後の雪など) の層と、ハザードマップを重ねている間だけ出す層のほかは、いつも出す
   const underHazard: string[] = [...SHOWN_UNDER_HAZARD];
   for (const l of style.layers)
     if (
-      !/^(hazard|rain|rainloop|risk|riskflood|river|nowc|rasrf)-|^river$/.test(
+      !/^(hazard|rain|rainloop|risk|riskflood|river|nowc|rasrf|snow)-|^river$/.test(
         l.id,
       )
     )
