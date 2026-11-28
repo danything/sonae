@@ -47,7 +47,7 @@
     type CameraFrame,
     cameraHead,
     cameraIcon,
-    cameraPage,
+    cameraPageRelay,
     type CameraPoint,
     CAMERAS_URL,
     frameAlt,
@@ -2422,15 +2422,15 @@
   }
 
   /**
-   * カメラの吹き出し。開くと、ブラウザが気象庁のカメラのページを読んでいちばん新しい画像の名前を拾い、その画像を
-   * 気象庁から直接読む (sonae のサーバーは通さない)。開いている間は 10 分ごとに読み直し、閉じたらやめる。
+   * カメラの吹き出し。開くと、サーバーの中継から気象庁のカメラのページを読んでいちばん新しい画像の名前を拾い、その画像も
+   * 中継から読む (docs/design.md の 2.14)。開いている間は 10 分ごとに読み直し、閉じたらやめる。
    * 画面が隠れている間は読み直さない
    */
   let cameraPopupEl: Popup | undefined;
   let cameraTimer: ReturnType<typeof setInterval> | undefined;
   function openCamera(p: CameraPoint, at: [number, number]): void {
     if (!map || !PopupClass) return;
-    const page = cameraPage(p.vc);
+    const page = cameraPageRelay(p.vc);
     if (!page) return;
     const line = (l: { text: string; cls?: string; href?: string }) => {
       const el = document.createElement("p");

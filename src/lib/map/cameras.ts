@@ -2,12 +2,13 @@
  * 気象庁の火山の監視カメラ (docs/map.md の「火山の監視カメラ」)。カメラの位置の表は `tools/cameras/build.sh` で
  * 気象庁ホームページの地図の GeoJSON から作った `static/cameras/volcano-cameras.json`。
  *
- * 画像はサーバーで取らない。印を押したときに、ブラウザが気象庁ホームページのカメラのページ (CORS `*`) を読んで
- * いちばん新しい画像の名前を読み取り、その画像を気象庁ホームページから直接読んで吹き出しに出す。sonae は画像を保存も
- * 配布もしない。ここは吹き出しの中身と、ページから画像の名前を読み取る所 (画面だけで使う)
+ * 印を押したときに、ブラウザがカメラのページを sonae のサーバーの中継 (`#lib/relay.ts`。docs/design.md の 2.14) から
+ * 読んでいちばん新しい画像の名前を読み取り、その画像も中継から読んで吹き出しに出す。サーバーは期限 (10 分) の間だけ
+ * 覚えて家の中の端末で使い回し、保存も配布もしない。ここは吹き出しの中身と、ページから画像の名前を読み取る所 (画面だけで使う)
  */
 
 import type { PopupLine } from "#lib/map/marine.ts";
+import { relayBase } from "#lib/relay.ts";
 
 /** カメラの表 (GeoJSON)。画面が地図を読み終えたときに 1 度だけ読む */
 export const CAMERAS_URL = "/cameras/volcano-cameras.json";
@@ -16,8 +17,12 @@ export const CAMERAS_URL = "/cameras/volcano-cameras.json";
 export const VOLCAM_PAGE =
   "https://www.data.jma.go.jp/vois/data/obs/volcam/volcam.php";
 
-/** 画像の置き場。ページの `../camera/<火山>_<16 進 8 桁>/<撮った時刻>.jpg` をここに足す */
-const CAMERA_BASE = "https://www.data.jma.go.jp/vois/data/obs/camera/";
+/**
+ * 中継の頭 (`https://www.data.jma.go.jp/vois/data/obs/` を読む)。画像の置き場は、ページの
+ * `../camera/<火山>_<16 進 8 桁>/<撮った時刻>.jpg` をこの `camera/` に足したもの
+ */
+const VOLCAM_RELAY = relayBase("volcam");
+const CAMERA_BASE = `${VOLCAM_RELAY}/camera/`;
 
 /**
  * 吹き出しを開いている間に、カメラのページを読み直す間 (ミリ秒)。画像は 2〜3 分ごとに替わるが、ページには
@@ -45,9 +50,16 @@ export interface CameraPoint {
   camera: string;
 }
 
-/** カメラのページの URL。番号が 5 桁の数でなければ undefined (表の外のものを読まない) */
+/** カメラのページの URL (人が開くリンク)。番号が 5 桁の数でなければ undefined (表の外のものを読まない) */
 export function cameraPage(vc: string): string | undefined {
   return /^\d{5}$/.test(vc) ? `${VOLCAM_PAGE}?VC=${vc}` : undefined;
+}
+
+/** カメラのページを、サーバーの中継から読む URL (画像の名前を読み取るため)。番号が 5 桁の数でなければ undefined */
+export function cameraPageRelay(vc: string): string | undefined {
+  return /^\d{5}$/.test(vc)
+    ? `${VOLCAM_RELAY}/volcam/volcam.php?VC=${vc}`
+    : undefined;
 }
 
 /** ページから読み取ったいちばん新しい画像 */
@@ -122,7 +134,7 @@ export function cameraFoot(p: CameraPoint): PopupLine[] {
       cls: "small muted",
     },
     {
-      text: "出典：気象庁ホームページ (監視カメラ画像)。画像は気象庁から直接読んでいます",
+      text: "出典：気象庁ホームページ (監視カメラ画像)。画像は sonae のサーバーが気象庁から取って中継しています",
       cls: "tiny muted",
     },
   );

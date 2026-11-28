@@ -420,6 +420,27 @@ test("地理院・ハザードマップ・GIBS の道", () => {
   expect(ok("gibs", "9/12/28.jpeg")).toBe(true);
 });
 
+test("火山カメラはページ (5 桁の VC だけ) と、撮った時刻の名前の画像だけを通す", async () => {
+  const up = upstream(() => png());
+  const r = new Relay({ sources: RELAY_SOURCES, fetch: up.fetch });
+  const q = (s: string) => new URLSearchParams(s);
+  const ok = async (p: string, s = "") =>
+    (await r.handle("volcam", p, q(s), h())).status;
+  expect(await ok("volcam/volcam.php", "VC=31501")).toBe(200);
+  expect(await ok("camera/315_820081B0/20261128121001.jpg")).toBe(200);
+  expect(up.calls.map((c) => c.url)).toEqual([
+    "https://www.data.jma.go.jp/vois/data/obs/volcam/volcam.php?VC=31501",
+    "https://www.data.jma.go.jp/vois/data/obs/camera/315_820081B0/20261128121001.jpg",
+  ]);
+  expect(await ok("volcam/volcam.php")).toBe(400);
+  expect(await ok("volcam/volcam.php", "VC=315")).toBe(400);
+  expect(await ok("volcam/volcam.php", "VC=31501&x=1")).toBe(400);
+  expect(await ok("camera/315_820081B0/20261128121001.jpg", "a=1")).toBe(400);
+  expect(await ok("camera/../volcam.php")).toBe(400);
+  expect(await ok("other.php", "VC=31501")).toBe(400);
+  expect(up.calls).toHaveLength(2);
+});
+
 test("PMTiles は Range の無い要求を断る (まるごと取らせない)", async () => {
   const up = upstream(() => png());
   const r = new Relay({ sources: RELAY_SOURCES, fetch: up.fetch });

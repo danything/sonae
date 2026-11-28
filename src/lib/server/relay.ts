@@ -29,7 +29,7 @@ export interface RelaySource {
   /** 通してよい道 (頭の `/relay/<源>/` の後ろ) */
   path: RegExp;
   /** 通してよい問い合わせ (`?` の後ろ)。整えた問い合わせ (`""` は無し) か、断るなら null。無ければ問い合わせは断る */
-  query?: (q: URLSearchParams) => string | null;
+  query?: (q: URLSearchParams, path: string) => string | null;
   /** 配信元が max-age を書かないときの期限 (秒) */
   ttl: number;
   /** 期限の下限 (秒)。配信元の max-age がこれより短くても、これより早くは取り直さない */
@@ -238,7 +238,7 @@ export class Relay {
       return noStore(400, "中継しない道です");
     let query = "";
     if (source.query) {
-      const q = source.query(search);
+      const q = source.query(search, path);
       if (q === null) return noStore(400, "中継しない問い合わせです");
       query = q;
     } else if ([...search.keys()].length > 0)
@@ -557,6 +557,19 @@ export const RELAY_SOURCES = {
     upstream: "https://disaportal.gsi.go.jp/hazardmap/copyright/img/",
     path: /^[0-9a-z_]{1,64}\.png$/,
     ttl: 86_400,
+  },
+  // 気象庁ホームページの火山の監視カメラ。カメラのページ (`volcam.php?VC=<5 桁>`。いちばん新しい画像の名前を読む) と、
+  // 撮った時刻の名前の画像。どちらも max-age 600 (docs/map.md の「火山の監視カメラ」)
+  volcam: {
+    upstream: "https://www.data.jma.go.jp/vois/data/obs/",
+    path: /^(?:volcam\/volcam\.php|camera\/\d{3}_[0-9A-Fa-f]{8}\/\d{14}\.jpg)$/,
+    query: (q, path) => {
+      const keys = [...q.keys()];
+      if (!path.endsWith(".php")) return keys.length === 0 ? "" : null;
+      const vc = q.get("VC") ?? "";
+      return keys.length === 1 && /^\d{5}$/.test(vc) ? `VC=${vc}` : null;
+    },
+    ttl: 600,
   },
   // NASA GIBS の Blue Marble (陰影つき。max-age 3 日)。引いたときの下地
   gibs: {
