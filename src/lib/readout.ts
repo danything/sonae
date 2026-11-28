@@ -159,7 +159,7 @@ function eewParts(e: Eew): string[] {
   if (place)
     out.push(`震源は${place}${m ? `、規模は${m}` : ""}と推定されています。`);
   else if (m) out.push(`規模は${m}と推定されています。`);
-  if (e.assumed) out.push("震源と規模は仮のものです。");
+  if (e.assumed) out.push("震源は仮のものです。");
   return out;
 }
 

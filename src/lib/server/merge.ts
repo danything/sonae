@@ -297,14 +297,24 @@ export function mergeTsunami(
   return next;
 }
 
-/** お知らせ。同じ番号の新しい報で置き換え、取消で無効にする */
+/**
+ * お知らせ。同じ番号の新しい報で置き換え、取消で無効にする。
+ * 同じ報 (発表の時刻と種類が同じ) は捨てる。ただし Wolfx の予備 (`source: "wolfx"`、見出しが無い) を
+ * 先に受けていて、気象庁 XML の同じ報が後から来たら、XML のもので置き換える。時刻は書き方
+ * (XML は日本時間、Wolfx は UTC) が違うので、ミリ秒で比べる
+ */
 export function mergeAdvisory(
   prev: Advisory | undefined,
   a: Omit<Advisory, "updatedAt" | "cancelled">,
   now: string,
 ): Advisory | null {
   if (prev && ms(a.reportedAt) < ms(prev.reportedAt)) return null;
-  if (prev && a.reportedAt === prev.reportedAt && a.infoType === prev.infoType)
+  if (
+    prev &&
+    ms(a.reportedAt) === ms(prev.reportedAt) &&
+    a.infoType === prev.infoType &&
+    !(prev.source === "wolfx" && a.source === undefined)
+  )
     return null;
   if (a.infoType === "取消") {
     if (!prev) return { ...a, cancelled: true, updatedAt: now };
