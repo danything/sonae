@@ -131,6 +131,6 @@ test("並べ方: 市町村が多く当たる語でも、住所・地名に 3 枠
 
 test("問い合わせの URL は打った文字だけ", () => {
   expect(gsiSearchUrl(" 霞が関1-3-1 ")).toBe(
-    "https://msearch.gsi.go.jp/address-search/AddressSearch?q=%E9%9C%9E%E3%81%8C%E9%96%A21-3-1",
+    "/relay/gsi-search/AddressSearch?q=%E9%9C%9E%E3%81%8C%E9%96%A21-3-1",
   );
 });

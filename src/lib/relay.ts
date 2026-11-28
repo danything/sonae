@@ -15,7 +15,8 @@ export type RelaySourceId =
   | "disaportal"
   | "disaportal-legend"
   | "gibs"
-  | "volcam";
+  | "volcam"
+  | "gsi-search";
 
 /** 中継の道の頭 */
 export const RELAY_PATH = "/relay";

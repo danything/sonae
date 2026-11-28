@@ -577,6 +577,21 @@ export const RELAY_SOURCES = {
     },
     ttl: 600,
   },
+  // 国土地理院の地名検索 API (住所検索)。打った文字を運ぶので、覚えず (`store: false`)、ブラウザにも覚えさせない。
+  // 通すのは `q` (100 文字まで) だけ。中継はどの要求もログに道や問い合わせを出さない (docs/map.md の「場所の検索」)
+  "gsi-search": {
+    upstream: "https://msearch.gsi.go.jp/address-search/",
+    path: /^AddressSearch$/,
+    query: (q) => {
+      const v = q.get("q") ?? "";
+      return [...q.keys()].length === 1 && v.length > 0 && v.length <= 100
+        ? `q=${encodeURIComponent(v)}`
+        : null;
+    },
+    ttl: 0,
+    store: false,
+    concurrency: 2,
+  },
   // NASA GIBS の Blue Marble (陰影つき。max-age 3 日)。引いたときの下地
   gibs: {
     upstream:
