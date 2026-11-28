@@ -2172,6 +2172,8 @@
     for (const l of cameraFoot(p)) box.append(line(l));
     let shown: CameraFrame | undefined;
     const fail = (text: string) => {
+      // 次の読み直しで同じ画像の名前が返っても、もう一度読む
+      shown = undefined;
       img.hidden = true;
       img.removeAttribute("src");
       frameBox.dataset.state = "empty";
@@ -2184,7 +2186,9 @@
       frameBox.dataset.state = "shown";
     };
     img.onerror = () => fail(CAMERA_FAILED);
+    let loadedAt = 0;
     const load = async () => {
+      loadedAt = Date.now();
       try {
         const r = await fetch(page);
         if (!r.ok) throw new Error(String(r.status));
@@ -2207,7 +2211,14 @@
       .setDOMContent(box)
       .addTo(map);
     cameraPopupEl = popup;
+    // 隠れている間は読み直さないので、戻ったときに前に読んでから 10 分たっていれば読み直す
+    const onvisible = () => {
+      if (!document.hidden && Date.now() - loadedAt >= CAMERA_REFRESH_MS)
+        void load();
+    };
+    document.addEventListener("visibilitychange", onvisible);
     popup.on("close", () => {
+      document.removeEventListener("visibilitychange", onvisible);
       if (cameraPopupEl !== popup) return;
       clearInterval(cameraTimer);
       cameraTimer = undefined;
