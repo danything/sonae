@@ -699,7 +699,17 @@ export function noticeOf(event: SonaeEvent, now: number): Notice | null {
       break;
     }
   }
-  if (!Number.isFinite(n.at) || now - n.at > FRESH_MS[event.type]) return null;
+  // 取消は原報の時刻のままなので、古さは取消を受けた時刻で見る (原報から 1 時間より後に出た取消も、
+  // 前に知らせた端末の通知を「(取消)」に置き換えに行く)
+  const d = event.data as { cancelled?: boolean; updatedAt?: string };
+  const freshAt =
+    d.cancelled && d.updatedAt !== undefined ? Date.parse(d.updatedAt) : n.at;
+  if (
+    !Number.isFinite(n.at) ||
+    !Number.isFinite(freshAt) ||
+    now - freshAt > FRESH_MS[event.type]
+  )
+    return null;
   return n;
 }
 

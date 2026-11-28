@@ -9,7 +9,7 @@ import {
 } from "#lib/alert.ts";
 import { type AreaFeature, createHereFinder, featureAt } from "#lib/home.ts";
 import type { WeatherWarning } from "#lib/model.ts";
-import { ADVISORY_QUOTA, type Sent } from "#lib/notify.ts";
+import { ADVISORY_QUOTA, noticeOf, type Sent } from "#lib/notify.ts";
 import { HERE, isFixed, readoutOf, readoutOfAll } from "#lib/readout.ts";
 
 import {
@@ -236,6 +236,42 @@ describe("開いているときは、現在地の気象も知らせる", () => {
       "気象防災速報です。",
       HERE,
     ]);
+  });
+
+  test("線状降水帯の直前の予測と発生は、題の情報タグで見分けられる", () => {
+    const lines = weatherInfo("82_01_01_260324_VPBS50.xml", "VPBS50");
+    const soon = {
+      ...lines,
+      id: `${lines.id}-soon`,
+      kindName: "線状降水帯直前",
+    };
+    const at = Date.parse(lines.reportedAt) + 60_000;
+    const titles = [lines, soon].map(
+      (i) =>
+        planAlerts(
+          weatherEvent(i),
+          at,
+          prefs({ home: homeAt("1220400") }),
+          new Map(),
+        )[0]?.notice.title,
+    );
+    expect(titles[0]).toContain("(線状降水帯発生)");
+    expect(titles[1]).toContain("(線状降水帯直前)");
+  });
+
+  test("原報から 1 時間より後に出た取消も、取消を受けた時刻で古さを見て知らせる", () => {
+    const lines = weatherInfo("82_01_01_260324_VPBS50.xml", "VPBS50");
+    const at = Date.parse(lines.reportedAt) + 62 * 60_000;
+    const cancelled = {
+      ...lines,
+      cancelled: true,
+      updatedAt: new Date(at - 30_000).toISOString(),
+    };
+    expect(noticeOf(weatherEvent(cancelled), at)).not.toBeNull();
+    // 取消でない報は、原報の時刻で古さを見る (1 時間より古ければ知らせない)
+    expect(
+      noticeOf(weatherEvent({ ...lines, updatedAt: cancelled.updatedAt }), at),
+    ).toBeNull();
   });
 
   test("前のスイッチ「現在地の気象も知らせる」は読まない (現在地はいつも使う)", () => {
