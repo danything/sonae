@@ -3,8 +3,11 @@ import { expect, test } from "bun:test";
 import { validateStyleMin } from "@maplibre/maplibre-gl-style-spec";
 
 import {
+  readSnowHours,
+  SNOW_FALL_HOURS,
   SNOW_KINDS,
   SNOW_TIMES_URL,
+  snowFallKind,
   snowFrames,
   snowOf,
   snowStale,
@@ -12,7 +15,10 @@ import {
 } from "#lib/map/snow.ts";
 import {
   baseStyle,
+  COLOR_DEPTHS,
+  depthApplies,
   overlayVisibility,
+  readColorDepth,
   readHazard,
   snowShown,
   snowVisibility,
@@ -152,4 +158,58 @@ test("出典と注意: 今後の雪の出典と、加工して作成したこと
     "出典：気象庁ホームページ（https://www.jma.go.jp/bosai/snow/）",
   );
   expect(text).toContain("気象庁「今後の雪（降雪短時間予報）」を加工して作成");
+});
+
+test("今後の雪: 降雪量は 3・6・12・24・48・72 時間から選び、要素と凡例が替わる (既定は 12 時間)", () => {
+  expect(SNOW_FALL_HOURS).toEqual([3, 6, 12, 24, 48, 72]);
+  expect(snowOf("snow-fall", 3)?.element).toBe("snowf03h");
+  expect(snowOf("snow-fall", 72)?.element).toBe("snowf72h");
+  expect(snowOf("snow-fall", 24)?.pill).toBe("今後の雪: 降雪量 (24 時間)");
+  // 区切りは気象庁の凡例 (legend_normal_snowf24h.svg) のまま。8 色
+  expect(snowOf("snow-fall", 24)?.legend.map((l) => l.label)).toEqual([
+    "70 以上",
+    "60〜70",
+    "50〜60",
+    "40〜50",
+    "30〜40",
+    "20〜30",
+    "10〜20",
+    "10 未満",
+  ]);
+  for (const h of SNOW_FALL_HOURS)
+    expect(snowFallKind(h).legend).toHaveLength(8);
+  // 積雪の深さは時間で替わらない
+  expect(snowOf("snow-depth", 3)?.element).toBe("snowd");
+  expect(readSnowHours("6")).toBe(6);
+  expect(readSnowHours("5")).toBe(12);
+  expect(readSnowHours(null)).toBe(12);
+});
+
+test("色の濃さ: 気象庁の画面と同じ 3 つ (薄い 0.5・ふつう 0.75・濃い 1) を、気象庁の格子の図にだけ選べる", () => {
+  expect(COLOR_DEPTHS.map((d) => [d.label, d.opacity])).toEqual([
+    ["薄い", 0.5],
+    ["ふつう", 0.75],
+    ["濃い", 1],
+  ]);
+  expect(readColorDepth("deep")).toBe("deep");
+  expect(readColorDepth("x")).toBe("normal");
+  for (const id of [
+    "rain",
+    "rain-loop",
+    "rain-forecast",
+    "thunder",
+    "risk-land",
+    "snow-fall",
+  ] as const)
+    expect(depthApplies(id)).toBe(true);
+  for (const id of ["none", "risk-flood", "flood", "quake-prob"] as const)
+    expect(depthApplies(id)).toBe(false);
+  // 地図を作るときの不透明度も色の濃さから
+  const style = baseStyle("", "snow-depth", null, null, "thin") as {
+    layers: { id: string; paint?: Record<string, unknown> }[];
+  };
+  for (const id of ["rain-4", "risk-4", "nowc-4", "rasrf-4", "snow-4"])
+    expect(
+      style.layers.find((l) => l.id === id)?.paint?.["raster-opacity"],
+    ).toBe(0.5);
 });

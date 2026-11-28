@@ -605,8 +605,45 @@ export const HIDDEN_UNDER_QUAKE = [
   "warning-focus",
 ] as const;
 
-/** 雨雲を写真の上に重ねるときの不透明度 (ハザードマップより少し濃く。淡い 0〜1 mm/h も写真の上で見える) */
-export const RAIN_OPACITY = 0.8;
+/**
+ * 気象庁の図 (雨雲・雨雲 (いま→予測)・今後の雨・雷・竜巻・キキクルの格子・今後の雪) の色の濃さ。気象庁の画面の
+ * 「色の濃さ」と同じ 3 つで、値も同じ (各画面の設定の `colorDepth`: 薄い 50・ふつう 75・濃い 100 の不透明度。
+ * 2026-11-28 に読んだ)。色そのものは変えず、写真に透かす濃さだけを替える。端末に覚える (`sonae.map.colorDepth`)
+ */
+export type ColorDepth = "thin" | "normal" | "deep";
+export const COLOR_DEPTHS: {
+  id: ColorDepth;
+  label: string;
+  opacity: number;
+}[] = [
+  { id: "thin", label: "薄い", opacity: 0.5 },
+  { id: "normal", label: "ふつう", opacity: 0.75 },
+  { id: "deep", label: "濃い", opacity: 1 },
+];
+/** 端末に覚えた色の濃さを読む。知らない値は「ふつう」 */
+export const readColorDepth = (raw: string | null): ColorDepth =>
+  COLOR_DEPTHS.find((d) => d.id === raw)?.id ?? "normal";
+/** 色の濃さの不透明度 */
+export const depthOpacity = (d: ColorDepth): number =>
+  COLOR_DEPTHS.find((x) => x.id === d)?.opacity ?? 0.75;
+
+/** 色の濃さを替える層の頭 (`<頭>-<ズーム>`)。キキクルの洪水の線と雨雲 (いま→予測) は含めない (後者は枚ごとに替える) */
+export const DEPTH_LAYER_PREFIXES = [
+  "rain",
+  "risk",
+  "nowc",
+  "rasrf",
+  "snow",
+] as const;
+
+/** 色の濃さを選べる重ねる図か (気象庁の格子の図) */
+export const depthApplies = (id: HazardId): boolean =>
+  id === "rain" ||
+  id === "rain-loop" ||
+  id === "rain-forecast" ||
+  nowcOf(id) !== undefined ||
+  riskOf(id)?.draw === "grid" ||
+  snowOf(id) !== undefined;
 
 /**
  * 雨雲を出すか。地震を選んでいる間は隠す。雨雲の色 (気象庁の降水量の配色) は震度の色と同じ色を使うので、
@@ -646,12 +683,12 @@ export function loopVisibility(
   );
 }
 
-/** 雨雲 (いま→予測) の枚ごとの透明度。見せる枚だけを雨雲と同じ濃さにし、ほかは 0 (描かないが、タイルは持つ) */
-export const loopOpacity = (slot: number, shown: number) =>
-  slot === shown ? RAIN_OPACITY : 0;
-
-/** キキクルを写真の上に重ねるときの不透明度 (雨雲と同じ。黄の「注意」も写真の上で見える) */
-const RISK_OPACITY = 0.8;
+/** 雨雲 (いま→予測) の枚ごとの透明度。見せる枚だけを色の濃さの不透明度にし、ほかは 0 (描かないが、タイルは持つ) */
+export const loopOpacity = (
+  slot: number,
+  shown: number,
+  depth: ColorDepth = "normal",
+) => (slot === shown ? depthOpacity(depth) : 0);
 
 /**
  * キキクルを出すか。雨雲と同じく、地震を選んでいる間は隠す。キキクルの黄・赤・紫は震度の色とぶつかるため
@@ -898,9 +935,6 @@ const PLACEHOLDER_TILE = `${JMATILE}/nowc/19700101000000/none/19700101000000/sur
 const NOWC_ATTRIBUTION = `<a href="${NOWC_PAGE}" target="_blank" rel="noopener">気象庁 雷・竜巻発生確度ナウキャスト</a> を加工`;
 const RASRF_ATTRIBUTION = `<a href="${RASRF_PAGE}" target="_blank" rel="noopener">気象庁 降水短時間予報</a> を加工`;
 const SLMCS_ATTRIBUTION = `<a href="${NOWC_PAGE}" target="_blank" rel="noopener">気象庁 線状降水帯の雨域</a> を加工`;
-
-/** 雷・竜巻・今後の雨を写真の上に重ねるときの不透明度 (雨雲と同じ) */
-const NOWC_OPACITY = 0.8;
 
 /**
  * 雷・竜巻・今後の雨を出すか。雨雲と同じく、地震を選んでいる間は隠す。どれも気象庁の配色 (震度の色と同じ赤・橙・黄・紫) で
@@ -1598,8 +1632,11 @@ export function baseStyle(
   rain: RainFrame | null = null,
   /** キキクルのいまの 1 枚。まだ時刻の表を読んでいなければ null (キキクルの層は出さない) */
   risk: RiskFrame | null = null,
+  /** 気象庁の図の色の濃さ (端末に覚えたもの) */
+  depth: ColorDepth = "normal",
 ): Record<string, unknown> {
   const hazardShown = hazardVisibility(hazard);
+  const jmaOpacity = depthOpacity(depth);
   const overlay = overlayVisibility(hazard);
   const rainOn = rainVisibility(hazard, false, rain !== null);
   const riskOn = riskVisibility(hazard, false, risk !== null);
@@ -1905,7 +1942,7 @@ export function baseStyle(
         source: `rain-${n}`,
         ...rainLayerZoom(n),
         paint: {
-          "raster-opacity": RAIN_OPACITY,
+          "raster-opacity": jmaOpacity,
           "raster-resampling": "nearest",
           "raster-fade-duration": 0,
         },
@@ -1918,7 +1955,7 @@ export function baseStyle(
         source: `risk-${n}`,
         ...rainLayerZoom(n),
         paint: {
-          "raster-opacity": RISK_OPACITY,
+          "raster-opacity": jmaOpacity,
           "raster-resampling": "nearest",
           "raster-fade-duration": 0,
         },
@@ -1934,7 +1971,7 @@ export function baseStyle(
         source: `nowc-${n}`,
         ...stepLayerZoom(n, N3_TILE_ZOOMS),
         paint: {
-          "raster-opacity": NOWC_OPACITY,
+          "raster-opacity": jmaOpacity,
           "raster-resampling": "nearest",
           "raster-fade-duration": 0,
         },
@@ -1946,7 +1983,7 @@ export function baseStyle(
         source: `rasrf-${n}`,
         ...stepLayerZoom(n, RASRF_TILE_ZOOMS),
         paint: {
-          "raster-opacity": NOWC_OPACITY,
+          "raster-opacity": jmaOpacity,
           "raster-resampling": "nearest",
           "raster-fade-duration": 0,
         },
@@ -1959,7 +1996,7 @@ export function baseStyle(
         source: `snow-${n}`,
         ...snowLayerZoom(n),
         paint: {
-          "raster-opacity": NOWC_OPACITY,
+          "raster-opacity": jmaOpacity,
           "raster-resampling": "nearest",
           "raster-fade-duration": 0,
         },
@@ -1974,7 +2011,7 @@ export function baseStyle(
           source: loopLayerId(s, n),
           ...rainLayerZoom(n),
           paint: {
-            "raster-opacity": loopOpacity(s, 0),
+            "raster-opacity": loopOpacity(s, 0, depth),
             "raster-opacity-transition": { duration: 0, delay: 0 },
             "raster-resampling": "nearest",
             "raster-fade-duration": 0,

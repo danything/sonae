@@ -181,11 +181,16 @@
     ROADS_URL,
   } from "#lib/map/roads.ts";
   import {
+    readSnowHours,
+    SNOW_FALL_DEFAULT,
+    SNOW_FALL_HOURS,
     SNOW_KINDS,
     SNOW_PAGE,
     SNOW_POLL_MS,
+    SNOW_SEASON_MS,
     SNOW_TILE_ZOOMS,
     SNOW_TIMES_URL,
+    type SnowFallHours,
     type SnowFrame,
     snowFrames,
     snowOf,
@@ -202,6 +207,11 @@
   } from "#lib/map/stations.ts";
   import {
     baseStyle,
+    COLOR_DEPTHS,
+    type ColorDepth,
+    DEPTH_LAYER_PREFIXES,
+    depthApplies,
+    depthOpacity,
     eewFill,
     foreignFeatures,
     GSI,
@@ -234,6 +244,7 @@
     rainShown,
     rainVisibility,
     rasrfVisibility,
+    readColorDepth,
     readHazard,
     riskShown,
     riskVisibility,
@@ -429,6 +440,9 @@
         style: baseStyle(
           location.origin,
           untrack(() => hazard),
+          null,
+          null,
+          untrack(() => colorDepth),
         ) as never,
         bounds: JAPAN_BOUNDS,
         // MapLibre の (i) は押すまで出典が見えないので出さず、隅の短い出典をいつも出す (docs/map.md)
@@ -1131,6 +1145,37 @@
   $effect.pre(() => {
     hazard = readHazard(readPref("map.hazard"));
   });
+  /** 気象庁の図の色の濃さ (薄い・ふつう・濃い。気象庁の画面と同じ。端末に覚える。`#lib/map/style.ts` の `COLOR_DEPTHS`) */
+  let colorDepth = $state<ColorDepth>("normal");
+  /** 降雪量の時間 (3・6・12・24・48・72。端末に覚える。`#lib/map/snow.ts`) */
+  let snowHours = $state<SnowFallHours>(SNOW_FALL_DEFAULT);
+  $effect.pre(() => {
+    colorDepth = readColorDepth(readPref("map.colorDepth"));
+    snowHours = readSnowHours(readPref("map.snowHours"));
+  });
+  function pickDepth(d: ColorDepth): void {
+    colorDepth = d;
+    writePref("map.colorDepth", d);
+  }
+  function pickSnowHours(h: SnowFallHours): void {
+    snowHours = h;
+    writePref("map.snowHours", String(h));
+  }
+  // 色の濃さを替えたら、気象庁の図の層の不透明度を替える (雨雲 (いま→予測) は枚ごとの所で替える)
+  $effect(() => {
+    const m = map;
+    if (!m) return;
+    const o = depthOpacity(colorDepth);
+    for (const l of m.getStyle().layers ?? [])
+      if (
+        l.type === "raster" &&
+        DEPTH_LAYER_PREFIXES.some(
+          (p) =>
+            l.id.startsWith(`${p}-`) && /^\d+$/.test(l.id.slice(p.length + 1)),
+        )
+      )
+        m.setPaintProperty(l.id, "raster-opacity", o);
+  });
   const chosenHazard = $derived(HAZARDS.find((h) => h.id === hazard));
   /** 凡例の上で切り替えられる図 (洪水の 3 つ。無ければ空) */
   const family = $derived(hazardFamily(hazard));
@@ -1535,7 +1580,7 @@
   // ---- 今後の雪 (気象庁の解析積雪深・解析降雪量と降雪短時間予報。docs/map.md の「今後の雪」) ----
   // 時刻の表をサーバーの中継から取り、いちばん新しい解析 (いま) と 6 時間先までの予測を並べる。‹ › で人が動かす
   // (自動では動かさない)。取るのは出している間だけ。冬でない間は表が空で、凡例にそう書く
-  const chosenSnow = $derived(snowOf(hazard));
+  const chosenSnow = $derived(snowOf(hazard, snowHours));
   /** 今後の雪を出しているか (選んでいて、地震を選んでいない) */
   const snowOn = $derived(snowShown(hazard, focusShown));
   let snow = $state<SnowFrame[]>([]);
@@ -1547,6 +1592,37 @@
   let snowFailed = $state(false);
   /** 表は読めたが、その要素の解析が無い (冬でない間) */
   let snowNone = $state(false);
+  /**
+   * 気象庁が今後の雪を配信している時期か (冬の間だけ配信する)。配信の無い時期は選択肢の「今後の雪」を出さない。
+   * 地図ができたときと、その後は SNOW_SEASON_MS ごとに時刻の表を 1 度読んで決める (サーバーの中継が覚えるので、
+   * 家族の何台が開いても気象庁へは 1 回)。まだ分からない・読めない (null) ときは出す
+   */
+  let snowSeason = $state<boolean | null>(null);
+  $effect(() => {
+    if (!map || !pageVisible) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const check = async () => {
+      try {
+        const r = await fetch(SNOW_TIMES_URL, {
+          referrerPolicy: "no-referrer",
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (r.ok) {
+          const has = snowFrames(await r.json(), "snowd").length > 0;
+          if (!stopped) snowSeason = has;
+        }
+      } catch {
+        // 分からないままにする (選択肢は出す)
+      }
+      if (!stopped) timer = setTimeout(() => void check(), SNOW_SEASON_MS);
+    };
+    void check();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  });
   $effect(() => {
     const element = chosenSnow?.element;
     if (!map || !element || !snowOn || !pageVisible) return;
@@ -1695,7 +1771,7 @@
         map.setPaintProperty(
           loopLayerId(s, n),
           "raster-opacity",
-          loopOpacity(s, loopStep),
+          loopOpacity(s, loopStep, colorDepth),
         );
   });
   /** 見せている枚の予測 (いまの枚なら null) */
@@ -3150,7 +3226,7 @@
                     : chosenNowc
                       ? chosenNowc.pill
                       : chosenSnow
-                        ? `今後の雪: ${chosenSnow.label}`
+                        ? chosenSnow.pill
                         : hazard === "rain-forecast"
                           ? "今後の雨 (予測)"
                           : hazard === "rain"
@@ -3180,17 +3256,20 @@
                 data-testid="hazard-{h.id}">{h.label}</button
               >
             {/each}
-            <p class="menu-head">今後の雪</p>
-            {#each SNOW_KINDS as s (s.id)}
-              <button
-                type="button"
-                role="menuitemradio"
-                class="menu-item"
-                aria-checked={hazard === s.id}
-                onclick={() => pickHazard(s.id)}
-                data-testid="hazard-{s.id}">{s.label}</button
-              >
-            {/each}
+            {#if snowSeason !== false}
+              <!-- 気象庁が今後の雪を配信していない時期 (冬でない間) は出さない (docs/map.md の「今後の雪」) -->
+              <p class="menu-head">今後の雪</p>
+              {#each SNOW_KINDS as s (s.id)}
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  class="menu-item"
+                  aria-checked={hazard === s.id}
+                  onclick={() => pickHazard(s.id)}
+                  data-testid="hazard-{s.id}">{s.label}</button
+                >
+              {/each}
+            {/if}
             <p class="menu-head">キキクル (危険度分布)</p>
             {#each RISKS as r (r.id)}
               <button
@@ -3216,6 +3295,20 @@
                 >
               {/each}
             {/each}
+            {#if depthApplies(hazard)}
+              <!-- 気象庁の図の色の濃さ (気象庁の画面と同じ 3 つ。写真に透かす濃さだけを替え、色は変えない) -->
+              <p class="menu-head">色の濃さ (気象庁の図)</p>
+              {#each COLOR_DEPTHS as d (d.id)}
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  class="menu-item"
+                  aria-checked={colorDepth === d.id}
+                  onclick={() => pickDepth(d.id)}
+                  data-testid="depth-{d.id}">{d.label}</button
+                >
+              {/each}
+            {/if}
           </Menu>
         </div>
         <button
@@ -3722,6 +3815,24 @@
         {#if snowOn}
           <figure class="legend rain-legend" data-testid="snow-legend">
             <figcaption class="small bold">{chosenSnow.title}</figcaption>
+            {#if chosenSnow.id === "snow-fall"}
+              <!-- 降雪量の時間 (気象庁の画面と同じ 3・6・12・24・48・72 時間)。1 つだけ選ぶ並び -->
+              <div
+                class="chips variants"
+                role="group"
+                aria-label="降雪量の時間"
+              >
+                {#each SNOW_FALL_HOURS as h (h)}
+                  <button
+                    type="button"
+                    class="chip"
+                    aria-pressed={snowHours === h}
+                    onclick={() => pickSnowHours(h)}
+                    data-testid="snow-hours-{h}">{h} 時間</button
+                  >
+                {/each}
+              </div>
+            {/if}
             {#if snowFrame}
               <p class="forecast-time bold" data-testid="snow-time">
                 {jst(stampIso(snowFrame.validtime))}
