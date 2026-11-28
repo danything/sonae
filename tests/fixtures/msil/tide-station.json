@@ -1,0 +1,20 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [145.58, 43.35] },
+      "properties": { "stationCode": "0114", "nameJa": "根室", "nameEn": "NEMURO" }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [140.1, 35.57] },
+      "properties": { "stationCode": "9901", "nameJa": "作り物港", "nameEn": "TSUKURIMONO" }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [140.2, 35.5] },
+      "properties": { "stationCode": "../x", "nameJa": "形の違うコード", "nameEn": "BAD" }
+    }
+  ]
+}
