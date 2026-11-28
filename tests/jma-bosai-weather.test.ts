@@ -375,6 +375,30 @@ describe("主の源が取れない間だけ取る", () => {
     expect(waits).toEqual([60_000, 120_000, 240_000]);
     expect(source.status().lastError).toContain("503");
   });
+
+  test("警報・注意報の一覧が取れなくても、気象防災速報は取る", async () => {
+    const { ctx, got } = sourceContext();
+    const controller = new AbortController();
+    const source = bosaiWeatherSource(ctx, {
+      primary: () => ({
+        ...base,
+        state: "retrying",
+        lastSeenAt: "2026-11-26T19:00:00.000Z",
+      }),
+      now: () => at("2026-11-28T09:20:00Z"),
+      fetch: (async (url: string) => {
+        if (url === BOSAI_AREA) return new Response(AREA);
+        if (url === BOSAI_INFORMATION) return new Response(INFORMATION);
+        if (url === bosaiDenbun(DENBUN_NAME)) return new Response(DENBUN);
+        return new Response("busy", { status: 503 });
+      }) as unknown as typeof fetch,
+      sleep: async () => controller.abort(),
+      log: () => {},
+    });
+    await source.run(controller.signal);
+    expect(got.map((m) => m.key)).toEqual([DENBUN_NAME]);
+    expect(source.status().lastError).toContain("map.json");
+  });
 });
 
 describe("気象庁 XML との重なり (store)", () => {

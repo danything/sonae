@@ -505,19 +505,29 @@ export function bosaiWeatherSource(
           await wait(INTERVAL_MS, signal);
           continue;
         }
-        try {
-          const since = cutoff();
-          await warnings(signal, since);
-          await information(signal, since);
+        // 主が落ちている間は主の最後に取れた時刻が動かないので、境は落ちてから変わらない。
+        // 一覧が 304 の間に境が動いても、受けた報は ctx.seen で除くので二重にはならない
+        const since = cutoff();
+        // 警報・注意報と気象防災速報は別の一覧なので、片方が取れなくても、もう片方は取る
+        const errors: string[] = [];
+        for (const part of [warnings, information]) {
+          try {
+            await part(signal, since);
+          } catch (err) {
+            if (signal.aborted) break;
+            log(`${tag} 取れませんでした: ${err}`);
+            errors.push(String(err));
+          }
+        }
+        if (signal.aborted) break;
+        if (errors.length === 0) {
           fail = 0;
           status.seen(false);
           status.set("connected");
           status.recovered();
-        } catch (err) {
-          if (signal.aborted) break;
+        } else {
           fail++;
-          log(`${tag} 取れませんでした: ${err}`);
-          status.set("retrying", String(err));
+          status.set("retrying", errors.join(" / "));
         }
         await wait(
           fail === 0
