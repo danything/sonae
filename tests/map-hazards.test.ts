@@ -26,8 +26,7 @@ const hazard = (id: string) => {
 };
 
 test("ハザードマップ: 高潮・内水・浸水継続時間・家屋倒壊等を、オープンデータの URL とズームで読む", () => {
-  const url = (layer: string) =>
-    `https://disaportaldata.gsi.go.jp/raster/${layer}/{z}/{x}/{y}.png`;
+  const url = (layer: string) => `/relay/disaportal/${layer}/{z}/{x}/{y}.png`;
   expect(hazard("hightide").layers.map((l) => l.tiles)).toEqual([
     url("03_hightide_l2_shinsuishin_data"),
   ]);

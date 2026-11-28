@@ -192,6 +192,7 @@
     baseStyle,
     eewFill,
     foreignFeatures,
+    GSI,
     HAZARD_CHOICES,
     HAZARD_GROUPS,
     hazardChoice,
@@ -1856,7 +1857,7 @@
     const parts = await Promise.all(
       tiles.flatMap(([x, y]) =>
         SHELTER_LAYERS.map(async (layer) => {
-          const url = `https://cyberjapandata.gsi.go.jp/xyz/${layer}/${SHELTER_TILE_ZOOM}/${x}/${y}.geojson`;
+          const url = `${GSI}/${layer}/${SHELTER_TILE_ZOOM}/${x}/${y}.geojson`;
           let p = shelterCache.get(url);
           if (!p) {
             // タイルの無い所 (海など) は 404。そこは空
