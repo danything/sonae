@@ -370,13 +370,9 @@ export function bosaiWeatherSource(
   /** 採れなかった報のある一覧の本文 (地域の表を取り直したら、一覧を取り直さずに読み直す) */
   let pendingMap: string | undefined;
 
-  async function get(url: string, signal: AbortSignal, conditional: boolean) {
-    return await http.get(url, signal, conditional);
-  }
-
   async function areaTable(signal: AbortSignal): Promise<BosaiAreas> {
     if (areas) return areas.table;
-    const r = await get(BOSAI_AREA, signal, false);
+    const r = await http.get(BOSAI_AREA, signal, false);
     if (!r) throw new Error("地域の表が取れませんでした");
     areas = { table: parseBosaiAreas(r.text), at: now() };
     return areas.table;
@@ -398,7 +394,7 @@ export function bosaiWeatherSource(
     } else {
       mapAt = now();
       // 変わっていなければ 304 で本体を運ばない (落ちている間の量を抑える。docs/design.md の 2.8 の「予備」)
-      const r = await get(BOSAI_WARNING_MAP, signal, true);
+      const r = await http.get(BOSAI_WARNING_MAP, signal, true);
       if (r) {
         http.remember(BOSAI_WARNING_MAP, r.validators);
         text = r.text;
@@ -432,7 +428,7 @@ export function bosaiWeatherSource(
     signal: AbortSignal,
     since: number,
   ): Promise<void> {
-    const r = await get(BOSAI_INFORMATION, signal, true);
+    const r = await http.get(BOSAI_INFORMATION, signal, true);
     if (!r) return;
     const items = parseBosaiInformation(r.text);
     const listed = new Set(items.map((i) => i.name));
@@ -450,7 +446,7 @@ export function bosaiWeatherSource(
       if (signal.aborted) return;
       let body: string;
       try {
-        const res = await get(bosaiDenbun(i.name), signal, false);
+        const res = await http.get(bosaiDenbun(i.name), signal, false);
         if (!res) continue;
         body = res.text;
       } catch (err) {
