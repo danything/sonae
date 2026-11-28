@@ -1021,6 +1021,8 @@ export interface WeatherSection {
 
 /** 台風の実況 (台風解析・予報情報のいちばん初めの「実況」) */
 export interface TyphoonNow {
+  /** 実況の時刻 (電文の `DateTime type="実況"`)。これまでの経路の点の時刻。この値を持つようにする前に受けた報には無い */
+  time?: string;
   /** 台風番号 (4 桁。2617 は 2026 年の第 17 号)。発生前は無い */
   number?: string;
   name?: string;

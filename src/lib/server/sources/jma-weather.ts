@@ -492,6 +492,9 @@ function readTyphoon(body: V): TyphoonNow | undefined {
     infos.find((i) => attr(child(i, "DateTime"), "type") === "実況") ??
     infos[0];
   if (!now) return undefined;
+  // 実況の時刻 (経路の点の時刻。docs/map.md の「台風」の「これまでの経路」)。推定などの報には無い
+  const at = child(now, "DateTime");
+  const time = attr(at, "type") === "実況" ? text(at) : undefined;
   const props = children(child(now, "Item"), "Kind").map((k) =>
     child(k, "Property"),
   );
@@ -517,6 +520,7 @@ function readTyphoon(body: V): TyphoonNow | undefined {
       ),
     );
   return {
+    ...(time ? { time } : {}),
     number: textAt(name, "Number"),
     name: textAt(name, "Name"),
     nameKana: textAt(name, "NameKana"),

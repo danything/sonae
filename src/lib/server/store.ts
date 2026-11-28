@@ -6,6 +6,7 @@
 import type { Database } from "bun:sqlite";
 import { gzipSync } from "node:zlib";
 
+import { type TrackPoint, trackPoints } from "#lib/map/typhoon.ts";
 import type {
   Advisory,
   AshWindow,
@@ -324,6 +325,22 @@ export class Store {
            reported_at = excluded.reported_at, data = excluded.data`,
       )
       .run(p.series, p.status, p.reportedAt, JSON.stringify(p));
+  }
+
+  /**
+   * 1 つの台風のこれまでの経路 (受けた台風解析・予報情報の実況の中心。時刻の順。docs/map.md の「台風」)。
+   * 台風は長くても数週間なので、新しい 500 通までを見る
+   */
+  typhoonTrack(series: string): TrackPoint[] {
+    return trackPoints(
+      this.db
+        .query<{ data: string }, [string]>(
+          `SELECT data FROM weather_infos WHERE series = ? AND kind = 'typhoon' AND status = 'normal'
+           ORDER BY datetime(reported_at) DESC LIMIT 500`,
+        )
+        .all(series)
+        .map((r) => JSON.parse(r.data) as WeatherInfo),
+    );
   }
 
   /** 台風 (series) のいちばん新しい暴風域に入る確率 */
