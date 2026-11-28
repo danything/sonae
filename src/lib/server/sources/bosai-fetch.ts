@@ -105,7 +105,7 @@ async function readText(res: Response, url: string): Promise<string> {
     if (done) break;
     total += value.byteLength;
     if (total > MAX_BODY_BYTES) {
-      void reader.cancel();
+      reader.cancel().catch(() => {});
       // 取り直しても同じなので、404 と同じく諦める側 (取り直さない失敗) にする
       const err = new BosaiHttpError(url, 413);
       err.message = `${url} の本体が ${MAX_BODY_BYTES / 1024 / 1024}MB を超えました`;
