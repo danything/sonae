@@ -103,6 +103,10 @@ const ROADS_ATTRIBUTION =
 const MARINE_ATTRIBUTION =
   '出典：<a href="https://www.msil.go.jp/" target="_blank" rel="noopener">海洋状況表示システム</a> (海底地殻変動観測点・海域火山DB を加工)';
 
+/** 火山の監視カメラの位置の出典 (全文は `#lib/notice.ts` の CREDITS) */
+const CAMERAS_ATTRIBUTION =
+  '出典：<a href="https://www.data.jma.go.jp/vois/data/obs/volcam/volcam.php" target="_blank" rel="noopener">気象庁ホームページ (監視カメラ画像)</a>';
+
 const JMA_GIS_ATTRIBUTION =
   '<a href="https://www.data.jma.go.jp/developer/gis.html" target="_blank" rel="noopener">気象庁 予報区等 GIS データ</a> を加工';
 
@@ -142,6 +146,12 @@ export const ROAD_FAST_COLOR = "#3cc8ff";
  * 大きく見えるので隠す (docs/map.md の「災害時の通行止め」)
  */
 export const ROAD_SPEED_MAXZOOM = 13;
+
+/**
+ * 火山の監視カメラの印を出すズーム。引いた縮尺では 1 つの火山に 2〜8 台が重なり、噴火警報・予報の火山の印も隠すので、
+ * 火山の周りが見分けられるズームから出す (docs/map.md の「火山の監視カメラ」)
+ */
+export const CAMERA_MINZOOM = 7;
 
 /**
  * 地理院地図Vector (国土地理院最適化ベクトルタイル) の PMTiles。試験公開で URL が変わりうる (docs/map.md)。
@@ -912,6 +922,10 @@ export const MAP_LEGEND: { label: string; note: string }[] = [
     note: "海上保安庁の海しるから取った点です。水色のひし形は海底地殻変動観測点 (GNSS-A。海底の動きを測る所)、黒い縁の白い三角の輪郭は海域火山データベースの火山です。押すと、名前と設置水深・標高などが出ます。サーバーが 1 日 1 回取り直します。海しるの API のキーが無いサーバーでは出ません。三角の輪郭は火山の警戒の段とは関係がありません (噴火警報・予報の火山は、色で塗った三角です)",
   },
   {
+    label: "火山の監視カメラ",
+    note: `白い縁の暗い四角に白いカメラの形。気象庁が火山を見ているカメラの位置です (ズーム ${CAMERA_MINZOOM} から出します)。押すと、気象庁ホームページのいちばん新しい画像が出ます。画像は 2〜3 分ごとに替わりますが、気象庁の配信で 10 分ほど遅れることがあり、吹き出しを開いている間は 10 分ごとに読み直します。位置はおおよそで、どの向きを撮っているかは火山の活動で変わります`,
+  },
+  {
     label: "通行止め (災害)",
     note: "白い縁の赤い太い線。国土交通省が災害ごとに出す「通れるマップ」の道路規制情報のうち、いま全面通行止めの区間です。押すと、路線名・区間・規制の内容と理由・更新の時刻が出ます。国土交通省 道路局のページで見つけた災害 (と、サーバーの管理者が登録した URL) の分を出します (30 分ごとに取り直します)。ここに無くても通れるとは限りません",
   },
@@ -1484,6 +1498,12 @@ export function baseStyle(
         data: { type: "FeatureCollection", features: [] },
         attribution: MARINE_ATTRIBUTION,
       },
+      // 気象庁の火山の監視カメラの位置。画面が /cameras/volcano-cameras.json を読んで差し込む (`#lib/map/cameras.ts`)
+      cameras: {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+        attribution: CAMERAS_ATTRIBUTION,
+      },
       hypocenters: {
         type: "geojson",
         data: { type: "FeatureCollection", features: [] },
@@ -1884,6 +1904,29 @@ export function baseStyle(
             8,
             1.2,
             12,
+            1.5,
+          ],
+        },
+      },
+      // 火山の監視カメラ (白い縁の暗い角丸の四角に白いカメラの形)。いつも出し、押すと吹き出しに気象庁の画像。
+      // 引いた縮尺では火山の印と重なって読めないので、ズーム 7 から出す (`CAMERA_MINZOOM`)。海しるの点の上、観測点ごとの震度の丸の下
+      {
+        id: "cameras",
+        type: "symbol",
+        source: "cameras",
+        minzoom: CAMERA_MINZOOM,
+        layout: {
+          "icon-image": "camera",
+          "icon-allow-overlap": true,
+          "icon-size": [
+            "interpolate",
+            ["linear"],
+            ["zoom"],
+            7,
+            1,
+            10,
+            1.25,
+            13,
             1.5,
           ],
         },

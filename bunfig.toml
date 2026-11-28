@@ -14,4 +14,6 @@ ignorePatterns = [
   "static/map/gsi/**",
   # プレート境界 (PB2002) から tools/plates/build.sh で作るもの
   "static/plates/*.geojson",
+  # 気象庁の監視カメラの地図の GeoJSON から tools/cameras/build.sh で作るもの
+  "static/cameras/**",
 ]
