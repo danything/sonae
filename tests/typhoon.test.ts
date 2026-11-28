@@ -330,6 +330,12 @@ describe("台風のこれまでの経路", () => {
     expect(trackPoints([old])[0]?.time).toBe(
       new Date(old.reportedAt).toISOString(),
     );
+    // 読めない時刻の報は使わない
+    expect(
+      trackPoints([
+        { ...old, typhoon: { ...a.typhoon, time: "x", lat: 1, lon: 2 } },
+      ]),
+    ).toEqual([]);
   });
 
   test("6 時間を超えて空いた所は線でつながず、抜けにする", () => {

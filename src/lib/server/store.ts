@@ -325,7 +325,6 @@ export class Store {
       .run(p.series, p.status, p.reportedAt, JSON.stringify(p));
   }
 
-  /** 台風 (series) のいちばん新しい暴風域に入る確率 */
   /**
    * 1 つの台風のこれまでの経路 (受けた台風解析・予報情報の実況の中心。時刻の順。docs/map.md の「台風」)。
    * 台風は長くても数週間なので、新しい 500 通までを見る
@@ -342,6 +341,7 @@ export class Store {
     );
   }
 
+  /** 台風 (series) のいちばん新しい暴風域に入る確率 */
   typhoonProbability(series: string): TyphoonProbability | undefined {
     const row = this.db
       .query<{ data: string }, [string]>(

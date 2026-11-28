@@ -11,6 +11,7 @@ export const GET = ({ url }) => {
   if (!/^typhoon-TC\d+$/.test(series)) error(400, "series が正しくありません");
   return json(
     { points: app().store.typhoonTrack(series) },
-    { headers: { "cache-control": "private, max-age=60" } },
+    // 画面は報が替わったときだけ読み直すので、古い応答を使わない (新しい実況の点が抜けないように)
+    { headers: { "cache-control": "private, no-cache" } },
   );
 };

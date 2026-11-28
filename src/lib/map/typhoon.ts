@@ -259,7 +259,10 @@ export function trackPoints(reports: readonly WeatherInfo[]): TrackPoint[] {
     const t = w.typhoon;
     if (w.kind !== "typhoon" || w.status !== "normal" || w.cancelled) continue;
     if (!t || t.lat === undefined || t.lon === undefined) continue;
-    const time = new Date(t.time ?? w.reportedAt).toISOString();
+    const ms = Date.parse(t.time ?? w.reportedAt);
+    // 読めない時刻の報は使わない (並べられない)
+    if (Number.isNaN(ms)) continue;
+    const time = new Date(ms).toISOString();
     const at = Date.parse(w.reportedAt);
     const prev = byTime.get(time);
     if (prev && prev.at >= at) continue;

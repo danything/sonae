@@ -703,14 +703,16 @@
       if (trackFor.get(series) === key) continue;
       trackFor.set(series, key);
       void fetch(`${TYPHOON_TRACK_URL}?series=${encodeURIComponent(series)}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((j: { points?: TrackPoint[] } | null) => {
-          if (j?.points && trackFor.get(series) === key)
+        .then((r) => {
+          if (!r.ok) throw new Error(String(r.status));
+          return r.json() as Promise<{ points?: TrackPoint[] }>;
+        })
+        .then((j) => {
+          if (j.points && trackFor.get(series) === key)
             tracks = { ...tracks, [series]: j.points };
         })
         .catch(() => {
-          // 読めなければ経路を描かないだけ (予報円などは描く)。次の報で読み直す
-          if (trackFor.get(series) === key) trackFor.delete(series);
+          // 読めなければ経路を描かないだけ (予報円などは描く)。その台風の次の報で読み直す
         });
     }
   });
