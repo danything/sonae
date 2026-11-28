@@ -227,7 +227,73 @@ export function envelope(rings: P[][]): P[][] {
 // ---- 地図の GeoJSON ----
 
 export type TyphoonLineKind =
-  "gale" | "storm" | "forecast" | "track" | "warning";
+  "gale" | "storm" | "forecast" | "track" | "warning" | "past";
+
+// ---- これまでの経路 (docs/map.md の「台風」の「これまでの経路」) ----
+
+/** これまでの経路の 1 点 (受けた 1 通の報の実況の中心) */
+export interface TrackPoint {
+  /** 実況の時刻 (前に受けた報で実況の時刻が無ければ、発表の時刻) */
+  time: string;
+  lat: number;
+  lon: number;
+}
+
+/**
+ * これまでの経路の点の間がこれより空いたら、sonae が報を受けていなかった抜けとみなし、線でつながない。
+ * 台風解析・予報情報の実況は 3 時間ごと (近づくと 1 時間ごと) なので、6 時間を超えれば 1 通より多く欠けている
+ */
+export const TRACK_GAP_MS = 6 * 3600_000;
+
+/** これまでの経路の線の色 (気象庁の台風の図の、これまでの経路の青) */
+export const TYPHOON_PAST_COLOR = "#4a8cff";
+
+/**
+ * 1 つの台風の報 (同じ series) から、これまでの経路の点を作る。取消・訓練・試験の報と、中心の無い報は使わない。
+ * 同じ実況の時刻の報が幾つもあれば (訂正など)、あとに発表したものを採る。時刻の順。
+ * 受けた報の実況をそのまま並べるだけで、点の間を補ったり、なめらかにしたりしない (docs/design.md の 5 章)
+ */
+export function trackPoints(reports: readonly WeatherInfo[]): TrackPoint[] {
+  const byTime = new Map<string, { at: number; p: TrackPoint }>();
+  for (const w of reports) {
+    const t = w.typhoon;
+    if (w.kind !== "typhoon" || w.status !== "normal" || w.cancelled) continue;
+    if (!t || t.lat === undefined || t.lon === undefined) continue;
+    const ms = Date.parse(t.time ?? w.reportedAt);
+    // 読めない時刻の報は使わない (並べられない)
+    if (Number.isNaN(ms)) continue;
+    const time = new Date(ms).toISOString();
+    const at = Date.parse(w.reportedAt);
+    const prev = byTime.get(time);
+    if (prev && prev.at >= at) continue;
+    byTime.set(time, { at, p: { time, lat: t.lat, lon: t.lon } });
+  }
+  return [...byTime.values()]
+    .map((x) => x.p)
+    .sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+}
+
+/**
+ * 点を、線でつなぐ区間に分ける。間が `TRACK_GAP_MS` を超えた所 (抜け) で切り、線を引かずに空ける。
+ * 1 点だけの区間は線にしない (点は画面がどれも小さな丸で置くので、抜けの間の 1 通も見える)
+ */
+export function trackSegments(
+  points: readonly TrackPoint[],
+  gapMs = TRACK_GAP_MS,
+): P[][] {
+  const runs: P[][] = [];
+  let run: P[] = [];
+  points.forEach((p, i) => {
+    const prev = points[i - 1];
+    if (prev && Date.parse(p.time) - Date.parse(prev.time) > gapMs) {
+      if (run.length > 1) runs.push(run);
+      run = [];
+    }
+    run.push([p.lon, p.lat]);
+  });
+  if (run.length > 1) runs.push(run);
+  return runs;
+}
 
 interface Feature {
   type: "Feature";
@@ -248,11 +314,14 @@ export interface TyphoonPoint {
 
 /**
  * 地図に描く線 (`typhoon` の source) と点 (`typhoon-points` の source)。`selected` は一覧で選んだ台風の series
- * (その台風の線を少し太くする)
+ * (その台風の線を少し太くする)。
+ * `tracks` は台風 (series) ごとのこれまでの経路の点 (`/api/typhoon-track` から読んだもの)。線の source に、
+ * つなぐ線 (`past`) と点 (`past-point`) として入れる (経路の点は押しても何も出さない)
  */
 export function typhoonFeatures(
   infos: WeatherInfo[],
   selected: string | null,
+  tracks: Readonly<Record<string, readonly TrackPoint[]>> = {},
 ): {
   lines: { type: "FeatureCollection"; features: Feature[] };
   points: { type: "FeatureCollection"; features: Feature[] };
@@ -271,6 +340,17 @@ export function typhoonFeatures(
           properties: { kind, sel },
         });
     };
+    // これまでの経路 (いちばん下に描くので先に入れる)。いまの中心 (この報) まで受けた報の実況をつなぐ
+    const track = tracks[w.series] ?? [];
+    if (track.length > 0) {
+      line("past", trackSegments(track));
+      for (const p of track)
+        lines.push({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [p.lon, p.lat] },
+          properties: { kind: "past-point", sel },
+        });
+    }
     const fcs = w.typhoonForecasts ?? [];
     // 暴風警戒域 (実況の暴風域と、予報ごとの暴風警戒域の円)。予報に暴風警戒域が 1 つも無ければ描かない
     const warn = fcs.flatMap((f) =>
@@ -451,6 +531,9 @@ export function nearestTyphoonPoint<T extends { d2: number; index: number }>(
 
 // ---- 地図の層 (`#lib/map/style.ts` が差し込む) ----
 
+/** これまでの経路を読む所 (`src/routes/api/typhoon-track`) */
+export const TYPHOON_TRACK_URL = "/api/typhoon-track";
+
 /** 地図の source の出典 (気象庁の電文の値をそのまま描く) */
 export const TYPHOON_ATTRIBUTION = "気象庁 (台風解析・予報情報)";
 
@@ -477,7 +560,42 @@ export function typhoonLineLayers(): Record<string, unknown>[] {
     ["get", "kind"],
     ["literal", ["warning", "storm", "gale"]],
   ];
+  const pastPoint = [
+    "all",
+    ["==", ["geometry-type"], "Point"],
+    ["==", ["get", "kind"], "past-point"],
+  ];
   return [
+    // これまでの経路: 黒い縁の上に青の実線。抜け (sonae が報を受けていなかった間) は線を引かずに空け、
+    // 受けた実況の点だけを小さな丸で置く (間を補った線に見せない)
+    {
+      id: "typhoon-past-casing",
+      type: "line",
+      source: "typhoon",
+      filter: kindIs("past"),
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": "rgba(0,0,0,0.5)", "line-width": width(4) },
+    },
+    {
+      id: "typhoon-past",
+      type: "line",
+      source: "typhoon",
+      filter: kindIs("past"),
+      layout: { "line-join": "round", "line-cap": "round" },
+      paint: { "line-color": TYPHOON_PAST_COLOR, "line-width": width(2) },
+    },
+    {
+      id: "typhoon-past-point",
+      type: "circle",
+      source: "typhoon",
+      filter: pastPoint,
+      paint: {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 3, 2, 7, 3.5],
+        "circle-color": TYPHOON_PAST_COLOR,
+        "circle-stroke-color": "rgba(0,0,0,0.6)",
+        "circle-stroke-width": 1,
+      },
+    },
     {
       id: "typhoon-casing",
       type: "line",

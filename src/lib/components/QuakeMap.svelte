@@ -201,6 +201,8 @@
   } from "#lib/map/style.ts";
   import {
     nearestTyphoonPoint,
+    type TrackPoint,
+    TYPHOON_TRACK_URL,
     typhoonBounds,
     typhoonFeatures,
     type TyphoonPoint,
@@ -689,17 +691,50 @@
   // 台風の予報円・暴風警戒域・暴風域・強風域と中心 (docs/map.md の「台風」)。中身が変わったときだけ差し替える
   let typhoonSig = "";
   const typhoonById = new Map<string, WeatherInfo>();
+  // これまでの経路 (台風ごと)。台風の報が替わったときだけ、その台風の分を `/api/typhoon-track` から読み直す
+  let tracks = $state<Record<string, TrackPoint[]>>({});
+  const trackFor = new Map<string, string>();
+  $effect(() => {
+    const want = new Map(
+      typhoons.map((w) => [w.series, `${w.id}|${w.updatedAt}`]),
+    );
+    for (const s of trackFor.keys()) if (!want.has(s)) trackFor.delete(s);
+    for (const [series, key] of want) {
+      if (trackFor.get(series) === key) continue;
+      trackFor.set(series, key);
+      void fetch(`${TYPHOON_TRACK_URL}?series=${encodeURIComponent(series)}`)
+        .then((r) => {
+          if (!r.ok) throw new Error(String(r.status));
+          return r.json() as Promise<{ points?: TrackPoint[] }>;
+        })
+        .then((j) => {
+          if (j.points && trackFor.get(series) === key)
+            tracks = { ...tracks, [series]: j.points };
+        })
+        .catch(() => {
+          // 読めなければ経路を描かないだけ (予報円などは描く)。その台風の次の報で読み直す
+        });
+    }
+  });
   $effect(() => {
     if (!map) return;
+    const shown = Object.fromEntries(
+      typhoons.map((w) => [w.series, tracks[w.series] ?? []]),
+    );
     const next = sig(
       typhoons.map((w) => [w.id, w.updatedAt]),
       typhoon?.series ?? null,
+      Object.entries(shown).map(([s, p]) => [
+        s,
+        p.length,
+        p.at(-1)?.time ?? "",
+      ]),
     );
     if (next === typhoonSig) return;
     typhoonSig = next;
     typhoonById.clear();
     for (const w of typhoons) typhoonById.set(w.id, w);
-    const f = typhoonFeatures(typhoons, typhoon?.series ?? null);
+    const f = typhoonFeatures(typhoons, typhoon?.series ?? null, shown);
     setData(map, "typhoon", f.lines);
     setData(map, "typhoon-points", f.points);
     // 前の中身の吹き出しは閉じる
