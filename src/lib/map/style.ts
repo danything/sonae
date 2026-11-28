@@ -55,6 +55,13 @@ import {
 } from "#lib/map/risk.ts";
 import { MLIT_ROAD_DISASTER } from "#lib/map/roads.ts";
 import {
+  SNOW_ATTRIBUTION,
+  SNOW_KINDS,
+  SNOW_TILE_ZOOMS,
+  snowLayerZoom,
+  snowOf,
+} from "#lib/map/snow.ts";
+import {
   typhoonLineLayers,
   typhoonPointLayers,
   typhoonSources,
@@ -180,7 +187,7 @@ export const TEXT_FONT_CSS = '"Noto Sans JP", sans-serif';
 
 /**
  * 重ねる図。選ぶのは 1 つだけ (色がぶつかるため)。雨雲 (`#lib/map/rain.ts`)・雨雲 (いま→予測) (`#lib/map/rain-loop.ts`)・
- * 今後の雨と雷・竜巻 (`#lib/map/nowc.ts`)・キキクルの土砂・大雨・浸水・洪水 (`#lib/map/risk.ts`) と、ハザードマップ
+ * 今後の雨と雷・竜巻 (`#lib/map/nowc.ts`)・今後の雪 (`#lib/map/snow.ts`)・キキクルの土砂・大雨・浸水・洪水 (`#lib/map/risk.ts`) と、ハザードマップ
  * (ハザードマップポータルサイトの水害と土砂災害) と、地震の備えの図 (地理院タイルの都市圏活断層図と、防災科研の J-SHIS
  * の 2 つ)。どれも面か線を危険の色で塗る図なので、いつも重ねると写真と警報・注意報の塗りが見づらい。選んだときだけ出す
  */
@@ -191,6 +198,8 @@ export type HazardId =
   | "rain-forecast"
   | "thunder"
   | "tornado"
+  | "snow-depth"
+  | "snow-fall"
   | "risk-land"
   | "risk-heavyrain"
   | "risk-inund"
@@ -263,6 +272,8 @@ interface Hazard {
     | "rain-forecast"
     | "thunder"
     | "tornado"
+    | "snow-depth"
+    | "snow-fall"
     | "risk-land"
     | "risk-heavyrain"
     | "risk-inund"
@@ -919,6 +930,23 @@ export function rasrfVisibility(
 }
 
 /**
+ * 今後の雪を出すか。雨雲と同じく、地震を選んでいる間は隠す (積雪の深さの赤・橙・黄・紫は震度の色と同じで、
+ * 重ねると震度を読み違えるため。docs/map.md の「地震を選んでいる間」)
+ */
+export const snowShown = (id: HazardId, quake: boolean) =>
+  snowOf(id) !== undefined && !quake;
+
+/** 今後の雪の層ごとに出すかどうか (`snow-<ズーム>`。積雪の深さと降雪量は URL を替えて同じ source を使う) */
+export function snowVisibility(
+  id: HazardId,
+  quake: boolean,
+  ready: boolean,
+): Record<string, boolean> {
+  const on = ready && snowShown(id, quake);
+  return Object.fromEntries(SNOW_TILE_ZOOMS.map((n) => [`snow-${n}`, on]));
+}
+
+/**
  * 重ねる図が重なっているか・地震を選んでいるかで、重ねる層の出し入れを決める (隠す層・代わりに出す層)。
  * 重ねる図が重なっている間は `HIDDEN_UNDER_HAZARD` を、地震を選んでいる間は `HIDDEN_UNDER_QUAKE` を
  * 隠し、どちらのときも特別警報の縁取りを出す。雨雲・雨雲 (いま→予測)・キキクル・雷・竜巻・今後の雨は地震を選んでいる間は出さない
@@ -936,7 +964,8 @@ export function overlayVisibility(
     rainShown(id, quake) ||
     loopShown(id, quake) ||
     riskShown(id, quake) ||
-    nowcShown(id, quake);
+    nowcShown(id, quake) ||
+    snowShown(id, quake);
   const hidden = new Set<string>([
     ...(on ? HIDDEN_UNDER_HAZARD : []),
     ...(quake ? HIDDEN_UNDER_QUAKE : []),
@@ -967,6 +996,7 @@ export const readHazard = (raw: string | null): HazardId =>
   raw === "rain-loop" ||
   raw === "rain-forecast" ||
   NOWC_KINDS.some((k) => k.id === raw) ||
+  SNOW_KINDS.some((k) => k.id === raw) ||
   RISKS.some((r) => r.id === raw) ||
   HAZARDS.some((h) => h.id === raw)
     ? (raw as HazardId)
@@ -1693,6 +1723,20 @@ export function baseStyle(
           },
         ]),
       ),
+      // 今後の雪 (選んだときだけ)。雨雲と同じく偶数のズームの 4〜10。積雪の深さと降雪量は URL を替えて使う
+      ...Object.fromEntries(
+        SNOW_TILE_ZOOMS.map((n, i) => [
+          `snow-${n}`,
+          {
+            type: "raster",
+            tiles: [PLACEHOLDER_TILE],
+            tileSize: 256,
+            minzoom: n,
+            maxzoom: n,
+            ...(i === 0 ? { attribution: SNOW_ATTRIBUTION } : {}),
+          },
+        ]),
+      ),
       // 雨雲 (いま→予測。選んだときだけ)。枚ごとに source を分け (0 がいまの観測、1〜3 が予測)、段は雨雲と同じ 4〜10。
       // URL は時刻の表を読んでから差し替える
       ...Object.fromEntries(
@@ -1901,6 +1945,19 @@ export function baseStyle(
         type: "raster",
         source: `rasrf-${n}`,
         ...stepLayerZoom(n, RASRF_TILE_ZOOMS),
+        paint: {
+          "raster-opacity": NOWC_OPACITY,
+          "raster-resampling": "nearest",
+          "raster-fade-duration": 0,
+        },
+        layout: { visibility: "none" },
+      })),
+      // 今後の雪 (選んだときだけ。雨雲と同じ所・同じ出し方)
+      ...SNOW_TILE_ZOOMS.map((n) => ({
+        id: `snow-${n}`,
+        type: "raster",
+        source: `snow-${n}`,
+        ...snowLayerZoom(n),
         paint: {
           "raster-opacity": NOWC_OPACITY,
           "raster-resampling": "nearest",

@@ -104,7 +104,8 @@ export interface NowcFrame {
 const STAMP = /^\d{14}$/;
 const MEMBER = /^[a-z0-9_]+$/;
 
-function rows(raw: unknown): (NowcFrame & { elements: unknown[] })[] {
+/** 時刻の表の行。形の分からない行は捨てる (今後の雪も同じ形。`#lib/map/snow.ts`) */
+export function rows(raw: unknown): (NowcFrame & { elements: unknown[] })[] {
   if (!Array.isArray(raw)) return [];
   const out: (NowcFrame & { elements: unknown[] })[] = [];
   for (const row of raw as unknown[]) {

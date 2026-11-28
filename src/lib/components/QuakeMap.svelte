@@ -181,6 +181,18 @@
     ROADS_URL,
   } from "#lib/map/roads.ts";
   import {
+    SNOW_KINDS,
+    SNOW_PAGE,
+    SNOW_POLL_MS,
+    SNOW_TILE_ZOOMS,
+    SNOW_TIMES_URL,
+    type SnowFrame,
+    snowFrames,
+    snowOf,
+    snowStale,
+    snowTiles,
+  } from "#lib/map/snow.ts";
+  import {
     nearestStation,
     stationFeatures,
     type StationIndex,
@@ -230,6 +242,8 @@
     SHELTER_LAYERS,
     SHELTER_MIN_ZOOM,
     SHELTER_TILE_ZOOM,
+    snowShown,
+    snowVisibility,
     specialWarningFilter,
     TEXT_FONT_CSS,
     tilesIn,
@@ -1518,6 +1532,80 @@
       rasrfStale(forecastFrame, forecastChecked),
   );
 
+  // ---- 今後の雪 (気象庁の解析積雪深・解析降雪量と降雪短時間予報。docs/map.md の「今後の雪」) ----
+  // 時刻の表をサーバーの中継から取り、いちばん新しい解析 (いま) と 6 時間先までの予測を並べる。‹ › で人が動かす
+  // (自動では動かさない)。取るのは出している間だけ。冬でない間は表が空で、凡例にそう書く
+  const chosenSnow = $derived(snowOf(hazard));
+  /** 今後の雪を出しているか (選んでいて、地震を選んでいない) */
+  const snowOn = $derived(snowShown(hazard, focusShown));
+  let snow = $state<SnowFrame[]>([]);
+  /** 並びが、いま選んでいる要素 (積雪の深さか降雪量) のものか */
+  let snowElement = $state<string | null>(null);
+  /** 選んでいる枚 (0 が解析のいま)。新しい解析が来ても、何時間先かを保つ */
+  let snowStep = $state(0);
+  let snowChecked = $state(0);
+  let snowFailed = $state(false);
+  /** 表は読めたが、その要素の解析が無い (冬でない間) */
+  let snowNone = $state(false);
+  $effect(() => {
+    const element = chosenSnow?.element;
+    if (!map || !element || !snowOn || !pageVisible) return;
+    if (untrack(() => snowElement) !== element) {
+      snow = [];
+      snowElement = element;
+      snowStep = 0;
+      snowFailed = false;
+      snowNone = false;
+    }
+    snowChecked = Date.now();
+    return pollTimes(
+      SNOW_TIMES_URL,
+      (raw) => {
+        const frames = snowFrames(raw, element);
+        snowChecked = Date.now();
+        snowFailed = false;
+        snowNone = frames.length === 0;
+        const now = untrack(() => snow);
+        if (
+          now.length !== frames.length ||
+          now[0]?.validtime !== frames[0]?.validtime
+        ) {
+          snow = frames;
+          // 予測が減ったら、選んでいる枚を並びの中へ戻す (‹ を押しても動かないように見えない)
+          snowStep = Math.max(
+            0,
+            Math.min(
+              untrack(() => snowStep),
+              frames.length - 1,
+            ),
+          );
+        }
+        return SNOW_POLL_MS;
+      },
+      () => {
+        snowChecked = Date.now();
+        snowFailed = true;
+      },
+    );
+  });
+  const snowFrame = $derived(
+    snowElement === chosenSnow?.element
+      ? (snow[Math.min(snowStep, snow.length - 1)] ?? null)
+      : null,
+  );
+  $effect(() => {
+    if (!map || !snowFrame || !chosenSnow) return;
+    const url = snowTiles(snowFrame, chosenSnow.element);
+    for (const n of SNOW_TILE_ZOOMS) {
+      const src = map.getSource(`snow-${n}`);
+      if (src && "setTiles" in src)
+        (src as { setTiles(t: string[]): void }).setTiles([url]);
+    }
+  });
+  const snowOld = $derived(
+    snowFrame !== null && snowChecked > 0 && snowStale(snowFrame, snowChecked),
+  );
+
   // ---- 雨雲 (いま→予測)。docs/map.md の「雨雲 (いま→予測)」 ----
   // いまの観測 (雨雲) と、今後の雨の 3 時間先までの枚を、決めた間で順に見せ続ける。枚ごとの層は全部出してタイルを持ち、
   // 見せる枚だけ透明度を上げる (MapLibre の層の出し入れで替える)。画面が見えていない間・ソフトウェアで描いている端末
@@ -1685,7 +1773,7 @@
 
   /** 気象警報・注意報の塗りを隠しているか (重ねる図が重なっているか、地震を選んでいるため) */
   const warningsHidden = $derived(
-    covered || rainOn || loopOn || riskOn || nowcOn || focusShown,
+    covered || rainOn || loopOn || riskOn || nowcOn || snowOn || focusShown,
   );
   $effect(() => {
     if (!map) return;
@@ -1695,6 +1783,7 @@
       ...riskVisibility(hazard, focusShown, riskReady),
       ...nowcVisibility(hazard, focusShown, nowcReady),
       ...rasrfVisibility(hazard, focusShown, forecastFrame !== null),
+      ...snowVisibility(hazard, focusShown, snowFrame !== null),
       ...loopVisibility(hazard, focusShown, loopSlots),
       ...overlayVisibility(hazard, zoom, focusShown),
     }))
@@ -3060,13 +3149,15 @@
                     ? `キキクル: ${chosenRisk.label.replace(/ \(.*\)$/, "")}`
                     : chosenNowc
                       ? chosenNowc.pill
-                      : hazard === "rain-forecast"
-                        ? "今後の雨 (予測)"
-                        : hazard === "rain"
-                          ? "雨雲"
-                          : hazard === "rain-loop"
-                            ? "雨雲 (いま→予測)"
-                            : "重ねる: なし"}
+                      : chosenSnow
+                        ? `今後の雪: ${chosenSnow.label}`
+                        : hazard === "rain-forecast"
+                          ? "今後の雨 (予測)"
+                          : hazard === "rain"
+                            ? "雨雲"
+                            : hazard === "rain-loop"
+                              ? "雨雲 (いま→予測)"
+                              : "重ねる: なし"}
               </button>
             {/snippet}
             <!-- 重ねる図は 1 つだけ (色がぶつかるため)。雨雲・今後の雨・雷・竜巻・キキクル・ハザードマップ・地震の備えの図を同じ選択に並べる -->
@@ -3087,6 +3178,17 @@
                 aria-checked={hazard === h.id}
                 onclick={() => pickHazard(h.id)}
                 data-testid="hazard-{h.id}">{h.label}</button
+              >
+            {/each}
+            <p class="menu-head">今後の雪</p>
+            {#each SNOW_KINDS as s (s.id)}
+              <button
+                type="button"
+                role="menuitemradio"
+                class="menu-item"
+                aria-checked={hazard === s.id}
+                onclick={() => pickHazard(s.id)}
+                data-testid="hazard-{s.id}">{s.label}</button
               >
             {/each}
             <p class="menu-head">キキクル (危険度分布)</p>
@@ -3605,6 +3707,103 @@
         {:else if boxHeight >= NOTE_MIN_HEIGHT}
           <p class="map-note tiny muted" data-testid="quake-hides-forecast">
             {focusWhat}を選んでいる間は、今後の雨{warningsPainted
+              ? "と気象警報・注意報の塗り"
+              : ""}を隠しています ({focusWhy}){specialPainted
+              ? "。特別警報は縁取りで出します"
+              : ""}。一覧へ戻ると元に戻ります。
+          </p>
+        {/if}
+      {/if}
+      {#if chosenSnow}
+        <!--
+          今後の雪の凡例。いまの解析か、何時までの予測かを大きく出し、‹ › で先の時刻へ動かす (自動では動かさない)。
+          予測はいまの雪と取り違えないよう、そう書く (docs/map.md の「今後の雪」)
+        -->
+        {#if snowOn}
+          <figure class="legend rain-legend" data-testid="snow-legend">
+            <figcaption class="small bold">{chosenSnow.title}</figcaption>
+            {#if snowFrame}
+              <p class="forecast-time bold" data-testid="snow-time">
+                {jst(stampIso(snowFrame.validtime))}
+                {snowFrame.forecast ? "までの予測" : "の解析"}
+              </p>
+              <div class="forecast-step">
+                <button
+                  type="button"
+                  class="ghost small step"
+                  aria-label="1 つ前の時刻"
+                  disabled={snowStep <= 0}
+                  onclick={() => (snowStep = Math.max(0, snowStep - 1))}
+                  data-testid="snow-prev">‹</button
+                >
+                <span class="small"
+                  >{snowFrame.forecast
+                    ? `${hoursAhead(snowFrame)} 時間先`
+                    : "いま"}</span
+                >
+                <button
+                  type="button"
+                  class="ghost small step"
+                  aria-label="1 つ先の時刻"
+                  disabled={snowStep >= snow.length - 1}
+                  onclick={() =>
+                    (snowStep = Math.min(snow.length - 1, snowStep + 1))}
+                  data-testid="snow-next">›</button
+                >
+              </div>
+              <p class="tiny muted" data-testid="snow-note">
+                {#if snowOld}
+                  <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
+                {/if}
+                {#if snowFrame.forecast}
+                  {jst(stampIso(snowFrame.basetime))} の解析にもとづく気象庁の予測です{snowOld
+                    ? "。新しい解析を読めていません"
+                    : ""}。いまの雪ではありません。
+                {:else}
+                  気象庁の解析です ({snowOld
+                    ? "新しい解析を読めていないため、いまのものではありません"
+                    : "1 時間ごとに更新"})。› で 6
+                  時間先までの予測を見られます。
+                {/if}
+              </p>
+            {:else if snowFailed}
+              <p class="small rain-time" data-testid="snow-time">
+                <span class="warn-mark"><Icon icon={TriangleAlert} /></span>
+                今後の雪を読み込めませんでした。1 分後に再試行します
+              </p>
+            {:else if snowNone}
+              <p class="small muted" data-testid="snow-time">
+                いまは今後の雪の配信がありません (気象庁は冬の間だけ配信します)
+              </p>
+            {:else}
+              <p class="small muted" data-testid="snow-time">
+                読み込んでいます…
+              </p>
+            {/if}
+            <ul class="rain-scale">
+              {#each chosenSnow.legend as l (l.label)}
+                <li>
+                  <span class="rain-swatch" style:background={l.color}
+                  ></span><span class="tiny">{l.label}</span>
+                </li>
+              {/each}
+            </ul>
+            <p class="tiny muted">{chosenSnow.about}</p>
+            <p class="tiny muted">
+              出典: <a href={SNOW_PAGE} target="_blank" rel="noopener"
+                >気象庁 (今後の雪)</a
+              >
+            </p>
+            <p class="tiny muted" data-testid="hazard-hidden">
+              色がぶつからないよう、警報・注意報の塗り{roadSpeedDrawn
+                ? "・通れた道 (目安) の線"
+                : ""}を隠しています
+              (特別警報・緊急地震速報は縁取りで出します)。「なし」に戻すと元に戻ります。
+            </p>
+          </figure>
+        {:else if boxHeight >= NOTE_MIN_HEIGHT}
+          <p class="map-note tiny muted" data-testid="quake-hides-snow">
+            {focusWhat}を選んでいる間は、今後の雪{warningsPainted
               ? "と気象警報・注意報の塗り"
               : ""}を隠しています ({focusWhy}){specialPainted
               ? "。特別警報は縁取りで出します"

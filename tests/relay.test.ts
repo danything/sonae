@@ -486,6 +486,10 @@ test("気象庁のタイルの道", () => {
   expect(p.test("map/none/none/none/surf/designated_river/data.geojson")).toBe(
     true,
   );
+  expect(p.test("snow/targetTimes.json")).toBe(true);
+  expect(
+    p.test("snow/20261128070000/none/20261128070000/surf/snowd/6/57/23.png"),
+  ).toBe(true);
   expect(p.test("other/x.png")).toBe(false);
   expect(p.test("nowc/x.html")).toBe(false);
 });

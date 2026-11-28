@@ -527,12 +527,12 @@ const SEG = "[A-Za-z0-9_.-]+";
  * どれも docs/design.md の 1 章の「地図と声」の規約を読んで、サーバーが取って家の中で使い回してよいと決めたもの
  */
 export const RELAY_SOURCES = {
-  // 気象庁ホームページの雨雲・今後の雨・雷・竜巻・線状降水帯・キキクルのタイルと時刻の表 (docs/map.md)。
+  // 気象庁ホームページの雨雲・今後の雨・雷・竜巻・線状降水帯・キキクル・今後の雪のタイルと時刻の表 (docs/map.md)。
   // 時刻の表は max-age=60、タイルは max-age=86400 (時刻ごとに URL が替わる)
   jmatile: {
     upstream: "https://www.jma.go.jp/bosai/jmatile/data/",
     path: new RegExp(
-      `^(?:nowc|rasrf|risk|map)/(?:${SEG}/)*${SEG}\\.(?:png|pbf|json|geojson)$`,
+      `^(?:nowc|rasrf|risk|map|snow)/(?:${SEG}/)*${SEG}\\.(?:png|pbf|json|geojson)$`,
     ),
     ttl: 60,
     minTtl: 30,
