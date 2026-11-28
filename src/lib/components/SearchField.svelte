@@ -29,6 +29,15 @@
   /** 住所検索の答えは、同じ文字ならもう一度は問い合わせない (このタブの間だけ持つ) */
   const remoteCache = new Map<string, Place[]>();
 
+  /** 住所検索の失敗。中継の 503 は、国土地理院が混んでいて待っている間 (docs/design.md の 2.14) */
+  class SearchFailed extends Error {
+    readonly status: number;
+    constructor(status: number) {
+      super(String(status));
+      this.status = status;
+    }
+  }
+
   /**
    * 国土地理院の住所検索に、sonae のサーバーの中継を通して問い合わせる。送るのは打った文字だけ。
    * サーバーは打った文字を覚えず、ログにも出さず、国土地理院へは Cookie・Referer・端末の IP を送らない
@@ -44,7 +53,7 @@
       signal,
       referrerPolicy: "no-referrer",
     });
-    if (!res.ok) throw new Error(`${res.status}`);
+    if (!res.ok) throw new SearchFailed(res.status);
     const places = parseGsi(await res.json());
     // 持ちすぎない (古いものから捨てる)
     if (remoteCache.size >= 50) {
@@ -96,7 +105,7 @@
   let active = $state(-1);
   let data = $state<Awaited<ReturnType<typeof loadTables>>>();
   let remote = $state<{ query: string; places: Place[] }>();
-  let remoteState = $state<"idle" | "loading" | "failed">("idle");
+  let remoteState = $state<"idle" | "loading" | "failed" | "busy">("idle");
   let timer: ReturnType<typeof setTimeout> | undefined;
   let controller: AbortController | undefined;
 
@@ -141,8 +150,10 @@
         remote = { query: q, places: ps };
         remoteState = "idle";
       })
-      .catch(() => {
-        if (!c.signal.aborted) remoteState = "failed";
+      .catch((err: unknown) => {
+        if (c.signal.aborted) return;
+        remoteState =
+          err instanceof SearchFailed && err.status === 503 ? "busy" : "failed";
       });
   }
 
@@ -264,6 +275,8 @@
     <p class="places-foot tiny muted" role="status">
       {#if remoteState === "loading"}
         住所を探しています…
+      {:else if remoteState === "busy"}
+        国土地理院の地名検索APIが混んでいるため、住所を探せませんでした。市町村だけを出しています。少し待ってから探し直してください
       {:else if remoteState === "failed"}
         住所を探せませんでした
         (地理院地図の地名検索API)。市町村だけを出しています

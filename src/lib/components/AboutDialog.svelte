@@ -5,6 +5,7 @@
   import { MAP_LEGEND } from "#lib/map/style.ts";
   import type { SourceStatus } from "#lib/model.ts";
   import { CREDITS, EEW_NOTICE, NOTICE } from "#lib/notice.ts";
+  import type { RelayStatus } from "#lib/relay.ts";
 
   import StatusList from "./StatusList.svelte";
 
@@ -19,11 +20,13 @@
     onclose,
     connected,
     statuses,
+    relay,
   }: {
     open: boolean;
     onclose: () => void;
     connected: boolean;
     statuses: SourceStatus[];
+    relay: RelayStatus[];
   } = $props();
   let dialog = $state<HTMLDialogElement>();
 
@@ -65,7 +68,7 @@
         情報源ごとの受信と、最後に受けた時刻です。名前の下はつなぎ方です。開いている間も替わります
       </p>
       <div class="receive">
-        <StatusList {connected} {statuses} />
+        <StatusList {connected} {statuses} {relay} />
       </div>
       <h2>地図の見方</h2>
       <dl class="small legend" data-testid="map-legend">

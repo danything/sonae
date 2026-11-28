@@ -66,6 +66,7 @@
     outlookDay,
     placeName,
     quakeName,
+    receiveGapText,
     sourceInTrouble,
     STATUS_LABEL,
     volcanoKindText,
@@ -109,6 +110,7 @@
     type ThemeMode,
     writePref,
   } from "#lib/prefs.ts";
+  import { relayInTrouble } from "#lib/relay-view.ts";
   import {
     listTop,
     nextRetract,
@@ -869,7 +871,15 @@
   // ---- 状態 (つながっていないものがあるときだけ、ヘッダーと dock に注意の印。押すと情報源ごとの受信。
   // 設定で切ってある情報源 (オフ) は問題にしない。いつもの状態は「出典と注意」の「受信の状態」) ----
   const trouble = $derived(
-    browser && (!live.connected || snap.statuses.some(sourceInTrouble)),
+    browser &&
+      (!live.connected ||
+        snap.statuses.some(sourceInTrouble) ||
+        snap.relay.some(relayInTrouble)),
+  );
+
+  /** 一覧の先頭の、受けられていない情報源の 1 行 (時刻で数え直すので live.now で回す) */
+  const receiveGap = $derived(
+    browser ? receiveGapText(snap.statuses, live.now) : undefined,
   );
 
   // ---- 出典と注意 ----
@@ -1192,7 +1202,11 @@
   <p class="menu-head">
     {troubleLabel(live.connected)}
   </p>
-  <StatusList connected={live.connected} statuses={snap.statuses} />
+  <StatusList
+    connected={live.connected}
+    statuses={snap.statuses}
+    relay={snap.relay}
+  />
 {/snippet}
 
 {#snippet kindChips(where: string)}
@@ -1531,6 +1545,27 @@
             {@render pinnedNotices()}
           {/if}
 
+          {#if receiveGap}
+            <!--
+              受けられていない情報源があるとき。一覧の情報がいつまでのものかを取り違えないよう、源といつから
+              受けられていないかを書く (docs/ui.md の「一覧」)。押すと「出典と注意」の受信の状態。
+              画面への配信が切れているときは、ヘッダーの注意の印が「受信が切れています」と出す
+            -->
+            <a
+              class="outlook-line small receive-gap"
+              href={aboutHref}
+              data-testid="receive-gap"
+            >
+              <span class="bold"
+                ><span class="gap-mark"><Icon icon={TriangleAlert} /></span
+                >受けられていない情報源があります</span
+              >
+              <span
+                >{receiveGap}。この源の情報は、そのときまでに受けたものです。</span
+              >
+            </a>
+          {/if}
+
           {#if homeOutlook && shownKind("weather")}
             <!-- 住んでいる地域の警報級の可能性。備えの情報なので、塗らず控えた字の 1 行だけ (docs/ui.md) -->
             <a
@@ -1619,6 +1654,7 @@
         {aboutHref}
         {found}
         selected={v.selected !== null}
+        relay={snap.relay}
         onstations={(r) => (stationMiss = r)}
       />
     </div>
@@ -1772,6 +1808,7 @@
     onclose={closeAbout}
     connected={live.connected}
     statuses={snap.statuses}
+    relay={snap.relay}
   />
   {#if user}
     <PushSettings bind:open={pushOpen} />
@@ -2026,6 +2063,13 @@
   }
   .alerts-in-list {
     gap: var(--so-space-2);
+  }
+  /* 受けられていない情報源の 1 行。面は付けず、印だけ注意の色 (denpa の 6 章「通知」) */
+  .receive-gap .gap-mark {
+    display: inline-flex;
+    margin-inline-end: var(--so-space-1);
+    vertical-align: -0.125em;
+    color: var(--so-warn-text);
   }
   /* 住んでいる地域の警報級の可能性 (早期注意情報)。面も色も付けず、控えた見出しと字の 1 行 */
   .outlook-line {
