@@ -454,6 +454,14 @@ describe("潮汐推算の値", () => {
     expect(full.stepSec).toBe(60);
     // time が無ければ、その日の 0 時 (日本時間) から
     expect(full.start).toBe("2026-11-27T15:00:00.000Z");
+    // 時差の無い時刻は日本時間と読む
+    expect(
+      parseTide(
+        "0114",
+        "2026-11-28",
+        JSON.stringify({ time: "2026-11-28T00:00:00", tide: sineDay().tide }),
+      ).start,
+    ).toBe("2026-11-27T15:00:00.000Z");
     expect(() => parseTide("0114", "2026-11-28", "{}")).toThrow();
     expect(() =>
       parseTide("0114", "2026-11-28", JSON.stringify({ tide: [1, "x"] })),

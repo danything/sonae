@@ -351,7 +351,7 @@ const jstDay = (ms: number) =>
 /**
  * 推算潮位の答え (`{ time, interval, stationCode, tide }`) を読む。形が違えば例外。
  * `interval` は秒 (仕様の説明は「1分毎」で既定は 60)。値の並びが半日に満たないときは、分とみなす
- * (仕様の例は 1 時間ごと 24 個に見えるため)。`time` が無ければその日の 0 時 (日本時間) から
+ * (仕様の例は 1 時間ごと 24 個に見えるため)。`time` が無ければその日の 0 時 (日本時間) から。時差の無い `time` は日本時間
  */
 export function parseTide(code: string, date: string, text: string): TideDay {
   const doc = JSON.parse(text) as Record<string, unknown>;
@@ -367,7 +367,11 @@ export function parseTide(code: string, date: string, text: string): TideDay {
     typeof doc.interval === "number" && doc.interval > 0 ? doc.interval : 60;
   const stepSec =
     tide.length * interval < 12 * 60 * 60 ? interval * 60 : interval;
-  const time = typeof doc.time === "string" ? doc.time : "";
+  // 時差の付かない時刻 (「2026-11-28T00:00:00」) は日本時間と読む (サーバーの時計の地域に頼らない)
+  const raw = typeof doc.time === "string" ? doc.time.trim() : "";
+  const time = /^\d{4}-\d\d-\d\dT\d\d:\d\d(:\d\d(\.\d+)?)?$/.test(raw)
+    ? `${raw}+09:00`
+    : raw;
   const start = Number.isFinite(Date.parse(time))
     ? new Date(Date.parse(time)).toISOString()
     : new Date(Date.parse(`${date}T00:00:00+09:00`)).toISOString();
