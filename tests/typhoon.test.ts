@@ -5,6 +5,8 @@ import {
   dayHour,
   envelope,
   nearestTyphoonPoint,
+  trackPoints,
+  trackSegments,
   TYPHOON_STALE_MS,
   typhoonBounds,
   typhoonFeatures,
@@ -281,5 +283,98 @@ describe("住んでいる地域が暴風域に入る確率", () => {
     const z = homeProbability(p, "011011", "宗谷北部");
     expect(z).toMatchObject({ name: "宗谷北部", zero: true, steps: [] });
     expect(z.days.every((d) => d.p === 0)).toBe(true);
+  });
+});
+
+describe("台風のこれまでの経路", () => {
+  const a = info("10_04_03_170913_VPTW60.xml");
+  /** 実況の時刻と中心を替えた作り物の報 (`h` は 2017-09-13 21:00 からの時間) */
+  const at = (h: number, lat: number, lon: number, extra = {}): WeatherInfo => {
+    const time = new Date(
+      Date.parse("2017-09-13T21:00:00+09:00") + h * 3600_000,
+    ).toISOString();
+    return {
+      ...a,
+      id: `r${h}`,
+      reportedAt: new Date(Date.parse(time) + 45 * 60_000).toISOString(),
+      typhoon: { ...a.typhoon, time, lat, lon },
+      ...extra,
+    };
+  };
+
+  test("電文の実況の時刻を読む", () => {
+    expect(a.typhoon?.time).toBe("2017-09-13T21:00:00+09:00");
+  });
+
+  test("受けた報の実況を時刻の順に並べる。取消・訓練は使わず、同じ時刻は後の発表を採る", () => {
+    const pts = trackPoints([
+      at(3, 26, 125),
+      at(0, 25.5, 125.5),
+      at(-3, 25, 126, { cancelled: true }),
+      at(-6, 24.5, 126.5, { status: "training" }),
+      {
+        ...at(0, 25.4, 125.6),
+        id: "fix",
+        reportedAt: "2017-09-13T22:00:00+09:00",
+      },
+    ]);
+    expect(pts.map((p) => [p.lat, p.lon])).toEqual([
+      [25.4, 125.6],
+      [26, 125],
+    ]);
+    // 実況の時刻が無い前の報は、発表の時刻で並べる
+    const old = {
+      ...at(6, 27, 124),
+      typhoon: { ...a.typhoon, time: undefined, lat: 27, lon: 124 },
+    };
+    expect(trackPoints([old])[0]?.time).toBe(
+      new Date(old.reportedAt).toISOString(),
+    );
+  });
+
+  test("6 時間を超えて空いた所は線でつながず、抜けにする", () => {
+    const pts = trackPoints(
+      [0, 3, 6, 12, 19, 22].map((h) => at(h, 20 + h / 10, 130 - h / 10)),
+    );
+    // 0-3-6-12 は 6 時間以内でつながる。12→19 は 7 時間で抜け。19-22 はつながる
+    expect(trackSegments(pts).map((l) => l.length)).toEqual([4, 2]);
+    // 1 点だけ残った区間は線にしない (点は別に置く)
+    expect(
+      trackSegments(pts.slice(0, 4).concat(pts[5] ?? [])).map((l) => l.length),
+    ).toEqual([4]);
+  });
+
+  test("経路の線と点を、台風の線の source に入れる (いちばん新しい報の台風だけ)", () => {
+    const pts = trackPoints([
+      at(-12, 24, 127),
+      at(-3, 25, 126),
+      at(0, 25.5, 125.5),
+    ]);
+    const { lines } = typhoonFeatures([a], a.series, { [a.series]: pts });
+    const kinds = lines.features.map((f) => f.properties.kind);
+    expect(kinds.filter((k) => k === "past")).toHaveLength(1);
+    expect(kinds.filter((k) => k === "past-point")).toHaveLength(3);
+    // ほかの台風の経路は描かない
+    const none = typhoonFeatures([a], null, { "typhoon-TC9999": pts });
+    expect(
+      none.lines.features.some((f) => f.properties.kind === "past-point"),
+    ).toBe(false);
+  });
+
+  test("DB に入れた報から経路を引く", () => {
+    const { store } = memoryStore();
+    for (const h of [0, 3, 6]) {
+      const w = at(h, 25 + h / 10, 125);
+      store.ingest({
+        source: "jma-weather",
+        key: `k${h}`,
+        code: "VPTW60",
+        items: [{ type: "weather", info: { ...w, id: `VPTW60-TC1718-${h}` } }],
+      });
+    }
+    expect(store.typhoonTrack(a.series).map((p) => p.lat)).toEqual([
+      25, 25.3, 25.6,
+    ]);
+    expect(store.typhoonTrack("typhoon-TC0000")).toEqual([]);
   });
 });
