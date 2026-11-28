@@ -75,6 +75,18 @@ function clock(start = 1_000_000) {
   let t = start;
   return { now: () => t, add: (ms: number) => (t += ms) };
 }
+/** 本体 10 バイトのものを 1 つ覚えたときに数える大きさ (本体と、鍵・見出し・入れ物の分) */ async function oneSize(
+  sources: Record<string, RelaySource>,
+  id: string,
+  path: string,
+): Promise<number> {
+  const r = new Relay({
+    sources,
+    fetch: upstream(() => png("0123456789")).fetch,
+  });
+  await r.handle(id, path, none, h());
+  return (await r.stats()).bytes;
+}
 
 test("同じタイルは、何台が読んでも配信元へは 1 回だけ取りに行く", async () => {
   const up = upstream(() => png("x", { "cache-control": "max-age=120" }));
@@ -376,12 +388,16 @@ test("gzip のまま覚え、gzip を受けない要求には開いて返す", a
 
 test("上限を超えたら、長く使っていないものから捨てる", async () => {
   const up = upstream(() => png("0123456789"));
-  const r = new Relay({ sources: SRC, fetch: up.fetch, maxBytes: 25 });
+  const r = new Relay({
+    sources: SRC,
+    fetch: up.fetch,
+    maxBytes: 2.5 * (await oneSize(SRC, "t", "a/1.png")),
+  });
   await r.handle("t", "a/1.png", none, h());
   await r.handle("t", "a/2.png", none, h());
   await r.handle("t", "a/1.png", none, h()); // 1 を使ったので、2 が古い
   await r.handle("t", "a/3.png", none, h());
-  expect(await r.stats()).toEqual({ bytes: 20, entries: 2 });
+  expect((await r.stats()).entries).toBe(2);
   await r.handle("t", "a/1.png", none, h());
   expect(up.calls).toHaveLength(3);
   await r.handle("t", "a/2.png", none, h());
@@ -656,14 +672,19 @@ test("上限を超えたら、使った時刻に段の猶予を足して古い�
     low: { ...SRC.t, upstream: "https://low.test/", priority: 0 as const },
     high: { ...SRC.t, upstream: "https://high.test/", priority: 2 as const },
   };
-  const r = new Relay({ sources, fetch: up.fetch, now: c.now, maxBytes: 25 });
+  const r = new Relay({
+    sources,
+    fetch: up.fetch,
+    now: c.now,
+    maxBytes: 2.5 * (await oneSize(sources, "high", "a/1.png")),
+  });
   await r.handle("high", "a/1.png", none, h());
   c.add(1000);
   await r.handle("low", "a/1.png", none, h());
   c.add(1000);
   // 高い層は先に使っていても残り、低い層が捨てられる
   await r.handle("low", "a/2.png", none, h());
-  expect(await r.stats()).toEqual({ bytes: 20, entries: 2 });
+  expect((await r.stats()).entries).toBe(2);
   await r.handle("high", "a/1.png", none, h());
   expect(up.calls).toHaveLength(3);
   // 猶予 (2 時間) を過ぎるほど使っていなければ、高い層でも先に捨てる
@@ -696,13 +717,18 @@ test("返せなくなったもの (古くても返してよい長さを過ぎた
       priority: 0 as const,
     },
   };
-  const r = new Relay({ sources, fetch: up.fetch, now: c.now, maxBytes: 25 });
+  const r = new Relay({
+    sources,
+    fetch: up.fetch,
+    now: c.now,
+    maxBytes: 2.5 * (await oneSize(sources, "short", "a/1.png")),
+  });
   await r.handle("long", "a/1.png", none, h());
   await r.handle("short", "a/1.png", none, h());
   c.add(121_000);
   await r.handle("long", "a/2.png", none, h());
   // short は返せる長さを過ぎたので捨て、long の 2 つが残る
-  expect(await r.stats()).toEqual({ bytes: 20, entries: 2 });
+  expect((await r.stats()).entries).toBe(2);
 });
 
 test("置き場は差し替えられる (外の置き場のように Promise を返すものでも)", async () => {
@@ -929,4 +955,44 @@ test("覚えない源は、失敗した要求の文字も残さない", async ()
     ).failedUntil.keys(),
   ];
   expect(keys.some((k) => k.includes("q="))).toBe(false);
+});
+
+test("覚えた量は、本体だけでなく鍵と見出しと入れ物の分も数える", async () => {
+  const size = await oneSize(SRC, "t", "a/1.png");
+  expect(size).toBeGreaterThan(10 + 256);
+});
+
+test("上限の内でも、返せなくなったものは 1 分に 1 回掃く", async () => {
+  const up = upstream(() => new Response("no", { status: 404 }));
+  const c = clock();
+  const r = new Relay({ sources: SRC, fetch: up.fetch, now: c.now });
+  for (let i = 0; i < 50; i++) await r.handle("t", `z/${i}.png`, none, h());
+  expect((await r.stats()).entries).toBe(50);
+  // 404 は 5 分だけ覚える。過ぎた後に何かを覚えると、掃かれる
+  c.add(6 * 60_000);
+  await r.handle("t", "z/x.png", none, h()).catch(() => {});
+  await r.handle("t", "z/99.png", none, h());
+  expect((await r.stats()).entries).toBe(1);
+});
+
+test("同じホストの源 (地理院タイルと地理院地図Vector) は、断られたら一緒に控える", async () => {
+  const up = upstream(
+    () =>
+      new Response("busy", { status: 429, headers: { "retry-after": "120" } }),
+  );
+  const sources = {
+    a: { ...SRC.t, upstream: "https://same.test/a/" },
+    b: { ...SRC.t, upstream: "https://same.test/b/" },
+    c: { ...SRC.t, upstream: "https://other.test/" },
+  };
+  const r = new Relay({ sources, fetch: up.fetch });
+  expect((await r.handle("a", "x/1.png", none, h())).status).toBe(503);
+  // 同じホストの b は配信元へ行かずに控える。ほかのホストの c は取りに行く
+  const b = await r.handle("b", "x/1.png", none, h());
+  expect(b.headers.get("x-relay")).toBe("busy");
+  await r.handle("c", "x/1.png", none, h());
+  expect(up.calls.map((x) => new URL(x.url).host)).toEqual([
+    "same.test",
+    "other.test",
+  ]);
 });
