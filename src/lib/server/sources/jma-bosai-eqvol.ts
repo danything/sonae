@@ -15,7 +15,7 @@
  *   (噴火警報の本文と同じ形と見て読み、読めなければ原文を残す)
  * - 主のフィードが最後に取れた時刻 (の 10 分前) より前の報は採らない (気象庁 XML で受けている)
  * - **公式の API ではない** (ホームページの表示用で、予告なく変わる)。形が変わって読めなくなったら、その報の原文を
- *   残して状態にエラーを出すだけにする (ほかの情報源と画面は止まらない)
+ *   残して状態にエラーを出すだけにする (ほかの情報源と画面は止まらない。docs/design.md の 2.1 の「読めない・取れないとき」)
  * - 受けた報には `source: "jma-bosai"` を付ける。津波は気象庁 XML と同じ重みで合わせ (merge.ts)、火山は気象庁 XML の
  *   同じ報 (同じ id) が届いたら、そちらに置き換わる。見出しは電文と同じ字なので、置き換えても通知は鳴り直さない
  *
@@ -47,6 +47,10 @@ const MAX_BACKOFF_MS = 15 * 60_000;
 const OVERLAP_MS = 10 * 60_000;
 /** 主のフィードが一度も取れていないときに、予備で採る報の古さの上限 */
 const COLD_START_MS = 24 * 60 * 60_000;
+/** 本文が 404・410 だったとき、諦めるまでに取りに行く回数 (1 分ごと。一覧が先に出て本文が遅れることがある) */
+const BODY_MISS_LIMIT = 5;
+/** 捨てた一覧の項目の訳を置く鍵 (報の鍵とぶつからない) */
+const DROPPED = "#dropped";
 /** 一回に取る本文の数の上限 (一覧ごと) */
 const MAX_BODIES = 10;
 const STANDBY_REASON = "気象庁 XML (地震火山) が取れない間だけ取ります";
@@ -280,8 +284,12 @@ export function bosaiEqvolSource(
   const log = opts.log ?? ((m: string) => console.log(m));
   const now = opts.now ?? Date.now;
   const tag = `[${id}]`;
-  /** 本文が 404・410 だった報 (一覧に載っている間は取り直さない) */
+  /** 本文が 404・410 のまま諦めた報 (一覧に載っている間は取り直さない) */
   const gone = new Map<string, Set<string>>();
+  /** 本文が 404・410 だった回数 (一覧が先に出て本文がまだ置かれていないことがあるので、すぐには諦めない) */
+  const missTries = new Map<string, Map<string, number>>();
+  /** 読めなかった報と、諦めた報の訳 (一覧に載っている間は、受信の状態に出し続ける) */
+  const trouble = new Map<string, Map<string, string>>();
 
   function cutoff(): number {
     const p = opts.primary();
@@ -291,27 +299,44 @@ export function bosaiEqvolSource(
 
   /**
    * 一覧を条件付きで取り、まだ受けていない報の本文を 1 回ずつ取って渡す。取り残しがあれば控えを覚えず、
-   * 次の回に一覧を読み直す
+   * 次の回に一覧を読み直す。読めない報・取れない報・読めない一覧の項目は、黙って落とさず訳を返す (受信の状態に出す)
    */
   async function drain<T extends { reportedAt: string }>(
     listUrl: string,
     signal: AbortSignal,
     since: number,
-    parseList: (text: string) => T[],
+    parseList: (text: string) => { items: T[]; dropped: number },
     keyOf: (item: T) => string,
     bodyUrl: (item: T) => string,
     codeOf: (item: T) => string,
     parse: (text: string, item: T) => Normalized[],
-  ): Promise<void> {
+    /** 本文が一覧の項目より古い (配信の途中で、前の報がまだ置かれている) なら true。取らずに次の回へ回す */
+    behind?: (text: string, item: T) => boolean,
+  ): Promise<string[]> {
+    const problems = trouble.get(listUrl) ?? new Map<string, string>();
+    trouble.set(listUrl, problems);
     const r = await http.get(listUrl, signal, true);
-    if (!r) return;
-    const items = parseList(r.text);
+    if (!r) return [...problems.values()];
+    const { items, dropped } = parseList(r.text);
     const listed = new Set(items.map(keyOf));
     // 一覧に載っていない報は忘れる (載り直したら、また取る)
     const missing = new Set(
       [...(gone.get(listUrl) ?? [])].filter((k) => listed.has(k)),
     );
     gone.set(listUrl, missing);
+    for (const k of problems.keys()) if (!listed.has(k)) problems.delete(k);
+    // 捨てた項目の数も、一覧が変わるまで出し続ける (次の回が 304 でも消さない)
+    if (dropped > 0)
+      problems.set(DROPPED, `${listUrl} の ${dropped} 項目を読めませんでした`);
+    const tries = missTries.get(listUrl) ?? new Map<string, number>();
+    for (const k of tries.keys()) if (!listed.has(k)) tries.delete(k);
+    missTries.set(listUrl, tries);
+    /** 取り直した回数を数え、上限に届いたら true */
+    const tried = (key: string) => {
+      const n = (tries.get(key) ?? 0) + 1;
+      tries.set(key, n);
+      return n >= BODY_MISS_LIMIT;
+    };
     const todo = items.filter((i) => {
       const k = keyOf(i);
       return (
@@ -320,7 +345,7 @@ export function bosaiEqvolSource(
     });
     let left = todo.length > MAX_BODIES;
     for (const i of todo.slice(0, MAX_BODIES)) {
-      if (signal.aborted) return;
+      if (signal.aborted) return [];
       const key = keyOf(i);
       let body: string;
       try {
@@ -329,19 +354,45 @@ export function bosaiEqvolSource(
         if (!res) continue;
         body = res.text;
       } catch (err) {
-        if (signal.aborted) return;
+        if (signal.aborted) return [];
         log(`${tag} ${err}`);
         if (retryable(err)) left = true;
-        else if (err instanceof BosaiHttpError) missing.add(key);
+        else if (err instanceof BosaiHttpError) {
+          if (tried(key)) {
+            tries.delete(key);
+            missing.add(key);
+            problems.set(key, `${key} の本文を取れません (${err.message})`);
+          } else left = true;
+        }
         continue;
       }
+      let stale = false;
+      try {
+        stale = behind?.(body, i) ?? false;
+      } catch {
+        // 時刻を読めない本文は、下の読み方で読めないとする
+      }
+      if (stale) {
+        // 取り直し続ける (古い本文を新しい報の鍵で受けない)。続くなら、形が違うかもしれないので状態に出す
+        log(`${tag} ${key} の本文がまだ前の報なので、次の回に取り直します`);
+        if (tried(key))
+          problems.set(key, `${key} の本文が一覧の時刻より古いままです`);
+        left = true;
+        continue;
+      }
+      tries.delete(key);
+      problems.delete(key);
       let incoming: Incoming;
       try {
         const items = parse(body, i);
         incoming = { source: id, key, code: codeOf(i), body, items };
       } catch (err) {
-        // 読めない本文も原文は残す (読み方を直したら流し直す)
+        // 読めない本文も原文は残す (読み方を直したら流し直す)。黙って落とさず、受信の状態に出す
         log(`${tag} ${key} を読めませんでした: ${err}`);
+        problems.set(
+          key,
+          `${key} を読めませんでした (原文を残しました): ${err}`,
+        );
         incoming = {
           source: id,
           key,
@@ -355,6 +406,7 @@ export function bosaiEqvolSource(
       status.seen(true);
     }
     if (!left) http.remember(listUrl, r.validators);
+    return [...problems.values()];
   }
 
   const tsunami = (signal: AbortSignal, since: number) =>
@@ -362,7 +414,8 @@ export function bosaiEqvolSource(
       BOSAI_TSUNAMI_LIST,
       signal,
       since,
-      parseBosaiTsunamiList,
+      // 名前の形が違う項目 (ほかの種類の電文) は、もともと取らないものなので数えない
+      (text) => ({ items: parseBosaiTsunamiList(text), dropped: 0 }),
       (i) => `tsunami:${i.name}`,
       (i) => bosaiTsunami(i.name),
       (i) => i.code,
@@ -379,12 +432,27 @@ export function bosaiEqvolSource(
         listUrl,
         signal,
         since,
-        parseBosaiVolcanoList,
+        // 項目の形が違えば (噴火速報の一覧は形を確かめられていない)、黙って捨てずに数える
+        (text) => {
+          const items = parseBosaiVolcanoList(text);
+          return {
+            items,
+            dropped: list(JSON.parse(text)).length - items.length,
+          };
+        },
         // 噴火警報・予報のいまの一覧は火山ごとにいちばん新しい報なので、火山と発表の時刻で 1 つの報になる
         (i) => `${code}:${i.eventId}:${i.reportedAt}`,
         (i) => bodyUrl(i.eventId),
         () => code,
         (text) => parseBosaiVolcano(text, code),
+        // 火山の本文は火山ごとに 1 つで差し替わるので、一覧より古ければ (前の報が残っていれば) 待つ
+        (text, i) => {
+          const d = JSON.parse(text) as unknown;
+          const at = isObject(d)
+            ? Date.parse(str(d.reportDatetime) ?? "")
+            : NaN;
+          return Number.isFinite(at) && at < Date.parse(i.reportedAt);
+        },
       );
   };
 
@@ -406,9 +474,11 @@ export function bosaiEqvolSource(
         const since = cutoff();
         // 津波・噴火警報・噴火速報は別の一覧なので、どれかが取れなくてもほかは取る
         const errors: string[] = [];
+        /** 一覧は取れたが、読めない報・取れない報があった訳 (待つ長さは延ばさず、受信の状態に出す) */
+        const problems: string[] = [];
         for (const part of [tsunami, volcano("VFVO56"), volcano("VFVO50")]) {
           try {
-            await part(signal, since);
+            problems.push(...(await part(signal, since)));
           } catch (err) {
             if (signal.aborted) break;
             log(`${tag} 取れませんでした: ${err}`);
@@ -419,8 +489,11 @@ export function bosaiEqvolSource(
         if (errors.length === 0) {
           fail = 0;
           status.seen(false);
-          status.set("connected");
-          status.recovered();
+          if (problems.length > 0) status.set("retrying", problems.join(" / "));
+          else {
+            status.set("connected");
+            status.recovered();
+          }
         } else {
           fail++;
           status.set("retrying", errors.join(" / "));

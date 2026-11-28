@@ -208,6 +208,11 @@ function feedSource(
       /** 電文まで全部取れた最後の時刻と、長期フィードを最後に取りに行った時刻 */
       let lastOk = 0;
       let lastLong = Number.NEGATIVE_INFINITY;
+      /**
+       * 長期フィードの回で電文を取り残したか。高頻度フィードだけが取れて `lastOk` が進んでも、長期フィードにしか
+       * 載っていない電文を取り直すため、取り切れるまで (10 分に 1 回) 長期フィードを読む
+       */
+      let longPending = false;
       /** 一緒に取るほかのフィードの、次に取る時刻と、最後に取れた時刻 */
       const moreNext = new Map<string, number>();
       const moreOk = new Map<string, number>();
@@ -219,8 +224,12 @@ function feedSource(
           // 10 分以上取り残しがあれば長期フィードで埋める。取り残しが続く間も、長期フィード (大きい) を取りに行くのは
           // 10 分に 1 回まで (落ちかけの配信元に毎分取りに行かない)
           const now0 = Date.now();
-          if (now0 - lastOk > GAP_MS && now0 - lastLong > GAP_MS) {
+          if (
+            (now0 - lastOk > GAP_MS || longPending) &&
+            now0 - lastLong > GAP_MS
+          ) {
             complete = await feed(opts.longFeedUrl ?? kind.longFeedUrl, signal);
+            longPending = !complete;
             // フィードが取れたときだけ数える (フィードが落ちている間は、戻った回にすぐ取る)
             lastLong = now0;
           }

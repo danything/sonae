@@ -388,6 +388,7 @@ export function bosaiWeatherSource(
   async function warnings(signal: AbortSignal, since: number): Promise<void> {
     const table = await areaTable(signal);
     let text: string;
+    let fresh: Parameters<typeof http.remember>[1] | undefined;
     if (now() - mapAt < MAP_MIN_INTERVAL_MS) {
       if (pendingMap === undefined) return;
       text = pendingMap;
@@ -396,12 +397,14 @@ export function bosaiWeatherSource(
       // 変わっていなければ 304 で本体を運ばない (落ちている間の量を抑える。docs/design.md の 2.8 の「予備」)
       const r = await http.get(BOSAI_WARNING_MAP, signal, true);
       if (r) {
-        http.remember(BOSAI_WARNING_MAP, r.validators);
         text = r.text;
+        fresh = r.validators;
       } else if (pendingMap !== undefined) text = pendingMap;
       else return;
     }
     const { warnings: ws, unknown } = parseBosaiWarnings(text, table);
+    // 控えは読めた後に覚える (読めない形の一覧を覚えると、次の 304 で受信中に戻り、エラーが消える)
+    if (fresh) http.remember(BOSAI_WARNING_MAP, fresh);
     // 採れなかった報があっても控えは覚え (変わっていない一覧を取り直さない)、本文を手元に残して読み直す
     pendingMap = unknown > 0 ? text : undefined;
     if (unknown > 0) {
