@@ -15,6 +15,7 @@
     WEATHER_INFO_LABEL,
     type WeatherInfo,
   } from "#lib/model.ts";
+  import { BOSAI_WEATHER_NOTE } from "#lib/notice.ts";
 
   import WarningLevel from "../WarningLevel.svelte";
   import TyphoonSection from "./TyphoonSection.svelte";
@@ -67,6 +68,10 @@
     <p><WarningLevel level={w.level} label={kindText(w.kindName)} /></p>
   {:else if w.kindName && (w.kind === "bosai" || NOTE_KINDS.has(w.kind))}
     <p class="small bold">{w.kindName}</p>
+  {/if}
+
+  {#if w.source === "jma-bosai"}
+    <p class="small">{BOSAI_WEATHER_NOTE}</p>
   {/if}
 
   {#if w.headline}

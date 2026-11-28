@@ -43,6 +43,12 @@ const ODC_BY = "https://opendatacommons.org/licenses/by/1-0/";
 const DISAPORTAL =
   "https://disaportal.gsi.go.jp/hazardmap/copyright/opendata.html";
 const JSHIS_SITE = "https://www.j-shis.bosai.go.jp/";
+const BOSAI_WARNING_PAGE = "https://www.jma.go.jp/bosai/warning/";
+const BOSAI_INFORMATION_PAGE = "https://www.jma.go.jp/bosai/information/";
+
+/** 気象庁ホームページの JSON (気象 XML の予備) から受けた警報・注意報と気象防災速報の、詳しい内容に添える文 */
+export const BOSAI_WEATHER_NOTE =
+  "気象庁 XML が取れなかった間に、気象庁ホームページの JSON から受けた情報です (気象庁 XML の予備)。気象庁 XML の同じ報が届いたら、そちらに置き換えます。";
 const JSHIS_Z_RULES =
   "https://www.j-shis.bosai.go.jp/map/JSHIS2/data/DOC/DataFileRule/Z-RULES.pdf";
 
@@ -286,6 +292,17 @@ export const CREDITS: Credit[] = [
     label: "南海トラフ地震臨時情報など (気象庁 XML の予備)",
     parts: [
       "Wolfx Project が中継した気象庁の情報。気象庁「防災情報XML」の南海トラフ地震臨時情報・南海トラフ地震関連解説情報・北海道・三陸沖後発地震注意情報を加工して作成。気象庁 XML の同じ報が届いたら、そちらに置き換えます",
+    ],
+  },
+  {
+    // 気象 XML のフィードが取れない間だけ取る (docs/design.md の 2.8 の「予備」)
+    label: "気象警報・注意報と気象防災速報 (気象庁 XML の予備)",
+    parts: [
+      "出典：気象庁ホームページ（",
+      { text: BOSAI_WARNING_PAGE, href: BOSAI_WARNING_PAGE },
+      "・",
+      { text: BOSAI_INFORMATION_PAGE, href: BOSAI_INFORMATION_PAGE },
+      "）。気象庁 XML (気象) が取れない間だけ、気象庁ホームページの「気象警報・注意報」「気象情報」の JSON を加工して作成 (種類のコードに、電文と同じ種類の名前を当てています)。気象庁 XML の同じ報が届いたら、そちらに置き換えます",
     ],
   },
   {

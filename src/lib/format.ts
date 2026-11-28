@@ -112,6 +112,8 @@ export const SOURCE_LABEL: Record<SourceId, string> = {
   cwa: "中央氣象署 (台湾)",
   ptwc: "PTWC (米国 太平洋津波警報センター)",
   "jma-bosai": "気象庁ホームページ (国際津波)",
+  "jma-bosai-weather":
+    "気象庁ホームページ (警報・注意報と気象防災速報。気象 XML の予備)",
   trem: "ExpTech TREM (台湾の観測点の揺れ・非公式)",
   seisjs: "Wolfx SeisJS (有志の観測点の揺れ・非公式)",
   msil: "海しる (海上保安庁。海底地殻変動観測点・海域火山・海上保安部署・潮汐推算)",
@@ -125,12 +127,14 @@ const SOURCE_STATE: Record<SourceStatus["state"], string> = {
   retrying: "再接続中",
   stopped: "停止",
   off: "オフ",
+  standby: "待機中",
 };
 
-/** 情報源の受信の状態の 1 行 (「受信中・11/13 08:43:12」「オフ (授権碼がありません)」) */
+/** 情報源の受信の状態の 1 行 (「受信中・11/13 08:43:12」「オフ (授権碼がありません)」「待機中 (…)」) */
 export function sourceStateText(s: SourceStatus): string {
   const state = SOURCE_STATE[s.state] ?? s.state;
-  if (s.state === "off") return s.reason ? `${state} (${s.reason})` : state;
+  if (s.state === "off" || s.state === "standby")
+    return s.reason ? `${state} (${s.reason})` : state;
   const road = roadDiscoverText(s, state);
   if (road) return road;
   return s.lastSeenAt ? `${state}・${jstSeconds(s.lastSeenAt)}` : state;
@@ -181,9 +185,9 @@ function roadDiscoverText(s: SourceStatus, state: string): string | undefined {
   return `${state}・${manual ? `${found}、${manual}` : found}・${at} に一覧を確かめた`;
 }
 
-/** 注意の色で出す状態か。受信中と、設定で切ってあるものは問題ではない。通行止めの一覧が読めないときは出す */
+/** 注意の色で出す状態か。受信中と、設定で切ってあるものと、待機中の予備は問題ではない。通行止めの一覧が読めないときは出す */
 export const sourceInTrouble = (s: SourceStatus) =>
-  (s.state !== "connected" && s.state !== "off") ||
+  (s.state !== "connected" && s.state !== "off" && s.state !== "standby") ||
   (s.id === "roads" && s.state !== "off" && !!s.roads?.problem);
 
 /** M の書き方 (「M3.5」)。M が無ければ電文の文のまま、それも無ければ「—」 */
