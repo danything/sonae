@@ -5,6 +5,7 @@ import {
   parseWolfx,
   parseWolfxEqlist,
   parseWolfxSpecialEq,
+  parseWolfxTsunami,
   wolfxShindo,
 } from "#lib/server/sources/wolfx-json.ts";
 
@@ -363,5 +364,132 @@ describe("Wolfx の南海トラフ地震臨時情報など (作った JSON)", ()
     ).toBe("training");
     // 時刻の読めない報は捨てる
     expect(one({ time: null })).toBeUndefined();
+  });
+});
+
+describe("Wolfx の津波 (作った JSON)", () => {
+  test("予報区の公式の分類と高さの文だけを読む。Wolfx 独自の値は読まない", () => {
+    const [t] = parseWolfxTsunami(json("wolfx/made-tsunami.json"));
+    expect(t?.item.report).toMatchObject({
+      code: "VTSE41",
+      source: "wolfx",
+      eventIds: ["20110311144640"],
+      status: "normal",
+      infoType: "発表",
+      reportedAt: "2011-03-11T05:49:00.000Z",
+      observations: [],
+    });
+    expect(t?.item.report.areas).toEqual([
+      {
+        code: "210",
+        name: "岩手県",
+        grade: "major",
+        kindName: "大津波警報：発表",
+        immediate: undefined,
+        arrivalTime: undefined,
+        condition: "津波到達中と推測",
+        maxHeightText: "巨大",
+      },
+      {
+        code: "220",
+        name: "宮城県",
+        grade: "major",
+        kindName: "大津波警報：発表",
+        immediate: undefined,
+        arrivalTime: "2011-03-11T06:00:00.000Z",
+        condition: undefined,
+        maxHeightText: "巨大",
+      },
+      {
+        code: "101",
+        name: "北海道太平洋沿岸中部",
+        grade: "warning",
+        kindName: "津波警報",
+        immediate: undefined,
+        arrivalTime: "2011-03-11T06:30:00.000Z",
+        condition: undefined,
+        maxHeightText: "高い",
+      },
+      {
+        code: "100",
+        name: "北海道太平洋沿岸東部",
+        grade: "watch",
+        kindName: "津波注意報",
+        immediate: undefined,
+        arrivalTime: "2011-03-11T06:30:00.000Z",
+        condition: undefined,
+        maxHeightText: undefined,
+      },
+    ]);
+    const text = JSON.stringify(t);
+    for (const s of [
+      "trusted",
+      "validUntil",
+      "lastKnown",
+      "読まない",
+      "expired",
+    ])
+      expect(text).not.toContain(s);
+  });
+
+  test("Wolfx の状態 (status・trusted・validUntil) が変わっても、報と予報区が同じなら同じ鍵", () => {
+    const v = json("wolfx/made-tsunami.json");
+    const a = parseWolfxTsunami(v)[0];
+    const b = parseWolfxTsunami({
+      ...v,
+      status: "unknown",
+      trusted: false,
+      validUntil: "2011-03-11T05:52:29.000Z",
+      md5: "other",
+    })[0];
+    expect(b?.key).toBe(a?.key);
+    expect(b?.item).toEqual(a?.item);
+  });
+
+  test("予報区の空の発表 (有効期限の過ぎた報) は捨て、取消は予報区を空にして読む", () => {
+    const v = json("wolfx/made-tsunami.json");
+    expect(parseWolfxTsunami({ ...v, status: "expired", areas: [] })).toEqual(
+      [],
+    );
+    const report = v.report as Record<string, unknown>;
+    const [c] = parseWolfxTsunami({
+      ...v,
+      report: {
+        ...report,
+        status: "cancelled",
+        time: "2011-03-11T05:55:00.000Z",
+      },
+      areas: [],
+    });
+    expect(c?.item.report.infoType).toBe("取消");
+    expect(c?.item.report.areas).toEqual([]);
+    // VTSE41 でない報と、報の無いものは捨てる
+    expect(
+      parseWolfxTsunami({ ...v, report: { ...report, product: "VTSE51" } }),
+    ).toEqual([]);
+    expect(
+      parseWolfxTsunami({ status: "uninitialized", report: null, areas: [] }),
+    ).toEqual([]);
+  });
+
+  test("知らないコードは level の名前で分け、表題に訓練とあれば訓練", () => {
+    const v = json("wolfx/made-tsunami.json");
+    const [t] = parseWolfxTsunami({
+      ...v,
+      report: { ...(v.report as object), title: "津波予報（訓練）" },
+      areas: [
+        {
+          code: "100",
+          name: "北海道太平洋沿岸東部",
+          level: "forecast",
+          kind: "99",
+        },
+      ],
+    });
+    expect(t?.item.report.status).toBe("training");
+    expect(t?.item.report.areas?.[0]).toMatchObject({
+      grade: "forecast",
+      kindName: "津波予報",
+    });
   });
 });
